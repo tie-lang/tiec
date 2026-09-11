@@ -744,13 +744,14 @@ pub func parse_args_after_lparen(args: ref table<i64>) -> bool {
 }
 
 // p.8.2.3 插值字符串组装：lexer 已把 `"a{expr}b"` 拆为 STR("a") { expr } STR("b")
-// token 序列——这里组装为 `"a" + to_string(expr) + "b"` 拼接链（to_string 对
+// token 序列（插值 `{` 是 lex_interp_lbrace 专用 tag，块开括号 lex_lbrace 不误入）
+// ——这里组装为 `"a" + to_string(expr) + "b"` 拼接链（to_string 对
 // string 实参返回自身，irgen 已补分支）。`{}` 空插值由 parse_expr 对 `}` 报错。
 func parse_interp_chain(first_lid: i64, line: i64, col: i64) -> i64 {
     var acc = ast.new_node(N_STR_LIT, first_lid, -1, -1, line, col)
     var d = false
     while !d {
-        if putil.peek_tag() != lex_lbrace {
+        if putil.peek_tag() != lex_interp_lbrace {
             d = true
             break
         }
@@ -864,8 +865,9 @@ func parse_primary() -> i64 {
         var lid = interner.intern(putil.peek_lexeme())
         putil.advance()
         // p.8.2.3 字符串插值：`"Hello, {name}!"` → 拼接链（lexer 在插值段后
-        // 产 STR { expr } STR ... token 序列）
-        if putil.peek_tag() == lex_lbrace {
+        // 产 STR + lex_interp_lbrace（插值专用 tag）+ expr + } + STR ... 序列；
+        // 块/结构体开括号是 lex_lbrace，此处不误入）
+        if putil.peek_tag() == lex_interp_lbrace {
             return parse_interp_chain(lid, line, col)
         }
         return ast.new_node(N_STR_LIT, lid, -1, -1, line, col)
