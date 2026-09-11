@@ -514,6 +514,15 @@ func tig_switch(id: i64) -> i64 {
         var body = sstate.child(case_node, 2)
         var body_blk = ir.new_block(g_cur_func, interner.intern("sw.body"))
         var next_blk = ir.new_block(g_cur_func, interner.intern("sw.next"))
+        // p.8.1.4 when 守卫：SwitchCase[children=[PatternList, when 或 -1, body]]。
+        // 有守卫时命中模式先进 guard_blk 求守卫：真 → body；假 → next case（
+        // 对齐 Rust 守卫语义——守卫失败继续尝试后续 case，不落 default）。
+        var when_n = sstate.child(case_node, 1)
+        var has_guard: bool = when_n >= 0
+        var guard_blk: i64 = -1
+        if has_guard {
+            guard_blk = ir.new_block(g_cur_func, interner.intern("sw.gd"))
+        }
         var npat = sstate.nchild(pl)
         // 逐个模式比较链：eq → body；ne → 下一模式块
         var i: i64 = 0
@@ -652,8 +661,8 @@ func tig_switch(id: i64) -> i64 {
                 if bb2 < 0 {
                     return -1
                 }
-                var brb = ir.new_inst(g_cur_block, 30, -1)  // br body
-                ir.add_operand(brb, body_blk, 1)
+                var brb = ir.new_inst(g_cur_block, 30, -1)  // br body（守卫则在守卫块）
+                ir.add_operand(brb, has_guard ? guard_blk : body_blk, 1)
                 g_cur_block = np_blk
             } else if subj_is_any && pat_is_bind {
                 // P2c：struct 解构——case Point(p): 命中 → 绑定块（从堆 any 盒
@@ -668,13 +677,13 @@ func tig_switch(id: i64) -> i64 {
                 if sb2 < 0 {
                     return -1
                 }
-                var brb2 = ir.new_inst(g_cur_block, 30, -1)  // br body
-                ir.add_operand(brb2, body_blk, 1)
+                var brb2 = ir.new_inst(g_cur_block, 30, -1)  // br body（守卫则在守卫块）
+                ir.add_operand(brb2, has_guard ? guard_blk : body_blk, 1)
                 g_cur_block = np_blk
             } else {
                 var cb = ir.new_inst(g_cur_block, 31, -1)
                 ir.add_operand(cb, eq_v, 0)
-                ir.add_operand(cb, body_blk, 1)
+                ir.add_operand(cb, has_guard ? guard_blk : body_blk, 1)
                 ir.add_operand(cb, np_blk, 1)
                 g_cur_block = np_blk
             }
@@ -684,6 +693,21 @@ func tig_switch(id: i64) -> i64 {
         if !block_terminated() {
             var bnx = ir.new_inst(g_cur_block, 30, -1)  // br next
             ir.add_operand(bnx, next_blk, 1)
+        }
+        // p.8.1.4 when 守卫块：守卫表达式（可引用 case 绑定变量，绑定已登记
+        // 作用域）→ 真 br body / 假 br next（守卫失败继续下一 case）
+        if has_guard {
+            g_cur_block = guard_blk
+            var gv = tig_expr(when_n)
+            if gv < 0 {
+                return -1
+            }
+            var gty = node_types[when_n]
+            var gcond = tig_cond_to_bool(gv, gty)
+            var cbg = ir.new_inst(g_cur_block, 31, -1)
+            ir.add_operand(cbg, gcond, 0)
+            ir.add_operand(cbg, body_blk, 1)
+            ir.add_operand(cbg, next_blk, 1)
         }
         // body 块
         g_cur_block = body_blk
