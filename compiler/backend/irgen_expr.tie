@@ -205,6 +205,10 @@ func tig_expr(id: i64) -> i64 {
         // Index：t[i] 表下标读（动态表 → tie_table_at 桥）
         return tig_index_read(id)
     }
+    if tag == 150 {
+        // p.8.1.5 可空链安全访问：`a?[i]` / `opt?.field` → Option 包装传播
+        return tig_safe_access(id)
+    }
     if tag == 14 {
         // TupleLit：元组字面量 (a, b) → 聚合值（alloca + 逐字段 store + load）
         return tig_tuple_lit(id)
