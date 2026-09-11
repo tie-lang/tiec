@@ -1,0 +1,35 @@
+# 构建产物 / build artifacts
+*.exe
+*.ll
+*.o
+*.obj
+*.log
+*.a
+*.lib
+*.class
+*.dll
+*.exp
+*.so
+
+# 自举例外：tiec.exe 作为 stage0 引导二进制入库版本化（自举语言惯例：
+# 删除 Rust 种子后，clone 即可用 tiec 自举；源码变更后重新自举并提交同步更新）
+!compiler/tiec.exe
+
+# 发行版打包产物
+/dist/
+
+# 系统与临时文件 / system & temp
+Thumbs.db
+.DS_Store
+*.tmp
+_tmp_*
+*_tr.txt
+
+# 记忆与本地配置
+.localmemory/
+opencode.json
+
+# 代码索引与计划（本地生成）
+.codegraph/
+.omo/
+.superpowers/
