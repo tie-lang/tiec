@@ -125,7 +125,7 @@ func tig_index_read(id: i64) -> i64 {
     // P2a 复合元素（struct/enum/fn）：返回类型 = 元素类型 id（多字元素类型化
     // load，供字段访问/方法调用/整体使用）
     var ekind2 = types.kind(elem)
-    if ekind2 == K_STRUCT || ekind2 == K_ENUM || ekind2 == K_FN || elem == types.named(TK_ANY) {
+    if ekind2 == K_STRUCT || ekind2 == K_ENUM || ekind2 == K_FN || ekind2 == K_TUPLE || elem == types.named(TK_ANY) {
         ret_ty = elem
     } else if types.is_table(elem) || types.is_map(elem) || types.kind(elem) == K_PORT {
         suffix = "string"
@@ -392,7 +392,7 @@ func tig_index_assign(id: i64) -> i64 {
     var pty = types.named(TK_I64)
     // P2a 复合元素：槽类型 = 元素类型 id（多字元素类型化 store/load）
     var elem_k2 = types.kind(elem)
-    if elem_k2 == K_STRUCT || elem_k2 == K_ENUM || elem_k2 == K_FN || elem == types.named(TK_ANY) {
+    if elem_k2 == K_STRUCT || elem_k2 == K_ENUM || elem_k2 == K_FN || elem_k2 == K_TUPLE || elem == types.named(TK_ANY) {
         pty = elem
     } else if types.kind(elem) == K_PORT {
         // S2.4：port 对象元素（table<Drawable>）存 ptr → set_string 桥
@@ -2154,7 +2154,7 @@ func tig_for_table(id: i64, iter: i64, body: i64) -> i64 {
     var elem_llvm_ty = types.named(TK_I64)
     // P2a 复合元素（struct/enum/fn）：循环变量类型 = 元素类型 id（多字元素）
     var fk2 = types.kind(elem)
-    if fk2 == K_STRUCT || fk2 == K_ENUM || fk2 == K_FN || elem == types.named(TK_ANY) {
+    if fk2 == K_STRUCT || fk2 == K_ENUM || fk2 == K_FN || fk2 == K_TUPLE || elem == types.named(TK_ANY) {
         elem_llvm_ty = elem
     } else if types.is_table(elem) || types.is_map(elem) || types.kind(elem) == K_PORT {
         suffix = "string"

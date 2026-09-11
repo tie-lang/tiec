@@ -1213,7 +1213,13 @@ pub func infer_expr(id: i64) -> i64 {
             if elem_ty < 0 {
                 elem_ty = vt
             } else {
-                if vt != elem_ty && !(types.is_int(vt) && types.is_int(elem_ty)) && !(types.is_float(vt) && types.is_float(elem_ty)) {
+                // p.8.2.2：tuple 字面量每次登记独立 tuple 类型 id——结构相等
+                // 的元组（如 (1,"a") 与 (2,"b")）视为一致，不落 any 异构
+                var tuple_same: bool = false
+                if types.kind(vt) == K_TUPLE && types.kind(elem_ty) == K_TUPLE {
+                    tuple_same = stype.tuple_equal(vt, elem_ty)
+                }
+                if !tuple_same && vt != elem_ty && !(types.is_int(vt) && types.is_int(elem_ty)) && !(types.is_float(vt) && types.is_float(elem_ty)) {
                     // P2b 异构元素：类型不一致（非同类收窄）→ 推断为 any 动态
                     // 类型（`[1, "a", true]` → table<any>；装箱在 irgen 层完成）
                     elem_ty = types.named(TK_ANY)

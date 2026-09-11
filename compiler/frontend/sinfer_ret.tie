@@ -199,6 +199,130 @@ pub func infer_call_expr(id: i64) -> i64 {
     return frt
 }
 
+// p.8.2.2 命名实参重排：`f(x: 1, y: 2)`（N_NAMED_ARG）→ 按形参名映射位置，
+// 就地改写调用节点 children 段与 args 表（irgen 按位置发射，后续检查零改动）。
+// 规则：位置实参在前、命名实参在后（乱序可）；命名实参调用须提供**全部**实参
+// （不省略——省略参数请用位置调用 + 默认值）；变参函数不支持；未知/重复/
+// 与位置实参冲突的参数名报错。
+func reorder_named_args(call_id: i64, args: ref table<i64>, full_name: string, sig: i64) -> i64 {
+    var has_named: bool = false
+    var i0: i64 = 0
+    while i0 < len(args) {
+        if s_tags[args[i0]] == N_NAMED_ARG {
+            has_named = true
+        }
+        i0 = i0 + 1
+    }
+    if !has_named {
+        return 0
+    }
+    var nparams = sg_nparams[sig]
+    if sstate.fn_has_variadic(sig) == 1 {
+        sm_err_line = s_lines[call_id]
+        sm_err_col = s_cols[call_id]
+        sm_err_msg = "命名实参不支持变参函数 '" + full_name + "'"
+        return -1
+    }
+    var fnode = sstate.fn_def_node(full_name)
+    if fnode < 0 {
+        sm_err_line = s_lines[call_id]
+        sm_err_col = s_cols[call_id]
+        sm_err_msg = "内部错误：命名实参函数 '" + full_name + "' 无定义节点"
+        return -1
+    }
+    var pnames: table<i64> = table_new_i64()
+    var p: i64 = 0
+    while p < nparams {
+        var pnode = sstate.child(fnode, sstate.slot_off(fnode) + 1 + p)
+        table_push(pnames, s_names[pnode])
+        p = p + 1
+    }
+    var new_order: table<i64> = table_new_i64()
+    var filled: table<i64> = table_new_i64()
+    var k: i64 = 0
+    while k < nparams {
+        table_push(new_order, -1)
+        table_push(filled, 0)
+        k = k + 1
+    }
+    var pos: i64 = 0
+    var seen_named: bool = false
+    var i2: i64 = 0
+    while i2 < len(args) {
+        var a = args[i2]
+        if s_tags[a] == N_NAMED_ARG {
+            seen_named = true
+            var nm = s_names[a]
+            var pi: i64 = -1
+            var j: i64 = 0
+            while j < nparams {
+                if pnames[j] == nm {
+                    pi = j
+                    break
+                }
+                j = j + 1
+            }
+            if pi < 0 {
+                sm_err_line = s_lines[a]
+                sm_err_col = s_cols[a]
+                sm_err_msg = "命名实参 '" + intern.lookup(nm) + "' 不是函数 '" + full_name + "' 的形参"
+                return -1
+            }
+            if filled[pi] == 1 {
+                sm_err_line = s_lines[a]
+                sm_err_col = s_cols[a]
+                sm_err_msg = "命名实参 '" + intern.lookup(nm) + "' 重复"
+                return -1
+            }
+            if pi < pos {
+                sm_err_line = s_lines[a]
+                sm_err_col = s_cols[a]
+                sm_err_msg = "命名实参 '" + intern.lookup(nm) + "' 与位置实参冲突（位置实参已占用形参 " + to_string(pi + 1) + "）"
+                return -1
+            }
+            new_order[pi] = sstate.child(a, 0)
+            filled[pi] = 1
+        } else {
+            if seen_named {
+                sm_err_line = s_lines[a]
+                sm_err_col = s_cols[a]
+                sm_err_msg = "命名实参之后不能再出现位置实参"
+                return -1
+            }
+            if pos >= nparams {
+                sm_err_line = s_lines[call_id]
+                sm_err_col = s_cols[call_id]
+                sm_err_msg = "函数 '" + full_name + "' 实参过多（命名实参调用）"
+                return -1
+            }
+            new_order[pos] = a
+            filled[pos] = 1
+            pos = pos + 1
+        }
+        i2 = i2 + 1
+    }
+    // 全部形参必须有值（命名实参调用不省略参数）
+    var f2: i64 = 0
+    while f2 < nparams {
+        if filled[f2] == 0 {
+            sm_err_line = s_lines[call_id]
+            sm_err_col = s_cols[call_id]
+            sm_err_msg = "命名实参调用 '" + full_name + "' 缺少第 " + to_string(f2 + 1) + " 个形参 '" + intern.lookup(pnames[f2]) + "' 的值"
+            return -1
+        }
+        f2 = f2 + 1
+    }
+    // 就地改写调用节点 children 段（slot_off 起，长度不变 = nparams）
+    var off0 = s_coff[call_id] + sstate.slot_off(call_id)
+    var f4: i64 = 0
+    while f4 < nparams {
+        s_children[off0 + f4] = new_order[f4]
+        args[f4] = new_order[f4]
+        f4 = f4 + 1
+    }
+    return 0
+}
+
 pub func infer_call(id: i64) -> i64 {
     var fnm = sstate.name_str(id)
     // 实参收集：Call children = [泛型槽(-1或N_TYPE_ARGS), 实参...]，
@@ -674,6 +798,13 @@ pub func infer_call(id: i64) -> i64 {
     }
     // 用户函数（裸调用解析：顶层 / 当前命名空间补全 / using 前缀补全）
     var sig = sstate.fn_sig(full_name)
+    // p.8.2.2 命名实参：`f(x: 1, y: 2)` → 按形参名重排并改写调用节点 children
+    if sig >= 0 {
+        var rn = reorder_named_args(id, args, full_name, sig)
+        if rn < 0 {
+            return -1
+        }
+    }
     if sig < 0 {
         // S2.2 闭包函数值调用：函数签名未命中时，若调用名是 fn 类型变量
         // （闭包字面量 / 函数值参数），按函数值调用检查：参数个数、参数
