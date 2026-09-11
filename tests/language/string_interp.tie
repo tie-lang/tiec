@@ -1,0 +1,39 @@
+type tie<logic>
+
+// ============================================================
+// p.8.2.3 字符串插值验收：`"Hello, {name}!"` 模板（lexer 拆段 + 拼接链 desugar）
+//
+// 覆盖场景：
+//   1. 变量插值：string / i64 / f64 / bool（true/false）
+//   2. 表达式插值：{n + 8} / {len(name)} / 函数调用
+//   3. 转义：{{ → '{'、}} → '}'（字面花括号）
+//   4. 相邻/连续插值：{n}{n}
+//   5. 普通字符串（无 '{'）行为不变
+//   6. 非 ASCII 文本段（中文）插值
+//
+// 期望输出（逐行，与 println 一一对应）：
+//   Hello, tie! / n=42 f=3.5 b=true / sum=50 / len=3 /
+//   {literal} 42 / 4242 / plain string ok / 你好，tie！
+// ============================================================
+
+func main() {
+    var name = "tie"
+    var n: i64 = 42
+    var f: f64 = 3.5
+    var b: bool = true
+    // 1. 变量插值（string/i64/f64/bool）
+    println("Hello, {name}!")
+    println("n={n} f={f} b={b}")
+    // 2. 表达式插值
+    println("sum={n + 8}")
+    println("len={len(name)}")
+    // 3. 转义花括号
+    println("{{literal}} {n}")
+    // 4. 连续插值
+    println("{n}{n}")
+    // 5. 普通字符串
+    println("plain string ok")
+    // 6. 非 ASCII 文本段
+    var cn = "tie"
+    println("你好，{cn}！")
+}

@@ -743,6 +743,45 @@ pub func parse_args_after_lparen(args: ref table<i64>) -> bool {
     return true
 }
 
+// p.8.2.3 插值字符串组装：lexer 已把 `"a{expr}b"` 拆为 STR("a") { expr } STR("b")
+// token 序列——这里组装为 `"a" + to_string(expr) + "b"` 拼接链（to_string 对
+// string 实参返回自身，irgen 已补分支）。`{}` 空插值由 parse_expr 对 `}` 报错。
+func parse_interp_chain(first_lid: i64, line: i64, col: i64) -> i64 {
+    var acc = ast.new_node(N_STR_LIT, first_lid, -1, -1, line, col)
+    var d = false
+    while !d {
+        if putil.peek_tag() != lex_lbrace {
+            d = true
+            break
+        }
+        putil.advance()  // '{'
+        var expr = parse_expr()
+        if expr < 0 {
+            return -1
+        }
+        if !putil.expect(lex_rbrace, "'}'") {
+            return -1
+        }
+        // to_string(expr)（N_CALL 布局：[泛型槽, 实参]）
+        var ts = ast.new_node(N_CALL, interner.intern("to_string"), -1, -1, line, col)
+        var tkids: table<i64> = table_new_i64()
+        table_push(tkids, -1)
+        table_push(tkids, expr)
+        ast.set_children(ts, tkids)
+        acc = mk_binary(B_ADD, acc, ts)
+        // 下一文本段（lexer 插值模式保证续段是 lex_str）
+        if putil.peek_tag() != lex_str {
+            d = true
+            break
+        }
+        var lid2 = interner.intern(putil.peek_lexeme())
+        putil.advance()
+        var seg = ast.new_node(N_STR_LIT, lid2, -1, -1, line, col)
+        acc = mk_binary(B_ADD, acc, seg)
+    }
+    return acc
+}
+
 // 原子表达式：字面量 / 标识符（路径/调用/变量）/ 括号元组 / 表字面量
 func parse_primary() -> i64 {
     var line = putil.peek_line()
@@ -824,6 +863,11 @@ func parse_primary() -> i64 {
     if tag == lex_str {
         var lid = interner.intern(putil.peek_lexeme())
         putil.advance()
+        // p.8.2.3 字符串插值：`"Hello, {name}!"` → 拼接链（lexer 在插值段后
+        // 产 STR { expr } STR ... token 序列）
+        if putil.peek_tag() == lex_lbrace {
+            return parse_interp_chain(lid, line, col)
+        }
         return ast.new_node(N_STR_LIT, lid, -1, -1, line, col)
     }
     if tag == lex_charlit {
