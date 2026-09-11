@@ -1066,6 +1066,21 @@ pub func infer_type_args(tmpl_node: i64, gti: i64, explicit: table<i64>, param_s
     while j < len(arg_tys) {
         var pi = param_start + j
         if pi >= nparams {
+            // p.8.1.3 变长泛型：形参最后一个为变参（`name: ...T`）→ 剩余实参
+            // 全部匹配变参的元素类型节点（TypeVar T），逐个绑定（冲突由
+            // match_type_node 报「推断冲突」）。
+            if nparams > 0 {
+                var lastp = sstate.child(tmpl_node, sstate.slot_off(tmpl_node) + 1 + (nparams - 1))
+                if s_aux[lastp] == 1 {
+                    var lty_node = sstate.child(lastp, 0)
+                    var mr = match_type_node(lty_node, arg_tys[j], tp_names, bk, bv, call_id)
+                    if mr == -2 {
+                        return table_new_i64()
+                    }
+                    j = j + 1
+                    continue
+                }
+            }
             sm_err_line = s_lines[call_id]
             sm_err_col = s_cols[call_id]
             sm_err_msg = "函数 '" + sstate.name_str(tmpl_node) + "' 实参过多（泛型推断）"

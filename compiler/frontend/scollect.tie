@@ -102,6 +102,18 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
                 }
                 return 0
             }
+            if s_tags[slot0] == S_N_TYPE_ARGS {
+                // p.8.1.3 显式特化：`func name<具体类型>(...)` ——类型实参已具体
+                // 化，mangle 函数名为 name$T1$T2 并按普通函数收集（与泛型实例化
+                // 同 key：调用点 instantiate_fn 幂等命中 → 自动优先绑定特化实现）。
+                var sargs = sgen.parse_type_args_ast(slot0)
+                if len(sargs) == 0 {
+                    return -1
+                }
+                full = sgen.mangle(full, sargs)
+                s_names[fn_node] = intern.intern(full)
+                s_children[s_coff[fn_node]] = -1   // 泛型槽清 -1（普通函数布局）
+            }
         }
     }
     var nparams = s_aux[fn_node]

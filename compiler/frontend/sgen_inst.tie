@@ -98,6 +98,13 @@ pub func instantiate_fn(gti: i64, args: table<i64>, line: i64, col: i64) -> i64 
     var p_defs: table<i64> = table_new_i64()
     var p_vars: table<i64> = table_new_i64()
     var required: i64 = nparams
+    // p.8.1.3 变长泛型：变参（最后一个形参 ...T）不占必选位（对齐 collect_fn）
+    if nparams > 0 {
+        var lastp0 = sstate.child(new_node, sstate.slot_off(new_node) + 1 + (nparams - 1))
+        if s_aux[lastp0] == 1 {
+            required = nparams - 1
+        }
+    }
     var seen_default: bool = false
     var k: i64 = 0
     while k < nparams {
