@@ -1013,7 +1013,7 @@ func tig_table_lit(id: i64) -> i64 {
         var suffix = bridge_suffix(elem)
         var pty = types.named(TK_I64)
         var elem_k = types.kind(elem)
-        if elem_k == K_STRUCT || elem_k == K_ENUM || elem_k == K_FN || elem == types.named(TK_ANY) {
+        if elem_k == K_STRUCT || elem_k == K_ENUM || elem_k == K_FN || elem_k == K_TUPLE || elem == types.named(TK_ANY) {
             // P2a/P2b 复合元素：槽类型 = 元素类型 id（llvmgen 映射 %struct.X/%enum.X/
             // %fn.N / {i64,i64}），类型化 store/load 多字元素；esz 由 elem_size 精确计算。
             pty = elem

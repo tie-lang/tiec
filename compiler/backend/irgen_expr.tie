@@ -1767,7 +1767,37 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         // 实参类型：f64 → 用 i128 内联除数换成「浮点暂保留 Rust 桥」见下；
         // i64/u64 → tig_i64_to_str（去 Rust）；窄整数 sext → i64 后再内联。
         var vt = node_types[call_arg(id, 0)]
-        if vt == types.named(TK_F64) || vt == types.named(TK_F32) {
+        if vt == types.named(TK_STR) {
+            // p.8.2.3 字符串插值：to_string(string) 返回自身（插值拼接链
+            // 统一包 to_string——string 段直通，数字/布尔段走数值转换）
+            g_builtin_res = v
+        } else if vt == types.named(TK_BOOL) {
+            // p.8.2.3 bool 插值：cond_br + phi → "true"/"false"
+            //（const_str 是 i64 指针整数，llvmgen 字符串 phi 分支自动转真 ptr）
+            var t_str = tig_str_lit(interner.intern("\"true\""))
+            var f_str = tig_str_lit(interner.intern("\"false\""))
+            var bcond = tig_cond_to_bool(v, types.named(TK_BOOL))
+            var t_blk = ir.new_block(g_cur_func, interner.intern("tos.t"))
+            var f_blk = ir.new_block(g_cur_func, interner.intern("tos.f"))
+            var m_blk = ir.new_block(g_cur_func, interner.intern("tos.m"))
+            var cbr = ir.new_inst(g_cur_block, 31, -1)
+            ir.add_operand(cbr, bcond, 0)
+            ir.add_operand(cbr, t_blk, 1)
+            ir.add_operand(cbr, f_blk, 1)
+            g_cur_block = t_blk
+            var br1 = ir.new_inst(g_cur_block, 30, -1)
+            ir.add_operand(br1, m_blk, 1)
+            g_cur_block = f_blk
+            var br2 = ir.new_inst(g_cur_block, 30, -1)
+            ir.add_operand(br2, m_blk, 1)
+            g_cur_block = m_blk
+            var phi = ir.new_inst(g_cur_block, 33, types.named(TK_STR))
+            ir.add_operand(phi, t_str, 0)
+            ir.add_operand(phi, t_blk, 1)
+            ir.add_operand(phi, f_str, 0)
+            ir.add_operand(phi, f_blk, 1)
+            g_builtin_res = ir.get_value(phi)
+        } else if vt == types.named(TK_F64) || vt == types.named(TK_F32) {
             // p.6.4.4：去 Rust 桥（tie_to_string_f64）→ 内联 tig_f64_to_str
             //（CRT snprintf "%.17g" → 带头串；Rust 最短表示差异可接受）。
             var fv = v
@@ -2056,7 +2086,7 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         var pty = types.named(TK_I64)
         var vt = node_types[call_arg(id, 1)]
         var ek = types.kind(elem)
-        if ek == K_STRUCT || ek == K_ENUM || ek == K_FN || elem == types.named(TK_ANY) {
+        if ek == K_STRUCT || ek == K_ENUM || ek == K_FN || ek == K_TUPLE || elem == types.named(TK_ANY) {
             // P2a/P2b 复合元素：槽类型 = 元素类型 id（多字元素类型化 store）
             pty = elem
         } else if vt >= 0 && (types.is_table(vt) || types.is_map(vt) || vt == types.named(TK_STR)) {
@@ -2581,7 +2611,7 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         var suffix = bridge_suffix(elem)
         var ret_ty = types.named(TK_I64)
         var ek2 = types.kind(elem)
-        if ek2 == K_STRUCT || ek2 == K_ENUM || ek2 == K_FN {
+        if ek2 == K_STRUCT || ek2 == K_ENUM || ek2 == K_FN || ek2 == K_TUPLE {
             // P2a 复合元素：返回类型 = 元素类型 id（多字元素类型化 load）
             ret_ty = elem
         } else if suffix == "string" {
@@ -2640,7 +2670,7 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         var suffix = bridge_suffix(elem)
         var ret_ty = types.named(TK_I64)
         var ek2 = types.kind(elem)
-        if ek2 == K_STRUCT || ek2 == K_ENUM || ek2 == K_FN {
+        if ek2 == K_STRUCT || ek2 == K_ENUM || ek2 == K_FN || ek2 == K_TUPLE {
             ret_ty = elem
         } else if suffix == "string" {
             ret_ty = types.named(TK_STR)
