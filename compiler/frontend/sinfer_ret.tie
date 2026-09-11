@@ -401,6 +401,53 @@ pub func infer_call(id: i64) -> i64 {
             g_typed = g_typed + 1
             return node_types[id]
         }
+        // p.8.1.6 表删除/缩表原语（动态返回类型特判）：
+        // table_pop(t) → 表元素类型（table<T> → T；裸 table → var_table_elem 兜底
+        // → i64）。语义：弹出表尾元素，所有权转移给调用方（rc 不变，与 push 对称）。
+        if fnm == "table_pop" {
+            var p0 = infer_expr(args[0])
+            if p0 < 0 {
+                return -1
+            }
+            if !types.is_table(p0) {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "table_pop() 第 1 个参数必须是表，实际是 " + types.type_name(p0)
+                return -1
+            }
+            var et: i64 = -1
+            if p0 != types.named(TK_TABLE) {
+                et = types.table_elem(p0)
+            }
+            if et < 0 {
+                var tn1 = args[0]
+                if s_tags[tn1] == 6 {
+                    et = var_table_elem(intern.intern(sstate.name_str(tn1)))
+                }
+            }
+            if et < 0 {
+                et = types.named(TK_I64)
+            }
+            node_types[id] = et
+            g_typed = g_typed + 1
+            return et
+        }
+        // table_trunc(t, n) → void：第 1 参数须为表（n 为 i64，由通用实参推断校验）。
+        if fnm == "table_trunc" {
+            var p1 = infer_expr(args[0])
+            if p1 < 0 {
+                return -1
+            }
+            if !types.is_table(p1) {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "table_trunc() 第 1 个参数必须是表，实际是 " + types.type_name(p1)
+                return -1
+            }
+            node_types[id] = types.named(TK_VOID)
+            g_typed = g_typed + 1
+            return types.named(TK_VOID)
+        }
         // as_* 特殊检查（S1.3 数值转换 + P2b any 拆箱重载）：
         // 数字参数 → 数值转换；any 参数 → 拆箱（运行时 tag 检查）。
         // as_bool/as_string/as_char 仅支持 any（无数值转换语义）。
