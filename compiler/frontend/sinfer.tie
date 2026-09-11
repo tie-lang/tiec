@@ -1552,20 +1552,25 @@ pub func infer_generic_fn_call(full_name: string, gti: i64, id: i64, args: table
         sm_err_msg = "调用 unsafe 函数 '" + full_name + "' 必须在 unsafe 块或 unsafe 函数中（安全代码禁止触底）"
         return -1
     }
-    // 参数个数（实例化签名）
+    // 参数个数（实例化签名；p.8.1.3 变长泛型：变参函数允许超出 total）
     var req = sg_required[sig]
     var total = sg_nparams[sig]
-    if nc < req || nc > total {
+    var is_var = sstate.fn_has_variadic(sig)
+    if nc < req || (nc > total && is_var == 0) {
         sm_err_line = s_lines[id]
         sm_err_col = s_cols[id]
         sm_err_msg = "函数 '" + full_name + "' 期望 " + to_string(req) + " 个参数，实际 " + to_string(nc) + " 个"
         return -1
     }
-    // 参数类型检查（实例化形参已具体化 → 现有类型系统自然验证）
+    // 参数类型检查（实例化形参已具体化 → 现有类型系统自然验证；
+    // p.8.1.3 变长泛型：超出固定形参数（total-1）的实参与变参元素类型匹配）
     var off = sg_off[sig]
     var j2: i64 = 0
     while j2 < nc {
         var want = sp_tys[off + j2]
+        if is_var == 1 && j2 >= total - 1 {
+            want = sstate_fn_variadic_elem(sig)
+        }
         var at = arg_tys[j2]
         if !stype.types_compatible(want, at) && !stype.types_match(want, at, args[j2]) &&
             !stype.types_narrow_int(want, at, args[j2]) {
