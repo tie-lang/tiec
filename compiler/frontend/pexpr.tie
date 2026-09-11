@@ -581,6 +581,76 @@ pub func parse_unary() -> i64 {
             putil.advance()
             expr = mk_unary(U_POST_DEC, expr, ast.line(expr), ast.col(expr))
         } else if t == lex_question {
+            // p.8.1.5：`?` 后紧跟 ':' → elvis 安全默认值（opt ?: def，二元），
+            // 优先级低于后缀链、右结合——构造 B_ELVIS 并终止本层链。
+            if putil.peek_n(1) == lex_colon {
+                putil.advance()  // '?'
+                putil.advance()  // ':'
+                var def_expr = parse_expr()
+                if def_expr < 0 {
+                    return -1
+                }
+                expr = mk_binary(B_ELVIS, expr, def_expr)
+                d = true
+                break
+            }
+            // p.8.1.5 可空链安全访问：`a?[i]`（安全索引）/ `opt?.field` /
+            // `opt?.method(args)`——Option<T> 为 Some 时执行访问并包装回
+            // Option<结果类型>，None 时传播 None。链可持续（`a?[i]?.field`）。
+            if putil.peek_n(1) == lex_lbracket {
+                putil.advance()  // '?'
+                putil.advance()  // '['
+                var sindex = parse_expr()
+                if sindex < 0 {
+                    return -1
+                }
+                if !putil.expect(lex_rbracket, "']'") {
+                    return -1
+                }
+                var sa = ast.new_node(N_SAFE_ACCESS, -1, -1, -1, ast.line(expr), ast.col(expr))
+                var skids: table<i64> = table_new_i64()
+                table_push(skids, expr)
+                table_push(skids, sindex)
+                ast.set_children(sa, skids)
+                expr = sa
+                d = false
+                continue
+            }
+            if putil.peek_n(1) == lex_dot {
+                putil.advance()  // '?'
+                putil.advance()  // '.'
+                var fname = putil.expect_ident()
+                if fname < 0 {
+                    return -1
+                }
+                if putil.peek_tag() == lex_lparen {
+                    // 安全方法调用：`.method(args)`
+                    putil.advance()  // '('
+                    var sargs: table<i64> = table_new_i64()
+                    if !parse_args_after_lparen(sargs) {
+                        return -1
+                    }
+                    var sm = ast.new_node(N_SAFE_ACCESS, fname, -1, -1, ast.line(expr), ast.col(expr))
+                    var smkids: table<i64> = table_new_i64()
+                    table_push(smkids, expr)
+                    var si: i64 = 0
+                    while si < len(sargs) {
+                        table_push(smkids, sargs[si])
+                        si = si + 1
+                    }
+                    ast.set_children(sm, smkids)
+                    expr = sm
+                } else {
+                    // 安全字段：`.field`
+                    var sf = ast.new_node(N_SAFE_ACCESS, fname, -1, -1, ast.line(expr), ast.col(expr))
+                    var sfkids: table<i64> = table_new_i64()
+                    table_push(sfkids, expr)
+                    ast.set_children(sf, sfkids)
+                    expr = sf
+                }
+                d = false
+                continue
+            }
             // S2.3：`?` 后缀解包（expr ?）与三目（cond ? then : else）共用同一
             // token，此处用 save/restore 探测区分：吃 `?` 后若能解析出一个
             // 完整表达式且其后紧跟 ':'，则是三目形态 → 还原让 parse_ternary

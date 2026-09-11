@@ -114,6 +114,401 @@ func tig_try(id: i64) -> i64 {
     return ir.get_value(ld3)
 }
 
+// p.8.1.5 `?:` 安全默认值（B_ELVIS）：Option<T> ?: T → T。
+// Some(v) → v（payload 解包，还原逻辑对齐 tig_try）；None → 右侧默认值。
+// cond_br(some) → some_blk / none_blk → merge phi 汇合（类型 T）。
+func tig_elvis(lhs: i64, rhs: i64) -> i64 {
+    var oty = node_types[lhs]
+    if oty < 0 || types.kind(oty) != K_ENUM {
+        sm_err_line = s_lines[lhs]
+        sm_err_col = s_cols[lhs]
+        sm_err_msg = "内部错误：'?:' 左侧缺少 Option 枚举类型（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var ei = types.low(oty)
+    var some_tag = enum_variant_tag(ei, "Some")
+    if some_tag < 0 {
+        sm_err_line = s_lines[lhs]
+        sm_err_col = s_cols[lhs]
+        sm_err_msg = "内部错误：'?:' 左侧枚举缺少 Some 变体（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var uty = sinfer.option_payload_ty(oty)
+    if uty < 0 {
+        uty = types.named(TK_I64)
+    }
+    // 1. lhs 落内存 + 读 tag（槽 0）
+    var eaddr = tig_agg_addr(lhs, oty)
+    if eaddr < 0 {
+        return -1
+    }
+    var g0 = ir.new_inst(g_cur_block, 27, oty)
+    ir.add_operand(g0, eaddr, 0)
+    ir.add_operand(g0, 0, 2)
+    var g0p = ir.get_value(g0)
+    var ld0 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
+    ir.add_operand(ld0, g0p, 0)
+    var tag_v = ir.get_value(ld0)
+    var some_c = tig_int_lit_ty(some_tag, types.named(TK_I64))
+    var ic = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
+    ir.add_operand(ic, tag_v, 0)
+    ir.add_operand(ic, some_c, 0)
+    ir.add_operand(ic, 0, 2)  // eq
+    var icv = ir.get_value(ic)
+    // 2. cond_br → some_blk / none_blk
+    var some_blk = ir.new_block(g_cur_func, interner.intern("elv.s"))
+    var none_blk = ir.new_block(g_cur_func, interner.intern("elv.n"))
+    var merge_blk = ir.new_block(g_cur_func, interner.intern("elv.m"))
+    var cbr = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cbr, icv, 0)
+    ir.add_operand(cbr, some_blk, 1)
+    ir.add_operand(cbr, none_blk, 1)
+    // 3. some_blk：解包 payload（槽 1）
+    g_cur_block = some_blk
+    var g1 = ir.new_inst(g_cur_block, 27, oty)
+    ir.add_operand(g1, eaddr, 0)
+    ir.add_operand(g1, 1, 2)
+    var g1p = ir.get_value(g1)
+    var sv: i64 = -1
+    if uty == types.named(TK_STR) {
+        var ld1 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
+        ir.add_operand(ld1, g1p, 0)
+        var pv1 = ir.get_value(ld1)
+        var ip = ir.new_inst(g_cur_block, 25, types.named(TK_STR))  // inttoptr
+        ir.add_operand(ip, pv1, 0)
+        sv = ir.get_value(ip)
+    } else if uty == types.named(TK_F64) {
+        var ldf = ir.new_inst(g_cur_block, 21, types.named(TK_F64))
+        ir.add_operand(ldf, g1p, 0)
+        sv = ir.get_value(ldf)
+    } else if types.is_table(uty) || types.is_map(uty) {
+        var ld4 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
+        ir.add_operand(ld4, g1p, 0)
+        var pv4 = ir.get_value(ld4)
+        var ip4 = ir.new_inst(g_cur_block, 25, uty)  // inttoptr → ptr
+        ir.add_operand(ip4, pv4, 0)
+        sv = ir.get_value(ip4)
+    } else if types.is_int(uty) && uty != types.named(TK_I64) && uty != types.named(TK_U64) {
+        var ld2 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
+        ir.add_operand(ld2, g1p, 0)
+        var pv2 = ir.get_value(ld2)
+        sv = tig_coerce(pv2, types.named(TK_I64), uty)
+        if sv < 0 {
+            return -1
+        }
+    } else {
+        var ld3 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
+        ir.add_operand(ld3, g1p, 0)
+        sv = ir.get_value(ld3)
+    }
+    var some_blk_actual = g_cur_block
+    var brs = ir.new_inst(g_cur_block, 30, -1)  // br merge
+    ir.add_operand(brs, merge_blk, 1)
+    // 4. none_blk：默认值
+    g_cur_block = none_blk
+    var nv = tig_expr(rhs)
+    if nv < 0 {
+        return -1
+    }
+    var none_blk_actual = g_cur_block
+    var brn = ir.new_inst(g_cur_block, 30, -1)  // br merge
+    ir.add_operand(brn, merge_blk, 1)
+    // 5. merge：phi 汇合（结果类型 T）
+    g_cur_block = merge_blk
+    var phi = ir.new_inst(g_cur_block, 33, uty)
+    ir.add_operand(phi, sv, 0)
+    ir.add_operand(phi, some_blk_actual, 1)
+    ir.add_operand(phi, nv, 0)
+    ir.add_operand(phi, none_blk_actual, 1)
+    return ir.get_value(phi)
+}
+
+// 构造 Option 聚合值（None 形态）：只写 tag 槽，payload 槽留零（llvmgen 入口
+// 全零初始化；None 不读 payload，避免按载荷类型造零值的类型纠缠）。
+func tig_option_pack_none(oi: i64, tag: i64) -> i64 {
+    var agg = types.enum_of(oi)
+    var T64 = types.named(TK_I64)
+    var alloca = ir.new_inst(g_cur_block, 20, agg)
+    ir.add_operand(alloca, agg, 2)
+    var ap = ir.get_value(alloca)
+    var tagv = tig_int_lit_ty(tag, T64)
+    var g0 = ir.new_inst(g_cur_block, 27, agg)
+    ir.add_operand(g0, ap, 0)
+    ir.add_operand(g0, 0, 2)
+    var g0p = ir.get_value(g0)
+    var st0 = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(st0, T64, 2)
+    ir.add_operand(st0, tagv, 0)
+    ir.add_operand(st0, g0p, 0)
+    var ld = ir.new_inst(g_cur_block, 21, agg)
+    ir.add_operand(ld, ap, 0)
+    return ir.get_value(ld)
+}
+
+// 构造 Option 聚合值：{tag i64, payload}（tag 槽 0；payload 槽 1，存储形式对齐
+// tig_enum_construct：string/table/map ptr → ptrtoint 存 i64；f64 double 直存；
+// 窄整数 sext 存 i64；i64/u64 直存）。返回聚合值 id。
+func tig_option_pack(oi: i64, tag: i64, pty: i64, pv: i64) -> i64 {
+    var agg = types.enum_of(oi)
+    var T64 = types.named(TK_I64)
+    var alloca = ir.new_inst(g_cur_block, 20, agg)
+    ir.add_operand(alloca, agg, 2)
+    var ap = ir.get_value(alloca)
+    // tag 槽 0
+    var tagv = tig_int_lit_ty(tag, T64)
+    var g0 = ir.new_inst(g_cur_block, 27, agg)
+    ir.add_operand(g0, ap, 0)
+    ir.add_operand(g0, 0, 2)
+    var g0p = ir.get_value(g0)
+    var st0 = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(st0, T64, 2)
+    ir.add_operand(st0, tagv, 0)
+    ir.add_operand(st0, g0p, 0)
+    // payload 槽 1
+    var g1 = ir.new_inst(g_cur_block, 27, agg)
+    ir.add_operand(g1, ap, 0)
+    ir.add_operand(g1, 1, 2)
+    var g1p = ir.get_value(g1)
+    var st_ty: i64 = T64
+    var sv: i64 = pv
+    if pty == types.named(TK_F64) {
+        st_ty = pty  // double 直存
+    } else if types.is_table(pty) || types.is_map(pty) || pty == types.named(TK_STR) {
+        sv = t21_ptri(pv)  // ptr → ptrtoint i64
+    } else if types.is_int(pty) && pty != T64 && pty != types.named(TK_U64) {
+        var cv = tig_coerce(pv, pty, T64)  // sext 升宽
+        if cv < 0 {
+            return -1
+        }
+        sv = cv
+    }
+    var st1 = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(st1, st_ty, 2)
+    ir.add_operand(st1, sv, 0)
+    ir.add_operand(st1, g1p, 0)
+    // load 聚合值
+    var ld = ir.new_inst(g_cur_block, 21, agg)
+    ir.add_operand(ld, ap, 0)
+    return ir.get_value(ld)
+}
+
+// p.8.1.5 可空链安全访问（N_SAFE_ACCESS）：
+//   a?[i] → Option<table<T>>?[i] → Option<T>（None/越界 → None；Some → 包装）
+//   opt?.field → Option<Struct>?.field → Option<字段类型>
+// 控制流：tag==Some → some_blk（解包载荷 + 访问 + 包装）→ merge；
+//          None → none_blk（包装 None）→ merge；merge phi 汇合。
+func tig_safe_access(id: i64) -> i64 {
+    var base0 = sstate.child(id, 0)
+    var oty = node_types[base0]
+    if oty < 0 || types.kind(oty) != K_ENUM {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "内部错误：'?.' 左侧缺少 Option 枚举类型（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var oi = types.low(oty)
+    var some_tag = enum_variant_tag(oi, "Some")
+    var none_tag = enum_variant_tag(oi, "None")
+    if some_tag < 0 || none_tag < 0 {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "内部错误：'?.' 左侧枚举缺少 Some/None 变体（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var pt = sinfer.option_payload_ty(oty)
+    if pt < 0 {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "内部错误：'?.' 左侧不是 Option 形态（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var T64 = types.named(TK_I64)
+    var sname = s_names[id]
+    var rty: i64 = -1
+    if sname < 0 {
+        // 索引形态：载荷为元素化表/映射 → 元素类型
+        if (types.is_table(pt) || types.is_map(pt)) && pt != types.named(TK_TABLE) && pt != types.named(TK_MAP) {
+            rty = types.table_elem(pt)
+        }
+    } else {
+        // 字段形态：struct 字段类型
+        if types.kind(pt) == K_STRUCT {
+            var sidx = types.low(pt)
+            var off = cls_fldoff[sidx]
+            var nf = cls_nfld[sidx]
+            var fname = sstate.name_str(id)
+            var fk: i64 = 0
+            while fk < nf {
+                if intern.lookup(fld_names[off + fk]) == fname {
+                    rty = fld_tys[off + fk]
+                    break
+                }
+                fk = fk + 1
+            }
+        }
+    }
+    if rty < 0 {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "内部错误：安全访问载荷类型不合法（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var res_oi = types.low(sinfer.option_ty_of(rty))
+    // 1. lhs 落内存 + 读 tag
+    var eaddr = tig_agg_addr(base0, oty)
+    if eaddr < 0 {
+        return -1
+    }
+    var g0 = ir.new_inst(g_cur_block, 27, oty)
+    ir.add_operand(g0, eaddr, 0)
+    ir.add_operand(g0, 0, 2)
+    var g0p = ir.get_value(g0)
+    var ld0 = ir.new_inst(g_cur_block, 21, T64)
+    ir.add_operand(ld0, g0p, 0)
+    var tag_v = ir.get_value(ld0)
+    var some_c = tig_int_lit_ty(some_tag, T64)
+    var ic = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
+    ir.add_operand(ic, tag_v, 0)
+    ir.add_operand(ic, some_c, 0)
+    ir.add_operand(ic, 0, 2)  // eq
+    var icv = ir.get_value(ic)
+    // 2. cond_br → some_blk / none_blk；merge 汇合
+    var some_blk = ir.new_block(g_cur_func, interner.intern("saf.s"))
+    var none_blk = ir.new_block(g_cur_func, interner.intern("saf.n"))
+    var merge_blk = ir.new_block(g_cur_func, interner.intern("saf.m"))
+    var cbr = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cbr, icv, 0)
+    ir.add_operand(cbr, some_blk, 1)
+    ir.add_operand(cbr, none_blk, 1)
+    // 3. some_blk：解包载荷 pt（对齐 tig_elvis 还原）→ 访问
+    g_cur_block = some_blk
+    var g1 = ir.new_inst(g_cur_block, 27, oty)
+    ir.add_operand(g1, eaddr, 0)
+    ir.add_operand(g1, 1, 2)
+    var g1p = ir.get_value(g1)
+    var pv: i64 = -1
+    if pt == types.named(TK_STR) {
+        var ld1 = ir.new_inst(g_cur_block, 21, T64)
+        ir.add_operand(ld1, g1p, 0)
+        var pv1 = ir.get_value(ld1)
+        var ip = ir.new_inst(g_cur_block, 25, types.named(TK_STR))
+        ir.add_operand(ip, pv1, 0)
+        pv = ir.get_value(ip)
+    } else if pt == types.named(TK_F64) {
+        var ldf = ir.new_inst(g_cur_block, 21, types.named(TK_F64))
+        ir.add_operand(ldf, g1p, 0)
+        pv = ir.get_value(ldf)
+    } else if types.is_table(pt) || types.is_map(pt) {
+        var ld4 = ir.new_inst(g_cur_block, 21, T64)
+        ir.add_operand(ld4, g1p, 0)
+        var pv4 = ir.get_value(ld4)
+        var ip4 = ir.new_inst(g_cur_block, 25, pt)
+        ir.add_operand(ip4, pv4, 0)
+        pv = ir.get_value(ip4)
+    } else if types.is_int(pt) && pt != T64 && pt != types.named(TK_U64) {
+        var ld2 = ir.new_inst(g_cur_block, 21, T64)
+        ir.add_operand(ld2, g1p, 0)
+        var pv2 = ir.get_value(ld2)
+        pv = tig_coerce(pv2, T64, pt)
+        if pv < 0 {
+            return -1
+        }
+    } else {
+        var ld3 = ir.new_inst(g_cur_block, 21, T64)
+        ir.add_operand(ld3, g1p, 0)
+        pv = ir.get_value(ld3)
+    }
+    // 执行访问：字段读 or 表下标读（越界 → to_none）
+    var some_val: i64 = -1
+    var pack_blk: i64 = -1
+    var to_none_blk: i64 = -1
+    if sname >= 0 {
+        // 字段形态：struct 值落 alloca → agg_gep 字段 → load rty
+        var fidx = agg_field_index(pt, sstate.name_str(id))
+        if fidx < 0 {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "内部错误：安全字段索引失败（函数 " + g_cur_fn_name + "）"
+            return -1
+        }
+        var va = ir.new_inst(g_cur_block, 20, pt)  // alloca pt（struct 值落内存）
+        ir.add_operand(va, pt, 2)
+        var vap = ir.get_value(va)
+        var stv = ir.new_inst(g_cur_block, 22, -1)
+        ir.add_operand(stv, pt, 2)
+        ir.add_operand(stv, pv, 0)
+        ir.add_operand(stv, vap, 0)
+        var fgp = ir.new_inst(g_cur_block, 27, pt)
+        ir.add_operand(fgp, vap, 0)
+        ir.add_operand(fgp, fidx, 2)
+        var fgpp = ir.get_value(fgp)
+        var fld = ir.new_inst(g_cur_block, 21, rty)
+        ir.add_operand(fld, fgpp, 0)
+        var fv = ir.get_value(fld)
+        some_val = tig_option_pack(res_oi, some_tag, rty, fv)
+        pack_blk = g_cur_block
+        var brs = ir.new_inst(g_cur_block, 30, -1)
+        ir.add_operand(brs, merge_blk, 1)
+    } else {
+        // 索引形态：t[i]（表下标读，越界 ok=0 → None）
+        var idx = tig_expr(sstate.child(id, 1))
+        if idx < 0 {
+            return -1
+        }
+        var ok_slot = ir.new_inst(g_cur_block, 20, types.named(TK_I8))
+        ir.add_operand(ok_slot, types.named(TK_I8), 2)
+        var ok_addr = ir.get_value(ok_slot)
+        var ev = s21_table_at(pv, idx, ok_addr, rty)
+        var okv = s21_load(ok_addr, types.named(TK_I8))
+        var okc = tig_cond_to_bool(okv, types.named(TK_I8))
+        var hit_blk = ir.new_block(g_cur_func, interner.intern("saf.hit"))
+        to_none_blk = ir.new_block(g_cur_func, interner.intern("saf.ton"))
+        var cbh = ir.new_inst(g_cur_block, 31, -1)
+        ir.add_operand(cbh, okc, 0)
+        ir.add_operand(cbh, hit_blk, 1)
+        ir.add_operand(cbh, to_none_blk, 1)
+        g_cur_block = hit_blk
+        some_val = tig_option_pack(res_oi, some_tag, rty, ev)
+        pack_blk = g_cur_block
+        var brh = ir.new_inst(g_cur_block, 30, -1)
+        ir.add_operand(brh, merge_blk, 1)
+        g_cur_block = to_none_blk
+        var none_v2 = tig_option_pack_none(res_oi, none_tag)
+        var brn2 = ir.new_inst(g_cur_block, 30, -1)
+        ir.add_operand(brn2, merge_blk, 1)
+        var to_none_actual = g_cur_block
+        // 4. none_blk：包装 None
+        g_cur_block = none_blk
+        var none_v1 = tig_option_pack_none(res_oi, none_tag)
+        var brn1 = ir.new_inst(g_cur_block, 30, -1)
+        ir.add_operand(brn1, merge_blk, 1)
+        var none_blk_actual = g_cur_block
+        // 5. merge：phi（some / none×2）
+        g_cur_block = merge_blk
+        var phi = ir.new_inst(g_cur_block, 33, sinfer.option_ty_of(rty))
+        ir.add_operand(phi, some_val, 0)
+        ir.add_operand(phi, pack_blk, 1)
+        ir.add_operand(phi, none_v1, 0)
+        ir.add_operand(phi, none_blk_actual, 1)
+        ir.add_operand(phi, none_v2, 0)
+        ir.add_operand(phi, to_none_actual, 1)
+        return ir.get_value(phi)
+    }
+    // 字段形态汇合（无 to_none）
+    g_cur_block = none_blk
+    var none_v1 = tig_option_pack_none(res_oi, none_tag)
+    var brn1 = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(brn1, merge_blk, 1)
+    var none_blk_actual = g_cur_block
+    g_cur_block = merge_blk
+    var phi2 = ir.new_inst(g_cur_block, 33, sinfer.option_ty_of(rty))
+    ir.add_operand(phi2, some_val, 0)
+    ir.add_operand(phi2, pack_blk, 1)
+    ir.add_operand(phi2, none_v1, 0)
+    ir.add_operand(phi2, none_blk_actual, 1)
+    return ir.get_value(phi2)
+}
+
 // S2.3：`panic("消息")` 不可恢复错误语句（N_PANIC=134）→ 打印消息 + 退出。
 // 参考 tig_println（call_vararg + 格式串池 id + 消息）与 exit() 先例
 // （tig_ext_call1("exit", ...)，C 运行时 exit() 自带 stdio flush）。
