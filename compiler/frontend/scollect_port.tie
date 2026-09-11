@@ -627,8 +627,8 @@ pub func collect_all_struct_fields() -> i64 {
 // 收集单个 enum 的变体信息（payload 类型拍平 + 白名单校验 + 槽数 K）。
 // 布局：Enum children = [泛型槽(-1或N_TYPE_PARAMS), EnumVariant...]，
 // 变体从 children[slot_off] 起；EnumVariant children = [payload 类型...]。
-// 白名单（一期）：整数族（i8..u64）/ bool / char / trit / string；
-// f32/f64/struct/table/map/嵌套 enum → "变体 'X' 的 payload 暂不支持类型 'Y'"。
+// 白名单（p.8.1.7 放开）：整数族（i8..u64）/ bool / char / trit / string /
+// f64 / table<T> / map<V>；struct / 嵌套 enum → "变体 'X' 的 payload 暂不支持类型 'Y'"。
 // 槽数 K = 所有变体 payload 字段数的最大值（后端聚合布局：{i64 tag, i64×K}）。
 pub func collect_enum_variants(ei: i64) -> i64 {
     if en_done[ei] == 1 {
