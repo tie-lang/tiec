@@ -9,6 +9,7 @@ type tie<class>
 // interner 经其 import 树传递可达）+ ./llvmgen.tie（消费 tie-IR，保持单根树，
 // ir 经 llvmgen 传递可达）。树式无环：driver_test import 本文件。
 import "./../frontend/semantic.tie"
+import "./../frontend/consteval.tie"
 import "./llvmgen.tie"
 import "./irgen_str.tie"
 import "./irgen_vtable.tie"
@@ -1155,9 +1156,88 @@ func global_init_fold(id: i64) -> (bool, bool, bool, i64, i64) {
                 if ls1 == false && ls2 == false && lf1 == false && lf2 == false && li2 != 0 {
                     return (true, false, false, li1 % li2, -1)
                 }
+            } else if op2 == 5 {
+                // B_EQ（p.8.1.1 比较折叠：整数相等 / 字符串同文——池 id 相同）
+                if ls1 && ls2 {
+                    return (true, false, false, lsd1 == lsd2 ? 1 : 0, -1)
+                }
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
+                    return (true, false, false, li1 == li2 ? 1 : 0, -1)
+                }
+            } else if op2 == 6 {
+                if ls1 && ls2 {
+                    return (true, false, false, lsd1 != lsd2 ? 1 : 0, -1)
+                }
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
+                    return (true, false, false, li1 != li2 ? 1 : 0, -1)
+                }
+            } else if op2 == 7 {
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
+                    return (true, false, false, li1 < li2 ? 1 : 0, -1)
+                }
+            } else if op2 == 8 {
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
+                    return (true, false, false, li1 > li2 ? 1 : 0, -1)
+                }
+            } else if op2 == 9 {
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
+                    return (true, false, false, li1 <= li2 ? 1 : 0, -1)
+                }
+            } else if op2 == 10 {
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
+                    return (true, false, false, li1 >= li2 ? 1 : 0, -1)
+                }
+            } else if op2 == 11 {
+                // B_AND（逻辑与：短路语义由折叠值判定）
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
+                    return (true, false, false, (li1 != 0 && li2 != 0) ? 1 : 0, -1)
+                }
+            } else if op2 == 12 {
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
+                    return (true, false, false, (li1 != 0 || li2 != 0) ? 1 : 0, -1)
+                }
             }
         }
         return (false, false, false, 0, -1)
+    }
+    if tag == 10 {
+        // N_TERNARY（p.8.1.1）：cond ? a : b——条件折叠为整值后取分支折叠
+        var (h0, s0, f0, i0, d0) = global_init_fold(sstate.child(id, 0))
+        if h0 && s0 == false && f0 == false {
+            var br: i64 = sstate.child(id, 1)
+            if i0 == 0 {
+                br = sstate.child(id, 2)
+            }
+            return global_init_fold(br)
+        }
+        return (false, false, false, 0, -1)
+    }
+    if tag == 7 {
+        // p.8.1.1 const fn 编译期求值：全局初始化中的 const fn 调用 → 实参全部
+        // 折叠后经 consteval 求值器算出结果常量落位（静态元编程基础）。任何一步
+        // 失败（非 const fn / 参数含不支持操作 / 未定义）→ 不折叠（零值语义保持）。
+        // 顶层会话进入前重置求值器全局状态；const fn 递归内部（g_depth>0）不重置。
+        var fnm = sinfer.resolve_call_name(sstate.name_str(id))
+        var off = sstate.slot_off(id)
+        var nc = sstate.nchild(id) - off
+        var a_str: table<i64> = table_new_i64()
+        var a_iv: table<i64> = table_new_i64()
+        var a_sid: table<i64> = table_new_i64()
+        var k: i64 = 0
+        while k < nc {
+            var (h, hs, hf, iv, sid) = global_init_fold(sstate.child(id, off + k))
+            if !h {
+                return (false, false, false, 0, -1)
+            }
+            table_push(a_str, hs == true ? 1 : 0)
+            table_push(a_iv, iv)
+            table_push(a_sid, sid)
+            k = k + 1
+        }
+        if !consteval.in_session() {
+            consteval.consteval_reset()
+        }
+        return consteval.eval_const_call(fnm, a_str, a_iv, a_sid)
     }
     return (false, false, false, 0, -1)
 }

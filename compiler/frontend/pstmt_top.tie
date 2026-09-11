@@ -146,11 +146,20 @@ pub func parse_program() -> i64 {
             }
             ast.collect_stmt(stmts, s)
         } else if tag == lex_const {
-            var s = pstmt.parse_var_decl(1)
-            if s < 0 {
-                return -1
+            // p.8.1.1：`const fn` / `const func` → const fn 定义；否则 const 全局变量
+            if putil.peek_lexeme_n(1) == "fn" || putil.peek_lexeme_n(1) == "func" {
+                var s = parse_fn_def()
+                if s < 0 {
+                    return -1
+                }
+                ast.collect_stmt(stmts, s)
+            } else {
+                var s = pstmt.parse_var_decl(1)
+                if s < 0 {
+                    return -1
+                }
+                ast.collect_stmt(stmts, s)
             }
-            ast.collect_stmt(stmts, s)
         } else if tag == lex_macro {
             // S3.3：宏定义 `macro name(...) -> code { ... }`（编译期函数）
             var s = parse_macro_def()
@@ -682,11 +691,21 @@ func parse_namespace() -> i64 {
                 }
                 table_push(body_stmts, st)
             } else if tag == lex_const {
-                var st = pstmt.parse_var_decl(1)
-                if st < 0 {
-                    return -1
+                // p.8.1.1：`const fn` / `const func`（命名空间内）→ const fn 定义；
+                // 否则 const 全局变量
+                if putil.peek_lexeme_n(1) == "fn" || putil.peek_lexeme_n(1) == "func" {
+                    var st = parse_fn_def()
+                    if st < 0 {
+                        return -1
+                    }
+                    table_push(body_stmts, st)
+                } else {
+                    var st = pstmt.parse_var_decl(1)
+                    if st < 0 {
+                        return -1
+                    }
+                    table_push(body_stmts, st)
                 }
-                table_push(body_stmts, st)
             } else {
                 putil.set_err(putil.peek_line(), putil.peek_col(), "顶层只允许函数定义、import、using、struct、enum、命名空间声明、extern 声明或全局变量，实际是 " + putil.describe(tag))
                 return -1
@@ -860,8 +879,17 @@ func parse_fn_def() -> i64 {
     var is_pub: i64 = 0
     var is_unsafe: i64 = 0
     var is_async: i64 = 0
+    // p.8.1.1：const fn 编译期求值——`const [pub] func/fn name(...)`（val bit4）。
+    // const 位置：pub 前（`const func`）或 pub 后（`pub const func`）均接受。
+    var is_const: i64 = 0
+    if putil.eat(lex_const) {
+        is_const = 1
+    }
     if putil.eat(lex_pub) {
         is_pub = 1
+    }
+    if is_const == 0 && putil.eat(lex_const) {
+        is_const = 1
     }
     if putil.eat(lex_async) {
         is_async = 1
@@ -871,7 +899,8 @@ func parse_fn_def() -> i64 {
     }
     // `unsafe fn name(...)`：unsafe 模式用 'fn' 字样（对齐设计文档与 extern
     // 声明，fn 即 func 角色）；普通函数仍用 func 关键字。'fn' 是标识符 token。
-    if is_unsafe == 1 {
+    // p.8.1.1：const fn 同款（`const fn` 即 const 语义的 fn 字样）。
+    if is_unsafe == 1 || is_const == 1 {
         if putil.peek_tag() == lex_ident && putil.peek_lexeme() == "fn" {
             putil.advance()
         } else if !putil.expect(lex_func, "'func'") {
@@ -980,7 +1009,7 @@ func parse_fn_def() -> i64 {
     if body < 0 {
         return -1
     }
-    var f = ast.new_node(N_FN_DEF, name, is_pub + is_unsafe * 2 + is_async * 4, len(params), line, col)
+    var f = ast.new_node(N_FN_DEF, name, is_pub + is_unsafe * 2 + is_async * 4 + is_const * 16, len(params), line, col)
     var kids: table<i64> = table_new_i64()
     table_push(kids, type_params)
     table_push(kids, ret_ty)
