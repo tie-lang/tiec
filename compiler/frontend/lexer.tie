@@ -77,6 +77,7 @@ pub func run_lex(src: string) -> bool {
     g_line_has_token = false
     g_last_line_tag = -1
     g_paren_depth = 0
+    g_str_interp = 0
     g_err_msg = ""
     // 源文本 → 码点表（性能重构：字节遍历 utf8_seq_len/utf8_char_at，
     // 替代 regex_find_all 逐码点切分——旧法每码点一次堆串分配，N 个字符串
@@ -97,6 +98,16 @@ pub func run_lex(src: string) -> bool {
     lextok.build_line_starts()
     var pos: i64 = 0
     while pos < g_n {
+        // p.8.2.3 插值 `}` 后：续扫字符串段（无开引号，scan_string 内部按
+        // g_str_interp==2 处理）
+        if g_str_interp == 2 {
+            var r2 = lexscan.scan_string(pos)
+            if r2 < 0 {
+                return false
+            }
+            pos = r2
+            continue
+        }
         var c = g_codes[pos]
         var r: i64 = 0
         if c == 10 {                       // '\n'：换行触发 ASI 判定
@@ -121,6 +132,12 @@ pub func run_lex(src: string) -> bool {
         }
         if r < 0 {
             return false
+        }
+        // p.8.2.3：插值模式中遇 `}`（lex_rbrace）→ 标记续扫（下一 token 走
+        // 字符串段续扫）。表达式内的 `}`（块/表字面量）不存在——tie 表用 `[`，
+        // `{` 不是表达式起始，插值表达式内不可能出现顶层 `}`，判定无歧义。
+        if g_str_interp == 1 && lextok.token_tag(lextok.token_count() - 1) == lex_rbrace {
+            g_str_interp = 2
         }
         pos = r
     }
