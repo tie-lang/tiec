@@ -76,6 +76,10 @@ const lex_async: i64 = 93;      // async 关键字（actor 异步投递方法修
 const lex_goto: i64 = 94;       // goto 关键字（三期：`unsafe goto #x` 无条件跳转，§7.1.5）
 // P1 数据流箭头 `<-`（镜像 `->`）：符号表新增（'<-' = 0x3C 0x2D，介于 '<' 与 '<<' 之间）
 const lex_larrow: i64 = 95;
+// p.8.2.3 字符串插值起始 '{'：scan_string 插值分支专用 tag——与块/结构体开括号
+// lex_lbrace 区分（`if s == "a" {` 的块 lbrace 不能误入插值链）；不落符号表，
+// 仅 scan_string 插值分支合成推送。tag 96 位于符号表范围之外，无冲突。
+const lex_interp_lbrace: i64 = 96;
 
 namespace lextok {
 
@@ -146,7 +150,7 @@ func is_bin_op(tag: i64) -> bool {
 func no_semi_end(tag: i64) -> bool {
     var bad: table<i64> = [lex_comma, lex_colon, lex_dcolon, lex_dot, lex_dotdot,
         lex_ellipsis, lex_lparen, lex_lbracket, lex_lbrace, lex_rbrace, lex_semi,
-        lex_else, lex_in]
+        lex_else, lex_in, lex_interp_lbrace]
     var i: i64 = 0
     while i < len(bad) {
         if bad[i] == tag {
