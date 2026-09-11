@@ -204,6 +204,10 @@ const N_GUARD_WITH: i64 = 147;
 //   CallExpr[children=[被调者表达式, 实参...]]——`t[0](5)` / `get_fn()(x)`。
 //   语义层要求被调者为 fn 类型；间接调用 entry(env, args...)。
 const N_CALL_EXPR: i64 = 148;
+// p.8.1.5 可空链安全访问：name = 字段/方法名池 id（-1 = 索引形态）；
+// 索引形态 children=[base, index]；字段形态 children=[base]；方法形态
+// children=[base, 实参...]（无泛型槽，第一版）
+const N_SAFE_ACCESS: i64 = 150;
 // S3.3 宏/元编程（三节点，布局约定见 mexpand.tie 头注释）：
 //   MacroDef[name=宏名, val=0, aux=nparams, children=[返回类型, 参数..., 函数体]]
 //     —— 布局与 FnDef 一致但**无泛型槽**（children[0] 即返回类型；形参从 1 起，
@@ -256,6 +260,8 @@ const B_SHR: i64 = 17;
 // 目标 = 可赋值 lvalue → 赋值）
 const B_ARROW_FWD: i64 = 18;
 const B_ARROW_REV: i64 = 19;
+// p.8.1.5：20=Elvis（`?:` 安全默认值）——Option<T> ?: T → T（Some 解包 / None 用默认值）
+const B_ELVIS: i64 = 20;
 
 // 一元：0=Neg 1=Not 2=PreInc 3=PreDec 4=PostInc 5=PostDec
 const U_NEG: i64 = 0;

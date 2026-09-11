@@ -92,6 +92,10 @@ func tig_binary(op: i64, lhs: i64, rhs: i64) -> i64 {
     if op == B_ARROW_FWD || op == B_ARROW_REV {
         return tig_arrow(op, lhs, rhs)
     }
+    // p.8.1.5 `?:` 安全默认值（Option<T> ?: T）→ cond_br + phi 解包
+    if op == B_ELVIS {
+        return tig_elvis(lhs, rhs)
+    }
     // trit 判定先行（对齐 Rust tig_binary 分派顺序）：trit 的 &&/|| 是 Kleene
     // min/max（非短路），混合 trit×i64 走 gen_binary_trit——短路分支只服务 bool
     var lhs_t = node_types[lhs]
