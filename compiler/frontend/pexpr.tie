@@ -322,12 +322,15 @@ func parse_equality() -> i64 {
     return lhs
 }
 
-// 比较 < > <= >=
+// 比较 < > <= >=（p.8.2.2 链式比较：`a < b < c` desugar 为 `(a < b) && (b < c)`；
+// 中项表达式求值两次，保守语义——常用于变量/字面量）
 func parse_comparison() -> i64 {
     var lhs = parse_shift()
     if lhs < 0 {
         return -1
     }
+    var prev_rhs: i64 = -1
+    var result: i64 = -1
     var d = false
     while !d {
         var op = -1
@@ -348,10 +351,21 @@ func parse_comparison() -> i64 {
             if rhs < 0 {
                 return -1
             }
-            lhs = mk_binary(op, lhs, rhs)
+            if prev_rhs < 0 {
+                // 第一对：lhs op rhs
+                result = mk_binary(op, lhs, rhs)
+            } else {
+                // 链式：result && (prev_rhs op rhs)
+                var nxt = mk_binary(op, prev_rhs, rhs)
+                result = mk_binary(B_AND, result, nxt)
+            }
+            prev_rhs = rhs
         }
     }
-    return lhs
+    if result < 0 {
+        return lhs
+    }
+    return result
 }
 
 // 移位 << >>
@@ -686,11 +700,37 @@ pub func parse_args_after_lparen(args: ref table<i64>) -> bool {
     }
     var d = false
     while !d {
-        var a = parse_expr()
-        if a < 0 {
-            return false
+        // p.8.2.2 命名实参：`ident : expr`（实参位置上的 name: 值）→ N_NAMED_ARG
+        if putil.peek_tag() == lex_ident {
+            if putil.peek_n(1) == lex_colon {
+                var nline = putil.peek_line()
+                var ncol = putil.peek_col()
+                var nm = interner.intern(putil.peek_lexeme())
+                putil.advance()  // ident
+                putil.advance()  // ':'
+                var val = parse_expr()
+                if val < 0 {
+                    return false
+                }
+                var na = ast.new_node(N_NAMED_ARG, nm, -1, -1, nline, ncol)
+                var nkids: table<i64> = table_new_i64()
+                table_push(nkids, val)
+                ast.set_children(na, nkids)
+                table_push(args, na)
+            } else {
+                var a = parse_expr()
+                if a < 0 {
+                    return false
+                }
+                table_push(args, a)
+            }
+        } else {
+            var a = parse_expr()
+            if a < 0 {
+                return false
+            }
+            table_push(args, a)
         }
-        table_push(args, a)
         if putil.eat(lex_comma) {
             // 继续
         } else {

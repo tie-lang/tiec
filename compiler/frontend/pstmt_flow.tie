@@ -510,9 +510,35 @@ func parse_for(label: i64) -> i64 {
     var line = putil.peek_line()
     var col = putil.peek_col()
     putil.advance()   // for
-    var var_id = putil.expect_ident()
-    if var_id < 0 {
-        return -1
+    var var_id: i64 = -1
+    var dest_names: table<i64> = table_new_i64()
+    if putil.peek_tag() == lex_lparen {
+        // p.8.2.2 for..in 解构迭代：`for (a, b) in t` → desugar 为
+        // `for _tmpN in t { var a = _tmpN.Item1; var b = _tmpN.Item2; body }`
+        putil.advance()  // '('
+        var dd = false
+        while !dd {
+            var nm = putil.expect_ident()
+            if nm < 0 {
+                return -1
+            }
+            table_push(dest_names, nm)
+            if putil.eat(lex_comma) {
+                // 继续
+            } else {
+                if !putil.expect(lex_rparen, "')'") {
+                    return -1
+                }
+                dd = true
+            }
+        }
+        var_id = interner.intern("_tmp" + to_string(g_tmp))
+        g_tmp = g_tmp + 1
+    } else {
+        var_id = putil.expect_ident()
+        if var_id < 0 {
+            return -1
+        }
     }
     if !putil.expect(lex_in, "'in'") {
         return -1
@@ -524,6 +550,38 @@ func parse_for(label: i64) -> i64 {
     var body = parse_block()
     if body < 0 {
         return -1
+    }
+    // 解构：逐字段声明（var a = _tmpN.Item1; ...）前插到 body 头部
+    if len(dest_names) > 0 {
+        var decls: table<i64> = table_new_i64()
+        var i: i64 = 0
+        while i < len(dest_names) {
+            var var_node = ast.new_node(N_VAR, var_id, -1, -1, line, col)
+            var fa = ast.new_node(N_FIELD_ACCESS, interner.intern("Item" + to_string(i + 1)), -1, -1, line, col)
+            var fkids: table<i64> = table_new_i64()
+            table_push(fkids, var_node)
+            ast.set_children(fa, fkids)
+            var fv = ast.new_node(N_VAR_DECL, dest_names[i], 0, -1, line, col)
+            var vkids: table<i64> = table_new_i64()
+            table_push(vkids, -1)
+            table_push(vkids, fa)
+            ast.set_children(fv, vkids)
+            table_push(decls, fv)
+            i = i + 1
+        }
+        var merged: table<i64> = table_new_i64()
+        var di: i64 = 0
+        while di < len(decls) {
+            table_push(merged, decls[di])
+            di = di + 1
+        }
+        // 注意：parse 阶段 ast 表与 sstate 表未同步——须用 ast.child_count/child_at
+        var bi: i64 = 0
+        while bi < ast.child_count(body) {
+            table_push(merged, ast.child_at(body, bi))
+            bi = bi + 1
+        }
+        ast.set_children(body, merged)
     }
     var n = ast.new_node(N_FOR, var_id, -1, label, line, col)
     var kids: table<i64> = table_new_i64()
