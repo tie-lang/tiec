@@ -159,21 +159,45 @@ pub func scan_string(pos: i64) -> i64 {
             sb_append_byte(sb, 125)    // '}}' → '}' 字面
             pos = pos + 2
         } else if g_codes[pos] == 123 {
-            // 插值开始判定（前瞻）：`{` 后首个非空白字符是表达式起始（字母/
-            // 数字/_/(/[ /!/ -/+ /~/ $）才触发插值；否则 `{` 是字面（兼容
-            // 既有 JSON/格式化字符串 `{"key": 1}` 等，其 `{` 后是 `\` 或 `"`）。
-            var nx = pos + 1
-            while nx < g_n && (g_codes[nx] == 32 || g_codes[nx] == 9 || g_codes[nx] == 13) {
-                nx = nx + 1
-            }
+            // 插值开始判定（前瞻）：`{` 后**紧邻**字符是表达式起始（数字/_/(/[/!/~/$
+            // 或标识符——语句关键字与映射显示串排除）才触发插值；否则 `{` 是字面
+            // （兼容既有 JSON `{"key": 1}`、代码片段 `"{ return ...; }"`、
+            // `"{ 10; }"`、映射显示 `"{a: 1}"` 等，其 `{` 后是 `"`/空白/关键字）。
             var start_expr: bool = false
+            // 判定只认 `{` 后**紧邻**字符（不跳空白）：`"{ 10; }"`/`"{ x }"` 带
+            // 空格的花括号是字面（代码片段/模板，interp_eval 实测回归）——
+            // 插值表达式按 `"{expr}"` 紧贴书写。
+            var nx = pos + 1
             if nx < g_n {
                 var c0 = g_codes[nx]
                 // 注意：`+`/`-` 排除（`"{" + x` 拼接字面常见；`"{-n}"` 插值
                 // 罕见）；`"`/`'` 排除（JSON `{"a":1}` 字面兼容）
-                if lextok.is_alpha(c0) || lextok.is_digit(c0) || c0 == 95 || c0 == 40 || c0 == 91 ||
+                if lextok.is_digit(c0) || c0 == 95 || c0 == 40 || c0 == 91 ||
                     c0 == 33 || c0 == 126 || c0 == 36 {
                     start_expr = true
+                } else if (c0 >= 65 && c0 <= 90) || (c0 >= 97 && c0 <= 122) {
+                    // 标识符起始（**仅 ASCII 字母**——非 ASCII（中文等）不触发：
+                    // 编译器/错误消息里的 `"{语句块}"` 等字面串保持原样，中文文本
+                    // 写进字面段，插值表达式用 ASCII 标识符如 `"你好，{cn}！"`）。
+                    // 语句/声明关键字不能起插值表达式——代码片段字面 `"{return ...}"`
+                    // 保持字面；值字面量 true/false/zero 可起；普通标识符（变量/
+                    // 函数名）可起——但后随 `:`（映射显示串 `"{a: 1, b: 2}"`）字面。
+                    var j = nx + 1
+                    while j < g_n && lextok.is_ident_cont(g_codes[j]) {
+                        j = j + 1
+                    }
+                    var ktag = lexsym.kw_lookup(cp_slice(nx, j))
+                    if ktag >= 0 {
+                        if ktag == lex_true || ktag == lex_false || ktag == lex_zero {
+                            start_expr = true
+                        }
+                    } else {
+                        if j < g_n && g_codes[j] == 58 {   // ':' → 映射显示串
+                            start_expr = false
+                        } else {
+                            start_expr = true
+                        }
+                    }
                 }
             }
             if start_expr {
