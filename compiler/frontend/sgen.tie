@@ -203,6 +203,21 @@ pub func clone_subst(node: i64, gti: i64, args: table<i64>) -> i64 {
 
 func clone_inner(node: i64, tp_names: table<i64>, args: table<i64>) -> i64 {
     var tag = s_tags[node]
+    // N_CASE_BIND（case 解构绑定，p.8.1.2 泛型函数）：children[1] 是**变量名池 id**
+    //（非 AST 节点——parser 直接把 intern id 塞进 children），不能递归克隆（会把
+    // 池 id 当节点 id 越界读 s_tags）；children[0] 变体引用照常递归。
+    if tag == N_CASE_BIND {
+        var c0 = clone_inner(sstate.child(node, 0), tp_names, args)
+        if c0 < 0 {
+            return -1
+        }
+        var kids: table<i64> = table_new_i64()
+        table_push(kids, c0)
+        table_push(kids, sstate.child(node, 1))  // 变量名池 id 原样
+        var nb = push_node(tag, s_names[node], s_vals[node], s_aux[node], s_lines[node], s_cols[node])
+        set_children_ast(nb, kids)
+        return nb
+    }
     // 类型参数引用 → 实参类型节点
     if tag == S_N_STRUCT_TYPE {
         var nm = sstate.name_str(node)
@@ -250,6 +265,21 @@ func clone_inner(node: i64, tp_names: table<i64>, args: table<i64>) -> i64 {
                     return -1
                 }
                 return type_node_from_id(types.struct_of(si))
+            }
+            if gidx >= 0 && gty_is_struct[gidx] == 2 {
+                // p.8.1.2 泛型 enum 模板形参（`r: Result<T,E>` 克隆后实参已具体化）：
+                // 与 struct 模板同款——当场实例化并替换整个节点。此前漏处理导致
+                // instantiate_fn 走 stype.parse_type_node 报「类型 'Result' 未定义」
+                // （stype 只查 st_keys/en_keys 具体实例，不认模板名 + N_TYPE_ARGS）。
+                var args2 = parse_type_args_ast(kids[0])
+                if len(args2) == 0 {
+                    return -1
+                }
+                var ei = instantiate_enum(gidx, args2)
+                if ei < 0 {
+                    return -1
+                }
+                return type_node_from_id(types.enum_of(ei))
             }
         }
         return new
