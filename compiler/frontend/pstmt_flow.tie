@@ -722,7 +722,9 @@ func parse_switch_body() -> i64 {
 }
 
 // case 匹配模式：类型匹配（case string:）或值/区间表达式；
-// 批次 7：枚举变体 payload 解构 `[Ident | A.B] "(" Ident ")"` → N_CASE_BIND
+// 批次 7：枚举变体 payload 解构 `[Ident | A.B] "(" Ident ")"` → N_CASE_BIND；
+// p.8.1.4：多字段解构 `[Ident | A.B] "(" Ident ("," Ident)* ")"`（绑定变量数
+// 由语义层与变体 payload 字段数校验）。
 func parse_case_pattern() -> i64 {
     if putil.peek_tag() == lex_typekw {
         var line = putil.peek_line()
@@ -746,14 +748,24 @@ func parse_case_pattern() -> i64 {
         if vr >= 0 && putil.peek_tag() == lex_lparen {
             putil.advance()  // '('
             if putil.peek_tag() == lex_ident {
-                var bind_name = interner.intern(putil.peek_lexeme())
-                putil.advance()
-                if putil.expect(lex_rparen, "')'") {
+                var bkids: table<i64> = table_new_i64()
+                table_push(bkids, vr)
+                var bdone = false
+                while !bdone {
+                    var bind_name = interner.intern(putil.peek_lexeme())
+                    putil.advance()
+                    table_push(bkids, bind_name)
+                    if putil.eat(lex_comma) {
+                        if putil.peek_tag() != lex_ident {
+                            break  // 非法（缺绑定名）→ 走 restore 回退
+                        }
+                    } else {
+                        bdone = true
+                    }
+                }
+                if bdone && putil.expect(lex_rparen, "')'") {
                     var n = ast.new_node(N_CASE_BIND, -1, -1, -1, line, col)
-                    var kids: table<i64> = table_new_i64()
-                    table_push(kids, vr)
-                    table_push(kids, bind_name)
-                    ast.set_children(n, kids)
+                    ast.set_children(n, bkids)
                     return n
                 }
             }

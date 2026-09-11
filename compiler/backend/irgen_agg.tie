@@ -544,8 +544,10 @@ func enum_case_tag(pat: i64, subj_ty: i64) -> i64 {
 }
 
 // 批次 7：枚举变体解构 `case Ok(v)` 的 payload 绑定（在绑定块内调用）。
-// subject 已求值（tig_expr 结果，聚合值）；从槽 1 提取 payload，还原成绑定
-// 变量类型（string → inttoptr / 窄整数 → trunc），存入新建 alloca 并 scope_put。
+// p.8.1.4：多字段解构 `case Both(x, t)`——逐 payload 槽（1..nfld）提取绑定。
+// subject 已求值（tig_expr 结果，聚合值）；从槽 j 提取 payload，还原成绑定
+// 变量类型（string/table → inttoptr / f64 → load double / 窄整数 → trunc），
+// 存入新建 alloca 并 scope_put。
 func tig_case_bind_body(subject: i64, subj_ty: i64, pat: i64) -> i64 {
     var ei = types.low(subj_ty)
     var ptag = enum_case_tag(pat, subj_ty)
@@ -553,53 +555,58 @@ func tig_case_bind_body(subject: i64, subj_ty: i64, pat: i64) -> i64 {
         return -1
     }
     var T64 = types.named(TK_I64)
-    // payload 类型（变体恰 1 字段，scheck 已校验）
+    // payload 类型段（变体 nfld 字段，scheck 已校验绑定数一致）
     var varoff = en_varoff[ei]
     var foff = en_vfldoff[varoff + ptag]
-    var pty = en_ftys[foff]
-    // subject 聚合地址 + 槽 1（payload）
+    var nfld = en_vnfld[varoff + ptag]
+    // subject 聚合地址
     var eaddr = tig_agg_addr(subject, subj_ty)
     if eaddr < 0 {
         return -1
     }
-    var g1 = ir.new_inst(g_cur_block, 27, subj_ty)  // agg_gep 下标 1
-    ir.add_operand(g1, eaddr, 0)
-    ir.add_operand(g1, 1, 2)
-    var g1p = ir.get_value(g1)
-    var ld = ir.new_inst(g_cur_block, 21, T64)  // load i64 payload
-    ir.add_operand(ld, g1p, 0)
-    var pv = ir.get_value(ld)
-    // 还原 payload 类型（对齐 tig_try：string → inttoptr；f64 → load double；
-    // table/map → inttoptr；窄整数 → trunc）
-    var bv: i64 = pv
-    if pty == types.named(TK_STR) {
-        var ip = ir.new_inst(g_cur_block, 25, types.named(TK_STR))  // inttoptr
-        ir.add_operand(ip, pv, 0)
-        bv = ir.get_value(ip)
-    } else if pty == types.named(TK_F64) {
-        // f64 payload（p.6.2.1）：槽存 double（8B type-punned）→ load double 直用
-        var ldf = ir.new_inst(g_cur_block, 21, pty)
-        ir.add_operand(ldf, g1p, 0)
-        bv = ir.get_value(ldf)
-    } else if types.is_table(pty) || types.is_map(pty) {
-        // table/map payload（p.6.2.1）：槽存 ptrtoint → inttoptr 还原 ptr
-        var ip2 = ir.new_inst(g_cur_block, 25, pty)  // inttoptr → ptr
-        ir.add_operand(ip2, pv, 0)
-        bv = ir.get_value(ip2)
-    } else if pty != T64 && pty != types.named(TK_U64) && types.is_int(pty) {
-        var cv = tig_coerce(bv, T64, pty)
-        if cv < 0 {
-            return -1
+    var j: i64 = 0
+    while j < nfld {
+        var pty = en_ftys[foff + j]
+        var gj = ir.new_inst(g_cur_block, 27, subj_ty)  // agg_gep 下标 1+j
+        ir.add_operand(gj, eaddr, 0)
+        ir.add_operand(gj, 1 + j, 2)
+        var gjp = ir.get_value(gj)
+        var ld = ir.new_inst(g_cur_block, 21, T64)  // load i64 payload
+        ir.add_operand(ld, gjp, 0)
+        var pv = ir.get_value(ld)
+        // 还原 payload 类型（对齐 tig_try：string → inttoptr；f64 → load double；
+        // table/map → inttoptr；窄整数 → trunc）
+        var bv: i64 = pv
+        if pty == types.named(TK_STR) {
+            var ip = ir.new_inst(g_cur_block, 25, types.named(TK_STR))  // inttoptr
+            ir.add_operand(ip, pv, 0)
+            bv = ir.get_value(ip)
+        } else if pty == types.named(TK_F64) {
+            // f64 payload（p.6.2.1）：槽存 double（8B type-punned）→ load double 直用
+            var ldf = ir.new_inst(g_cur_block, 21, pty)
+            ir.add_operand(ldf, gjp, 0)
+            bv = ir.get_value(ldf)
+        } else if types.is_table(pty) || types.is_map(pty) {
+            // table/map payload（p.6.2.1）：槽存 ptrtoint → inttoptr 还原 ptr
+            var ip2 = ir.new_inst(g_cur_block, 25, pty)  // inttoptr → ptr
+            ir.add_operand(ip2, pv, 0)
+            bv = ir.get_value(ip2)
+        } else if pty != T64 && pty != types.named(TK_U64) && types.is_int(pty) {
+            var cv = tig_coerce(bv, T64, pty)
+            if cv < 0 {
+                return -1
+            }
+            bv = cv
         }
-        bv = cv
+        // 绑定变量：新建 alloca（payload 类型）+ store + 登记作用域（body 可引用）
+        var bind_name = sstate.child(pat, 1 + j)
+        var va = ir.new_inst(g_cur_block, 20, pty)  // alloca pty
+        ir.add_operand(va, pty, 2)
+        var vap = ir.get_value(va)
+        s21_store(vap, bv, pty)
+        scope_put(bind_name, vap, pty)
+        j = j + 1
     }
-    // 绑定变量：新建 alloca（payload 类型）+ store + 登记作用域（body 可引用）
-    var bind_name = sstate.child(pat, 1)
-    var va = ir.new_inst(g_cur_block, 20, pty)  // alloca pty
-    ir.add_operand(va, pty, 2)
-    var vap = ir.get_value(va)
-    s21_store(vap, bv, pty)
-    scope_put(bind_name, vap, pty)
     return 0
 }
 
