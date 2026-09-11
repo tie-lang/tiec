@@ -117,9 +117,11 @@ func is_valid_escape(e: i64) -> bool {
 
 // 字符串（可跨行；lexeme = 原始切片含引号，parser 阶段再解码转义）。
 // p.8.2.3 字符串插值：遇未转义 '{'（'{{' 转义字面）→ 当前段以合成 lexeme
-// `"text"` 发 lex_str + 发 lex_lbrace 标记插值开始（g_str_interp=1），返回
-// `{` 后位置由主循环继续 lex 表达式；主循环遇 `}`（g_str_interp==1）置 2，
-// 下一 token 经主循环分派本函数**续扫**（无开引号，g_str_interp==2）。
+// `"text"` 发 lex_str + 发 lex_interp_lbrace（插值专用 tag，区别于块开括号
+// lex_lbrace，避免 `if s == "a" {` 的块 lbrace 被 parser 误认插值）标记插值
+// 开始（g_str_interp=1），返回 `{` 后位置由主循环继续 lex 表达式；主循环遇
+// `}`（g_str_interp==1）置 2，下一 token 经主循环分派本函数**续扫**（无开引号，
+// g_str_interp==2）。
 pub func scan_string(pos: i64) -> i64 {
     var start = pos
     var cont = g_str_interp == 2
@@ -180,7 +182,7 @@ pub func scan_string(pos: i64) -> i64 {
                 var lid = interner.intern("\"" + seg + "\"")
                 lextok.push_token_at(lex_str, start, lid)
                 var lb = interner.intern("{")
-                lextok.push_token_at(lex_lbrace, pos, lb)
+                lextok.push_token_at(lex_interp_lbrace, pos, lb)
                 g_str_interp = 1
                 return pos + 1
             }
