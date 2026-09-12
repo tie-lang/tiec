@@ -533,10 +533,20 @@ func map_print(id: i64) -> string {
 // 与 irgen.str_unescape_quoted 的转义集一致（消费方各自实现，本模块不依赖 irgen）。
 pub func unescape_str(raw: string) -> string {
     var n = str_len(raw)
-    if n >= 2 {
-        if str_char(raw, 0) == "\"" {
-            if str_char(raw, n - 1) == "\"" {
-                raw = slice(raw, 1, n - 1)
+    // p.9.11.19 raw 字符串 r"..."：lexeme 带 'r' 前缀 → 仅去 `r"`/`"` 不反转义
+    //（与 irgen.str_unescape_quoted 的 raw 分支一致；`\` 原样保留）
+    var is_raw: bool = false
+    if n >= 3 && str_char(raw, 0) == "r" && str_char(raw, 1) == "\"" &&
+        str_char(raw, n - 1) == "\"" {
+        raw = slice(raw, 2, n - 1)
+        is_raw = true
+    }
+    if !is_raw {
+        if n >= 2 {
+            if str_char(raw, 0) == "\"" {
+                if str_char(raw, n - 1) == "\"" {
+                    raw = slice(raw, 1, n - 1)
+                }
             }
         }
     }
@@ -548,7 +558,7 @@ pub func unescape_str(raw: string) -> string {
     var i: i64 = 0
     while i < m {
         var c = str_char(raw, i)
-        if c == "\\" && i + 1 < m {
+        if !is_raw && c == "\\" && i + 1 < m {
             var e = str_char(raw, i + 1)
             if e == "n" {
                 out = out + "\n"
