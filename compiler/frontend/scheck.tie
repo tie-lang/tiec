@@ -88,6 +88,17 @@ pub func check_block(blk: i64) -> i64 {
     return 0
 }
 
+// p.8.2.11：guard else 块（N_STMTLIST）是否以跳转语句收尾。
+func guard_else_ends_in_jump(list: i64) -> bool {
+    var n = sstate.nchild(list)
+    if n == 0 {
+        return false
+    }
+    var last = sstate.child(list, n - 1)
+    var t = s_tags[last]
+    return t == S_N_RETURN || t == S_N_BREAK || t == S_N_CONTINUE || t == S_N_GOTO || t == S_N_PANIC
+}
+
 // 块链前缀判定：prefix 是 full 的前缀（同块或外层块）。"/" 分隔段精确匹配，
 // 避免 "1" 误配 "12"（块 id 整数段）。prefix == full 也算前缀（同块）。
 func chain_is_prefix(prefix: string, full: string) -> bool {
@@ -989,6 +1000,33 @@ pub func check_stmt(s: i64) -> i64 {
             if r < 0 {
                 return -1
             }
+        }
+        return 0
+    }
+    // p.8.2.11 guard else 早退：children=[cond, else_list]，语义等价 if not(cond)
+    // { else_list }。约束：else 块必须以跳转语句收尾（否则 guard 退化为 if，
+    // 前置检查失去"不再继续"的语义）。
+    if tag == S_N_GUARD_STMT {
+        var gcond = sinfer.infer_expr(sstate.child(s, 0))
+        if gcond < 0 {
+            return -1
+        }
+        if !types.is_bool_like(gcond) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "guard 条件必须是 bool"
+            return -1
+        }
+        var gbody = sstate.child(s, 1)
+        var gr = check_block(gbody)
+        if gr < 0 {
+            return -1
+        }
+        if !guard_else_ends_in_jump(gbody) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "guard 的 else 块必须以跳转语句（return/break/continue/goto/panic）收尾，否则 guard 退化为 if"
+            return -1
         }
         return 0
     }

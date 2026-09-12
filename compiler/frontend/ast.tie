@@ -215,6 +215,11 @@ const N_NAMED_ARG: i64 = 151;
 // 中的 `expr...`：expr 为表/数组时按元素序展开为该位置之后的多个实参（与
 // p.8.1.3 变长泛型形参衔接），展开数量由运行期表长度决定。
 const N_SPREAD_ARG: i64 = 152;
+// p.8.2.11 guard else 早退：`guard <cond> else { <stmts> }`——前置条件检查，
+// 条件为假则执行 else 块（该块必须以 return/break/continue 等跳转语句收尾，
+// scheck 约束），随后不再继续；为真则继续向下。children=[cond, else_list]。
+// 语义等价 `if not(cond) { else_list }`（irgen 按 if-not 发射，复用 if AST/IR）。
+const N_GUARD_STMT: i64 = 153;
 // S3.3 宏/元编程（三节点，布局约定见 mexpand.tie 头注释）：
 //   MacroDef[name=宏名, val=0, aux=nparams, children=[返回类型, 参数..., 函数体]]
 //     —— 布局与 FnDef 一致但**无泛型槽**（children[0] 即返回类型；形参从 1 起，

@@ -1511,6 +1511,31 @@ func tig_stmt(id: i64) -> i64 {
         g_cur_block = merge_blk
         return 0
     }
+    if tag == 153 {
+        // p.8.2.11 guard else 早退：children=[cond, else_list]，等价 if not(cond)
+        // { else_list }。条件为真 → 继续（merge）；为假 → 进入 else 块（scheck
+        // 已约束块尾为跳转，不会向 merge 落回）。
+        var gcond_nid = sstate.child(id, 0)
+        var gcond = tig_expr(gcond_nid)
+        if gcond < 0 {
+            return -1
+        }
+        gcond = tig_cond_to_bool(gcond, node_types[gcond_nid])
+        var body_blk = ir.new_block(g_cur_func, interner.intern("guard.body"))
+        var merge_blk = ir.new_block(g_cur_func, interner.intern("guard.merge"))
+        var cbr = ir.new_inst(g_cur_block, 31, -1)
+        ir.add_operand(cbr, gcond, 0)
+        ir.add_operand(cbr, merge_blk, 1)   // 条件真 → 继续
+        ir.add_operand(cbr, body_blk, 1)    // 条件假 → guard else 块
+        g_cur_block = body_blk
+        var gbody_list = sstate.child(id, 1)
+        var ge = tig_block_stmts(gbody_list)
+        if ge < 0 {
+            return -1
+        }
+        g_cur_block = merge_blk
+        return 0
+    }
     if tag == 107 {
         // For：name=迭代变量, children=[iter, body]
         // 范围 0..N 最小集；表遍历 `for item in arr`（iter 为 Var 表变量）；
