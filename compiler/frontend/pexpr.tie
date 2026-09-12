@@ -539,14 +539,53 @@ pub func parse_unary() -> i64 {
         var t = putil.peek_tag()
         if t == lex_lbracket {
             putil.advance()
-            var index = parse_expr()
-            if index < 0 {
-                return -1
+            // p.9.11.7 切片/区间：'[' 后是 `..` 或首段表达式后紧跟 `..` → N_SLICE
+            //（`t[1..3]`/`t[..n]`/`t[n..]`/`t[..]`）；否则普通下标 N_INDEX。
+            // 空端须在 parse_expr 吞掉 `..` 前拦截（parse_expr 遇 `]` 空端报错），
+            // 故首段用 parse_ternary（不含 `..`，只到 `..` 前停下）。
+            var start = -1
+            var end = -1
+            var is_slice = false
+            if putil.peek_tag() == lex_dotdot {
+                // [..] 或 [..n]：空 start
+                is_slice = true
+                putil.advance()  // '..'
+                if putil.peek_tag() != lex_rbracket {
+                    end = parse_expr()
+                    if end < 0 {
+                        return -1
+                    }
+                }
+            } else {
+                start = parse_ternary()
+                if start < 0 {
+                    return -1
+                }
+                if putil.peek_tag() == lex_dotdot {
+                    is_slice = true
+                    putil.advance()  // '..'
+                    if putil.peek_tag() != lex_rbracket {
+                        end = parse_expr()
+                        if end < 0 {
+                            return -1
+                        }
+                    }
+                }
             }
             if !putil.expect(lex_rbracket, "']'") {
                 return -1
             }
-            expr = mk_index(expr, index)
+            if is_slice {
+                var sn = ast.new_node(N_SLICE, -1, -1, -1, ast.line(expr), ast.col(expr))
+                var skids: table<i64> = table_new_i64()
+                table_push(skids, expr)
+                table_push(skids, start)
+                table_push(skids, end)
+                ast.set_children(sn, skids)
+                expr = sn
+            } else {
+                expr = mk_index(expr, start)
+            }
         } else if t == lex_lparen {
             // P2a 调用表达式：`t[0](5)` / `get_fn()(x)`——被调者为 fn 值表达式
             //（简单名字调用 `f(5)` 已由 parse_primary N_CALL 处理，不达此处）。
