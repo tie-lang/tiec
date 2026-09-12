@@ -211,6 +211,10 @@ const N_SAFE_ACCESS: i64 = 150;
 // p.8.2.2 命名实参：`f(x: 1, y: 2)`——NamedArg[name=形参名池 id, children=[值]]。
 // 语义层调用检查时按形参名重排为位置实参（改写调用节点 children）。
 const N_NAMED_ARG: i64 = 151;
+// p.8.2.10 展开/解包实参：`f(a, xs..., b)`——SpreadArg[children=[expr]]。调用实参
+// 中的 `expr...`：expr 为表/数组时按元素序展开为该位置之后的多个实参（与
+// p.8.1.3 变长泛型形参衔接），展开数量由运行期表长度决定。
+const N_SPREAD_ARG: i64 = 152;
 // S3.3 宏/元编程（三节点，布局约定见 mexpand.tie 头注释）：
 //   MacroDef[name=宏名, val=0, aux=nparams, children=[返回类型, 参数..., 函数体]]
 //     —— 布局与 FnDef 一致但**无泛型槽**（children[0] 即返回类型；形参从 1 起，

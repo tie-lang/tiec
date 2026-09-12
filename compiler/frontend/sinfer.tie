@@ -379,6 +379,15 @@ func infer_arrow(id: i64, op: i64) -> i64 {
 
 pub func infer_expr(id: i64) -> i64 {
     var tag = s_tags[id]
+    // p.8.2.10 展开实参兜底：N_SPREAD_ARG 节点被当作独立表达式推断 = 其调用
+    // 语境不受支持（方法/枚举构造/闭包调用/泛型等）。支持的普通变参调用已在
+    // sinfer_ret.infer_call 显式处理（不会走到这里）。此处报诊断防崩溃。
+    if tag == N_SPREAD_ARG {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "展开实参 `...` 仅支持用于带变长形参 `...T` 的普通函数调用；当前调用语境不支持展开"
+        return -1
+    }
     // 字面量
     if tag == 0 {
         // S1.3 L3 后缀字面量：aux = 后缀类型 TyKw（-1 = 无后缀 → i64）

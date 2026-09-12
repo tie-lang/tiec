@@ -902,8 +902,36 @@ pub func infer_call(id: i64) -> i64 {
     var req = sg_required[sig]
     var total = sg_nparams[sig]
     var has_var = sstate.fn_has_variadic(sig) == 1
-    // 变参函数：实参数无上界（固定部分 + 任意个额外元素实参）
-    if nc < req || (!has_var && nc > total) {
+    // p.8.2.10 展开实参探测：首展开位置 + 是否存在展开。
+    var first_spread: i64 = -1
+    var cnt_sp: i64 = 0
+    var it2: i64 = 0
+    while it2 < nc {
+        if s_tags[args[it2]] == N_SPREAD_ARG {
+            if first_spread < 0 {
+                first_spread = it2
+            }
+            cnt_sp = cnt_sp + 1
+        }
+        it2 = it2 + 1
+    }
+    if first_spread >= 0 {
+        // 展开仅支持带变长形参 `...T` 的普通函数；且展开位置须在变参区
+        //（第 total-1 个实参之后——前 total-1 个固定形参用普通实参补齐）。
+        if !has_var {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "函数 '" + fnm + "' 带展开实参 '...' 但没有变长形参 '...T'，无法进行运行期展开"
+            return -1
+        }
+        if first_spread < total - 1 {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "函数 '" + fnm + "' 的展开实参 '...' 必须位于变长形参区（前 " + to_string(total - 1) + " 个固定实参之后）"
+            return -1
+        }
+    } else if nc < req || (!has_var && nc > total) {
+        // 变参函数：实参数无上界（固定部分 + 任意个额外元素实参）
         sm_err_line = s_lines[id]
         sm_err_col = s_cols[id]
         var cnt_desc = ""
@@ -928,6 +956,33 @@ pub func infer_call(id: i64) -> i64 {
                 want = sstate_fn_variadic_elem(sig)
                 want_fixed = false
             }
+        }
+        // p.8.2.10 展开实参：operand 是表，其元素类型须与变参元素匹配
+        if s_tags[args[j2]] == N_SPREAD_ARG {
+            var op0 = sstate.child(args[j2], 0)
+            var ot = infer_expr(op0)
+            if ot < 0 {
+                return -1
+            }
+            if !types.is_table(ot) {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "调用 '" + fnm + "' 的展开实参 '...' 被展开对象必须是表/数组，实际是 " + types.type_name(ot)
+                return -1
+            }
+            if !want_fixed {
+                var se = types.table_elem(ot)
+                if se >= 0 && !stype.types_compatible(want, se) && !stype.types_match(want, se, op0) &&
+                    !stype.types_narrow_int(want, se, op0) {
+                    sm_err_line = s_lines[id]
+                    sm_err_col = s_cols[id]
+                    sm_err_msg = "调用 '" + fnm + "' 的展开实参表元素类型不匹配：期望 " + types.type_name(want) + "，实际 " + types.type_name(se)
+                    return -1
+                }
+            }
+            node_types[args[j2]] = ot
+            j2 = j2 + 1
+            continue
         }
         var at = infer_expr(args[j2])
         if at < 0 {
