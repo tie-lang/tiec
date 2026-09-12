@@ -1191,6 +1191,19 @@ func parse_primary() -> i64 {
     if tag == lex_lbracket {
         return parse_table_lit(line, col)
     }
+    // p.9.11.5 记录字面量 `{k: v}`：表达式起始位的 `{`。消歧判定表
+    //（写死规则，与 p.8.2.9 尾随闭包 / 语句块对 `{` 的消费逻辑正交）：
+    //   `{` 之后的**首元素**：
+    //     标识符/字符串字面量 + 紧跟 `:` → 记录字面量（键: 值 元素序列）；
+    //     `}`（空）            → 空记录（语义 = 空表/空映射；表达式位 `{}`
+    //                            无既有块语义——块是语句位，故可安全定义）；
+    //     其它                 → 非法（表达式位 `{` 无既有含义，报错引导）。
+    // 语句位 `{`（块）仍由 pstmt 层消费，不达此分支（parse_primary 仅当
+    // `{` 是表达式首个 token 时才命中）。尾随闭包 `expr { }` 的 `{` 由
+    // parse_unary 后缀链消费，与记录字面量互不冲突。
+    if tag == lex_lbrace {
+        return parse_record_lit(line, col)
+    }
     putil.set_err(line, col, "无法以 " + putil.describe(tag) + " 开始表达式")
     return -1
 }
@@ -1240,6 +1253,73 @@ func parse_paren_or_tuple(line: i64, col: i64) -> i64 {
         return -1
     }
     return ast.child_at(first, 0)
+}
+
+// ---------- p.9.11.5 记录字面量 ----------
+// 记录字面量 `{k: v}`：`{` 已在表达式起始位判定为记录（见 parse_primary）。
+// 元素为「键: 值」对；键 = 标识符或字符串字面量，值 = 任意表达式；可嵌套
+// `{a: {b: 1}}`、可空 `{}`。
+//
+// 键化表裁决（type 模型）：记录**不新建独立 record 类型**，直接 desugar 为
+// 键化表（map）字面量 `["k": v, ...]`——复用既有 N_TABLE_LIT + N_TABLE_ID
+// 「字符串键 cell」路径：sinfer 推断为 map<V>，irgen 走 has_str_key 分支
+// 产出 s21_map 句柄。故 `rec.k`（点访问）与 `rec["name"]`（下标）一致性由
+// map 的字符串键读取天然保障（见 sinfer/irgen 对 N_FIELD_ACCESS 上 map 的
+// 扩展：均为 s21_map_get(base, "k")）。空 `{}` 产出无 cell 的 N_TABLE_LIT
+//（空表语义，与 `[]` 同）。
+func parse_record_lit(line: i64, col: i64) -> i64 {
+    if !putil.expect(lex_lbrace, "'{'") {
+        return -1
+    }
+    if putil.eat(lex_rbrace) {
+        return ast.new_node(N_TABLE_LIT, -1, -1, -1, line, col)
+    }
+    var cells: table<i64> = table_new_i64()
+    var d = false
+    while !d {
+        var kline = putil.peek_line()
+        var kcol = putil.peek_col()
+        var key_id: i64 = -1
+        if putil.peek_tag() == lex_ident {
+            if putil.peek_n(1) == lex_colon {
+                key_id = interner.intern(putil.peek_lexeme())
+                putil.advance()   // ident
+                putil.advance()   // ':'
+            }
+        } else if putil.peek_tag() == lex_str {
+            if putil.peek_n(1) == lex_colon {
+                key_id = interner.intern(putil.peek_lexeme())
+                putil.advance()   // 字符串
+                putil.advance()   // ':'
+            }
+        }
+        if key_id < 0 {
+            putil.set_err(putil.peek_line(), putil.peek_col(), "记录字面量元素必须是 '键: 值'（键为标识符或字符串字面量），实际是 " + putil.describe(putil.peek_tag()))
+            return -1
+        }
+        var value = parse_expr()
+        if value < 0 {
+            return -1
+        }
+        var kid = ast.new_node(N_TABLE_ID, key_id, -1, -1, kline, kcol)
+        var cell = ast.new_node(N_TABLE_CELL, -1, 0, -1, kline, kcol)
+        var ckids: table<i64> = table_new_i64()
+        table_push(ckids, kid)
+        table_push(ckids, value)
+        ast.set_children(cell, ckids)
+        table_push(cells, cell)
+        if putil.eat(lex_comma) {
+            // 继续
+        } else {
+            if !putil.expect(lex_rbrace, "'}'") {
+                return -1
+            }
+            d = true
+        }
+    }
+    var t = ast.new_node(N_TABLE_LIT, -1, -1, -1, line, col)
+    ast.set_children(t, cells)
+    return t
 }
 
 // 元组字段：`name: expr`（命名字段）或 `expr`（匿名）——返回 TupleField 节点

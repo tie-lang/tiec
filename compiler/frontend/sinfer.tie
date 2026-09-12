@@ -1308,9 +1308,23 @@ pub func infer_expr(id: i64) -> i64 {
             sm_err_msg = "类 '" + sstate.struct_name_of(si) + "' 没有字段 '" + fnm + "'"
             return -1
         }
+        if bk == K_MAP {
+            // p.9.11.5 记录字段读取：`rec.k` ↔ `rec["k"]` 一致（键化表 map 模型）。
+            // 字段名作字符串键 → s21_map_get(base, "k")，结果类型 = map 值类型。
+            var me = types.table_elem(base)
+            if me < 0 {
+                // 裸 map：值类型未知，默认 i64
+                node_types[id] = types.named(TK_I64)
+                g_typed = g_typed + 1
+                return types.named(TK_I64)
+            }
+            node_types[id] = me
+            g_typed = g_typed + 1
+            return me
+        }
         sm_err_line = s_lines[id]
         sm_err_col = s_cols[id]
-        sm_err_msg = "字段访问 '.' 的对象必须是元组或类实例，实际是 " + types.type_name(base)
+        sm_err_msg = "字段访问 '.' 的对象必须是元组/类实例/映射记录，实际是 " + types.type_name(base)
         return -1
     }
     // TableLit

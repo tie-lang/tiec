@@ -121,9 +121,24 @@ func tig_field_access(id: i64) -> i64 {
     var fname = sstate.name_str(id)
     var base_ty = node_types[base]
     var bk = types.kind(base_ty)
-    if base_ty < 0 || (bk != K_TUPLE && bk != K_STRUCT) {
-        sm_err_msg = "字段访问 '.' 的对象不是元组/struct（类型 " + types.type_name(base_ty) + "，函数 " + g_cur_fn_name + "）"
+    if base_ty < 0 || (bk != K_TUPLE && bk != K_STRUCT && bk != K_MAP) {
+        sm_err_msg = "字段访问 '.' 的对象不是元组/struct/映射记录（类型 " + types.type_name(base_ty) + "，函数 " + g_cur_fn_name + "）"
         return -1
+    }
+    // p.9.11.5 记录字段读取：`rec.k` ↔ `rec["k"]`（键化表 map 模型）——
+    // 字段名作字符串键 → s21_map_get(base, "k")，与下标读（tig_index_read 的
+    // map 分支）一致。复合 map 值（map<any>/map<struct>）沿用 map_get 槽语义。
+    if bk == K_MAP {
+        var mt = tig_expr(base)
+        if mt < 0 {
+            return -1
+        }
+        var mvty = types.table_elem(base_ty)
+        if mvty < 0 {
+            mvty = types.named(TK_I64)
+        }
+        var key = tig_str_lit(interner.intern(fname))
+        return s21_map_get(mt, key, mvty)
     }
     var gres = tig_computed_getter(id, base, base_ty, fname)
     if gres >= 0 {
