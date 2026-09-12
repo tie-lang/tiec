@@ -917,6 +917,72 @@ pub func infer_expr(id: i64) -> i64 {
         g_typed = g_typed + 1
         return th
     }
+    // p.9.10.1 match/switch 表达式：分支体为表达式，整体取值。复用语句位
+    // switch 的模式/守卫/穷尽检查（scheck.check_arm_patterns / check_enum_exhaustive），
+    // 仅分支体改走 infer_expr 收集共同类型。布局见 ast.tie N_SWITCH_EXPR。
+    if tag == S_N_SWITCH_EXPR {
+        var subj = infer_expr(sstate.child(id, 0))
+        if subj < 0 {
+            return -1
+        }
+        if !types.is_number(subj) && !types.is_bool_like(subj) && subj != TK_STR &&
+            subj != TK_CHAR && types.kind(subj) != K_ENUM && subj != types.named(TK_ANY) {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "switch 表达式对象仅支持数字、布尔、字符、字符串、枚举或 any 类型，实际是 " + types.type_name(subj)
+            return -1
+        }
+        scheck.reset_case_seen()
+        var ncases2 = s_aux[id]
+        var res_ty: i64 = -1
+        var k2: i64 = 0
+        while k2 < ncases2 {
+            var c = sstate.child(id, 1 + k2)
+            var rp = scheck.check_arm_patterns(c, subj)
+            if rp < 0 {
+                return -1
+            }
+            var bty = infer_expr(sstate.child(c, 2))
+            if bty < 0 {
+                return -1
+            }
+            if res_ty < 0 {
+                res_ty = bty
+            } else if bty != res_ty && !(types.is_int(bty) && types.is_int(res_ty)) && !(types.is_float(bty) && types.is_float(res_ty)) {
+                sm_err_line = s_lines[c]
+                sm_err_col = s_cols[c]
+                sm_err_msg = "switch 表达式各分支类型不一致：" + types.type_name(bty) + " 与 " + types.type_name(res_ty)
+                return -1
+            }
+            k2 = k2 + 1
+        }
+        var has_wild = s_vals[id] == 1
+        if has_wild {
+            var dty = infer_expr(sstate.child(id, 1 + ncases2))
+            if dty < 0 {
+                return -1
+            }
+            if res_ty < 0 {
+                res_ty = dty
+            } else if dty != res_ty && !(types.is_int(dty) && types.is_int(res_ty)) && !(types.is_float(dty) && types.is_float(res_ty)) {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "switch 表达式通配臂类型不一致：" + types.type_name(dty) + " 与 " + types.type_name(res_ty)
+                return -1
+            }
+        } else if types.kind(subj) == K_ENUM {
+            var re = scheck.check_enum_exhaustive(subj, id)
+            if re < 0 {
+                return -1
+            }
+        }
+        if res_ty < 0 {
+            res_ty = types.named(TK_I64)
+        }
+        node_types[id] = res_ty
+        g_typed = g_typed + 1
+        return res_ty
+    }
     // Path：不能作值
     if tag == S_N_PATH {
         // Path 名字在 Segment children 中（name 字段为空），拼接完整路径
