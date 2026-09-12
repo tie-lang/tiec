@@ -1072,7 +1072,8 @@ func parse_primary() -> i64 {
         // S1.3 L3：剥离 f32/f64 后缀存纯数字文本（llvmgen 输出用），
         // aux = 后缀类型（无后缀 → f64，对齐现状 FloatLit 语义）
         var lex = putil.peek_lexeme()
-        var lid = interner.intern(putil.strip_lit_suffix(lex))
+        // p.9.11.19：浮点字面量含 `_` 分隔符（1_000.5）→ 输出文本剥离 `_`
+        var lid = interner.intern(putil.strip_underscores(putil.strip_lit_suffix(lex)))
         var sufx = putil.parse_lit_suffix(lex)
         if sufx < 0 {
             sufx = 9   // TK_F64

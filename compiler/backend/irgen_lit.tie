@@ -162,16 +162,27 @@ func tig_ternary(id: i64) -> i64 {
 func str_unescape_quoted(name_id: i64) -> i64 {
     var raw = interner.lookup(name_id)
     var n: i64 = str_len(raw)
+    // p.9.11.19 raw 字符串 r"..."：lexeme 带 'r' 前缀（scan_raw_string 产出，
+    // 形态 r"<段>"，段内 `""` 已还原为字面 `"`）——仅去 `r"` 前缀与尾引号，
+    // **不反转义**（`\n` 保持两字符；raw = 免转义字面，含 `\` 原样保留）。
+    var is_raw: bool = false
+    if n >= 3 && str_char(raw, 0) == "r" && str_char(raw, 1) == "\"" &&
+        str_char(raw, n - 1) == "\"" {
+        raw = str_slice(raw, 2, n - 1)
+        is_raw = true
+    }
     // 去首尾引号（带引号 lexeme 的约定形态）
-    if n >= 2 && str_char(raw, 0) == "\"" && str_char(raw, n - 1) == "\"" {
-        raw = str_slice(raw, 1, n - 1)
+    if !is_raw {
+        if n >= 2 && str_char(raw, 0) == "\"" && str_char(raw, n - 1) == "\"" {
+            raw = str_slice(raw, 1, n - 1)
+        }
     }
     var out: string = ""
     var i: i64 = 0
     var m: i64 = str_len(raw)
     while i < m {
         var c = str_char(raw, i)
-        if c == "\\" && i + 1 < m {
+        if !is_raw && c == "\\" && i + 1 < m {
             var e = str_char(raw, i + 1)
             if e == "n" {
                 out = out + "\n"
