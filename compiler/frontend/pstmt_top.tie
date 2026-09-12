@@ -1084,6 +1084,13 @@ func parse_fn_def() -> i64 {
     if !putil.eat(lex_rparen) {
         var d = false
         while !d {
+            // p.9.11.11 immut 只读形参：`fn f(immut t: i64)`——immut 前缀置于
+            // 参数名之前。immut 存 N_PARAM val bit1（val = by_ref | immut*2；
+            // 既有按 s_vals[p] 读 by_ref 的站点须掩码 & 1）。
+            var is_immut: i64 = 0
+            if putil.eat(lex_immut) {
+                is_immut = 1
+            }
             var pname = putil.expect_ident_quasi()
             if pname < 0 {
                 return -1
@@ -1137,7 +1144,7 @@ func parse_fn_def() -> i64 {
                 putil.set_err(putil.peek_line(), putil.peek_col(), "变参参数必须是最后一个参数")
                 return -1
             }
-            var p = ast.new_node(N_PARAM, pname, by_ref, is_var, putil.peek_line(), putil.peek_col())
+            var p = ast.new_node(N_PARAM, pname, by_ref + is_immut * 2, is_var, putil.peek_line(), putil.peek_col())
             var pkids: table<i64> = table_new_i64()
             table_push(pkids, pty)
             table_push(pkids, pdef)
