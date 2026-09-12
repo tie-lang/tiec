@@ -274,6 +274,12 @@ const N_DEFER: i64 = 158;
 // 未提及键值从 base 拷贝（map 值语义：整表/整映射副本），无法零拷贝共享（容器
 // 扁平数组无结构化共享），裁决=全复制。链式 `t with {a:1} with {b:2}` 左结合。
 const N_WITH: i64 = 159;
+// p.9.11.15 yield 产出语句：`yield expr;`——生成器函数内产出单个值（本轮
+// 语言侧定稿：生成器 = 声明返回类型的函数，yield 攒入产出表，调用返回表；
+// 惰性协程运行期由 p.9.5.1 trm-lite 承载）。布局：N_YIELD[children=[expr]]。
+// 语句节点（parse_stmt 识别 lex_yield）。scheck 约束：仅具名函数体内合法、
+// 生成器函数须声明返回类型、禁止带值 return；IR = 表 push。
+const N_YIELD: i64 = 161;
 // p.9.11.7 切片/区间 `t[1..3]`：下标访问的区间形态——`t[1..3]`（含 1 不含 3）、
 // `t[..n]`（0..n）、`t[n..]`（n..len）、`t[..]`（全拷贝）。布局：
 // N_SLICE[children=[base, start 或 -1(=0), end 或 -1(=len)]]（start/end 为整数

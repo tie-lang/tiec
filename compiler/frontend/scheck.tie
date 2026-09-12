@@ -1058,6 +1058,14 @@ pub func check_stmt(s: i64) -> i64 {
     if tag == S_N_RETURN {
         var v = sstate.child(s, 0)
         if v >= 0 {
+            // p.9.11.15 生成器函数禁止带值 return（产出走 yield；`return;`
+            // 无值提前结束）。闭包体内 return 不受此限（闭包非生成器）。
+            if g_clo_ret_top == 0 && sstate.is_gen(g_curfn) == 1 {
+                sm_err_line = s_lines[s]
+                sm_err_col = s_cols[s]
+                sm_err_msg = "生成器函数不允许带值 return（产出请用 yield；`return;` 可提前结束）"
+                return -1
+            }
             var vt = sinfer.infer_expr(v)
             if vt < 0 {
 // S2.3 目标类型引导：return 泛型 enum 构造时类型参数推断不全，
@@ -1096,6 +1104,45 @@ pub func check_stmt(s: i64) -> i64 {
                 sm_err_msg = "return 类型不匹配：函数返回 " + types.type_name(ret_ty) + "，实际返回 " + types.type_name(vt)
                 return -1
             }
+        }
+        return 0
+    }
+    // p.9.11.15 yield 生成器产出语句：仅具名函数体内合法（闭包内禁止——生成器
+    // = 具名函数，闭包无独立产出通道）；产出值类型须与生成器声明返回类型
+    // （签名 = table<elem>）的元素兼容。生成器标记由 scollect.collect_fn
+    // 在收集阶段完成（含 yield → 签名返回类型 = table<elem>）。
+    if tag == S_N_YIELD {
+        if g_clo_ret_top > 0 {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "yield 只能在生成器函数（具名函数）体内使用，闭包内不允许"
+            return -1
+        }
+        if g_curfn < 0 {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "yield 只能在生成器函数体内使用（函数体内声明 `-> 元素类型`）"
+            return -1
+        }
+        var yv = sstate.child(s, 0)
+        var yt = sinfer.infer_expr(yv)
+        if yt < 0 {
+            return -1
+        }
+        var yret = sg_ret[g_curfn]   // 生成器签名返回类型 = table<elem>
+        var yelem: i64 = types.named(TK_I64)
+        if types.is_table(yret) {
+            var ye2 = types.table_elem(yret)
+            if ye2 >= 0 {
+                yelem = ye2
+            }
+        }
+        if !stype.types_compatible(yelem, yt) && !stype.types_match(yelem, yt, yv) &&
+            !stype.types_narrow_int(yelem, yt, yv) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "yield 值类型不匹配：生成器产出元素类型 " + types.type_name(yelem) + "，实际 " + types.type_name(yt)
+            return -1
         }
         return 0
     }

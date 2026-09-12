@@ -33,6 +33,10 @@ pub func parse_stmt() -> i64 {
     if tag == lex_return {
         return parse_return()
     }
+    if tag == lex_yield {
+        // p.9.11.15 yield 生成器产出语句：`yield expr;`
+        return parse_yield()
+    }
     if tag == lex_break {
         return parse_loop_jump(false)
     }
@@ -1139,6 +1143,27 @@ func parse_return() -> i64 {
         return -1
     }
     var n = ast.new_node(N_RETURN, -1, -1, -1, line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, expr)
+    ast.set_children(n, kids)
+    return n
+}
+
+// p.9.11.15 yield 生成器产出语句：`yield expr;`——产出单值并继续执行。
+// 产出值表达式必填（无值 yield 不支持——须声明元素类型）；语句结束符同
+// return（ASI 自动补分号）。产出 N_YIELD[name=-1, children=[expr]]。
+func parse_yield() -> i64 {
+    var line = putil.peek_line()
+    var col = putil.peek_col()
+    putil.advance()   // yield
+    var expr = pexpr.parse_expr()
+    if expr < 0 {
+        return -1
+    }
+    if !putil.expect_stmt_end() {
+        return -1
+    }
+    var n = ast.new_node(N_YIELD, -1, -1, -1, line, col)
     var kids: table<i64> = table_new_i64()
     table_push(kids, expr)
     ast.set_children(n, kids)

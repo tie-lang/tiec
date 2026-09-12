@@ -102,6 +102,11 @@ var g_cur_fn_name: string = "";
 // 当前函数返回类型 id（Return 的 BoolLit 适配 trit 用：`return false` 在返回
 // trit 的函数里生成 i8 而非 i1）
 var g_cur_ret_ty: i64 = 0;
+// p.9.11.15 生成器（yield）IR 上下文：当前函数为生成器时 g_gen_tbl = 产出表
+// 句柄的 alloca 槽（ptr 值），g_gen_elem = 产出元素 LLVM 类型 id（表 push 槽
+// 类型）。非生成器函数 g_gen_tbl = -1。tig_fn_def 按 sstate.is_gen 设置/复位。
+var g_gen_tbl: i64 = -1;
+var g_gen_elem: i64 = -1;
 // p.6.4.8 正则引擎（irgen_regex.tie）：编译期解析状态 + 生成期上下文。
 // 解析状态（rx_compile 期间）：
 var g_rx_u: i64 = 0;             // 模块唯一块名后缀
@@ -1504,6 +1509,16 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
         return -1
     }
     g_cur_ret_ty = ret_ty  // Return 生成期 trit 适配用
+    // p.9.11.15 生成器函数（含 yield）：返回类型 = 签名表类型 table<elem>
+    // （scollect 已登记；parse_generic_type_node 得到的是声明元素类型）。
+    // LLVM 函数返回 ptr（表句柄）；g_cur_ret_ty 同步（Return 生成期适配）。
+    var g_sig0 = sstate.fn_sig(full_name)
+    g_gen_tbl = -1
+    g_gen_elem = -1
+    if g_sig0 >= 0 && sstate.is_gen(g_sig0) == 1 {
+        ret_ty = sg_ret[g_sig0]
+        g_cur_ret_ty = ret_ty
+    }
     // M5 动态库导出面（dev33 批次 12）：顶层函数恒公有；命名空间函数仅 pub
     // func 导出（N_FN_DEF val bit0 = is_pub，对齐 parser）。导出标记登记进 IR
     // 供 llvmgen 在动态库模式输出 dllexport；动态库模式下对导出函数做边界检查。
@@ -1614,6 +1629,44 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
         table_push(g_param_nids, interner.intern(pname))
         i = i + 1
     }
+    // p.9.11.15 生成器 prologue：创建产出表（table<elem>，句柄 ptr 存槽）。
+    // 元素 LLVM 槽类型对齐 tig_for_table 的 elem_llvm_ty 推导（结构/enum/fn/
+    // 元组/any 用类型 id 本身，表/map/port → ptr，string/bool/f64 特判）。
+    if g_sig0 >= 0 && sstate.is_gen(g_sig0) == 1 {
+        var gelem = types.table_elem(ret_ty)
+        if gelem < 0 {
+            gelem = types.named(TK_I64)
+        }
+        var g_llvm = gelem
+        var g_suf = bridge_suffix(gelem)
+        var g_k = types.kind(gelem)
+        if g_k == K_STRUCT || g_k == K_ENUM || g_k == K_FN || g_k == K_TUPLE || gelem == types.named(TK_ANY) {
+            g_llvm = gelem
+        } else if types.is_table(gelem) || types.is_map(gelem) || types.kind(gelem) == K_PORT {
+            g_llvm = types.named(TK_STR)
+        } else if g_suf == "string" {
+            g_llvm = types.named(TK_STR)
+        } else if g_suf == "bool" {
+            g_llvm = types.named(TK_BOOL)
+        } else if g_suf == "f64" {
+            g_llvm = types.named(TK_F64)
+        } else {
+            g_llvm = types.named(TK_I64)
+        }
+        var gesz_v = tig_int_lit_ty(elem_size(gelem), types.named(TK_I64))
+        var gtbl = s21_table_new_ty(gelem, gesz_v)
+        if gtbl < 0 {
+            return -1
+        }
+        var gslot = ir.new_inst(g_cur_block, 20, types.named(TK_STR))  // alloca ptr
+        ir.add_operand(gslot, types.named(TK_STR), 2)
+        var gst = ir.new_inst(g_cur_block, 22, -1)
+        ir.add_operand(gst, types.named(TK_STR), 2)
+        ir.add_operand(gst, gtbl, 0)
+        ir.add_operand(gst, ir.get_value(gslot), 0)
+        g_gen_tbl = ir.get_value(gslot)
+        g_gen_elem = g_llvm
+    }
     // 全局表 main 初始化：@g = global ptr null → main 入口 tie_table_new + store
     // （阶段 A 表全局，Rust 版同路径；缺此则 len(g) 对 null 崩溃 0xC0000005）。
     // r.1.1.3：非空表字面量初值 → tig_table_lit 整体构造（含逐元素 push）；
@@ -1674,7 +1727,13 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
         // if 两分支都 return 后 merge 块不可达）→ 不补 ret（曾补死代码
         // `ret ptr %0` 到已终止块，LLVM 报类型错）
         if !has_ret && !block_terminated() {
-            if full_name == "main" {
+            if g_sig0 >= 0 && sstate.is_gen(g_sig0) == 1 {
+                // p.9.11.15 生成器自然结束：返回产出表（load 槽 + ret table）
+                var gv = ir.new_inst(g_cur_block, 21, types.named(TK_STR))  // load
+                ir.add_operand(gv, g_gen_tbl, 0)
+                var gre = ir.new_inst(g_cur_block, 32, ret_ty)
+                ir.add_operand(gre, ir.get_value(gv), 0)
+            } else if full_name == "main" {
                 // main 补 ret i32 0：ty 必须显式 i32（llvmgen 按 ins_ty 输出 ret 类型，
                 // ty=-1 会生成 ret ptr 0 / ret void 与 define i32 @main 不匹配）
                 var ret = ir.new_inst(g_cur_block, 32, types.named(TK_I32))  // ret i32

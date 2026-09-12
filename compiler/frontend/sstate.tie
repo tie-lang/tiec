@@ -41,6 +41,9 @@ var sp_tys: table<i64>;       // 参数类型 id（扁平段）
 var sp_refs: table<i64>;      // 参数 by_ref 标志（扁平段）
 var sp_defs: table<i64>;      // 参数有默认值（扁平段）
 var sp_vars: table<i64>;      // 参数变参标志（扁平段；1 = `name: ...T`）
+// p.9.11.15 生成器标记（与 sg_* 下标对齐）：0=普通函数 1=生成器函数（含 yield；
+// 签名返回类型已登记为 table<elem>）。scheck/irgen 读 is_gen 分派。
+var gen_marks: table<i64>;
 
 // p.9.11.11 immut 只读形参名集合（每函数 check_fn 重置；变量名池 id）。
 var g_im_keys: table<i64>;
@@ -405,6 +408,7 @@ const S_N_GUARD_STMT: i64 = 153;    // p.8.2.11 guard else 早退（与 ast.tie 
 const S_N_SWITCH_EXPR: i64 = 156;   // p.9.10.1 match/switch 表达式（与 ast.tie 同号）
 const S_N_TRY_BLOCK: i64 = 157;     // p.9.11.3 try 错误聚合块（与 ast.tie N_TRY_BLOCK 同号）
 const S_N_DEFER: i64 = 158;         // p.9.11.4 defer 资源释放（与 ast.tie N_DEFER 同号）
+const S_N_YIELD: i64 = 161;         // p.9.11.15 yield 产出语句（与 ast.tie N_YIELD 同号）
 // 三期 A 组 guard<cap> 凭据（与 ast.tie N_GUARD_GET/N_GUARD_USE/N_GUARD_WITH 同号）
 const S_N_GUARD_GET: i64 = 145;     // `unsafe.get(share)` 取得凭据（表达式）
 const S_N_GUARD_USE: i64 = 146;     // `unsafe use g { ... }` 持证越界块
@@ -1175,6 +1179,10 @@ pub func reg_fn(full_name: string, is_pub: i64, nparams: i64, required: i64, ret
     table_push(sg_ret, ret_ty)
     table_push(sg_pub, is_pub)
     table_push(sg_off, off)
+    // p.9.11.15：生成器标记列（与 sg_* 下标对齐；0=普通函数 1=生成器）。
+    // scollect.collect_fn 检测函数体含 N_YIELD 后置 1；scheck/irgen 据此
+    // 校验与生成（签名返回类型已登记为 table<elem>）。
+    table_push(gen_marks, 0)
     var i: i64 = 0
     while i < nparams {
         table_push(sp_tys, p_tys[i])
@@ -1205,6 +1213,21 @@ pub func fn_sig(full_name: string) -> i64 {
         return -1
     }
     return fn_vals[idx]
+}
+
+// p.9.11.15：标记 sig 为生成器函数（函数体含 yield；签名返回类型 = table<elem>）
+pub func mark_gen(sig: i64) {
+    if sig >= 0 && sig < len(gen_marks) {
+        gen_marks[sig] = 1
+    }
+}
+
+// 是否生成器函数（1=是；0/越界=否）
+pub func is_gen(sig: i64) -> i64 {
+    if sig < 0 || sig >= len(gen_marks) {
+        return 0
+    }
+    return gen_marks[sig]
 }
 
 // 函数是否含变参（最后一个形参 sp_vars == 1）；nparams=0 或非变参 → 0
