@@ -1390,13 +1390,19 @@ pub func infer_expr(id: i64) -> i64 {
                 i = i + 1
             }
             if field_found {
-                // 普通字段路径（既有）：base 必须可寻址（P2a：表下标 t[i] 放行）
+                // 普通字段路径（既有）：base 必须可寻址（P2a：表下标 t[i] 放行）。
+                // p.9.11.17 fn 类型字段放宽：函数值读取（作被调者，如
+                // make_cb().f(7) 改写后的 FieldAccess）不要求基可寻址——读值
+                // 走 tig_agg_addr 表达式落内存；普通字段读取仍要求可寻址。
                 if !sstate.is_addressable(base_node) && s_tags[base_node] != 13 {
-                    var cls_name = sstate.struct_name_of(si)
-                    sm_err_line = s_lines[id]
-                    sm_err_col = s_cols[id]
-                    sm_err_msg = "struct 实例 '" + cls_name + "' 的字段访问需要可寻址对象（变量/字段链），"
-                    return -1
+                    var is_fnf: bool = types.is_fn(fld_tys[off + i])
+                    if !is_fnf {
+                        var cls_name = sstate.struct_name_of(si)
+                        sm_err_line = s_lines[id]
+                        sm_err_col = s_cols[id]
+                        sm_err_msg = "struct 实例 '" + cls_name + "' 的字段访问需要可寻址对象（变量/字段链），"
+                        return -1
+                    }
                 }
                 node_types[id] = fld_tys[off + i]
                 g_typed = g_typed + 1
@@ -2279,6 +2285,23 @@ pub func infer_method_call(id: i64) -> i64 {
             g_typed = g_typed + 1
             return types.named(TK_STR)
         }
+        // p.9.11.17 表达式接收者的 fn 类型字段调用（如 make_cb().f(7)）：
+        // 接收者类型为 struct 且 mname 命中 fn 类型字段 → 改写为 CALL_EXPR
+        //（同绑定实例路径）；否则按命名空间路径解析（既有行为）。
+        if rt3 >= 0 && types.kind(rt3) == K_STRUCT {
+            var rsi3 = types.low(rt3)
+            var ffi3: i64 = 0
+            while ffi3 < cls_nfld[rsi3] {
+                if intern.lookup(fld_names[cls_fldoff[rsi3] + ffi3]) == mname {
+                    var ffty3 = fld_tys[cls_fldoff[rsi3] + ffi3]
+                    if types.is_fn(ffty3) {
+                        return rewrite_fn_field_call(id, recv, mname, args)
+                    }
+                    break
+                }
+                ffi3 = ffi3 + 1
+            }
+        }
         // Path 接收者 → ns 调用
         full = recv_path_name(recv) + "::" + mname
     }
@@ -2795,6 +2818,20 @@ pub func infer_struct_method(recv: i64, recv_ty: i64, mname: string, args: table
                 }
             }
         }
+        // p.9.11.17 fn 类型字段调用：`cb.f(args)`（f 为 fn 类型字段）→ 改写为
+        // CALL_EXPR（函数值间接调用）。字段名命中但非 fn 类型 → 不是字段调用，
+        // 落回「没有方法」诊断。
+        var ffi: i64 = 0
+        while ffi < cls_nfld[si] {
+            if intern.lookup(fld_names[cls_fldoff[si] + ffi]) == mname {
+                var ffty = fld_tys[cls_fldoff[si] + ffi]
+                if types.is_fn(ffty) {
+                    return rewrite_fn_field_call(id, recv, mname, args)
+                }
+                break
+            }
+            ffi = ffi + 1
+        }
         sm_err_line = s_lines[id]
         sm_err_col = s_cols[id]
         sm_err_msg = "struct '" + sname + "'（含继承链）没有方法 '" + mname + "'"
@@ -2866,6 +2903,40 @@ pub func infer_struct_method(recv: i64, recv_ty: i64, mname: string, args: table
     node_types[id] = rt
     g_typed = g_typed + 1
     return rt
+}
+
+// p.9.11.17 fn 类型字段调用改写：MethodCall(recv, mname, args) 且 mname 命中
+// recv 类型的 **fn 类型字段** → 就地改写为 CALL_EXPR（callee = 新建
+// FieldAccess 节点，children = [fa, args...]），复用 fn 值间接调用路径
+// （P2a：infer_call_expr / tig_call_expr → tig_call_fn_value）。改写时机在
+// sinfer（smove/irgen 之前），smove/irgen 对 CALL_EXPR 的既有处理直接生效。
+// 函数类型一等公民的四位承载（变量/形参/返回/字段）由此补全字段调用缺口。
+func rewrite_fn_field_call(id: i64, recv: i64, mname: string, args: table<i64>) -> i64 {
+    // 新建 FieldAccess 节点（name = mname，children = [recv]）
+    var fa = len(s_tags)
+    table_push(s_tags, S_N_FIELD_ACCESS)
+    table_push(s_names, interner.intern(mname))
+    table_push(s_vals, -1)
+    table_push(s_aux, -1)
+    table_push(s_coff, len(s_children))
+    table_push(s_children, recv)
+    table_push(s_nchild, 1)
+    table_push(s_lines, s_lines[id])
+    table_push(s_cols, s_cols[id])
+    table_push(node_types, -1)
+    // 改写 MethodCall → CALL_EXPR：children = [fa, args...]（无泛型槽；
+    // slot_off 动态判定：children[0]=FieldAccess 非槽 → 0，与 CALL_EXPR 约定一致）
+    s_tags[id] = S_N_CALL_EXPR
+    s_names[id] = -1
+    s_coff[id] = len(s_children)
+    s_nchild[id] = 1 + len(args)
+    table_push(s_children, fa)
+    var ai: i64 = 0
+    while ai < len(args) {
+        table_push(s_children, args[ai])
+        ai = ai + 1
+    }
+    return infer_call_expr(id)
 }
 
 // p.9.11.16 迭代器协议（内建约定，注释定死）：可迭代对象 = 用户 struct 实现
