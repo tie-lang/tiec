@@ -43,6 +43,14 @@ pub func parse_stmt() -> i64 {
         if is_loop_label_ahead() {
             return parse_labeled_loop()
         }
+        // p.9.11.4 defer 资源释放：`defer { ... }`（defer 非保留字，仅当紧跟 `{`
+        // 按 defer 语句解析，否则落回表达式/赋值路径，规避用户变量名 defer）。
+        // try 属表达式（parse_primary 处理），此处不拦。
+        if putil.peek_lexeme() == "defer" {
+            if putil.peek_n(1) == lex_lbrace {
+                return parse_defer()
+            }
+        }
         // p.8.2.11 guard else 早退：`guard <cond> else { ... }`。guard 非保留字
         //（guard<cap> 是类型名），此处语境识别——语句位 `guard` 后不跟 `<`（该
         // 情形是类型 `guard<cap>`，本就不该作语句）且不跟 `=`（guard 作变量赋值）
@@ -602,6 +610,25 @@ func parse_guard_else() -> i64 {
     var n = ast.new_node(N_GUARD_STMT, -1, -1, -1, line, col)
     var kids: table<i64> = table_new_i64()
     table_push(kids, cond)
+    table_push(kids, body)
+    ast.set_children(n, kids)
+    return n
+}
+
+// p.9.11.4 `defer { stmts }` 资源释放语句。游标停在 `defer` 上（调用方已确认
+// 后跟 `{`）。产出 N_DEFER[children=[块 StmtList]]。defer 块内禁止 return/break/
+// continue/yield/goto/panic/嵌套 defer 由 scheck 校验（仅允许表达式语句与
+// 赋值/读作用域变量）。
+func parse_defer() -> i64 {
+    var line = putil.peek_line()
+    var col = putil.peek_col()
+    putil.advance()   // defer
+    var body = parse_block()
+    if body < 0 {
+        return -1
+    }
+    var n = ast.new_node(N_DEFER, -1, -1, -1, line, col)
+    var kids: table<i64> = table_new_i64()
     table_push(kids, body)
     ast.set_children(n, kids)
     return n

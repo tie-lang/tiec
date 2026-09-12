@@ -1449,6 +1449,13 @@ func tig_stmt(id: i64) -> i64 {
             if rty >= 0 && types.is_table(rty) && ret_needs_retain {
                 tig_tbl_retain_call(rv)
             }
+            // p.9.11.4 defer：return（表达式）前运行函数级全部 defer（`?` 输出
+            // 表前，保证 defer body 仍可见作用域变量）
+            if len(g_def_flags) > 0 {
+                if tig_run_defers_all() < 0 {
+                    return -1
+                }
+            }
             tig_tbl_exit_release()
             var ret = ir.new_inst(g_cur_block, 32, rty)  // ret
             ir.add_operand(ret, rv, 0)
@@ -1456,6 +1463,12 @@ func tig_stmt(id: i64) -> i64 {
             // void 无值 return：main 特判 ret i32 0（CRT 退出码正确性，对齐 Rust 侧
             // tig_stmt 的 void main return 处理——define i32 @main 与 ret void 不匹配）；
             // 其余 void 函数 ret void。
+            // p.9.11.4 defer：return（void）前运行函数级全部 defer
+            if len(g_def_flags) > 0 {
+                if tig_run_defers_all() < 0 {
+                    return -1
+                }
+            }
             tig_tbl_exit_release()   // p.6.10.3：无值返回前同样析构非参数局部表
             if g_cur_fn_name == "main" {
                 var ret = ir.new_inst(g_cur_block, 32, types.named(TK_I32))  // ret i32 0
@@ -1534,6 +1547,26 @@ func tig_stmt(id: i64) -> i64 {
             return -1
         }
         g_cur_block = merge_blk
+        return 0
+    }
+    if tag == 158 {
+        // p.9.11.4 defer 资源释放：注册（非立即执行）。分配运行时标志 alloca 并
+        // 立即置 true（= 已武装，仅当本 defer 语句所在路径执行时才为 true；被
+        // 条件跳过/零迭代循环跳过的路径其标志未写入——边界裁决见报告），按
+        // 作用域 g_def_sc 登记，供各退出出口在作用域退出时 LIFO 发射执行。
+        var dbody = sstate.child(id, 0)
+        var flag_a = ir.new_inst(g_cur_block, 20, types.named(TK_BOOL))  // alloca i1
+        ir.add_operand(flag_a, types.named(TK_BOOL), 2)
+        var flag_ptr = ir.get_value(flag_a)
+        var fz = tig_bool_lit(1)  // true = 武装
+        var fs = ir.new_inst(g_cur_block, 22, -1)  // store true → flag
+        ir.add_operand(fs, types.named(TK_BOOL), 2)
+        ir.add_operand(fs, fz, 0)
+        ir.add_operand(fs, flag_ptr, 0)
+        table_push(g_def_bodies, dbody)
+        table_push(g_def_flags, flag_ptr)
+        table_push(g_def_scopes, g_lp_top)   // 作用域 0=函数体；>0=循环嵌套层
+        g_def_cnt = len(g_def_flags)
         return 0
     }
     if tag == 107 {
@@ -1625,6 +1658,14 @@ func tig_stmt(id: i64) -> i64 {
         ir.add_operand(sb, cond_blk, 1)
         // exit 块
         g_cur_block = exit_blk
+        // p.9.11.4 defer：范围 for 退出（break/自然结束汇于 exit_blk）→ 运行本
+        // 循环体作用域 defer（g_lp_top 此刻 = 本循环体作用域，逆序）
+        if len(g_def_flags) > 0 {
+            var drr = tig_run_defers(g_lp_top)
+            if drr < 0 {
+                return -1
+            }
+        }
         loop_pop()
         return 0
     }
@@ -1695,6 +1736,14 @@ func tig_stmt(id: i64) -> i64 {
         }
         // exit 块
         g_cur_block = exit_blk
+        // p.9.11.4 defer：while 退出（break/条件 false 汇于 exit_blk）→ 运行本
+        // 循环体作用域 defer（g_lp_top 此刻 = 本循环体作用域，逆序）
+        if len(g_def_flags) > 0 {
+            var drr2 = tig_run_defers(g_lp_top)
+            if drr2 < 0 {
+                return -1
+            }
+        }
         // p.6.1.4：提升候选在循环出口 build 回写 out 槽（break/条件 false 全部汇入
         // exit_blk → 任一出口都拿到最终拼接串；sb 登记同步移除）
         var bix: i64 = 0
@@ -2091,6 +2140,14 @@ func tig_for_chars(id: i64, iter: i64, body: i64) -> i64 {
     ir.add_operand(sb, cond_blk, 1)
     // exit 块
     g_cur_block = exit_blk
+    // p.9.11.4 defer：for 迭代退出（break/自然结束汇于 exit_blk）→ 运行本
+    // 循环体作用域 defer（g_lp_top 此刻 = 本循环体作用域，逆序）
+    if len(g_def_flags) > 0 {
+        var drr3 = tig_run_defers(g_lp_top)
+        if drr3 < 0 {
+            return -1
+        }
+    }
     loop_pop()
     return 0
 }
@@ -2266,6 +2323,14 @@ func tig_for_table(id: i64, iter: i64, body: i64) -> i64 {
     ir.add_operand(sb, cond_blk, 1)
     // exit 块
     g_cur_block = exit_blk
+    // p.9.11.4 defer：for 迭代退出（break/自然结束汇于 exit_blk）→ 运行本
+    // 循环体作用域 defer（g_lp_top 此刻 = 本循环体作用域，逆序）
+    if len(g_def_flags) > 0 {
+        var drr3 = tig_run_defers(g_lp_top)
+        if drr3 < 0 {
+            return -1
+        }
+    }
     loop_pop()
     return 0
 }
@@ -2762,6 +2827,7 @@ func cbs_scan(body: i64, cond: i64) -> table<i64> {
 // 后仍有语句时，新开承接块存放后续死代码——LLVM 不允许 terminator 后跟指令，
 // 死块由 opt DCE 清理（设计 §7.1.5：goto 后不可达代码 opt 清理，不报错）。
 func tig_block_stmts(blk: i64) -> i64 {
+    g_block_lvl = g_block_lvl + 1
     scope_push()
     var n = sstate.nchild(blk)
     var i: i64 = 0
@@ -2776,8 +2842,141 @@ func tig_block_stmts(blk: i64) -> i64 {
         }
         i = i + 1
     }
+    // p.9.11.4 defer：命名函数体的最外层块末尾（隐式函数收尾，块未终止即流到
+    // 隐式 return）→ 运行函数级全部 defer（作用域 0 与已清标志的循环 defer 因
+    // 已执行而自动跳过）。须在 scope_pop 前发射以保证 defer body 读到作用域变量。
+    if g_in_fn_body != 0 && g_block_lvl == 1 && len(g_def_flags) > 0 && !block_terminated() {
+        var dref = tig_run_defers_all()
+        if dref < 0 {
+            g_block_lvl = g_block_lvl - 1
+            return -1
+        }
+        g_in_fn_body = 0
+    }
     scope_pop()
+    g_block_lvl = g_block_lvl - 1
     return 0
+}
+
+// p.9.11.3 try 错误聚合块（表达式）：线性发射块体语句（块内 `?` 经 tig_try
+// 在 Err/None 时 ret 传播到当前函数——与块外一致，try 纯语法分组）。末语句若
+// 为 N_EXPR_STMT 取其表达式值作为 try 块的值；无末值则返回哑值（仅作语句）。
+// 注意：块体语句可能被 tig_stmt 内部阻塞（如 `?` 条件切块），逐语句在同一
+// g_cur_block 流上发射即达成顺序语义。
+func tig_try_block(id: i64) -> i64 {
+    var body = sstate.child(id, 0)
+    var nb = sstate.nchild(body)
+    var val: i64 = tig_int_lit(0)
+    var i: i64 = 0
+    while i < nb {
+        var s = sstate.child(body, i)
+        var is_last: bool = i == nb - 1
+        if is_last && s_tags[s] == S_N_EXPR_STMT && sstate.nchild(s) == 1 {
+            var ev = tig_expr(sstate.child(s, 0))
+            if ev < 0 {
+                return -1
+            }
+            val = ev
+        } else {
+            if tig_stmt(s) < 0 {
+                return -1
+            }
+        }
+        i = i + 1
+    }
+    return val
+}
+
+// ==================== p.9.11.4 defer 资源释放 ====================
+// defer 在 irgen 侧以「编译期注册表 + 出口发射」实现：
+//   - 每函数维护 g_def_bodies/g_def_flags/g_def_scopes 三表（函数开始置空）。
+//   - 每遇 `defer { body }`：注册 body StmtList 节点 + 分配 bool 标志 alloca
+//     （置 false），记录注册所在循环作用域标记（g_cur_loop_sc 计数）。
+//   - 退出执行点（函数正常收尾 / return / `?` Err 传播 / 循环自然结束+break）
+//     按需发射「LIFO 执行链」：逆序遍历满足作用域条件的 defer，用运行时标志
+//     守卫（条件注册立即生效），执行其 body 后清标志，汇合到 continuation。
+//   - panic 不可恢复（进程退出）不执行 defer（裁决注明）；continue 不退出循环
+//     体作用域故不触发（与 Go 语义一致）。
+// 全局表 g_def_bodies/g_def_flags/g_def_scopes/g_def_cnt/g_def_sc/sc_cnt/g_block_lvl/
+// g_in_fn_body 声明于 irgen.tie 主文件（本子文件只允许 func）。
+
+// 发射 defer LIFO 执行链。scopef<0 = 运行全部作用域（函数出口 return/?/尾收）；
+// scopef>=0 = 仅运行该循环体作用域（循环退出 break/自然结束，逆序）。
+// 逆序遍历（后注册先执行），每项用运行时标志守卫（true → 执行 body 后清标志，
+// false → 跳过）。执行后 g_cur_block 落在 continuation 块（调用方随后发射出口）。
+func tig_run_defers(scopef: i64) -> i64 {
+    var cnt = g_def_cnt
+    if cnt == 0 {
+        return 0
+    }
+    // 收集满足作用域条件的 defer 下标，LIFO 序 = 注册逆序
+    var list: table<i64> = table_new_i64()
+    var j: i64 = cnt - 1
+    while j >= 0 {
+        if scopef < 0 || g_def_scopes[j] == scopef {
+            table_push(list, j)
+        }
+        j = j - 1
+    }
+    var nl = len(list)
+    if nl == 0 {
+        return 0
+    }
+    var cont = ir.new_block(g_cur_func, interner.intern("dfr.cont"))
+    var guard_blocks: table<i64> = table_new_i64()
+    var body_blocks: table<i64> = table_new_i64()
+    var q: i64 = 0
+    while q < nl {
+        table_push(guard_blocks, ir.new_block(g_cur_func, interner.intern("dfr.g")))
+        table_push(body_blocks, ir.new_block(g_cur_func, interner.intern("dfr.b")))
+        q = q + 1
+    }
+    // 入口（当前块）→ 首个守卫块
+    if !block_terminated() {
+        var ebr = ir.new_inst(g_cur_block, 30, -1)
+        ir.add_operand(ebr, guard_blocks[0], 1)
+    } else {
+        g_cur_block = guard_blocks[0]
+    }
+    q = 0
+    while q < nl {
+        var nextblk: i64 = cont
+        if q + 1 < nl {
+            nextblk = guard_blocks[q + 1]
+        }
+        // 守卫块：load 标志 → cond_br(flag → body, else → next)
+        g_cur_block = guard_blocks[q]
+        var ldc = ir.new_inst(g_cur_block, 21, types.named(TK_BOOL))  // load i1
+        ir.add_operand(ldc, g_def_flags[list[q]], 0)
+        var flagv = ir.get_value(ldc)
+        var cbr = ir.new_inst(g_cur_block, 31, -1)  // cond_br
+        ir.add_operand(cbr, flagv, 0)
+        ir.add_operand(cbr, body_blocks[q], 1)
+        ir.add_operand(cbr, nextblk, 1)
+        // body 块：执行 defer body 语句，清标志，汇入 next
+        g_cur_block = body_blocks[q]
+        var br2 = tig_block_stmts(g_def_bodies[list[q]])
+        if br2 < 0 {
+            return -1
+        }
+        var fc = tig_bool_lit(0)  // false：清除（防止再次执行）
+        var fcs = ir.new_inst(g_cur_block, 22, -1)
+        ir.add_operand(fcs, types.named(TK_BOOL), 2)
+        ir.add_operand(fcs, fc, 0)
+        ir.add_operand(fcs, g_def_flags[list[q]], 0)
+        if !block_terminated() {
+            var brc = ir.new_inst(g_cur_block, 30, -1)
+            ir.add_operand(brc, nextblk, 1)
+        }
+        q = q + 1
+    }
+    g_cur_block = cont
+    return 0
+}
+
+// 快捷：运行全部作用域的 defer（函数出口）
+func tig_run_defers_all() -> i64 {
+    return tig_run_defers(-1)
 }
 
 }

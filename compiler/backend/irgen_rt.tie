@@ -65,6 +65,13 @@ func tig_try(id: i64) -> i64 {
     var ld_a = ir.new_inst(g_cur_block, 21, oty)  // load 聚合值
     ir.add_operand(ld_a, eaddr, 0)
     var agg_v = ir.get_value(ld_a)
+    // p.9.11.4 defer：`?` 早退（Err/None 传播到调用方）也覆盖一切提前退出路径，
+    // 在 ret 前运行函数级全部 defer（语义 = 与显式 return 一致）。
+    if len(g_def_flags) > 0 {
+        if tig_run_defers_all() < 0 {
+            return -1
+        }
+    }
     var ret_e = ir.new_inst(g_cur_block, 32, oty)  // ret 聚合
     ir.add_operand(ret_e, agg_v, 0)
     // 6. ok_blk：解包 payload（槽 1）
