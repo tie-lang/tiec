@@ -37,11 +37,11 @@ func build_kw() {
         "namespace", "num", "panic", "port", "pub", "ref", "repr", "return",
         "string", "struct", "switch", "table", "text", "trit", "true", "u128",
         "u16", "u32", "u64", "u8", "unsafe", "using", "var", "void", "when",
-        "while", "with", "zero"]
+        "while", "with", "yield", "zero"]
     var v: table<i64> = [92, 32, 21, 84, 93, 32, 14, 17, 32, 32, 7, 15, 18, 9, 81,
         23, 27, 32, 32, 29, 11, 5, 94, 32, 32, 32, 32, 32, 8, 103, 87, 20, 12, 102, 88, 32,
         32, 24, 32, 85, 86, 25, 31, 83, 13, 32, 22, 16, 32, 32, 32, 28, 32,
-        32, 32, 32, 32, 82, 26, 6, 32, 19, 10, 98, 30]
+        32, 32, 32, 32, 82, 26, 6, 32, 19, 10, 98, 105, 30]
     kw_keys = table_new_string()
     kw_vals = table_new_i64()
     var i: i64 = 0

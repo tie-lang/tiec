@@ -1470,13 +1470,36 @@ func tig_stmt(id: i64) -> i64 {
                 }
             }
             tig_tbl_exit_release()   // p.6.10.3：无值返回前同样析构非参数局部表
-            if g_cur_fn_name == "main" {
+            if g_gen_tbl >= 0 {
+                // p.9.11.15 生成器 `return;`：提前结束 → 返回产出表（scheck 已
+                // 拦截带值 return；表所有权随返回转移，出口析构已释放普通局部表）
+                var gv = ir.new_inst(g_cur_block, 21, types.named(TK_STR))  // load
+                ir.add_operand(gv, g_gen_tbl, 0)
+                var gre = ir.new_inst(g_cur_block, 32, g_cur_ret_ty)
+                ir.add_operand(gre, ir.get_value(gv), 0)
+            } else if g_cur_fn_name == "main" {
                 var ret = ir.new_inst(g_cur_block, 32, types.named(TK_I32))  // ret i32 0
                 ir.add_operand(ret, 0, 2)
             } else {
                 var ret = ir.new_inst(g_cur_block, 32, -1)  // ret void
             }
         }
+        return 0
+    }
+    // p.9.11.15 yield 产出语句：求值产出表达式 → 表 push（生成器上下文由
+    // scheck 保证；g_gen_tbl/g_gen_elem 由 tig_fn_def prologue 设置）。
+    if tag == 161 {
+        if g_gen_tbl < 0 {
+            sm_err_msg = "yield 出现在非生成器上下文（函数 " + g_cur_fn_name + "）"
+            return -1
+        }
+        var yv = tig_expr(sstate.child(id, 0))
+        if yv < 0 {
+            return -1
+        }
+        var ytbl = ir.new_inst(g_cur_block, 21, types.named(TK_STR))  // load 表句柄
+        ir.add_operand(ytbl, g_gen_tbl, 0)
+        s21_table_push(ir.get_value(ytbl), g_gen_elem, yv)
         return 0
     }
     if tag == 105 {

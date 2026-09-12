@@ -134,6 +134,26 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
         sm_err_msg = "返回指针/切片/原子类型 '" + types.type_name(ret_ty) + "' 的函数必须标注 unsafe（`unsafe fn`）"
         return -1
     }
+    // p.9.11.15 生成器检测：函数体含 N_YIELD → 生成器函数。语言侧定稿——
+    // 生成器必须声明返回类型（= 元素类型，非 void），签名返回类型登记为
+    // table<elem>（调用方 gen() 得表，for/推导式直接消费）；运行期惰性
+    // 协程由 p.9.5.1 trm-lite 承载，本轮 IR = 攒表返回（探针验证产出序列）。
+    var g_body = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + nparams)
+    var is_gen_fn: i64 = 0
+    if g_body >= 0 {
+        if contains_yield(g_body) {
+            is_gen_fn = 1
+        }
+    }
+    if is_gen_fn == 1 {
+        if ret_ty == types.named(TK_VOID) {
+            sm_err_line = s_lines[fn_node]
+            sm_err_col = s_cols[fn_node]
+            sm_err_msg = "生成器函数（含 yield）必须声明返回类型（= yield 产出元素的类型），实际是 void（请写 `-> 元素类型`）"
+            return -1
+        }
+        ret_ty = types.table_of(ret_ty)   // 签名返回类型 → table<elem>
+    }
     var p_tys: table<i64> = table_new_i64()
     var p_refs: table<i64> = table_new_i64()
     var p_defs: table<i64> = table_new_i64()
@@ -300,7 +320,38 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
         sm_err_col = s_cols[fn_node]
         return -1
     }
+    // p.9.11.15：生成器标记（签名返回类型已登记为 table<elem>；scheck 校验
+    // yield 元素类型、irgen 按生成器发射攒表/返回表）
+    if is_gen_fn == 1 {
+        var g_sig = sstate.fn_sig(full)
+        sstate.mark_gen(g_sig)
+    }
     return 0
+}
+
+// p.9.11.15 生成器检测辅助：子树（语句/表达式）是否含 N_YIELD。
+// 递归扫描子节点；N_FN_LIT（闭包）与 N_FN_DEF（块内函数定义）为函数边界，
+// 不深入（闭包内 yield 由 scheck 在闭包体检查时报错，不属外层函数）。
+func contains_yield(node: i64) -> bool {
+    if node < 0 {
+        return false
+    }
+    var tag = s_tags[node]
+    if tag == S_N_YIELD {
+        return true
+    }
+    if tag == S_N_FN_LIT || tag == S_N_FN_DEF {
+        return false
+    }
+    var nc = sstate.nchild(node)
+    var k: i64 = 0
+    while k < nc {
+        if contains_yield(sstate.child(node, k)) {
+            return true
+        }
+        k = k + 1
+    }
+    return false
 }
 
 // 字符串切片（scollect 本地辅助；对齐 irgen.ig_slice）
