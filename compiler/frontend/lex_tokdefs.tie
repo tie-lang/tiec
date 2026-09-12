@@ -80,6 +80,9 @@ const lex_larrow: i64 = 95;
 // lex_lbrace 区分（`if s == "a" {` 的块 lbrace 不能误入插值链）；不落符号表，
 // 仅 scan_string 插值分支合成推送。tag 96 位于符号表范围之外，无冲突。
 const lex_interp_lbrace: i64 = 96;
+// p.9.10.1 match/switch 表达式分支箭头 `=>`：`pat => expr`（tag 97，位于符号表
+// 范围之外的保留段，避开 lex_interp_lbrace=96；实际映射值在 lex_symtab.build_sym）。
+const lex_fatarrow: i64 = 97;
 
 namespace lextok {
 

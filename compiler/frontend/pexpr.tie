@@ -968,6 +968,12 @@ func parse_primary() -> i64 {
     if tag == lex_func {
         return parse_fn_lit(line, col)
     }
+    // p.9.10.1 match/switch 表达式：`switch <subject> { pat => expr, _ => expr }`。
+    // 表达式位模式匹配——分支体为表达式（见 pstmt_flow.parse_switch_expr）。
+    // switch 为保留字 token，表达式位置出现即表达式分支式 switch。
+    if tag == lex_switch {
+        return pstmt_flow.parse_switch_expr(line, col)
+    }
     if tag == lex_int {
         var lex = putil.peek_lexeme()
         // trit 字面量（trit 优化 L1）：整数后缀 't' 且值域 -1..1。

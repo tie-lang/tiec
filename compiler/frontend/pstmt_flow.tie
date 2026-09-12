@@ -452,10 +452,19 @@ pub func parse_deferred_code_blocks() -> i64 {
     return 0
 }
 
-// `if cond { } else { }` / else if 链
+// `if cond { } else { }` / else if 链；p.9.10.2 增加 `if let <pattern> = <expr> { }`
+// 解构条件（见 parse_if_let）。
 func parse_if() -> i64 {
     var line = putil.peek_line()
     var col = putil.peek_col()
+    // p.9.10.2 if-let：`if let <pattern> = <expr> { then } [else { else }]`。
+    // `let` 非保留字（lex_ident），此处按语境识别——`if` 后紧跟 `let` 即按
+    // if-let 解析（纯糖，脱糖为现有 switch 语句）。先消费 `if`（parse_if_let
+    // 游标停在 `let` 上，其内部再消费 `let`）。
+    if putil.peek_n(1) == lex_ident && putil.peek_lexeme_n(1) == "let" {
+        putil.advance()   // if
+        return parse_if_let(line, col)
+    }
     putil.advance()   // if
     putil.enter_cond()   // p.8.2.9：条件内不判定尾随闭包
     var cond = pexpr.parse_expr()
@@ -491,6 +500,78 @@ func parse_if() -> i64 {
     var kids: table<i64> = table_new_i64()
     table_push(kids, cond)
     table_push(kids, then_list)
+    table_push(kids, else_list)
+    ast.set_children(n, kids)
+    return n
+}
+
+// p.9.10.2 `if let <pattern> = <expr> { then } [else { else }]` 解构条件。
+// 游标停在 `let` 上（parse_if 已确认后跟 `let`）。纯糖：脱糖为现有 switch 语句
+//   if let P = E { B } [else { EB }]  ≡  switch E { case P: B ; default: EB }
+// 复用语句位 switch 的模式/解构/守卫语义：匹配成功进入 then 块并把 P 解构出的
+// 子值绑定为块内变量；失败走 default（else；无 else 时空走）。else 分支无绑定
+// 变量（switch 语义保证）。else if 链由 parse_if 递归处理。
+func parse_if_let(line: i64, col: i64) -> i64 {
+    putil.advance()   // let
+    var pat = parse_case_pattern()
+    if pat < 0 {
+        return -1
+    }
+    if !putil.expect(lex_eq, "'='") {
+        return -1
+    }
+    putil.enter_cond()   // p.8.2.9：条件内不判定尾随闭包
+    var expr = pexpr.parse_expr()
+    putil.exit_cond()
+    if expr < 0 {
+        return -1
+    }
+    var then_list = parse_block()
+    if then_list < 0 {
+        return -1
+    }
+    var else_list = -1
+    if putil.eat(lex_else) {
+        if putil.peek_tag() == lex_if {
+            var inner = parse_if()
+            if inner < 0 {
+                return -1
+            }
+            var tmp2: table<i64> = table_new_i64()
+            table_push(tmp2, inner)
+            else_list = ast.new_node(N_STMTLIST, -1, -1, -1, line, col)
+            ast.set_children(else_list, tmp2)
+        } else {
+            else_list = parse_block()
+            if else_list < 0 {
+                return -1
+            }
+        }
+    } else {
+        // 无 else：default 为空块。必须让 default 列表**非空**（嵌一个空
+        // StmtList 作 no-op），否则脱糖 switch 被语义层判为「无 default」而触发
+        // 枚举穷尽检查——if-let 是条件测试，不该要求覆盖全部变体。
+        var noop = ast.new_node(N_STMTLIST, -1, -1, -1, line, col)
+        var tmp3: table<i64> = table_new_i64()
+        table_push(tmp3, noop)
+        else_list = ast.new_node(N_STMTLIST, -1, -1, -1, line, col)
+        ast.set_children(else_list, tmp3)
+    }
+    // 脱糖：switch E { case P: then_list ; default: else_list }
+    var c = ast.new_node(N_SWITCH_CASE, -1, -1, -1, line, col)
+    var pl = ast.new_node(N_PATTERN_LIST, -1, -1, -1, line, col)
+    var pats: table<i64> = table_new_i64()
+    table_push(pats, pat)
+    ast.set_children(pl, pats)
+    var ckids: table<i64> = table_new_i64()
+    table_push(ckids, pl)
+    table_push(ckids, -1)          // when 槽（无守卫）
+    table_push(ckids, then_list)
+    ast.set_children(c, ckids)
+    var n = ast.new_node(N_SWITCH, -1, -1, 1, line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, expr)
+    table_push(kids, c)
     table_push(kids, else_list)
     ast.set_children(n, kids)
     return n
@@ -794,6 +875,113 @@ func parse_switch() -> i64 {
         i = i + 1
     }
     table_push(kids, default_list)
+    ast.set_children(n, kids)
+    return n
+}
+
+// p.9.10.1 switch **表达式**（表达式位模式匹配）：`switch <subject> { <arm>* }`。
+// 复用语句位模式语法（parse_case_pattern：值/区间/类型/枚举变体 payload 解构），
+// 但分支体为**表达式**，用 `=>` 分隔；`_` 作通配缺省臂。臂之间用 `,` 分隔
+// （不允许多模式臂——逗号即臂分隔，避免歧义）。产出：
+//   N_SWITCH_EXPR[aux=ncases, val=1=含 `_` 通配臂,
+//                 children=[subject, caseExpr1..caseExprN, defaultExpr 或 -1]]
+//   caseExpr = N_SWITCH_CASE[children=[N_PATTERN_LIST, when 或 -1, bodyExpr]]
+pub func parse_switch_expr(line: i64, col: i64) -> i64 {
+    putil.advance()   // switch
+    putil.enter_cond()   // p.8.2.9：判分子表达式内不判定尾随闭包
+    var subject = pexpr.parse_expr()
+    putil.exit_cond()
+    if subject < 0 {
+        return -1
+    }
+    if !putil.expect(lex_lbrace, "'{'") {
+        return -1
+    }
+    var cases: table<i64> = table_new_i64()
+    var default_expr = -1
+    var has_wild: i64 = 0
+    var done = false
+    while !done {
+        var tag = putil.peek_tag()
+        if tag == lex_rbrace {
+            putil.advance()
+            done = true
+        } else if tag == lex_eof {
+            if !putil.expect(lex_rbrace, "'}'") {
+                return -1
+            }
+            done = true
+        } else {
+            var cl = putil.peek_line()
+            var cc = putil.peek_col()
+            var pats: table<i64> = table_new_i64()
+            var is_wild: bool = false
+            // `_` 通配臂：仅当 `_` 后直接跟 `=>` 才算通配（否则落普通表达式/模式）
+            if tag == lex_ident && putil.peek_lexeme() == "_" && putil.peek_n(1) == lex_fatarrow {
+                is_wild = true
+                putil.advance()   // 消费 `_`
+            } else {
+                var p = parse_case_pattern()
+                if p < 0 {
+                    return -1
+                }
+                table_push(pats, p)
+            }
+            var when_expr = -1
+            if putil.eat(lex_when) {
+                when_expr = pexpr.parse_expr()
+                if when_expr < 0 {
+                    return -1
+                }
+            }
+            if !putil.expect(lex_fatarrow, "'=>'") {
+                return -1
+            }
+            var body_expr = pexpr.parse_expr()
+            if body_expr < 0 {
+                return -1
+            }
+            if is_wild {
+                if default_expr >= 0 {
+                    putil.set_err(cl, cc, "switch 表达式不允许重复的 `_` 通配臂")
+                    return -1
+                }
+                default_expr = body_expr
+                has_wild = 1
+            } else {
+                var c = ast.new_node(N_SWITCH_CASE, -1, -1, -1, cl, cc)
+                var pl = ast.new_node(N_PATTERN_LIST, -1, -1, -1, cl, cc)
+                ast.set_children(pl, pats)
+                var ckids: table<i64> = table_new_i64()
+                table_push(ckids, pl)
+                table_push(ckids, when_expr)
+                table_push(ckids, body_expr)
+                ast.set_children(c, ckids)
+                table_push(cases, c)
+            }
+            // 臂分隔：`,`（向后继续）或 `}` / 文件尾（结束）。tie 的 ASI 在臂体
+            // 非逗号/花括号收尾换行时行尾补分号（如末臂 `_ => "many"` 换行后紧跟
+            // `}`），先吃掉可能的分号再判分隔符。
+            putil.eat(lex_semi)
+            if putil.eat(lex_comma) {
+                // continue
+            } else if putil.peek_tag() == lex_rbrace || putil.peek_tag() == lex_eof {
+                // loop 尾部统一处理
+            } else {
+                putil.set_err(putil.peek_line(), putil.peek_col(), "switch 表达式分支之间需用 ',' 或右花括号 '}' 分隔，实际是 " + putil.describe(putil.peek_tag()))
+                return -1
+            }
+        }
+    }
+    var n = ast.new_node(N_SWITCH_EXPR, -1, has_wild, len(cases), line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, subject)
+    var i: i64 = 0
+    while i < len(cases) {
+        table_push(kids, cases[i])
+        i = i + 1
+    }
+    table_push(kids, default_expr)
     ast.set_children(n, kids)
     return n
 }
