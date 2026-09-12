@@ -163,6 +163,13 @@ var gty_is_struct: table<i64>; // 模板索引 -> 0=函数模板 1=struct 模板
 var gtyp_conoff: table<i64>;  // 模板索引 -> 约束段偏移（gtyp_cons）
 var gtyp_cons: table<i64>;    // 约束 port 名 id 扁平段（-1 = 无约束）
 
+// p.8.2.6 泛型默认类型参数段：gtyp_defoff[模板索引] -> gtyp_defs 段偏移；
+// 段长 = gtyp_nparams（每类型参数 1 槽）。槽值 = 默认类型**类型节点 id**
+//（N_NAMED_TYPE/N_TABLE_TYPE/N_STRUCT_TYPE 等，取自 N_TYPE_PARAM.children[1]；
+// 调用处用 sgen.parse_generic_type_node 解析为类型 id；-1 = 无默认类型）
+var gtyp_defoff: table<i64>;  // 模板索引 -> 默认类型段偏移（gtyp_defs）
+var gtyp_defs: table<i64>;    // 默认类型节点 id 扁平段（-1 = 无默认）
+
 // 实例化记录表（gin_*，T3b 单态化展开器 2026-08-14）：
 // 同（模板名, 类型实参组合）只展开一次——mangled 名即去重键。
 // gin_keys/gin_vals：mangled 名 id（升序）→ 记录索引（sorted_insert 同插）。
@@ -1233,6 +1240,7 @@ pub func reg_generic(full_name: string, node: i64, is_struct: i64) -> i64 {
     // 节点 N_STRUCT_TYPE 的 name 字段，或 -1 哨兵）。合法性（必须是已登记
     // port）由 sgen.check_generic_constraints 在实例化时校验。
     var con_off = len(gtyp_cons)
+    var def_off = len(gtyp_defs)
     var i: i64 = 0
     while i < npar {
         var p = child(tp, i)  // N_TYPE_PARAM 节点（name = 类型参数名 id）
@@ -1253,11 +1261,18 @@ pub func reg_generic(full_name: string, node: i64, is_struct: i64) -> i64 {
             }
         }
         table_push(gtyp_cons, cons)
+        // p.8.2.6 默认类型参数：children[1]（若存在）存默认类型节点 id（-1=无）
+        var dnode: i64 = -1
+        if s_nchild[p] > 1 {
+            dnode = child(p, 1)
+        }
+        table_push(gtyp_defs, dnode)
         i = i + 1
     }
     table_push(gtyp_nparams, npar)
     table_push(gtyp_off, off)
     table_push(gtyp_conoff, con_off)
+    table_push(gtyp_defoff, def_off)
     table_push(gty_node, node)
     table_push(gty_is_struct, is_struct)
     table_push(gty_full, intern.intern(full_name))
@@ -1633,6 +1648,23 @@ pub func gt_param_names(gti: i64) -> table<i64> {
     var k: i64 = 0
     while k < n {
         table_push(out, gtyp_names[off + k])
+        k = k + 1
+    }
+    return out
+}
+
+// p.8.2.6 默认类型参数节点 id 表（按声明顺序；-1 = 无默认；返回新表）。
+// 槽值 = 类型 AST 节点 id，调用处用 sgen.parse_generic_type_node 解析为类型 id。
+pub func gt_defaults(gti: i64) -> table<i64> {
+    var out: table<i64> = table_new_i64()
+    if gti < 0 || gti >= len(gtyp_nparams) {
+        return out
+    }
+    var n = gtyp_nparams[gti]
+    var off = gtyp_defoff[gti]
+    var k: i64 = 0
+    while k < n {
+        table_push(out, gtyp_defs[off + k])
         k = k + 1
     }
     return out

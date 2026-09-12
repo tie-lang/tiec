@@ -842,6 +842,48 @@ func parse_type_params() -> i64 {
     if !putil.expect_type_gt("类型参数列表后需 '>'") {
         return -1
     }
+    // p.8.2.6 泛型糖之一：**约束简化**。`<T, U: Drawable>` 一条约束作用于
+    // 从上一个约束组之后到当前参数的所有未约束参数（含当前）——不必为每个
+    // 参数重复书写 `T: Drawable`。纯书写糖，导出 AST 形态与逐参数写约束
+    // 完全一致（为回填参数克隆同名的 N_STRUCT_TYPE 约束节点，不共享节点 id，
+    // 保持 AST 为严格树）。向后兼容：无共享场景时此回填恒为空操作。
+    //   `<A: X, B: Y>`   → A:X, B:Y        （各自约束，不变）
+    //   `<T, U: Drawable>` → T:Drawable, U:Drawable （U 的约束回填到 T）
+    //   `<A: X, B, C: Y>` → A:X, B:Y, C:Y  （B 继承最近约束 Y）
+    var lastc: i64 = -1
+    var i: i64 = 0
+    while i < len(ps) {
+        var pp = ps[i]
+        if ast.tag(pp) == N_TYPE_PARAM && ast.child_count(pp) > 0 {
+            var c0 = ast.child_at(pp, 0)
+            if c0 >= 0 {
+                var k = lastc + 1
+                while k < i {
+                    var q = ps[k]
+                    if ast.tag(q) == N_TYPE_PARAM && ast.child_count(q) > 0 && ast.child_at(q, 0) < 0 {
+                        var qd = -1
+                        if ast.child_count(q) > 1 {
+                            qd = ast.child_at(q, 1)
+                        }
+                        // 克隆约束节点（N_STRUCT_TYPE 同名 + children=[-1] 槽），
+                        // 避免多父共享同一 AST 节点 id
+                        var nid = ast.name(c0)
+                        var clone = ast.new_node(N_STRUCT_TYPE, nid, -1, -1, ast.line(q), ast.col(q))
+                        var kk: table<i64> = table_new_i64()
+                        table_push(kk, -1)
+                        ast.set_children(clone, kk)
+                        var qkids: table<i64> = table_new_i64()
+                        table_push(qkids, clone)
+                        table_push(qkids, qd)
+                        ast.set_children(q, qkids)
+                    }
+                    k = k + 1
+                }
+                lastc = i
+            }
+        }
+        i = i + 1
+    }
     var n = ast.new_node(N_TYPE_PARAMS, -1, -1, -1, line, col)
     ast.set_children(n, ps)
     return n
@@ -877,8 +919,9 @@ func parse_fn_spec_args() -> i64 {
     return n
 }
 
-// 单个类型参数节点：`T` 或 `T: Drawable`（S2.4 约束）。
-// 产出 N_TYPE_PARAM[name=参数名, children=[约束类型节点或 -1]]。
+// 单个类型参数节点：`T` 或 `T: Drawable`（S2.4 约束）+ p.8.2.6 默认类型参数
+// `T=string` / `T: Drawable = string`。
+// 产出 N_TYPE_PARAM[name=参数名, children=[约束类型节点或 -1, 默认类型节点或 -1]]。
 func parse_type_param_one(p: i64, line: i64, col: i64) -> i64 {
     var cons: table<i64> = table_new_i64()
     if putil.eat(lex_colon) {
@@ -891,6 +934,18 @@ func parse_type_param_one(p: i64, line: i64, col: i64) -> i64 {
     } else {
         table_push(cons, -1)
     }
+    // p.8.2.6 默认类型参数：`=` 后为默认类型（显式实参/推断缺失时自动代入）。
+    // 语法形态为 N_TYPE_PARAM.children[1]（-1 = 无默认）。默认类型可引用
+    // 本列表之前的类型参数（如 `<T, U=table<T>>`；必须*在之前的*参数，否则
+    // 解析层接受、语义层实例化引用未定义参数时报错）。
+    var dflt: i64 = -1
+    if putil.eat(lex_eq) {
+        dflt = pexpr_type.parse_type()
+        if dflt < 0 {
+            return -1
+        }
+    }
+    table_push(cons, dflt)
     var n = ast.new_node(N_TYPE_PARAM, p, -1, -1, line, col)
     ast.set_children(n, cons)
     return n

@@ -495,6 +495,8 @@ pub func check_impl(ast_text: string, base_dir: string) -> string {
     // S2.4：泛型约束段 + port/impl 状态表重置（每次编译清零）
     gtyp_conoff = table_new_i64()
     gtyp_cons = table_new_i64()
+    gtyp_defoff = table_new_i64()
+    gtyp_defs = table_new_i64()
     pt_keys = table_new_i64()
     pt_vals = table_new_i64()
     pm_off = table_new_i64()
@@ -746,6 +748,8 @@ pub func check_ast(base_dir: string) -> string {
     // S2.4：泛型约束段 + port/impl 状态表重置（每次编译清零）
     gtyp_conoff = table_new_i64()
     gtyp_cons = table_new_i64()
+    gtyp_defoff = table_new_i64()
+    gtyp_defs = table_new_i64()
     pt_keys = table_new_i64()
     pt_vals = table_new_i64()
     pm_off = table_new_i64()
