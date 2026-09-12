@@ -1138,7 +1138,16 @@ func gen_func(fid: i64) {
     if g_dynlib && ir.func_exported(fid) == 1 {
         exp_kw = "dllexport "
     }
-    line("define " + exp_kw + ret_llvm + " @" + sym + "(" + params_llvm + ") {")
+    // p.9.11.10 inline fn：附加 LLVM 函数内联属性。裁决——统一用 `alwaysinline`
+    //（强制内联，-O0 也生效；据优化档在 -O1+ 用 `inlinehint` 可交优化器裁断，
+    // 但 alwaysinline 保证语义可见且语义安全：inline 仅作用于显式标注函数，对
+    // 递归/编译器自身（未标 inline）无影响，LLVM 对 alwaysinline 递归只内联限定
+    // 层后停止，不强制展开死循环）。函数属性放 define 头参数列表后、`{` 前。
+    var inl_kw = ""
+    if ir.func_inline(fid) == 1 {
+        inl_kw = " alwaysinline"
+    }
+    line("define " + exp_kw + ret_llvm + " @" + sym + "(" + params_llvm + ")" + inl_kw + " {")
     // F1 增强：临时 alloca 提升到 entry block——本函数全部 alloca（含循环体内
     // 的 ok 槽）前置输出，再对函数体行级重编号解决编号倒挂。流程：
     // 1) 切函数级缓冲 g_fn_lines（line() 重定向）；
