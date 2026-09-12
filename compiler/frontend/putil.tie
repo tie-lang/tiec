@@ -696,6 +696,11 @@ pub func parse_int_lit(lex: string) -> i64 {
     var i = start
     while i < n {
         var c = str_char(lex, i)
+        // p.9.11.19 数字分隔符 `_` 跳过（lexeme 保留 `_`，解析忽略）
+        if c == "_" {
+            i = i + 1
+            continue
+        }
         var d = digit_val(c)
         if d < 0 {
             break
@@ -739,6 +744,11 @@ pub func int_lit_overflow(lex: string) -> bool {
     var i = start
     while i < n {
         var c = str_char(lex, i)
+        // p.9.11.19 数字分隔符 `_` 跳过（与 parse_int_lit 同规则）
+        if c == "_" {
+            i = i + 1
+            continue
+        }
         var d = digit_val(c)
         if d < 0 {
             break
@@ -829,6 +839,22 @@ pub func strip_lit_suffix(lex: string) -> string {
         return slice_str(lex, 0, n - 3)
     }
     return lex
+}
+
+// p.9.11.19 去数字分隔符 `_`：浮点字面量文本（LLVM 输出用）剥离 `_`
+//（`1_000.5` → `1000.5`；整数 lexeme 保留 `_`，parse_int_lit 解析忽略）。
+// 仅删除 `_` 字符，其余原样。
+pub func strip_underscores(s: string) -> string {
+    var sb = string_builder()
+    var i: i64 = 0
+    while i < str_len(s) {
+        var c = str_char(s, i)
+        if c != "_" {
+            sb_append_byte(sb, str_byte(s, i))
+        }
+        i = i + 1
+    }
+    return sb_build(sb)
 }
 
 // trit 字面量判定（trit 优化 L1）：-1t/0t/1t，末尾为 t/T 后缀且数字部分为纯十进制。
