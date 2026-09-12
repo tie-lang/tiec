@@ -82,6 +82,14 @@ pub func parse_program() -> i64 {
                 }
                 ast.set_val(s, ast.val(s) + 2)   // val bit1 = ispub
                 ast.collect_stmt(stmts, s)
+            } else if nxt == lex_import {
+                // p.9.11.14 重导出：`pub import "path" [as 别名]`（内联模型
+                // 零成本；parse_import 内部消化 pub 前缀）
+                var s = parse_import()
+                if s < 0 {
+                    return -1
+                }
+                ast.collect_stmt(stmts, s)
             } else {
                 var s = parse_fn_def()
                 if s < 0 {
@@ -731,6 +739,13 @@ pub func pann_col(decl: i64, i: i64) -> i64 {
 func parse_import() -> i64 {
     var line = putil.peek_line()
     var col = putil.peek_col()
+    // p.9.11.14 重导出：`pub import "path" [as 别名]`——内联模型下 import 本就
+    // 全量可见（重导出零成本），pub 仅作登记标记（N_IMPORT val bit0 = is_pub，
+    // 供后续工具/诊断显示）。非法别名 token 由下方 expect_ident 拒绝。
+    var is_pub: i64 = 0
+    if putil.eat(lex_pub) {
+        is_pub = 1
+    }
     putil.advance()   // import
     var path = -1
     if putil.peek_tag() == lex_str {
@@ -764,7 +779,7 @@ func parse_import() -> i64 {
     if !putil.expect(lex_semi, "import 语句结束的分号") {
         return -1
     }
-    return ast.new_node(N_IMPORT, path, -1, alias, line, col)
+    return ast.new_node(N_IMPORT, path, is_pub, alias, line, col)
 }
 
 // using 引入语句：`using fmt2;` / `using fmt.error;`（仅顶层）
@@ -922,7 +937,22 @@ func parse_namespace() -> i64 {
             var tag = putil.peek_tag()
             if tag == lex_eof {
                 done = true
-            } else if tag == lex_func || tag == lex_pub {
+            } else if tag == lex_pub {
+                // pub 后：pub func（方法）/ p.9.11.14 pub import（重导出）
+                if putil.peek_n(1) == lex_import {
+                    var st = parse_import()
+                    if st < 0 {
+                        return -1
+                    }
+                    table_push(body_stmts, st)
+                } else {
+                    var st = parse_fn_def()
+                    if st < 0 {
+                        return -1
+                    }
+                    table_push(body_stmts, st)
+                }
+            } else if tag == lex_func {
                 var st = parse_fn_def()
                 if st < 0 {
                     return -1
