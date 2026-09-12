@@ -240,6 +240,15 @@ const N_COMPREHENSION: i64 = 154;
 const N_MACRO_DEF: i64 = 135;
 const N_CODE_LIT: i64 = 136;
 const N_CODE_INTERP: i64 = 137;
+// p.8.2.12 声明式宏（declarative macro，模板式，区别于既有 N_MACRO_DEF
+// 编译期函数宏）：`macro swap(a, b) { var __t = a; a = b; b = __t }`。
+// name=宏名, aux=nparams, children=[函数体 StmtList, 形参 N_PARAM...]（形参
+// N_PARAM children=[-1]，name=形参名）。展开（mexpand 声明式路径）：
+//   体内与形参同名的裸标识符 = 代换槽（替换为调用实参的**克隆**）；体内由
+//   宏作者引入、`__` 前缀的标识符 = 卫生临时名，每次展开唯一化（加序号后缀），
+//   与调用处同名隔离/不泄漏到调用处。不编译期执行（区别于既有宏），纯模板
+//   代换 + 卫生唯一化（p.8.2.12）。
+const N_DECL_MACRO_DEF: i64 = 155;
 // 类型段（val=TyKw 索引，name=类型关键字文本池 id）
 //   StructType[name=结构名, children=[类型实参槽]]——`Box<i64>` 引用含 N_TYPE_ARGS
 //   子节点；`Box` 裸引用 children[0] = -1（兼容现有）。

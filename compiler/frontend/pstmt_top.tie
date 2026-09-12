@@ -235,6 +235,11 @@ func parse_deferred_all() -> i64 {
 // name = 宏名，aux = 参数个数，val = 0。
 // 参数/返回类型必须是 code（准引用/插值载体）；宏体是普通 tie 语句
 // （编译期由 interp 执行，宏体错误在展开时报"宏执行错误"）。
+//
+// p.8.2.12 分支：**声明式宏**（裸形参 + 块体，无 `->`）走 N_DECL_MACRO_DEF：
+//   `macro swap(a, b) { var __t = $a; $a = $b; $b = __t }`
+// 形参名/`$名` 在体内 = 代换槽（替换为实参克隆）；`__` 前缀 = 卫生临时名，
+// 每次展开唯一化。分派依据：`)` 后是 `->`=函数式宏，是 `{`=声明式宏。
 func parse_macro_def() -> i64 {
     var line = putil.peek_line()
     var col = putil.peek_col()
@@ -247,6 +252,7 @@ func parse_macro_def() -> i64 {
         return -1
     }
     var params: table<i64> = table_new_i64()
+    var param_kind: i64 = 0   // 0=未定（无参或首个待定） 1=函数式(: code) 2=声明式(裸形参)
     if !putil.eat(lex_rparen) {
         var d = false
         while !d {
@@ -254,24 +260,42 @@ func parse_macro_def() -> i64 {
             if pname < 0 {
                 return -1
             }
-            if !putil.expect(lex_colon, "':'") {
-                return -1
+            if putil.peek_tag() == lex_colon {
+                // 函数式宏参数：必须是 code 类型
+                if param_kind == 2 {
+                    putil.set_err(putil.peek_line(), putil.peek_col(), "宏 '" + interner.lookup(name) + "' 形参类型不一致：声明式宏形参为裸标识符，不能混用 `: type`（请统一为裸形参或加 `: code` 全部转函数式宏）")
+                    return -1
+                }
+                param_kind = 1
+                putil.advance()
+                var pty = pexpr_type.parse_type()
+                if pty < 0 {
+                    return -1
+                }
+                // 宏参数必须显式标注 code 类型（宏 = 编译期 AST → AST 函数）
+                if !is_code_type_node(pty) {
+                    putil.set_err(putil.peek_line(), putil.peek_col(), "宏参数 '" + interner.lookup(pname) + "' 必须是 code 类型（宏 = 编译期 AST→AST 函数）")
+                    return -1
+                }
+                var p = ast.new_node(N_PARAM, pname, 0, 0, putil.peek_line(), putil.peek_col())
+                var pkids: table<i64> = table_new_i64()
+                table_push(pkids, pty)
+                table_push(pkids, -1)
+                ast.set_children(p, pkids)
+                table_push(params, p)
+            } else {
+                // 声明式宏裸形参（p.8.2.12，模板代换槽）
+                if param_kind == 1 {
+                    putil.set_err(putil.peek_line(), putil.peek_col(), "宏 '" + interner.lookup(name) + "' 形参类型不一致：函数式宏形参须带 `: code`，不能混用裸标识符")
+                    return -1
+                }
+                param_kind = 2
+                var p = ast.new_node(N_PARAM, pname, 0, 0, putil.peek_line(), putil.peek_col())
+                var pkids: table<i64> = table_new_i64()
+                table_push(pkids, -1)
+                ast.set_children(p, pkids)
+                table_push(params, p)
             }
-            var pty = pexpr_type.parse_type()
-            if pty < 0 {
-                return -1
-            }
-            // 宏参数必须显式标注 code 类型（宏 = 编译期 AST → AST 函数）
-            if !is_code_type_node(pty) {
-                putil.set_err(putil.peek_line(), putil.peek_col(), "宏参数 '" + interner.lookup(pname) + "' 必须是 code 类型（宏 = 编译期 AST→AST 函数）")
-                return -1
-            }
-            var p = ast.new_node(N_PARAM, pname, 0, 0, putil.peek_line(), putil.peek_col())
-            var pkids: table<i64> = table_new_i64()
-            table_push(pkids, pty)
-            table_push(pkids, -1)
-            ast.set_children(p, pkids)
-            table_push(params, p)
             if putil.eat(lex_comma) {
                 // 继续
             } else {
@@ -282,32 +306,56 @@ func parse_macro_def() -> i64 {
             }
         }
     }
-    if !putil.expect(lex_arrow, "'->'") {
-        return -1
+    // 分派：`)` 后 `->` = 函数式宏；`{` = 声明式宏（p.8.2.12）
+    if putil.peek_tag() == lex_arrow {
+        if param_kind == 2 {
+            putil.set_err(putil.peek_line(), putil.peek_col(), "声明式宏 '" + interner.lookup(name) + "' 是裸形参模板宏，不能有 '->' 返回类型（如需编译期函数宏请给每个形参加 `: code` 并返回 code）")
+            return -1
+        }
+        putil.advance()
+        var ret_ty = pexpr_type.parse_type()
+        if ret_ty < 0 {
+            return -1
+        }
+        if !is_code_type_node(ret_ty) {
+            putil.set_err(putil.peek_line(), putil.peek_col(), "宏 '" + interner.lookup(name) + "' 的返回类型必须是 code（宏 = 编译期 AST→AST 函数）")
+            return -1
+        }
+        var body = pstmt_flow.parse_block()
+        if body < 0 {
+            return -1
+        }
+        var f = ast.new_node(N_MACRO_DEF, name, 0, len(params), line, col)
+        var kids: table<i64> = table_new_i64()
+        table_push(kids, ret_ty)
+        var i: i64 = 0
+        while i < len(params) {
+            table_push(kids, params[i])
+            i = i + 1
+        }
+        table_push(kids, body)
+        ast.set_children(f, kids)
+        return f
     }
-    var ret_ty = pexpr_type.parse_type()
-    if ret_ty < 0 {
-        return -1
-    }
-    if !is_code_type_node(ret_ty) {
-        putil.set_err(putil.peek_line(), putil.peek_col(), "宏 '" + interner.lookup(name) + "' 的返回类型必须是 code（宏 = 编译期 AST→AST 函数）")
+    // 声明式宏：裸形参 + 块体（无 `->`）
+    if param_kind == 1 {
+        putil.set_err(putil.peek_line(), putil.peek_col(), "函数式宏 '" + interner.lookup(name) + "' 形参带 `: code`，必须跟 '-> code' 返回类型")
         return -1
     }
     var body = pstmt_flow.parse_block()
     if body < 0 {
         return -1
     }
-    var f = ast.new_node(N_MACRO_DEF, name, 0, len(params), line, col)
-    var kids: table<i64> = table_new_i64()
-    table_push(kids, ret_ty)
-    var i: i64 = 0
-    while i < len(params) {
-        table_push(kids, params[i])
-        i = i + 1
+    var df = ast.new_node(N_DECL_MACRO_DEF, name, 0, len(params), line, col)
+    var dkids: table<i64> = table_new_i64()
+    table_push(dkids, body)
+    var j: i64 = 0
+    while j < len(params) {
+        table_push(dkids, params[j])
+        j = j + 1
     }
-    table_push(kids, body)
-    ast.set_children(f, kids)
-    return f
+    ast.set_children(df, dkids)
+    return df
 }
 
 // 类型节点是否为 code 类型（N_NAMED_TYPE 且 TyKw 索引 == TK_CODE=15）。
