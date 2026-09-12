@@ -651,7 +651,7 @@ pub func infer_type_args_variants(tmpl_node: i64, gti: i64, variant_name: string
         }
         j = j + 1
     }
-    return finish_args(tp_names, bk, bv, call_id)
+    return finish_args(gti, tp_names, bk, bv, call_id)
 }
 
 // ==================== 返回表元素类型登记（实例化函数用）====================
@@ -1009,8 +1009,10 @@ pub func match_type_node(tnode: i64, arg_ty: i64, tp_names: table<i64>, bk: ref 
     return -1
 }
 
-// 按模板参数顺序收尾 args（未绑定的参数报"无法推断"）
-func finish_args(tp_names: table<i64>, bk: table<i64>, bv: table<i64>, call_id: i64) -> table<i64> {
+// 按模板参数顺序收尾 args。未绑定参数：p.8.2.6 若有默认类型参数则自动代入
+// 默认，否则报"无法推断"。优先级：显式实参 > 推断绑定 > 默认类型参数。
+func finish_args(gti: i64, tp_names: table<i64>, bk: table<i64>, bv: table<i64>, call_id: i64) -> table<i64> {
+    var defaults = sstate.gt_defaults(gti)
     var args: table<i64> = table_new_i64()
     var k: i64 = 0
     while k < len(tp_names) {
@@ -1024,9 +1026,21 @@ func finish_args(tp_names: table<i64>, bk: table<i64>, bv: table<i64>, call_id: 
             b = b + 1
         }
         if found < 0 {
+            // p.8.2.6 默认类型参数：未推断且带默认 → 自动代入默认（解析为类型 id）。
+            // 默认类型可为简单类型（i64/string/any）或模板 struct 引用（如
+            // Box<i64>，parse_generic_type_node 会实例化）；跨参数引用（引用
+            // 其他类型参数的默认）在此解析为未登记类型 → 报"无法推断"。
+            if k < len(defaults) && defaults[k] >= 0 {
+                var dty = parse_generic_type_node(defaults[k])
+                if dty >= 0 {
+                    table_push(args, dty)
+                    k = k + 1
+                    continue
+                }
+            }
             sm_err_line = s_lines[call_id]
             sm_err_col = s_cols[call_id]
-            sm_err_msg = "无法推断类型参数 " + intern.lookup(tp_names[k]) + "（调用点无足够信息，请显式指定类型实参，如 max<i64>(...)）"
+            sm_err_msg = "无法推断类型参数 " + intern.lookup(tp_names[k]) + "（调用点无足够信息，请显式指定类型实参，如 max<i64>(...)，或确认已声明默认类型）"
             return table_new_i64()
         }
         table_push(args, found)
@@ -1094,7 +1108,7 @@ pub func infer_type_args(tmpl_node: i64, gti: i64, explicit: table<i64>, param_s
         }
         j = j + 1
     }
-    return finish_args(tp_names, bk, bv, call_id)
+    return finish_args(gti, tp_names, bk, bv, call_id)
 }
 
 // 推断模板 **struct** 的类型实参（Struct 布局：字段 = children[1+k]，ClassField 的
@@ -1132,7 +1146,7 @@ pub func infer_type_args_fields(tmpl_node: i64, gti: i64, explicit: table<i64>, 
         }
         j = j + 1
     }
-    return finish_args(tp_names, bk, bv, call_id)
+    return finish_args(gti, tp_names, bk, bv, call_id)
 }
 
 }
