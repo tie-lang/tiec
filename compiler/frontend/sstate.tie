@@ -293,6 +293,10 @@ var pm_names: table<i64>;     // 方法名 id 扁平段（声明顺序 = vtable 
 var pm_npars: table<i64>;     // 每方法参数个数（含 self）扁平段
 var pm_ptys: table<i64>;      // 每方法参数类型扁平段（含 self 槽位，签名匹配跳过）
 var pm_rets: table<i64>;      // 每方法返回类型扁平段
+// p.9.11.21 interface 标记段（行 = port 索引）：0=port（S2.4 名义接口，实现
+// 关系 = 显式 impl 块登记）；1=interface（结构性接口，实现关系 = 该类型命名
+// 空间方法签名兼容，无需显式 impl——鸭子多态的类型安全升级）。
+var pm_iface: table<i64>;     // port 索引 -> 1=interface 0=port
 // impl 表：im_keys（升序键 = intern(port名 + "::" + struct名)）→ im_vals（impl 索引）。
 // impl 记录（行 = impl 索引）：
 //   im_port[impl]  -> port 索引
@@ -1401,9 +1405,18 @@ pub func reg_port(name: string) -> i64 {
     table_push(pm_npar, len(pm_npars))
     table_push(pm_paroff, len(pm_ptys))
     table_push(pm_ret, len(pm_rets))
+    table_push(pm_iface, 0)   // p.9.11.21：默认 port（名义）；interface 由 collect 置 1
     sorted_insert(pt_keys, pt_vals, intern.intern(name), idx)
     types.set_port_name(idx, name)
     return idx
+}
+
+// p.9.11.21：port 索引是否 interface（结构性接口；0=port 名义接口）
+pub func port_is_iface(pi: i64) -> bool {
+    if pi < 0 || pi >= len(pm_iface) {
+        return false
+    }
+    return pm_iface[pi] == 1
 }
 
 // actor 索引查询（actor 名 -> 索引；-1 = 未登记）。

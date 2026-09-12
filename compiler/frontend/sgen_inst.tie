@@ -41,7 +41,22 @@ pub func check_generic_constraints(gti: i64, args: table<i64>, line: i64, col: i
             if !stype.impl_has_ty(pi, at) {
                 sm_err_line = line
                 sm_err_col = col
-                sm_err_msg = "类型 '" + types.type_name(at) + "' 未实现 port '" + pname + "'（泛型约束不满足）"
+                if sstate.port_is_iface(pi) {
+                    // p.9.11.21 interface 约束不满足：定位第一个违规方法
+                    var vio = stype.iface_first_violation(pi, at)
+                    if vio >= 0 {
+                        var vname = sstate.port_method_name(pi, vio)
+                        if stype.iface_vio_missing() {
+                            sm_err_msg = "类型 '" + types.type_name(at) + "' 未实现 interface '" + pname + "'（缺少方法 '" + vname + "'）"
+                        } else {
+                            sm_err_msg = "类型 '" + types.type_name(at) + "' 未实现 interface '" + pname + "'（方法 '" + vname + "' 签名不匹配）"
+                        }
+                    } else {
+                        sm_err_msg = "类型 '" + types.type_name(at) + "' 未实现 interface '" + pname + "'（泛型约束不满足）"
+                    }
+                } else {
+                    sm_err_msg = "类型 '" + types.type_name(at) + "' 未实现 port '" + pname + "'（泛型约束不满足）"
+                }
                 return -1
             }
         }
