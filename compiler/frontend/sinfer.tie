@@ -1078,6 +1078,59 @@ pub func infer_expr(id: i64) -> i64 {
         sm_err_msg = "下标访问的对象必须是表或字符串，实际是 " + types.type_name(base)
         return -1
     }
+    // p.9.11.7 切片 `t[1..3]`：结果类型 = 表/数组 → 同元素类型的新表 table<elem>
+    //（仅起点不取元素）；字符串 → string（字节子串）。端点须为整数或缺省(-1)。
+    if tag == N_SLICE {
+        var sbase = infer_expr(sstate.child(id, 0))
+        if sbase < 0 {
+            return -1
+        }
+        var s1 = sstate.child(id, 1)
+        if s1 >= 0 {
+            var st = infer_expr(s1)
+            if st < 0 {
+                return -1
+            }
+            if !types.is_int(st) {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "切片起始必须是整数，实际是 " + types.type_name(st)
+                return -1
+            }
+        }
+        var s2 = sstate.child(id, 2)
+        if s2 >= 0 {
+            var et = infer_expr(s2)
+            if et < 0 {
+                return -1
+            }
+            if !types.is_int(et) {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "切片终点必须是整数，实际是 " + types.type_name(et)
+                return -1
+            }
+        }
+        if sbase == TK_STR {
+            node_types[id] = types.named(TK_STR)
+            g_typed = g_typed + 1
+            return types.named(TK_STR)
+        }
+        if types.is_table(sbase) {
+            var sle = types.table_elem(sbase)
+            if sle < 0 {
+                sle = types.named(TK_I64)
+            }
+            var rt = types.table_of(sle)
+            node_types[id] = rt
+            g_typed = g_typed + 1
+            return rt
+        }
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "切片对象必须是表/数组或字符串，实际是 " + types.type_name(sbase)
+        return -1
+    }
     // p.9.11.6 表不可变更新 `with`：类型 = 左侧表/映射类型；右侧须为记录/映射
     // 字面量（键化表 N_TABLE_LIT）。校验后登记，irgen 据此复制+合并。
     if tag == N_WITH {
