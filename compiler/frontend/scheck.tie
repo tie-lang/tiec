@@ -1259,10 +1259,17 @@ pub func check_stmt(s: i64) -> i64 {
         } else if types.is_int(it) {
             elem_ty = types.named(TK_I64)
         } else {
-            sm_err_line = s_lines[s]
-            sm_err_col = s_cols[s]
-            sm_err_msg = "for 迭代对象仅支持范围（0..10）或表变量，实际是 " + types.type_name(it)
-            return -1
+            // p.9.11.16 迭代器协议对象（struct 实现 has_next/next）：循环变量
+            // 元素类型 = next 返回类型。协议探测失败 → 报错（消息含协议提示）。
+            var ip_e = sinfer.iter_proto_elem(it)
+            if ip_e >= 0 {
+                elem_ty = ip_e
+            } else {
+                sm_err_line = s_lines[s]
+                sm_err_col = s_cols[s]
+                sm_err_msg = "for 迭代对象仅支持范围（0..10）、表变量或迭代器协议对象（struct 实现 has_next/next），实际是 " + types.type_name(it)
+                return -1
+            }
         }
         // for 迭代变量：lv_insert 已实现覆盖
         sinfer.lv_insert(vnid, elem_ty, 0, -1, 0)
