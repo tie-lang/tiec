@@ -316,6 +316,29 @@ func expand_one_import(imp_node: i64) -> i64 {
     var alias = s_aux[imp_node]
     var new_root = len(s_tags) - 1
     if alias >= 0 {
+        // p.9.11.14：别名登记 + 重复诊断（编译单元内 import 别名必须唯一；
+        // 别名映射 → g_imp_alias_names/paths 平行表，供后续工具/诊断显示）。
+        // 语义等价：别名 = 被导入文件顶层 namespace 的命名记录（内联模型下
+        // 别名经改名生效，非纯解析糖——M2.1.7 既有行为）。
+        var anm = intern.lookup(alias)
+        var ak2: i64 = 0
+        var adup: bool = false
+        while ak2 < len(g_imp_alias_names) {
+            if g_imp_alias_names[ak2] == anm {
+                adup = true
+                ak2 = len(g_imp_alias_names)
+            } else {
+                ak2 = ak2 + 1
+            }
+        }
+        if adup {
+            sm_err_line = s_lines[imp_node]
+            sm_err_col = s_cols[imp_node]
+            sm_err_msg = "import 别名 '" + anm + "' 重复（编译单元内 import 别名必须唯一）"
+            return -1
+        }
+        table_push(g_imp_alias_names, anm)
+        table_push(g_imp_alias_paths, full)
         var an = sstate.nchild(new_root)
         var ak: i64 = 0
         while ak < an {
@@ -360,6 +383,9 @@ func expand_one_import(imp_node: i64) -> i64 {
 func expand_imports() -> i64 {
     g_imported = table_new_string()
     g_extra_tops = table_new_i64()
+    // p.9.11.14：import 别名登记表重置（编译单元一次）
+    g_imp_alias_names = table_new_string()
+    g_imp_alias_paths = table_new_string()
     // dev33 批次10 任务29：文件起源跟踪复位；g_file_roots[文件 id] = 顶层
     // StmtList 根 id（平行表；主文件 = 0，导入文件按展开顺序递增）
     g_file_roots = table_new_i64()
