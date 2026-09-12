@@ -30,6 +30,9 @@ import "./middle/tieir_ser.tie"
 import "./tdzd.tie"
 // p.6.9.15 诊断标号：error[E#####]/warning[W#####] 渲染（driver 打印入口）
 import "./frontend/diagcode.tie"
+// p.9.11.13 #cfg 条件编译预处理（词法前按行裁剪；driver 读文件后、头部扫描/
+// 词法之前调用；条件求值源 = --target/配置 target 与 --profile/配置 profile）
+import "./frontend/cfg_preproc.tie"
 // p.7.1.1 Keel 骨架接线：driver 真实 pass 登记为注册项，经 Keel 注册表驱动
 // 执行管线（import 文本内联；顺序 registry → cli → boot → executor，各文件内部
 // 互不 import，依赖经入口 import 链内联可达）。
@@ -1145,6 +1148,29 @@ func main() -> i64 {
     // 角色注册引导：内建默认表 → config roles → 项目 roles.data.tie
     // → .tie/deps/*/roles.data.tie（包定制角色 = 纯数据声明，不扩展加载器）
     role_registry_boot(base_dir_of(str.clone(g_input)))
+    // p.9.11.13 #cfg 条件编译预处理：词法前按行裁剪（#cfg/#else/#end/#endif）。
+    // 必须在头部扫描（scan_header）之前——否则 #cfg 行会被当成头部首个非声明
+    // 内容终止角色识别；裁剪后源码再走 scan_header + strip_type_header。
+    // 条件求值源：--target > 配置 target > 主机（os/target 键）；生效 profile
+    // （--profile > 配置顶层 profile 键，dev=debug / release=release）。
+    var cfg_target = normalize_target(g_target)
+    if str_len(cfg_target) == 0 {
+        if g_cfg_root >= 0 {
+            cfg_target = normalize_target(config.get_str(g_cfg_root, "target"))
+        }
+    }
+    var cfg_profile = g_cli_profile
+    if str_len(cfg_profile) == 0 {
+        if g_cfg_root >= 0 {
+            cfg_profile = config.get_str(g_cfg_root, "profile")
+        }
+    }
+    var pruned = cfgpre.preprocess(src, cfg_target, cfg_profile)
+    if has_prefix(str.clone(pruned), "ERR:") {
+        println(diagcode.render_err_proto(pruned))
+        return 1
+    }
+    src = pruned
     // 头部扫描（文件类型声明 / 角色）
     if scan_header(str.clone(src)) < 0 {
         return 1
