@@ -1234,6 +1234,139 @@ func parse_tuple_field() -> i64 {
 }
 
 // 表字面量 `[col, col; row, row]`（逗号分列、分号分行；空表 [] 合法）
+// ---------- p.8.2.5 表/数组推导式（comprehension） ----------
+// `[expr for 迭代变量 in 源表 if 条件]`：`[` 首标的表字面量中，首个 cell 的元素
+// 表达式之后若紧跟 `for` 关键字，判定为推导式（与普通表字面量 `[a, b, c]` 区分
+// ——凡含 `for` 即推导式）。desugar 为「先建新表，for 源表逐元素绑定迭代变量，
+// 可选 if 条件为假则跳过，元素表达式结果 push 进新表」。元素顺序 = 源迭代顺序。
+// 形态：`for x in src`（单变量）或 `for (a, b) in src`（解构，p.8.2.2 for..in
+// 解构同款——循环变量登记临时名 `_cN`，把 expr/if 中对解构名 a/b 的引用改写为
+// `_cN.Item1`/`_cN.Item2` 字段访问）。生成器只支持单个 for + 可选单 if。
+
+// 构建 `_tmp.ItemK` 字段访问节点（改写给解构名）：返回 N_FIELD_ACCESS[name=ItemK,
+// children=[N_VAR(_tmp)]]。tmp_id = 循环（临时）变量名池 id。
+func cpr_field_access(tmp_id: i64, idx: i64, line: i64, col: i64) -> i64 {
+    var tv = ast.new_node(N_VAR, tmp_id, -1, -1, line, col)
+    var fa = ast.new_node(N_FIELD_ACCESS, interner.intern("Item" + to_string(idx)), -1, -1, line, col)
+    var fk: table<i64> = table_new_i64()
+    table_push(fk, tv)
+    ast.set_children(fa, fk)
+    return fa
+}
+
+// 递归改写推导式内的解构变量引用：遍历以 id 为根的表达式子树，把 name ∈
+// dest_names（池 id 表，序号 0 起 → Item1..）的 N_VAR 叶子替换为字段访问。
+// 其它节点若子节点发生替换则重建同 tag/name/val/aux 的新节点；无变化返回原 id。
+func cpr_rewrite(id: i64, dest_names: table<i64>, tmp_id: i64) -> i64 {
+    if id < 0 {
+        return id
+    }
+    if ast.tag(id) == N_VAR {
+        var k: i64 = 0
+        while k < len(dest_names) {
+            if ast.name(id) == dest_names[k] {
+                return cpr_field_access(tmp_id, k + 1, ast.line(id), ast.col(id))
+            }
+            k = k + 1
+        }
+        return id
+    }
+    var n = ast.child_count(id)
+    if n == 0 {
+        return id
+    }
+    var kids: table<i64> = table_new_i64()
+    var changed: bool = false
+    var i: i64 = 0
+    while i < n {
+        var c = ast.child_at(id, i)
+        var nc = cpr_rewrite(c, dest_names, tmp_id)
+        table_push(kids, nc)
+        if nc != c {
+            changed = true
+        }
+        i = i + 1
+    }
+    if !changed {
+        return id
+    }
+    var nn = ast.new_node(ast.tag(id), ast.name(id), ast.val(id), ast.aux(id), ast.line(id), ast.col(id))
+    ast.set_children(nn, kids)
+    return nn
+}
+
+// 解析推导式主体（游标停在 `for` 上）：`for 迭代变量 in 源表 [if 条件]` → 节点。
+// elem 为首个 cell 的元素表达式（已解析）。返回 N_COMPREHENSION[name=循环变量名
+// 池 id, children=[源, 元素, 条件或 -1]]。
+func parse_comprehension(elem: i64, line: i64, col: i64) -> i64 {
+    putil.advance()   // 'for'
+    var var_id: i64 = -1
+    var dest_names: table<i64> = table_new_i64()
+    if putil.peek_tag() == lex_lparen {
+        // 解构 `for (a, b) in src`（与 for..in 解构一致）
+        putil.advance()  // '('
+        var dd = false
+        while !dd {
+            var nm = putil.expect_ident()
+            if nm < 0 {
+                return -1
+            }
+            table_push(dest_names, nm)
+            if putil.eat(lex_comma) {
+                // 继续
+            } else {
+                if !putil.expect(lex_rparen, "')'") {
+                    return -1
+                }
+                dd = true
+            }
+        }
+        var_id = interner.intern("_c" + to_string(g_tmp))
+        g_tmp = g_tmp + 1
+    } else {
+        var_id = putil.expect_ident()
+        if var_id < 0 {
+            return -1
+        }
+    }
+    if !putil.expect(lex_in, "'in'") {
+        return -1
+    }
+    putil.enter_cond()   // 源表达式内不判定尾随闭包（对齐 for..in 迭代）
+    var source = parse_expr()
+    putil.exit_cond()
+    if source < 0 {
+        return -1
+    }
+    var cond: i64 = -1
+    if putil.eat(lex_if) {
+        cond = parse_expr()
+        if cond < 0 {
+            return -1
+        }
+    }
+    if !putil.expect(lex_rbracket, "']'") {
+        return -1
+    }
+    // 解构：把元素/条件里的解构名引用改写为 `_cN.ItemK`（源/元素/条件均已解析，
+    // 只需改写二者——源不含循环变量）
+    var fin_elem = elem
+    var fin_cond = cond
+    if len(dest_names) > 0 {
+        fin_elem = cpr_rewrite(elem, dest_names, var_id)
+        if cond >= 0 {
+            fin_cond = cpr_rewrite(cond, dest_names, var_id)
+        }
+    }
+    var n = ast.new_node(N_COMPREHENSION, var_id, -1, -1, line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, source)
+    table_push(kids, fin_elem)
+    table_push(kids, fin_cond)
+    ast.set_children(n, kids)
+    return n
+}
+
 func parse_table_lit(line: i64, col: i64) -> i64 {
     if !putil.expect(lex_lbracket, "'['") {
         return -1
@@ -1243,19 +1376,33 @@ func parse_table_lit(line: i64, col: i64) -> i64 {
         return ast.new_node(N_TABLE_LIT, -1, -1, -1, line, col)
     }
     var row: i64 = 0
+    // 解析首个 cell：其后若跟 `for` 关键字 → 推导式（element 已解析）
+    var first = parse_table_cell(row)
+    if first < 0 {
+        return -1
+    }
+    if putil.peek_tag() == lex_for {
+        return parse_comprehension(ast.child_at(first, 1), line, col)
+    }
+    table_push(cells, first)
     var d = false
     while !d {
-        var cell = parse_table_cell(row)
-        if cell < 0 {
-            return -1
-        }
-        table_push(cells, cell)
         var tag = putil.peek_tag()
         if tag == lex_comma {
             putil.advance()
+            var cell = parse_table_cell(row)
+            if cell < 0 {
+                return -1
+            }
+            table_push(cells, cell)
         } else if tag == lex_semi {
             putil.advance()
             row = row + 1
+            var cell2 = parse_table_cell(row)
+            if cell2 < 0 {
+                return -1
+            }
+            table_push(cells, cell2)
         } else if tag == lex_rbracket {
             putil.advance()
             d = true

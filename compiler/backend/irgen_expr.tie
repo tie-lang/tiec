@@ -232,6 +232,10 @@ func tig_expr(id: i64) -> i64 {
         // TableLit：动态表创建（仅 var 初始化/实参场景；直接求值 → 建表）
         return tig_table_lit(id)
     }
+    if tag == N_COMPREHENSION {
+        // p.8.2.5 表/数组推导式：`[expr for x in src if cond]` → 新建表
+        return tig_comprehension(id)
+    }
     if tag == 131 {
         // S1.2 I1 asm!：生成 inline_asm 指令（模板池 id + 操作数方向/值对）。
         // 第一个 out 操作数 → 结果类型（call 返回值）；其余 out 第一版忽略。
