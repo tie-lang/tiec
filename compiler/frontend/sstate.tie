@@ -42,6 +42,10 @@ var sp_refs: table<i64>;      // 参数 by_ref 标志（扁平段）
 var sp_defs: table<i64>;      // 参数有默认值（扁平段）
 var sp_vars: table<i64>;      // 参数变参标志（扁平段；1 = `name: ...T`）
 
+// p.9.11.11 immut 只读形参名集合（每函数 check_fn 重置；变量名池 id）。
+var g_im_keys: table<i64>;
+var g_im_vals: table<i64>;
+
 var st_keys: table<i64>;      // struct 名 id（升序）
 var st_vals: table<i64>;      // struct 索引
 var cls_parent: table<i64>;   // struct 父名 id（-1=无）
@@ -742,6 +746,68 @@ pub func name_str(id: i64) -> string {
         return ""
     }
     return intern.lookup(nid)
+}
+
+// ==================== immut 只读形参集合（p.9.11.11） ====================
+// 每函数（scheck.check_fn）重置——清空集合；check_fn 参数循环对 immut 形参
+// 逐一 im_insert 登记其变量名池 id。赋值/自增自减/字段&下标写经 im_is 拒绝。
+pub func im_reset() {
+    g_im_keys = table_new_i64()
+    g_im_vals = table_new_i64()
+}
+pub func im_insert(nid: i64) {
+    var i: i64 = 0
+    while i < len(g_im_keys) {
+        if g_im_keys[i] == nid {
+            return
+        }
+        i = i + 1
+    }
+    table_push(g_im_keys, nid)
+    table_push(g_im_vals, 1)
+}
+pub func im_is(nid: i64) -> bool {
+    var i: i64 = 0
+    while i < len(g_im_keys) {
+        if g_im_keys[i] == nid {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+// 名字池 id → 字符串（im_root 返回的是名字池 id，非节点 id；name_str 只接受节点 id）
+pub func im_name(nid: i64) -> string {
+    if nid < 0 {
+        return ""
+    }
+    return intern.lookup(nid)
+}
+// 取赋值目标链的根变量名池 id：从 base 沿 child(0) 上行，遇 S_N_VAR 返回其名；
+// 非纯变量/字段/索引链（S_N_UNARY/方法返回值等）返回 -1（不判定 immut）。
+pub func im_root(base: i64) -> i64 {
+    if base < 0 {
+        return -1
+    }
+    var cur = base
+    var guard: i64 = 0
+    while guard < 64 {
+        var t = s_tags[cur]
+        if t == S_N_VAR {
+            return s_names[cur]
+        }
+        if t == S_N_FIELD_ACCESS || t == S_N_INDEX || t == S_N_TUPLE_FIELD {
+            if s_nchild[cur] > 0 {
+                cur = s_children[s_coff[cur]]
+            } else {
+                return -1
+            }
+        } else {
+            return -1
+        }
+        guard = guard + 1
+    }
+    return -1
 }
 
 // 泛型槽偏移判定（2026-08-14 泛型语法布局，权威约定见 ast.tie 头部注释）：
