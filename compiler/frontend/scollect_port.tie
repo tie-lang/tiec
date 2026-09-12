@@ -19,32 +19,44 @@ namespace scollect {
 // port 声明收集：登记 port + 方法签名（方法必须 pub func、第一参数 self、
 // 无函数体——默认实现暂不支持，port-model.md §10 未决问题 1 后置）。
 // 方法签名 = 参数类型表（self 槽占位 TK_VOID，签名匹配时跳过）+ 返回类型。
+// p.9.11.21 扩展：N_PORT.val == 1 = interface（结构性接口）——声明语法与
+// 收集校验与 port 完全一致（方法签名集合），差别在**实现关系判定**：port
+// 需显式 impl 块，interface 由 stype.impl_has_ty 做结构性签名兼容判定
+// （命名空间方法签名匹配即实现，鸭子多态的类型安全升级），并置 pm_iface
+// 标记供消费方（泛型约束/提升检查）区分诊断消息。
 func collect_port(s: i64) -> i64 {
+    var is_iface = s_vals[s] == 1
+    var kword = "port"
+    var kword_m = "port 方法"
+    if is_iface {
+        kword = "interface"
+        kword_m = "interface 方法"
+    }
     var nm = sstate.name_str(s)
-    // 冲突检查：port 名不能与 struct/enum/函数/泛型模板同名（类型解析歧义）
+    // 冲突检查：port/interface 名不能与 struct/enum/函数/泛型模板同名（类型解析歧义）
     var nid = intern.intern(nm)
     if sstate.bs_find(st_keys, nid) >= 0 {
         sm_err_line = s_lines[s]
         sm_err_col = s_cols[s]
-        sm_err_msg = "port 名 '" + nm + "' 与 struct 名冲突"
+        sm_err_msg = kword + " 名 '" + nm + "' 与 struct 名冲突"
         return -1
     }
     if sstate.bs_find(en_keys, nid) >= 0 {
         sm_err_line = s_lines[s]
         sm_err_col = s_cols[s]
-        sm_err_msg = "port 名 '" + nm + "' 与枚举名冲突"
+        sm_err_msg = kword + " 名 '" + nm + "' 与枚举名冲突"
         return -1
     }
     if sstate.bs_find(fn_keys, nid) >= 0 {
         sm_err_line = s_lines[s]
         sm_err_col = s_cols[s]
-        sm_err_msg = "port 名 '" + nm + "' 与函数名冲突"
+        sm_err_msg = kword + " 名 '" + nm + "' 与函数名冲突"
         return -1
     }
     if sstate.gt_find(nm) >= 0 {
         sm_err_line = s_lines[s]
         sm_err_col = s_cols[s]
-        sm_err_msg = "port 名 '" + nm + "' 与泛型模板名冲突"
+        sm_err_msg = kword + " 名 '" + nm + "' 与泛型模板名冲突"
         return -1
     }
     var pi = sstate.reg_port(nm)
@@ -53,6 +65,9 @@ func collect_port(s: i64) -> i64 {
         sm_err_col = s_cols[s]
         return -1
     }
+    if is_iface {
+        pm_iface[pi] = 1   // interface 标记：结构性实现判定（鸭子风格）
+    }
     // 方法：children[slot_off ..]（泛型槽 -1 → slot_off = 1）
     var soff = sstate.slot_off(s)
     var nmeth = sstate.nchild(s) - soff
@@ -60,11 +75,11 @@ func collect_port(s: i64) -> i64 {
     while k < nmeth {
         var m = sstate.child(s, soff + k)
         var mname = sstate.name_str(m)
-        // 方法必须 pub（port 方法对外可见）
+        // 方法必须 pub（port/interface 方法对外可见）
         if (s_vals[m] & 1) == 0 {
             sm_err_line = s_lines[m]
             sm_err_col = s_cols[m]
-            sm_err_msg = "port 方法 '" + mname + "' 必须标注 pub（`pub func " + mname + "`）"
+            sm_err_msg = kword_m + " '" + mname + "' 必须标注 pub（`pub func " + mname + "`）"
             return -1
         }
         var nparams = s_aux[m]
@@ -72,17 +87,17 @@ func collect_port(s: i64) -> i64 {
         if nparams < 1 {
             sm_err_line = s_lines[m]
             sm_err_col = s_cols[m]
-            sm_err_msg = "port 方法 '" + mname + "' 必须有 self 接收者（第一参数）"
+            sm_err_msg = kword_m + " '" + mname + "' 必须有 self 接收者（第一参数）"
             return -1
         }
         var p0 = sstate.child(m, sstate.slot_off(m) + 1)
         if sstate.name_str(p0) != "self" {
             sm_err_line = s_lines[m]
             sm_err_col = s_cols[m]
-            sm_err_msg = "port 方法 '" + mname + "' 的第一参数必须是 self"
+            sm_err_msg = kword_m + " '" + mname + "' 的第一参数必须是 self"
             return -1
         }
-        // 无函数体（默认实现暂不支持，第一版 port 只声明签名）
+        // 无函数体（默认实现暂不支持，第一版 port/interface 只声明签名）
         var body: i64 = -1
         if sstate.nchild(m) > 2 + nparams {
             body = sstate.child(m, 2 + nparams)
@@ -90,7 +105,11 @@ func collect_port(s: i64) -> i64 {
         if body >= 0 {
             sm_err_line = s_lines[m]
             sm_err_col = s_cols[m]
-            sm_err_msg = "port 默认实现暂不支持（第一版：port 方法只声明签名，请用 impl 块提供实现）"
+            if is_iface {
+                sm_err_msg = "interface 默认实现暂不支持（第一版：interface 方法只声明签名，请用命名空间方法提供实现）"
+            } else {
+                sm_err_msg = "port 默认实现暂不支持（第一版：port 方法只声明签名，请用 impl 块提供实现）"
+            }
             return -1
         }
         // 参数类型解析（self 槽占位；其余类型必须可解析——port 不支持泛型，

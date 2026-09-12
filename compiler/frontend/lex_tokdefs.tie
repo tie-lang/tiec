@@ -101,6 +101,11 @@ const lex_at: i64 = 104;      // @ 注解符（声明前置元数据）
 // p.9.11.15 yield 生成器关键字（tag 105）：`func gen() { yield v; ... }`——
 // 含 yield 的函数 = 生成器函数（产出序列，调用返回迭代序列对象/表）。
 const lex_yield: i64 = 105;   // yield 关键字（生成器产出语句）
+// p.9.11.21 interface 关键字（tag 106）：`interface Drawable { pub func 签名... }`
+// 结构性接口声明（鸭子多态静态检查；与 S2.4 port 名义接口同登记表，语义
+// 区别 = 实现关系判定：有签名兼容方法即实现，无需显式 impl 块）。映射值
+// 登记于 lex_symtab.build_kw（"interface" 在 "inline" 与 "macro" 之间，严格升序）。
+const lex_interface: i64 = 106; // interface 关键字（结构性接口声明）
 
 namespace lextok {
 
@@ -197,6 +202,10 @@ func is_decl_start(tag: i64) -> bool {
     // S2.4：port 声明 / impl 块的 doc 附着；S3.3：macro 定义
     // （doc 附着到宏定义声明）
     if tag == lex_port || tag == lex_impl || tag == lex_macro {
+        return true
+    }
+    // p.9.11.21：interface 声明的 doc 附着（结构性接口）
+    if tag == lex_interface {
         return true
     }
     // 一期并发：actor 声明的 doc 附着

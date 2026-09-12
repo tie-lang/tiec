@@ -29,17 +29,20 @@ namespace lexsym {
 // p.9.11.10/11 two more keyword（严格升序）：
 //   immut（i m m u t）在 impl（i m p）前——第三字节 'm'(109)<'p'(112)；
 //   inline（i n l）在 in（i n）后（"in" 为 "inline" 前缀）、macro 前——'i'<'m'。
+// p.9.11.21 interface 关键字（tag 106，严格升序）：
+//   interface（i n t）在 inline（i n l）后——第三字节 't'(116)>'l'(108)；
+//   interface 在 macro（m）前——'i'<'m'。结构性接口（鸭子多态静态检查）。
 func build_kw() {
     var k: table<string> = ["actor", "any", "as", "asm", "async", "bool", "break",
         "case", "char", "code", "const", "continue", "default", "else", "enum",
         "extends", "extern", "f32", "f64", "false", "for", "func", "goto", "i128", "i16",
-        "i32", "i64", "i8", "if", "immut", "impl", "import", "in", "inline", "macro", "map", "misc",
+        "i32", "i64", "i8", "if", "immut", "impl", "import", "in", "inline", "interface", "macro", "map", "misc",
         "namespace", "num", "panic", "port", "pub", "ref", "repr", "return",
         "string", "struct", "switch", "table", "text", "trit", "true", "u128",
         "u16", "u32", "u64", "u8", "unsafe", "using", "var", "void", "when",
         "while", "with", "yield", "zero"]
     var v: table<i64> = [92, 32, 21, 84, 93, 32, 14, 17, 32, 32, 7, 15, 18, 9, 81,
-        23, 27, 32, 32, 29, 11, 5, 94, 32, 32, 32, 32, 32, 8, 103, 87, 20, 12, 102, 88, 32,
+        23, 27, 32, 32, 29, 11, 5, 94, 32, 32, 32, 32, 32, 8, 103, 87, 20, 12, 102, 106, 88, 32,
         32, 24, 32, 85, 86, 25, 31, 83, 13, 32, 22, 16, 32, 32, 32, 28, 32,
         32, 32, 32, 32, 82, 26, 6, 32, 19, 10, 98, 105, 30]
     kw_keys = table_new_string()
