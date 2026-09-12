@@ -401,13 +401,39 @@ pub func infer_expr(id: i64) -> i64 {
         if cst < 0 {
             return -1
         }
+        // p.9.11.16 迭代器协议源：struct 实现 has_next/next → 循环变量元素 =
+        // next 返回类型（与 for-in 消费分派一致）。协议未命中 → 表/数组源。
+        var celem_loop: i64 = types.named(TK_I64)
         if !types.is_table(cst) {
+            var ip_c = iter_proto_elem(cst)
+            if ip_c >= 0 {
+                celem_loop = ip_c
+                lv_insert(cvnid, celem_loop, 0, -1, 0)
+                var celem_ty = infer_expr(celem)
+                if celem_ty < 0 {
+                    return -1
+                }
+                if ccond >= 0 {
+                    var ccond_ty = infer_expr(ccond)
+                    if ccond_ty < 0 {
+                        return -1
+                    }
+                    if ccond_ty != types.named(TK_BOOL) {
+                        sm_err_line = s_lines[id]
+                        sm_err_col = s_cols[id]
+                        sm_err_msg = "推导式 if 筛选条件必须是 bool，实际是 " + types.type_name(ccond_ty)
+                        return -1
+                    }
+                }
+                node_types[id] = types.table_of(celem_ty)
+                g_typed = g_typed + 1
+                return types.table_of(celem_ty)
+            }
             sm_err_line = s_lines[id]
             sm_err_col = s_cols[id]
-            sm_err_msg = "推导式迭代源必须是表/数组，实际是 " + types.type_name(cst)
+            sm_err_msg = "推导式迭代源必须是表/数组或迭代器协议对象（struct 实现 has_next/next），实际是 " + types.type_name(cst)
             return -1
         }
-        var celem_loop: i64 = types.named(TK_I64)
         var cte = types.table_elem(cst)
         if cte >= 0 {
             celem_loop = cte
@@ -2840,6 +2866,33 @@ pub func infer_struct_method(recv: i64, recv_ty: i64, mname: string, args: table
     node_types[id] = rt
     g_typed = g_typed + 1
     return rt
+}
+
+// p.9.11.16 迭代器协议（内建约定，注释定死）：可迭代对象 = 用户 struct 实现
+// 两个方法（在 namespace <Struct 名> 内，与 struct 方法约定一致，首参 self 自动 ref）：
+//   pub func has_next(self) -> bool   —— 序列中还有元素？
+//   pub func next(self) -> T          —— 取当前元素并推进游标（T = 元素类型）
+// for x in it / 推导式 [e for x in it] 消费分派：while it.has_next() { x = it.next() }。
+// 返回 next 的返回类型（元素类型）；未实现协议返回 -1（调用方报错/回退）。
+// 校验：两方法均须存在、各恰好 1 参（self）、has_next 返回 bool。
+pub func iter_proto_elem(ty: i64) -> i64 {
+    if types.kind(ty) != K_STRUCT {
+        return -1
+    }
+    var si = types.low(ty)
+    var sname = sstate.struct_name_of(si)
+    var sig_hn = sstate.fn_sig(sname + "::has_next")
+    var sig_nx = sstate.fn_sig(sname + "::next")
+    if sig_hn < 0 || sig_nx < 0 {
+        return -1
+    }
+    if sg_nparams[sig_hn] != 1 || sg_nparams[sig_nx] != 1 {
+        return -1
+    }
+    if sg_ret[sig_hn] != types.named(TK_BOOL) {
+        return -1
+    }
+    return sg_ret[sig_nx]
 }
 
 // ==================== 运算符重载（p.8.2.4） ====================

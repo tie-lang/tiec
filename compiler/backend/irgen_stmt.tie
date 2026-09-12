@@ -1610,6 +1610,16 @@ func tig_stmt(id: i64) -> i64 {
             }
         }
         if iter_tag != 11 {
+            // p.9.11.16 迭代器协议对象（struct 实现 has_next/next）：先于表迭代
+            // 探测（语义层已登记 node_types[iter]；协议命中 → 方法调用循环）。
+            var itp = node_types[iter]
+            if itp >= 0 && sinfer.iter_proto_elem(itp) >= 0 {
+                var fp = tig_for_iter(id, iter, body, itp)
+                if fp < 0 {
+                    return -1
+                }
+                return 0
+            }
             // for-in 表迭代（动态表）：计数器 0..len(t) + tie_table_at 读取
             var fr = tig_for_table(id, iter, body)
             if fr < 0 {
@@ -2168,6 +2178,145 @@ func tig_for_chars(id: i64, iter: i64, body: i64) -> i64 {
     if len(g_def_flags) > 0 {
         var drr3 = tig_run_defers(g_lp_top)
         if drr3 < 0 {
+            return -1
+        }
+    }
+    loop_pop()
+    return 0
+}
+
+// p.9.11.16 迭代器协议方法调用：`it.has_next()` / `it.next()`（接收者存槽）。
+// 复用 struct 方法签名约定（首参 self 自动 ref → 传槽地址；按值 → load）。
+// 返回 call 结果值。
+func tig_iter_call(full: string, recv_ptr: i64, rty: i64) -> i64 {
+    var sig = sstate.fn_sig(full)
+    if sig < 0 {
+        sm_err_msg = "迭代器方法 '" + full + "' 无签名（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var ret_ty = sg_ret[sig]
+    var off = sg_off[sig]
+    var first_ref = 0
+    if off >= 0 && off < len(sp_refs) {
+        first_ref = sp_refs[off]
+    }
+    var sym = interner.intern(full)
+    llvmgen.call_sym_reg(sym)
+    var rv: i64 = -1
+    if first_ref == 1 {
+        rv = recv_ptr  // 接收者槽地址
+    } else {
+        rv = ir.new_inst(g_cur_block, 21, rty)  // load 接收者值
+        ir.add_operand(rv, recv_ptr, 0)
+        rv = ir.get_value(rv)
+    }
+    var ty35: i64 = -1
+    if ret_ty != types.named(TK_VOID) {
+        ty35 = ret_ty
+    }
+    var inst = ir.new_inst(g_cur_block, 35, ty35)  // call
+    ir.add_operand(inst, sym, 0)
+    ir.add_operand(inst, ret_ty, 2)
+    if first_ref == 1 {
+        ir.add_operand(inst, types.named(TK_STR), 2)
+    } else {
+        ir.add_operand(inst, rty, 2)
+    }
+    ir.add_operand(inst, rv, 0)
+    if ret_ty == types.named(TK_VOID) {
+        return tig_int_lit(0)
+    }
+    return ir.get_value(inst)
+}
+
+// p.9.11.16 for-in 迭代器协议对象：`for x in it`（it 为 struct 实例，实现
+// has_next/next）。接收者求值一次落临时槽（有状态迭代器；表达式接收者只
+// 构造一次）；cond 块：it.has_next() → body；body 块：x = it.next() →
+// store 循环变量 → body 语句；continue → cond（重新 has_next），break → exit。
+// 元素类型 = next 返回类型（scheck 已登记循环变量；此处 LLVM 槽类型推导
+// 对齐 tig_for_table 的 elem_llvm_ty）。
+func tig_for_iter(id: i64, iter: i64, body: i64, it_ty: i64) -> i64 {
+    var si = types.low(it_ty)
+    var sname = sstate.struct_name_of(si)
+    var elem = sinfer.iter_proto_elem(it_ty)
+    if elem < 0 {
+        sm_err_msg = "迭代器协议探测失败（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var elem_llvm = elem
+    var suf = bridge_suffix(elem)
+    var fk = types.kind(elem)
+    if fk == K_STRUCT || fk == K_ENUM || fk == K_FN || fk == K_TUPLE || elem == types.named(TK_ANY) {
+        elem_llvm = elem
+    } else if types.is_table(elem) || types.is_map(elem) || types.kind(elem) == K_PORT {
+        elem_llvm = types.named(TK_STR)
+    } else if suf == "string" {
+        elem_llvm = types.named(TK_STR)
+    } else if suf == "bool" {
+        elem_llvm = types.named(TK_BOOL)
+    } else if suf == "f64" {
+        elem_llvm = types.named(TK_F64)
+    } else {
+        elem_llvm = types.named(TK_I64)
+    }
+    // 接收者求值一次 → 临时槽（struct 聚合值）
+    var it_a = ir.new_inst(g_cur_block, 20, it_ty)  // alloca struct
+    ir.add_operand(it_a, it_ty, 2)
+    var it_ptr = ir.get_value(it_a)
+    var itv = tig_expr(iter)
+    if itv < 0 {
+        return -1
+    }
+    var st0 = ir.new_inst(g_cur_block, 22, -1)  // store 接收者
+    ir.add_operand(st0, it_ty, 2)
+    ir.add_operand(st0, itv, 0)
+    ir.add_operand(st0, it_ptr, 0)
+    // 循环变量 alloca（元素 LLVM 类型）
+    var item_a = ir.new_inst(g_cur_block, 20, elem_llvm)
+    ir.add_operand(item_a, elem_llvm, 2)
+    var item_ptr = ir.get_value(item_a)
+    // 三块：cond / body / exit（next 在 body 内自推进，无 step 块）
+    var cond_blk = ir.new_block(g_cur_func, interner.intern("for.cond"))
+    var body_blk = ir.new_block(g_cur_func, interner.intern("for.body"))
+    var exit_blk = ir.new_block(g_cur_func, interner.intern("for.exit"))
+    loop_push(s_aux[id], exit_blk, cond_blk)   // continue → cond（重查 has_next）
+    var b0 = ir.new_inst(g_cur_block, 30, -1)  // br cond
+    ir.add_operand(b0, cond_blk, 1)
+    // cond 块：has_next() → body，否则 exit
+    g_cur_block = cond_blk
+    var hn = tig_iter_call(sname + "::has_next", it_ptr, it_ty)
+    if hn < 0 {
+        return -1
+    }
+    var cb = ir.new_inst(g_cur_block, 31, -1)  // cond_br
+    ir.add_operand(cb, hn, 0)
+    ir.add_operand(cb, body_blk, 1)
+    ir.add_operand(cb, exit_blk, 1)
+    // body 块：x = next() → store → body 语句
+    g_cur_block = body_blk
+    var nx = tig_iter_call(sname + "::next", it_ptr, it_ty)
+    if nx < 0 {
+        return -1
+    }
+    var ist = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(ist, elem_llvm, 2)
+    ir.add_operand(ist, nx, 0)
+    ir.add_operand(ist, item_ptr, 0)
+    scope_put(s_names[id], item_ptr, elem_llvm)
+    var bb = tig_block_stmts(body)
+    if bb < 0 {
+        return -1
+    }
+    scope_pop()
+    if !block_terminated() {
+        var bb2 = ir.new_inst(g_cur_block, 30, -1)  // br cond
+        ir.add_operand(bb2, cond_blk, 1)
+    }
+    // exit 块：defer 处理同表迭代（循环体作用域逆序）
+    g_cur_block = exit_blk
+    if len(g_def_flags) > 0 {
+        var drr4 = tig_run_defers(g_lp_top)
+        if drr4 < 0 {
             return -1
         }
     }
