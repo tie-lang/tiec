@@ -29,6 +29,22 @@ pub func err_protocol() -> string {
     return errors.err_lex_err(p_err_line, p_err_col, p_err_msg)
 }
 
+// ---------- p.8.2.9 控制流条件上下文守卫 ----------
+// `while i < n { }` / `if f { }` 等控制流块开括号 `{` 与尾随闭包（通常裸函数
+// 名/裸变量后跟 `{`）在语法上完全同形。控制流条件 parse 期间置本守卫，让
+// pexpr 的尾随闭包判定（maybe_trailing_closure）知晓当前在条件表达式内，
+// 从而不把随后的 `{` 误吞为闭包块。条件表达式可嵌套（&&/|| 内的子调用等），
+// 用计数器进出配对。计数器 g_ctl_cond 声明于 pst.tie（模块全局）。
+pub func enter_cond() {
+    g_ctl_cond = g_ctl_cond + 1
+}
+pub func exit_cond() {
+    g_ctl_cond = g_ctl_cond - 1
+}
+pub func in_cond() -> bool {
+    return g_ctl_cond > 0
+}
+
 // ---------- token 流加载（新增：正式版直接消费 lexer 列式表）----------
 // 从 lexer 列式 token 表一次性加载到 pst 队列（替代 proto 的协议文本 re-parse）。
 // run_lex 成功后调用；随后 putil 的 peek/advance 全走 pst 队列。
@@ -41,6 +57,7 @@ pub func fill_pending() {
     g_pending_idx = 0
     g_last_tag = -1
     g_last_line = -1
+    g_ctl_cond = 0   // p.8.2.9 控制流条件守卫计数清零
     // S2.2：清空延迟闭包登记（闭包函数体快照，见 defer_closure_*）
     g_defer_nodes = table_new_i64()
     g_defer_done = 0   // 已回填游标清零（嵌套闭包防重复回填）

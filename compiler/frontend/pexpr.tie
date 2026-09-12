@@ -686,11 +686,118 @@ pub func parse_unary() -> i64 {
                 ast.set_children(tn, tkids)
                 expr = tn
             }
+        } else if t == lex_lbrace {
+            // p.8.2.9 尾随闭包：调用表达式后（含链式 `.method` / 裸函数名 / 方法
+            // 调用）紧跟 `{` 块 → 视为无参闭包字面量追加/构造为末位实参。仅当
+            // 前置 expr 是可携带尾随闭包的调用节点；否则该 `{` 与表达式无关
+            //（交给语句层/外层处理），按普通情况结束表达式。
+            var tc = maybe_trailing_closure(expr)
+            if tc < 0 {
+                return -1
+            }
+            if tc == expr {
+                d = true   // 未识别为尾随闭包目标：`{` 不属于本调用，结束
+            } else {
+                expr = tc
+                // 追加后可继续后缀链（如 `recv.m { }.next`）
+                d = false
+            }
         } else {
             d = true
         }
     }
     return expr
+}
+
+// ---------- p.8.2.9 尾随闭包 ----------
+
+// 深拷贝节点 children 到一张表（读段偏移逐个取出）。
+func clone_children(id: i64) -> table<i64> {
+    var out: table<i64> = table_new_i64()
+    var n = ast.child_count(id)
+    var i: i64 = 0
+    while i < n {
+        table_push(out, ast.child_at(id, i))
+        i = i + 1
+    }
+    return out
+}
+
+// 解析尾随闭包块。游标停在 `{` 上。如同 parse_fn_lit 的缺省形态：产出
+// `func() -> void { ... }`（无参、默认 void 返回），登记延迟闭包体快照后
+// 配平跳过块体（本体由 pstmt_flow.parse_deferred_closures 末尾回填）。
+// tie 闭包字面量唯一语法是 func(...) { ... }，无裸 lambda 参数形式，故
+// 尾随块一律按**无参 void 闭包**处理（决议见探针头注释）。
+func parse_trailing_closure(line: i64, col: i64) -> i64 {
+    var f = ast.new_node(N_FN_LIT, -1, -1, 0, line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, -1)   // 泛型槽（闭包暂不支持显式类型参数）
+    // 返回类型：无 -> 缺省 void（TK_VOID=14，与 parse_fn_lit 缺省一致）
+    table_push(kids, ast.new_node(N_NAMED_TYPE, interner.intern("void"), 14, -1, line, col))
+    ast.set_children(f, kids)
+    putil.defer_closure_push(f)
+    if !skip_closure_body() {
+        return -1
+    }
+    return f
+}
+
+// 尾随闭包主判定/构造：当前游标在 `{` 上。若 expr 为可携带尾随闭包的调用
+// 节点则把块并入谓词位置并返回（重建后）新节点；否则返回 expr 原样。
+// 规则：已有实参的调用 → 块追加为末位实参；裸函数名/裸 `.method` → 把块
+// 构造为该调用的唯一实参（等价 `f(closure)` / `recv.method(closure)`）。
+func maybe_trailing_closure(expr: i64) -> i64 {
+    // p.8.2.9：控制流条件表达式内不判定尾随闭包（`while cond { }` / `if f { }`
+    // 的块开括号与尾随闭包语法同形，须交由控制流解析器消费，见 putil.enter_cond）。
+    if putil.in_cond() {
+        return expr
+    }
+    var t = ast.tag(expr)
+    var ok = false
+    if t == N_VAR || t == N_CALL || t == N_CALL_EXPR || t == N_METHOD_CALL || t == N_FIELD_ACCESS || t == N_RUN_ACTOR {
+        ok = true
+    } else if t == N_SAFE_ACCESS {
+        // 安全访问仅方法形态（name != -1 且已有实参槽）可追加；索引/字段不可
+        if ast.name(expr) >= 0 && ast.child_count(expr) >= 1 {
+            ok = true
+        }
+    }
+    if !ok {
+        return expr
+    }
+    var line = putil.peek_line()
+    var col = putil.peek_col()
+    var clo = parse_trailing_closure(line, col)
+    if clo < 0 {
+        return -1
+    }
+    if t == N_VAR {
+        // 裸函数名 `f { }` → `f(closure)`
+        var c = ast.new_node(N_CALL, ast.name(expr), -1, -1, ast.line(expr), ast.col(expr))
+        var kkids: table<i64> = table_new_i64()
+        table_push(kkids, -1)   // 泛型槽
+        table_push(kkids, clo)
+        ast.set_children(c, kkids)
+        return c
+    }
+    if t == N_FIELD_ACCESS {
+        // 裸 `.method { }` → `recv.method(closure)`
+        var base = ast.child_at(expr, 0)
+        var m = ast.new_node(N_METHOD_CALL, ast.name(expr), -1, -1, ast.line(expr), ast.col(expr))
+        var mkids: table<i64> = table_new_i64()
+        table_push(mkids, -1)   // 泛型槽
+        table_push(mkids, base)
+        table_push(mkids, clo)
+        ast.set_children(m, mkids)
+        return m
+    }
+    // 其余调用节点（N_CALL/N_CALL_EXPR/N_METHOD_CALL/N_SAFE_ACCESS 方法形态/
+    // N_RUN_ACTOR）：追加为末位实参，重建为同 tag 新节点。
+    var e = clone_children(expr)
+    table_push(e, clo)
+    var nc = ast.new_node(t, ast.name(expr), ast.val(expr), ast.aux(expr), ast.line(expr), ast.col(expr))
+    ast.set_children(nc, e)
+    return nc
 }
 
 // 解析实参列表到 args（前提：'(' 已消费；以 ')' 结束）

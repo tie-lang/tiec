@@ -447,7 +447,9 @@ func parse_if() -> i64 {
     var line = putil.peek_line()
     var col = putil.peek_col()
     putil.advance()   // if
+    putil.enter_cond()   // p.8.2.9：条件内不判定尾随闭包
     var cond = pexpr.parse_expr()
+    putil.exit_cond()
     if cond < 0 {
         return -1
     }
@@ -489,7 +491,9 @@ func parse_while(label: i64) -> i64 {
     var line = putil.peek_line()
     var col = putil.peek_col()
     putil.advance()   // while
+    putil.enter_cond()   // p.8.2.9：条件内不判定尾随闭包
     var cond = pexpr.parse_expr()
+    putil.exit_cond()
     if cond < 0 {
         return -1
     }
@@ -543,7 +547,9 @@ func parse_for(label: i64) -> i64 {
     if !putil.expect(lex_in, "'in'") {
         return -1
     }
+    putil.enter_cond()   // p.8.2.9：迭代容器表达式内不判定尾随闭包
     var iter = pexpr.parse_expr()
+    putil.exit_cond()
     if iter < 0 {
         return -1
     }
@@ -660,7 +666,9 @@ func parse_switch() -> i64 {
     var line = putil.peek_line()
     var col = putil.peek_col()
     putil.advance()   // switch
+    putil.enter_cond()   // p.8.2.9：判分子表达式内不判定尾随闭包
     var subject = pexpr.parse_expr()
+    putil.exit_cond()
     if subject < 0 {
         return -1
     }
