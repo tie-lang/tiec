@@ -87,7 +87,9 @@ pub func parse_stmt() -> i64 {
         if nxt == lex_ident && putil.peek_lexeme_n(1) == "use" {
             return parse_guard_use()
         }
-        if nxt == lex_ident && putil.peek_lexeme_n(1) == "with" {
+        // p.9.11.6：`with` 已保留字化（lex_with），`unsafe with(share)` 的 with
+        // 现为关键词 token；此处改用 lex_with 判定（与其 lexeme 文本一致）。
+        if nxt == lex_with {
             return parse_guard_with()
         }
         // `unsafe.get(share)` 表达式：unsafe 后跟 `.`（get 是方法名）

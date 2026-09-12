@@ -1078,6 +1078,33 @@ pub func infer_expr(id: i64) -> i64 {
         sm_err_msg = "下标访问的对象必须是表或字符串，实际是 " + types.type_name(base)
         return -1
     }
+    // p.9.11.6 表不可变更新 `with`：类型 = 左侧表/映射类型；右侧须为记录/映射
+    // 字面量（键化表 N_TABLE_LIT）。校验后登记，irgen 据此复制+合并。
+    if tag == N_WITH {
+        var wbase = infer_expr(sstate.child(id, 0))
+        if wbase < 0 {
+            return -1
+        }
+        if !types.is_table(wbase) && !types.is_map(wbase) {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "'with' 左侧必须是表/数组或映射记录，实际是 " + types.type_name(wbase)
+            return -1
+        }
+        var wupd = infer_expr(sstate.child(id, 1))
+        if wupd < 0 {
+            return -1
+        }
+        if !types.is_map(wupd) {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "'with' 右侧必须是记录/映射字面量 {k: v}，实际是 " + types.type_name(wupd)
+            return -1
+        }
+        node_types[id] = wbase
+        g_typed = g_typed + 1
+        return wbase
+    }
     // p.8.1.5 可空链安全访问（N_SAFE_ACCESS）：
     //   a?[i] → Option<table<T>>?[i] → Option<T>（None/越界 → None）
     //   opt?.field → Option<Struct>?.field → Option<字段类型>

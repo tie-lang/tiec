@@ -83,6 +83,10 @@ const lex_interp_lbrace: i64 = 96;
 // p.9.10.1 match/switch 表达式分支箭头 `=>`：`pat => expr`（tag 97，位于符号表
 // 范围之外的保留段，避开 lex_interp_lbrace=96；实际映射值在 lex_symtab.build_sym）。
 const lex_fatarrow: i64 = 97;
+// p.9.11.6 表不可变更新运算符 `with`（保留字，tag 98；位于符号表范围之外，
+// 与 lex_fatarrow=97 错开；实际映射值在 lex_symtab.build_kw 关键字表登记）。
+// `t with {k: v}` 二元运算符 token，参照 p.9.11.1 `=>` 新 token 手法。
+const lex_with: i64 = 98;
 
 namespace lextok {
 

@@ -268,6 +268,12 @@ const N_TRY_BLOCK: i64 = 157;
 //   panic/嵌套 defer（scheck 诊断），允许表达式/赋值/读作用域变量。布局：
 //   N_DEFER[children=[块 StmtList]]。语句节点（parse_stmt 识别 `defer {`）。
 const N_DEFER: i64 = 158;
+// p.9.11.6 表不可变更新 `t with {k: v}`：基于左表/记录产出**新表**（值语义纯糖，
+// 等价拷贝+赋值；左表不被修改），右操作数 `with` 后的更新 map 字面量（键:值 对）。
+// 布局：N_WITH[children=[base 表/映射表达式, 更新 map 字面量(N_TABLE_LIT)]]。
+// 未提及键值从 base 拷贝（map 值语义：整表/整映射副本），无法零拷贝共享（容器
+// 扁平数组无结构化共享），裁决=全复制。链式 `t with {a:1} with {b:2}` 左结合。
+const N_WITH: i64 = 159;
 // 类型段（val=TyKw 索引，name=类型关键字文本池 id）
 //   StructType[name=结构名, children=[类型实参槽]]——`Box<i64>` 引用含 N_TYPE_ARGS
 //   子节点；`Box` 裸引用 children[0] = -1（兼容现有）。
