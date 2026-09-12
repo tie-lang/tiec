@@ -98,6 +98,9 @@ const lex_immut: i64 = 103;   // `fn f(immut t)` 只读形参修饰
 // p.9.11.12 @注解起始符（tag 104）：`@name` / `@name(args)` 声明前置注解。
 // 映射值登记于 lex_symtab.build_sym（'@' = 0x40，介于 '?' 与 '[' 之间）。
 const lex_at: i64 = 104;      // @ 注解符（声明前置元数据）
+// p.9.11.15 yield 生成器关键字（tag 105）：`func gen() { yield v; ... }`——
+// 含 yield 的函数 = 生成器函数（产出序列，调用返回迭代序列对象/表）。
+const lex_yield: i64 = 105;   // yield 关键字（生成器产出语句）
 
 namespace lextok {
 
