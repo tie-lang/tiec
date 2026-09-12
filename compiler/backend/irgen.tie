@@ -1569,6 +1569,9 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     // M5 动态库导出面：登记导出标记（llvmgen gen_func 读 ir.func_exported 输出
     // dllexport；非动态库模式下该标记不影响生成）
     ir.func_export_set(fid, is_pub)
+    // p.9.11.10 inline fn：N_FN_DEF val bit5 = is_inline（parser 已登记）。llvmgen
+    // gen_func 读 ir.func_inline 在 define 头附加 alwaysinline 属性。
+    ir.func_inline_set(fid, (s_vals[fn_node] >> 5) & 1)
     g_cur_func = fid
     var entry = ir.new_block(fid, interner.intern("entry"))
     g_entry_block = entry     // p.6.10.3：entry 级表变量析构候选登记用
