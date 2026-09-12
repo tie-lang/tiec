@@ -534,6 +534,7 @@ pub func check_impl(ast_text: string, base_dir: string) -> string {
     pm_npars = table_new_i64()
     pm_ptys = table_new_i64()
     pm_rets = table_new_i64()
+    pm_iface = table_new_i64()   // p.9.11.21 interface 标记段（每次编译清零）
     im_keys = table_new_i64()
     im_vals = table_new_i64()
     im_port = table_new_i64()
@@ -787,6 +788,7 @@ pub func check_ast(base_dir: string) -> string {
     pm_npars = table_new_i64()
     pm_ptys = table_new_i64()
     pm_rets = table_new_i64()
+    pm_iface = table_new_i64()   // p.9.11.21 interface 标记段（每次编译清零）
     im_keys = table_new_i64()
     im_vals = table_new_i64()
     im_port = table_new_i64()

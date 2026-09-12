@@ -152,6 +152,13 @@ pub func parse_program() -> i64 {
                 return -1
             }
             ast.collect_stmt(stmts, s)
+        } else if tag == lex_interface {
+            // p.9.11.21：interface 结构性接口声明
+            var s = parse_interface()
+            if s < 0 {
+                return -1
+            }
+            ast.collect_stmt(stmts, s)
         } else if tag == lex_impl {
             // S2.4：impl 实现块（impl Drawable for Button { ... }）
             var s = parse_impl()
@@ -911,6 +918,13 @@ func parse_namespace() -> i64 {
                     return -1
                 }
                 table_push(body_stmts, st)
+            } else if tag == lex_interface {
+                // p.9.11.21：命名空间内 interface 声明（结构性接口）
+                var st = parse_interface()
+                if st < 0 {
+                    return -1
+                }
+                table_push(body_stmts, st)
             } else if tag == lex_impl {
                 // S2.4：命名空间内 impl 块
                 var st = parse_impl()
@@ -1014,6 +1028,13 @@ func parse_namespace() -> i64 {
             } else if tag == lex_port {
                 // S2.4：命名空间内 port 声明
                 var st = parse_port()
+                if st < 0 {
+                    return -1
+                }
+                table_push(body_stmts, st)
+            } else if tag == lex_interface {
+                // p.9.11.21：命名空间内 interface 声明（结构性接口）
+                var st = parse_interface()
                 if st < 0 {
                     return -1
                 }
@@ -1588,13 +1609,27 @@ func parse_port_method() -> i64 {
 }
 
 // `port Name { [pub] func 方法签名... }`（S2.4，docs/plans/port-model.md §2.1）
-// port = 接口，声明方法签名集合（不包含实现）；方法接收者统一为 self。
-// 产出 N_PORT[name=port 名, children=[泛型槽(-1), 方法 FnDef...]]。
+// port = 名义接口，声明方法签名集合（不包含实现）；方法接收者统一为 self。
+// 产出 N_PORT[name=port 名, val=kind, children=[泛型槽(-1), 方法 FnDef...]]。
 // 方法体可选（无体 = 签名声明；默认实现暂不支持，语义层报错）。
+// p.9.11.21 扩展：kind = -1 为 port（S2.4 名义接口，需显式 impl 块）；
+// kind = 1 为 interface（结构性接口，实现关系 = 命名空间方法签名兼容，
+// 无需显式 impl——鸭子多态的类型安全升级）。语法形态与 port 完全一致。
 func parse_port() -> i64 {
+    return parse_port_inner(-1)
+}
+
+// p.9.11.21：`interface Name { [pub] func 方法签名... }` 结构性接口声明。
+// 语法与 port 一致（方法签名集合、第一参 self、无函数体），产出 N_PORT
+// val=1 标记 interface——语义层（collect_port）据此区分实现关系判定。
+func parse_interface() -> i64 {
+    return parse_port_inner(1)
+}
+
+func parse_port_inner(kind: i64) -> i64 {
     var line = putil.peek_line()
     var col = putil.peek_col()
-    putil.advance()   // port
+    putil.advance()   // port / interface
     var name = putil.expect_ident()
     if name < 0 {
         return -1
@@ -1617,20 +1652,24 @@ func parse_port() -> i64 {
         } else if tag == lex_semi {
             putil.advance()   // ASI 补的分号（方法签名行尾）
         } else if tag == lex_func || tag == lex_pub {
-            // 方法签名（无体或带体；port 方法必须是 pub func）
+            // 方法签名（无体或带体；port/interface 方法必须是 pub func）
             var m = parse_port_method()
             if m < 0 {
                 return -1
             }
             table_push(methods, m)
         } else {
-            putil.set_err(putil.peek_line(), putil.peek_col(), "port 体内只允许方法定义（pub func 签名），实际是 " + putil.describe(tag))
+            if kind == 1 {
+                putil.set_err(putil.peek_line(), putil.peek_col(), "interface 体内只允许方法定义（pub func 签名），实际是 " + putil.describe(tag))
+            } else {
+                putil.set_err(putil.peek_line(), putil.peek_col(), "port 体内只允许方法定义（pub func 签名），实际是 " + putil.describe(tag))
+            }
             return -1
         }
     }
-    var p = ast.new_node(N_PORT, name, -1, -1, line, col)
+    var p = ast.new_node(N_PORT, name, kind, -1, line, col)
     var pkids: table<i64> = table_new_i64()
-    table_push(pkids, -1)   // 泛型槽（第一版 port 不支持泛型，恒 -1）
+    table_push(pkids, -1)   // 泛型槽（第一版 port/interface 不支持泛型，恒 -1）
     var i: i64 = 0
     while i < len(methods) {
         table_push(pkids, methods[i])

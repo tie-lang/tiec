@@ -1591,7 +1591,22 @@ pub func check_var_decl(s: i64) -> i64 {
                 if !stype.impl_has_ty(pi_l, it_p) {
                     sm_err_line = s_lines[s]
                     sm_err_col = s_cols[s]
-                    sm_err_msg = "类型 '" + types.type_name(it_p) + "' 未实现 port '" + types.type_name(ty) + "'，不能提升（请先写 impl " + types.type_name(ty) + " for " + types.type_name(it_p) + "）"
+                    if sstate.port_is_iface(pi_l) {
+                        // p.9.11.21 interface 提升不满足：定位第一个违规方法
+                        var vio2 = stype.iface_first_violation(pi_l, it_p)
+                        if vio2 >= 0 {
+                            var vname2 = sstate.port_method_name(pi_l, vio2)
+                            if stype.iface_vio_missing() {
+                                sm_err_msg = "类型 '" + types.type_name(it_p) + "' 未实现 interface '" + types.type_name(ty) + "'，不能提升（缺少方法 '" + vname2 + "'）"
+                            } else {
+                                sm_err_msg = "类型 '" + types.type_name(it_p) + "' 未实现 interface '" + types.type_name(ty) + "'，不能提升（方法 '" + vname2 + "' 签名不匹配）"
+                            }
+                        } else {
+                            sm_err_msg = "类型 '" + types.type_name(it_p) + "' 未实现 interface '" + types.type_name(ty) + "'，不能提升"
+                        }
+                    } else {
+                        sm_err_msg = "类型 '" + types.type_name(it_p) + "' 未实现 port '" + types.type_name(ty) + "'，不能提升（请先写 impl " + types.type_name(ty) + " for " + types.type_name(it_p) + "）"
+                    }
                     return -1
                 }
             } else if types.kind(it_p) == K_PORT {

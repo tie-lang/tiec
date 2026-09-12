@@ -13,6 +13,9 @@ type tie<class>
 import "./sstate.tie"
 import "../middle/data.tie"
 
+// p.9.11.21 interface 诊断辅助全局（tie 约束：全局变量须在命名空间之前）
+var g_iface_vio_missing: bool = true;
+
 namespace stype {
 
 // 类型节点 → 类型 id（types 自编码；含 tuple 查找/登记）
@@ -175,20 +178,159 @@ pub func parse_type_node(tid: i64) -> i64 {
 }
 
 // ---------- S2.4 port 提升/约束判定辅助 ----------
-// struct 类型 id 是否实现 port（port 索引）——提升合法性 / 泛型约束校验共用。
-// struct_ty 必须是 K_STRUCT（调用方保证）；未实现返回 false。
+// struct/enum 类型 id 是否实现 port/interface（port 索引）——提升合法性 /
+// 泛型约束校验共用。port（名义）：查显式 impl 记录；p.9.11.21 interface
+// （结构性）：命名空间方法签名兼容即实现（鸭子多态，无需显式 impl 块）。
+// 未实现返回 false。
 pub func impl_has_ty(pi: i64, struct_ty: i64) -> bool {
-    if types.kind(struct_ty) != K_STRUCT {
+    var k = types.kind(struct_ty)
+    if k == K_STRUCT {
+        var si = types.low(struct_ty)
+        if si < 0 {
+            return false
+        }
+        if sstate.impl_find(pi, si) >= 0 {
+            return true
+        }
+        // p.9.11.21 interface 结构性实现：签名兼容即实现（首次判定合成
+        // impl 记录 → vtable 生成 / 提升 / 约束校验全复用，后端零改动）
+        if sstate.port_is_iface(pi) {
+            return iface_struct_has_ty(pi, si)
+        }
         return false
     }
-    var si = types.low(struct_ty)
-    if si < 0 {
-        return false
-    }
-    if sstate.impl_find(pi, si) >= 0 {
-        return true
+    if k == K_ENUM {
+        // p.9.11.21 interface 结构性实现（enum 关联方法，M2.1.8 自动 ref）：
+        // 仅签名兼容判定（enum 不合成 impl 记录——impl 表存 struct 索引，
+        // 与 port 现状一致：enum 可满足泛型约束，但不能提升为接口对象）
+        if !sstate.port_is_iface(pi) {
+            return false
+        }
+        var ei = types.low(struct_ty)
+        if ei < 0 {
+            return false
+        }
+        return iface_enum_has_ty(pi, ei)
     }
     return false
+}
+
+// p.9.11.21 interface 结构性实现判定（struct）：接口全部方法在该 struct 的
+// 命名空间方法（<struct>::<m>，M2.1.8 首参自动 ref）中签名兼容（方法名 +
+// 参数个数 + 去 self 参数类型 + 返回类型）。全匹配 → 合成 impl 记录返回
+// true；任一缺失/不匹配返回 false（violation 细节经 iface_first_violation
+// 供调用方构造诊断，见 sgen_inst / scheck）。
+func iface_struct_has_ty(pi: i64, si: i64) -> bool {
+    var sname = sstate.struct_name_of(si)
+    var n = pm_n[pi]
+    var mnames: table<i64> = table_new_i64()
+    var mi: i64 = 0
+    while mi < n {
+        var mname = sstate.port_method_name(pi, mi)
+        var full = sname + "::" + mname
+        if !iface_method_matches(pi, mi, full) {
+            return false
+        }
+        table_push(mnames, intern.intern(full))
+        mi = mi + 1
+    }
+    // 全部签名兼容：合成 impl 记录（vtable 生成 / 提升 / 约束校验复用）
+    if sstate.reg_impl(pi, si, mnames) < 0 {
+        return false
+    }
+    return true
+}
+
+// p.9.11.21 interface 结构性实现判定（enum）：仅签名兼容检查，不合成
+// impl 记录（enum 提升为接口对象后置，与 port 现状一致）。
+func iface_enum_has_ty(pi: i64, ei: i64) -> bool {
+    var ename = sstate.enum_name_of(ei)
+    var n = pm_n[pi]
+    var mi: i64 = 0
+    while mi < n {
+        var mname = sstate.port_method_name(pi, mi)
+        var full = ename + "::" + mname
+        if !iface_method_matches(pi, mi, full) {
+            return false
+        }
+        mi = mi + 1
+    }
+    return true
+}
+
+// interface 方法签名与命名空间函数签名匹配（fn_sig 全名查找，去 self 槽）
+func iface_method_matches(pi: i64, mi: i64, full: string) -> bool {
+    var sig = sstate.fn_sig(full)
+    if sig < 0 {
+        return false
+    }
+    var pnp = sstate.port_method_nparams(pi, mi)  // 含 self
+    if sg_nparams[sig] != pnp {
+        return false
+    }
+    var j: i64 = 1
+    while j < pnp {
+        var want = sstate.port_method_param(pi, mi, j)
+        var got = sp_tys[sg_off[sig] + j]
+        if want != got {
+            return false
+        }
+        j = j + 1
+    }
+    if sg_ret[sig] != sstate.port_method_ret(pi, mi) {
+        return false
+    }
+    return true
+}
+
+// p.9.11.21 诊断辅助：第一个不满足 interface 的方法序号（-1 = 全满足；
+// -2 = 非 struct/enum 类型）。g_iface_vio_missing 说明原因：true = 缺少
+// 同名方法，false = 方法存在但签名不匹配（参数/返回类型）。
+pub func iface_first_violation(pi: i64, ty: i64) -> i64 {
+    var k = types.kind(ty)
+    var tname = ""
+    if k == K_STRUCT {
+        tname = sstate.struct_name_of(types.low(ty))
+    } else if k == K_ENUM {
+        tname = sstate.enum_name_of(types.low(ty))
+    } else {
+        return -2
+    }
+    var n = pm_n[pi]
+    var mi: i64 = 0
+    while mi < n {
+        var mname = sstate.port_method_name(pi, mi)
+        var full = tname + "::" + mname
+        var sig = sstate.fn_sig(full)
+        if sig < 0 {
+            g_iface_vio_missing = true
+            return mi
+        }
+        var pnp = sstate.port_method_nparams(pi, mi)
+        if sg_nparams[sig] != pnp {
+            g_iface_vio_missing = true
+            return mi
+        }
+        var j: i64 = 1
+        while j < pnp {
+            if sstate.port_method_param(pi, mi, j) != sp_tys[sg_off[sig] + j] {
+                g_iface_vio_missing = false
+                return mi
+            }
+            j = j + 1
+        }
+        if sg_ret[sig] != sstate.port_method_ret(pi, mi) {
+            g_iface_vio_missing = false
+            return mi
+        }
+        mi = mi + 1
+    }
+    return -1
+}
+
+// 最近一次 iface_first_violation 的原因：true = 缺少方法，false = 签名不匹配
+pub func iface_vio_missing() -> bool {
+    return g_iface_vio_missing
 }
 
 // ---------- S1.3 窄整数辅助（位宽/符号性） ----------
