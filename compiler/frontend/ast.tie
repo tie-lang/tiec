@@ -257,6 +257,17 @@ const N_DECL_MACRO_DEF: i64 = 155;
 //   caseExpr = N_SWITCH_CASE[children=[N_PATTERN_LIST, when 或 -1, bodyExpr]]；
 //   defaultExpr = `_ => expr` 的 body 表达式（无 `_` 时该槽为 -1）。
 const N_SWITCH_EXPR: i64 = 156;
+// p.9.11.3 try 错误聚合块：`try { stmts }`——块内多个 `?` 传播点聚合（纯语法
+//   分组，块内 `?` 语义与块外一致→传播到当前函数）；块末表达式为 try 块的值
+//   （无末值则 try 作语句，取值规则=末 N_EXPR_STMT 的值）。布局：
+//   N_TRY_BLOCK[children=[块 StmtList]]。表达式节点（parse_primary 识别
+//   `try {`；语句位经 N_EXPR_STMT 包裹）。node_types = 末表达式类型或 -1。
+const N_TRY_BLOCK: i64 = 157;
+// p.9.11.4 defer 资源释放：`defer { stmts }`——注册者所在作用域（函数/块）退出
+//   时**逆序**（后注册先执行）执行。块内禁止 return/break/continue/yield/goto/
+//   panic/嵌套 defer（scheck 诊断），允许表达式/赋值/读作用域变量。布局：
+//   N_DEFER[children=[块 StmtList]]。语句节点（parse_stmt 识别 `defer {`）。
+const N_DEFER: i64 = 158;
 // 类型段（val=TyKw 索引，name=类型关键字文本池 id）
 //   StructType[name=结构名, children=[类型实参槽]]——`Box<i64>` 引用含 N_TYPE_ARGS
 //   子节点；`Box` 裸引用 children[0] = -1（兼容现有）。

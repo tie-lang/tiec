@@ -395,6 +395,8 @@ const S_N_GOTO_LABEL: i64 = 143;    // `#[tag.x]` 语句位置标签
 const S_N_GOTO: i64 = 144;          // `unsafe goto #x` 无条件跳转
 const S_N_GUARD_STMT: i64 = 153;    // p.8.2.11 guard else 早退（与 ast.tie N_GUARD_STMT 同号）
 const S_N_SWITCH_EXPR: i64 = 156;   // p.9.10.1 match/switch 表达式（与 ast.tie 同号）
+const S_N_TRY_BLOCK: i64 = 157;     // p.9.11.3 try 错误聚合块（与 ast.tie N_TRY_BLOCK 同号）
+const S_N_DEFER: i64 = 158;         // p.9.11.4 defer 资源释放（与 ast.tie N_DEFER 同号）
 // 三期 A 组 guard<cap> 凭据（与 ast.tie N_GUARD_GET/N_GUARD_USE/N_GUARD_WITH 同号）
 const S_N_GUARD_GET: i64 = 145;     // `unsafe.get(share)` 取得凭据（表达式）
 const S_N_GUARD_USE: i64 = 146;     // `unsafe use g { ... }` 持证越界块

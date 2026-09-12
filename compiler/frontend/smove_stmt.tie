@@ -121,6 +121,10 @@ func check_stmt(s: i64) -> i64 {
                 }
                 return 0
             }
+            // p.9.11.3 try 错误聚合块：表达式位，其块体是语句 → 按块遍历移动语义
+            if et == S_N_TRY_BLOCK {
+                return check_block(sstate.child(e, 0))
+            }
         }
         return check_expr_read(e)
     }
@@ -243,6 +247,14 @@ func check_stmt(s: i64) -> i64 {
         var blk_w = sstate.child(s, 1)
         if blk_w >= 0 {
             return check_block(blk_w)
+        }
+        return 0
+    }
+    // p.9.11.4 defer 资源释放：块体遍历移动语义（读作用域变量/赋值）
+    if tag == S_N_DEFER {
+        var blk_d = sstate.child(s, 0)
+        if blk_d >= 0 {
+            return check_block(blk_d)
         }
         return 0
     }

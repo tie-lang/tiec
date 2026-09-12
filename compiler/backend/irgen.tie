@@ -45,6 +45,18 @@ var g_lp_top: i64 = 0;
 // 语义层已做 R1/R2/R3 校验；irgen 按标签表生成 br 目标块。
 var g_gt_names: table<i64>;
 var g_gt_blks: table<i64>;
+// p.9.11.4 defer 资源释放（编译期注册表 + 出口 LIFO 发射）：
+//   g_def_bodies/g_def_flags/g_def_scopes —— defer 体节点 id / 运行时标志 alloca
+//   / 注册作用域（0 函数体，>0 循环嵌套层，对齐 g_lp_top）；
+//   g_def_cnt —— 已注册计数；g_def_sc_cnt —— （保留）作用域计数；
+//   g_block_lvl —— tig_block_stmts 嵌套深度；g_in_fn_body —— 命名函数体标记。
+var g_def_bodies: table<i64>;
+var g_def_flags: table<i64>;
+var g_def_scopes: table<i64>;
+var g_def_cnt: i64 = 0;
+var g_def_sc_cnt: i64 = 0;
+var g_block_lvl: i64 = 0;
+var g_in_fn_body: i64 = 0;
 // 字符串常量收集（池 id → 全局序号）；llvmgen 生成 @.str.N
 var g_str_keys: table<i64>;
 var g_str_count: i64 = 0;
@@ -1463,6 +1475,13 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     g_lp_breaks = table_new_i64()
     g_lp_cont = table_new_i64()
     g_lp_top = 0
+    // p.9.11.4 defer：每函数重置 defer 注册表与作用域计数
+    g_def_bodies = table_new_i64()
+    g_def_flags = table_new_i64()
+    g_def_scopes = table_new_i64()
+    g_def_cnt = 0
+    g_block_lvl = 0
+    g_in_fn_body = 0
     // 三期 goto（§7.1.5）：每函数重置 goto 标签块表（标签块 = 跳转目标）
     g_gt_names = table_new_i64()
     g_gt_blks = table_new_i64()
@@ -1626,6 +1645,8 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     }
     // 函数体：children[slot_off + 1 + nparams]
     var body = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + nparams)
+    // p.9.11.4 defer：标记正在生成命名函数体（其最外层块末尾跑函数级 defer）
+    g_in_fn_body = 1
     var r = tig_block_stmts(body)
     if r < 0 {
         return -1

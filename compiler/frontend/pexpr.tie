@@ -1079,6 +1079,26 @@ func parse_primary() -> i64 {
                 }
             }
         }
+        // p.9.11.3 try 错误聚合块：`try { ... }`（try 非保留字，仅当紧跟 `{` 按
+        // try 块解析；否则落回 N_VAR/N_CALL 常规路径，规避用户变量名 try）。块体
+        // 为语句块——pexpr 位于 import 树底层无法解析语句，复用 S2.2 延迟闭包体
+        // 快照机制（putil.defer_closure_push + 配平跳过 + skip_closure_body），
+        // 块体由 pstmt_flow.parse_deferred_closures 末尾 parse_block 解析并回填为
+        // N_TRY_BLOCK 的 children[0]（StmtList）。块内 `?` 传播点语义与块外一致
+        //（传播到当前函数，try 纯语法分组成错误聚合）。
+        if len(putil.peek_lexeme()) > 0 && putil.peek_lexeme() == "try" {
+            if putil.peek_n(1) == lex_lbrace {
+                var tl = putil.peek_line()
+                var tc = putil.peek_col()
+                putil.advance()   // try
+                var tn = ast.new_node(N_TRY_BLOCK, -1, -1, -1, tl, tc)
+                putil.defer_closure_push(tn)
+                if !skip_closure_body() {
+                    return -1
+                }
+                return tn
+            }
+        }
         putil.advance()
         // 命名空间路径：a::b::c
         if putil.peek_tag() == lex_dcolon {

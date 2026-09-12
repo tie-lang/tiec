@@ -1643,6 +1643,20 @@ pub func infer_expr(id: i64) -> i64 {
     if tag == S_N_TRY {
         return infer_try_unwrap(id)
     }
+    // p.9.11.3 try 错误聚合块：表达式位。块体由 scheck.check_try 检查（含 `?`
+    // 传播校验），此处取末表达式值类型（无末值则 -1/仅作语句）。块内 `?` 传播
+    // 目标 = 当前函数（与块外一致，try 仅语法分组）。
+    if tag == S_N_TRY_BLOCK {
+        var tr = scheck.check_try(id)
+        if tr < 0 {
+            return -1
+        }
+        var tv = node_types[id]
+        if tv < 0 {
+            tv = types.named(TK_I64)
+        }
+        return tv
+    }
     sm_err_line = s_lines[id]
     sm_err_col = s_cols[id]
     sm_err_msg = "无法推断表达式（节点 " + to_string(tag) + "）"
