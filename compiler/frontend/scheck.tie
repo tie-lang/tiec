@@ -1252,9 +1252,42 @@ pub func check_stmt(s: i64) -> i64 {
                 i = i + 1
             }
             if !found {
+                // p.8.2.7 计算属性写：命中 setter（<Struct>::<name>_set，接收者+新值）
+                // → 校验 setter 参数并登记 g_cmp_setter，供 irgen 发射 setter 调用。
+                var sname = sstate.struct_name_of(si)
+                var setfull = sname + "::" + fnm + "_set"
+                var ssig = sstate.fn_sig(setfull)
+                if ssig >= 0 {
+                    var srec = sp_tys[sg_off[ssig]]
+                    if !stype.types_compatible(srec, base) {
+                        sm_err_line = s_lines[s]
+                        sm_err_col = s_cols[s]
+                        sm_err_msg = "计算属性 setter '" + setfull + "' 接收者类型不匹配：期望 " + types.type_name(srec) + "，实际 " + types.type_name(base)
+                        return -1
+                    }
+                    if sg_nparams[ssig] != 2 {
+                        sm_err_line = s_lines[s]
+                        sm_err_col = s_cols[s]
+                        sm_err_msg = "计算属性 setter '" + setfull + "' 必须恰好 2 个参数（接收者 + 新值），实际 " + to_string(sg_nparams[ssig]) + " 个"
+                        return -1
+                    }
+                    var want_v = sp_tys[sg_off[ssig] + 1]
+                    var vt = sinfer.infer_expr(sstate.child(s, 1))
+                    if vt < 0 {
+                        return -1
+                    }
+                    if !stype.types_compatible(want_v, vt) && !stype.types_match(want_v, vt, sstate.child(s, 1)) {
+                        sm_err_line = s_lines[s]
+                        sm_err_col = s_cols[s]
+                        sm_err_msg = "计算属性 setter '" + setfull + "' 参数类型不匹配：期望 " + types.type_name(want_v) + "，实际 " + types.type_name(vt)
+                        return -1
+                    }
+                    g_cmp_setter[s] = interner.intern(setfull)
+                    return 0
+                }
                 sm_err_line = s_lines[s]
                 sm_err_col = s_cols[s]
-                sm_err_msg = "类 '" + sstate.struct_name_of(si) + "' 没有字段 '" + fnm + "'"
+                sm_err_msg = "类 '" + sname + "' 没有字段 '" + fnm + "'"
                 return -1
             }
             var vt = sinfer.infer_expr(sstate.child(s, 1))

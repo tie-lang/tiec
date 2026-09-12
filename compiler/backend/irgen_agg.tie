@@ -91,6 +91,31 @@ func tig_tuple_lit_typed(id: i64, agg: i64) -> i64 {
 }
 
 // 字段访问（读）：base.field → 地址 + agg_gep + load。
+// 计算属性读：语义层登记 getter（g_cmp_getter[id] > 0）或字段缺失时按方法约定
+// 独立探测（<Struct>::<fname> getter 存在）→ 发射 getter 方法调用（接收者 = base
+// 表达式，arg 为空），返回属性值。独立探测与 op_add 判定同源，保证自举两期一致。
+func tig_computed_getter(id: i64, base: i64, base_ty: i64, fname: string) -> i64 {
+    var gidx = g_cmp_getter[id]
+    if gidx < 0 {
+        gidx = 0
+    }
+    var gfull = ""
+    if gidx > 0 {
+        gfull = interner.lookup(gidx)
+    } else if types.kind(base_ty) == K_STRUCT {
+        var cgsi = types.low(base_ty)
+        var cand = sstate.struct_name_of(cgsi) + "::" + fname
+        if sstate.fn_sig(cand) >= 0 {
+            gfull = cand
+        }
+    }
+    if gfull != "" {
+        var gnone: table<i64> = table_new_i64()
+        return tig_op_overload(gfull, base, base_ty, gnone)
+    }
+    return -2
+}
+
 func tig_field_access(id: i64) -> i64 {
     var base = sstate.child(id, 0)
     var fname = sstate.name_str(id)
@@ -99,6 +124,10 @@ func tig_field_access(id: i64) -> i64 {
     if base_ty < 0 || (bk != K_TUPLE && bk != K_STRUCT) {
         sm_err_msg = "字段访问 '.' 的对象不是元组/struct（类型 " + types.type_name(base_ty) + "，函数 " + g_cur_fn_name + "）"
         return -1
+    }
+    var gres = tig_computed_getter(id, base, base_ty, fname)
+    if gres >= 0 {
+        return gres
     }
     var fidx = agg_field_index(base_ty, fname)
     if fidx < 0 {
@@ -133,6 +162,30 @@ func tig_field_assign(id: i64) -> i64 {
     if base_ty < 0 || (bk != K_TUPLE && bk != K_STRUCT) {
         sm_err_msg = "字段赋值的目标不是元组/struct（类型 " + types.type_name(base_ty) + "，函数 " + g_cur_fn_name + "）"
         return -1
+    }
+    // p.8.2.7 计算属性写：语义层登记 setter（g_cmp_setter[id] > 0）或字段缺失时
+    // 按方法约定独立探测（<Struct>::<fname>_set 存在）→ 发射 setter 方法调用
+    // （接收者 = base，实参 = value）。setter 通常 void，tig_op_overload 对 void
+    // 返回哑值 0，赋值语句丢弃结果。命中计算属性 → 返回其发射值；否则 -2 走普通
+    // 字段存储路径。
+    var sidx = g_cmp_setter[id]
+    if sidx < 0 {
+        sidx = 0
+    }
+    var sfull = ""
+    if sidx > 0 {
+        sfull = interner.lookup(sidx)
+    } else if types.kind(base_ty) == K_STRUCT {
+        var cgsi2 = types.low(base_ty)
+        var cand2 = sstate.struct_name_of(cgsi2) + "::" + fname + "_set"
+        if sstate.fn_sig(cand2) >= 0 {
+            sfull = cand2
+        }
+    }
+    if sfull != "" {
+        var onearg: table<i64> = table_new_i64()
+        table_push(onearg, val)
+        return tig_op_overload(sfull, base, base_ty, onearg)
     }
     var fidx = agg_field_index(base_ty, fname)
     if fidx < 0 {
