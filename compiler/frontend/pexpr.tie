@@ -800,6 +800,25 @@ func maybe_trailing_closure(expr: i64) -> i64 {
     return nc
 }
 
+// ---------- p.8.2.10 展开实参 ----------
+
+// 实参 `expr...`：若实参表达式后紧跟 `...`，则把整个表达式包装为 N_SPREAD_ARG
+// 节点（children=[expr]）。`...` 仅出现在实参位置（形参声明处的变参 `...T` 是
+// p.8.1.3 已完成的功能，互不相扰）。返回原 a（无 `...`）或包装后的 spread 节点。
+func wrap_spread_arg(a: i64) -> i64 {
+    if putil.peek_tag() != lex_ellipsis {
+        return a
+    }
+    putil.advance()   // '...'
+    var line = ast.line(a)
+    var col = ast.col(a)
+    var sp = ast.new_node(N_SPREAD_ARG, -1, -1, -1, line, col)
+    var skids: table<i64> = table_new_i64()
+    table_push(skids, a)
+    ast.set_children(sp, skids)
+    return sp
+}
+
 // 解析实参列表到 args（前提：'(' 已消费；以 ')' 结束）
 pub func parse_args_after_lparen(args: ref table<i64>) -> bool {
     if putil.eat(lex_rparen) {
@@ -829,6 +848,7 @@ pub func parse_args_after_lparen(args: ref table<i64>) -> bool {
                 if a < 0 {
                     return false
                 }
+                a = wrap_spread_arg(a)
                 table_push(args, a)
             }
         } else {
@@ -836,6 +856,7 @@ pub func parse_args_after_lparen(args: ref table<i64>) -> bool {
             if a < 0 {
                 return false
             }
+            a = wrap_spread_arg(a)
             table_push(args, a)
         }
         if putil.eat(lex_comma) {

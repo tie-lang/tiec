@@ -401,6 +401,20 @@ func tig_variadic_table(nodes: table<i64>, elem: i64) -> i64 {
     var t = s21_table_new(size_v)
     var i: i64 = 0
     while i < len(nodes) {
+        // p.8.2.10 展开实参（N_SPREAD_ARG）：operand 是表，运行期把其全部元素
+        // 依序并入变参表（tig_variadic_append_spread 发射复制循环）。
+        if s_tags[nodes[i]] == N_SPREAD_ARG {
+            var sp_op = sstate.child(nodes[i], 0)
+            var src = tig_expr(sp_op)
+            if src < 0 {
+                return -1
+            }
+            if tig_variadic_append_spread(t, src, elem) < 0 {
+                return -1
+            }
+            i = i + 1
+            continue
+        }
         var v = tig_expr(nodes[i])
         if v < 0 {
             return -1
@@ -423,6 +437,86 @@ func tig_variadic_table(nodes: table<i64>, elem: i64) -> i64 {
         i = i + 1
     }
     return t
+}
+
+// p.8.2.10 展开实参：把源表 src 的全部元素运行期依序并入变参表 t（复制循环）。
+// 发射 4 块（cond/body/step/exit）线性小循环，逐元素 s21_table_at + s21_table_push。
+// 内部循环不做 loop_push/loop_pop（非用户循环——外层用户循环的 break/continue
+// 仍应导向用户循环标签，不受本复制循环干扰）。
+func tig_variadic_append_spread(t: i64, src: i64, elem: i64) -> i64 {
+    var elem_llvm_ty = types.named(TK_I64)
+    var suffix = bridge_suffix(elem)
+    var fk2 = types.kind(elem)
+    if fk2 == K_STRUCT || fk2 == K_ENUM || fk2 == K_FN || fk2 == K_TUPLE || elem == types.named(TK_ANY) {
+        elem_llvm_ty = elem
+    } else if types.is_table(elem) || types.is_map(elem) || types.kind(elem) == K_PORT {
+        suffix = "string"
+        elem_llvm_ty = elem
+    } else if suffix == "string" {
+        elem_llvm_ty = types.named(TK_STR)
+    } else if suffix == "bool" {
+        elem_llvm_ty = types.named(TK_BOOL)
+    } else if suffix == "f64" {
+        elem_llvm_ty = types.named(TK_F64)
+    }
+    // idx alloca + store 0
+    var idx_a = ir.new_inst(g_cur_block, 20, types.named(TK_I64))
+    ir.add_operand(idx_a, types.named(TK_I64), 2)
+    var idx_ptr = ir.get_value(idx_a)
+    var i0 = tig_int_lit_ty(0, types.named(TK_I64))
+    var st0 = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(st0, types.named(TK_I64), 2)
+    ir.add_operand(st0, i0, 0)
+    ir.add_operand(st0, idx_ptr, 0)
+    var cond_blk = ir.new_block(g_cur_func, interner.intern("spread.cond"))
+    var body_blk = ir.new_block(g_cur_func, interner.intern("spread.body"))
+    var step_blk = ir.new_block(g_cur_func, interner.intern("spread.step"))
+    var exit_blk = ir.new_block(g_cur_func, interner.intern("spread.exit"))
+    var b0 = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(b0, cond_blk, 1)
+    // cond: idx >= len(src) → exit
+    g_cur_block = cond_blk
+    var cur = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
+    ir.add_operand(cur, idx_ptr, 0)
+    var cur_v = ir.get_value(cur)
+    var tlen = s21_table_len(src)
+    if tlen < 0 {
+        return -1
+    }
+    var done = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
+    ir.add_operand(done, cur_v, 0)
+    ir.add_operand(done, tlen, 0)
+    ir.add_operand(done, 5, 2)   // sge
+    var done_v = ir.get_value(done)
+    var cb = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb, done_v, 0)
+    ir.add_operand(cb, exit_blk, 1)
+    ir.add_operand(cb, body_blk, 1)
+    // body: item = src[idx]; push into t
+    g_cur_block = body_blk
+    var ok_slot = ir.new_inst(g_cur_block, 20, types.named(TK_I8))
+    ir.add_operand(ok_slot, types.named(TK_I8), 2)
+    var iv = s21_table_at(src, cur_v, ir.get_value(ok_slot), elem_llvm_ty)
+    if iv < 0 {
+        return -1
+    }
+    s21_table_push(t, elem_llvm_ty, iv)
+    var bb2 = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(bb2, step_blk, 1)
+    // step: idx+1 → store → br cond
+    g_cur_block = step_blk
+    var add1 = ir.new_inst(g_cur_block, 0, types.named(TK_I64))
+    ir.add_operand(add1, cur_v, 0)
+    ir.add_operand(add1, 1, 2)
+    var add_v = ir.get_value(add1)
+    var st2 = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(st2, types.named(TK_I64), 2)
+    ir.add_operand(st2, add_v, 0)
+    ir.add_operand(st2, idx_ptr, 0)
+    var sb = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(sb, cond_blk, 1)
+    g_cur_block = exit_blk
+    return 0
 }
 
 
