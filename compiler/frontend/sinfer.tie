@@ -2790,14 +2790,29 @@ func infer_actor_method(aty: i64, mname: string, args: table<i64>, id: i64) -> i
 // struct 实例方法转发
 pub func infer_struct_method(recv: i64, recv_ty: i64, mname: string, args: table<i64>, id: i64) -> i64 {
     var bk = types.kind(recv_ty)
-    if bk != K_STRUCT {
+    // p.9.11.20 enum 关联方法：接收者为 enum 类型 → 方法全名 = <enum 名>::<方法>
+    //（复用 struct 方法机制：namespace <enum 名> 内 pub func，首参 = enum 类型
+    // 自动 ref）。enum 名经 sstate.enum_name_of（en_keys/en_vals 反查）。
+    var sname = ""
+    var si: i64 = 0
+    if bk == K_STRUCT {
+        si = types.low(recv_ty)
+        sname = intern.lookup(st_keys[si])
+    } else if bk == K_ENUM {
+        si = types.low(recv_ty)
+        sname = sstate.enum_name_of(si)
+        if str_len(sname) == 0 {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "枚举类型解析失败（方法 " + mname + "）"
+            return -1
+        }
+    } else {
         sm_err_line = s_lines[id]
         sm_err_col = s_cols[id]
-        sm_err_msg = "方法调用的对象必须是 struct 实例或 struct 名，实际是 " + types.type_name(recv_ty)
+        sm_err_msg = "方法调用的对象必须是 struct/enum 实例或 struct/enum 名，实际是 " + types.type_name(recv_ty)
         return -1
     }
-    var si = types.low(recv_ty)
-    var sname = intern.lookup(st_keys[si])
     var full = sname + "::" + mname
     var sig = sstate.fn_sig(full)
     if sig < 0 {
@@ -2820,21 +2835,28 @@ pub func infer_struct_method(recv: i64, recv_ty: i64, mname: string, args: table
         }
         // p.9.11.17 fn 类型字段调用：`cb.f(args)`（f 为 fn 类型字段）→ 改写为
         // CALL_EXPR（函数值间接调用）。字段名命中但非 fn 类型 → 不是字段调用，
-        // 落回「没有方法」诊断。
-        var ffi: i64 = 0
-        while ffi < cls_nfld[si] {
-            if intern.lookup(fld_names[cls_fldoff[si] + ffi]) == mname {
-                var ffty = fld_tys[cls_fldoff[si] + ffi]
-                if types.is_fn(ffty) {
-                    return rewrite_fn_field_call(id, recv, mname, args)
+        // 落回「没有方法」诊断。仅 struct 接收者（enum 无字段表，si 是 enum
+        // 索引，不能查 cls_* 字段表）。
+        if bk == K_STRUCT {
+            var ffi: i64 = 0
+            while ffi < cls_nfld[si] {
+                if intern.lookup(fld_names[cls_fldoff[si] + ffi]) == mname {
+                    var ffty = fld_tys[cls_fldoff[si] + ffi]
+                    if types.is_fn(ffty) {
+                        return rewrite_fn_field_call(id, recv, mname, args)
+                    }
+                    break
                 }
-                break
+                ffi = ffi + 1
             }
-            ffi = ffi + 1
         }
         sm_err_line = s_lines[id]
         sm_err_col = s_cols[id]
-        sm_err_msg = "struct '" + sname + "'（含继承链）没有方法 '" + mname + "'"
+        if bk == K_ENUM {
+            sm_err_msg = "枚举 '" + sname + "' 没有方法 '" + mname + "'"
+        } else {
+            sm_err_msg = "struct '" + sname + "'（含继承链）没有方法 '" + mname + "'"
+        }
         return -1
     }
     // 方法函数必须 pub

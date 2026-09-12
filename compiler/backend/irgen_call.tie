@@ -298,6 +298,16 @@ func tig_method_call(id: i64) -> i64 {
                     return tig_struct_method_call(full, id, recv, g_lookup_ty)
                 }
             }
+            if types.kind(g_lookup_ty) == K_ENUM {
+                // p.9.11.20 enum 关联方法：接收者为 enum 实例 → 方法全名 =
+                // <enum 名>::<方法>（语义层已校验签名与参数；发射同 struct
+                // 方法转发——首参 ref 传槽地址，else 按值传聚合）
+                var ei9 = g_lookup_ty - BASE_ENUM
+                var full9 = sstate.enum_name_of(ei9) + "::" + mname
+                if sstate.fn_sig(full9) >= 0 {
+                    return tig_struct_method_call(full9, id, recv, g_lookup_ty)
+                }
+            }
             if types.kind(g_lookup_ty) == K_ACTOR {
                 // 一期并发 A4 Step4b-2：actor 句柄同步 RPC（c.inc(5) → 入队 +
                 // 阻塞应答槽 → 读 result）。接收者句柄 = load 槽（i64）。
