@@ -312,6 +312,10 @@ var g_extra_tops: table<i64>;    // 全部文件顶层语句 id（主 + 被导�
 // 实现 pub 宏跨文件可见、非 pub 宏同文件私有。
 var g_file_roots: table<i64>;    // 顶层 StmtList 根 id → 文件 id
 var g_file_count: i64 = 1;       // 已分配文件 id 数（主文件 0 占位）
+// p.9.11.14 import 别名登记（平行表：别名 → 导入路径；编译单元内别名唯一，
+// 重复 = 诊断）。别名同时经 M2.1.7 语义把被导入文件顶层 namespace 首段改名。
+var g_imp_alias_names: table<string>;   // 别名（字符串）
+var g_imp_alias_paths: table<string>;   // 对应导入路径（归一化）
 
 const S_N_INT_LIT: i64 = 0;
 const S_N_FLOAT_LIT: i64 = 1;
