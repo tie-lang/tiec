@@ -1184,27 +1184,58 @@ pub func infer_expr(id: i64) -> i64 {
             return -1
         }
         if bk == K_STRUCT {
-            // P8：struct 字段访问的 base 必须可寻址（P2a：表下标 t[i] 放行——
-            // 读走值拷贝、写走读-改-写回，见 irgen_agg tig_field_assign）
+            // 成员访问两种语义（p.8.2.7）：存储字段（普通，沿既有路径）/
+            // 计算属性（<Struct>::name getter 方法，纯函数读，无需可寻址）。
+            // 裁决：**字段优先**（若成员名命中真实字段 → 恒为普通字段，保证
+            // 既有字段路径零变化）；字段缺失时才查 getter，命中即计算属性读。
             var base_node = sstate.child(id, 0)
-            if !sstate.is_addressable(base_node) && s_tags[base_node] != 13 {
-                var cls_name = sstate.struct_name_of(types.low(base))
-                sm_err_line = s_lines[id]
-                sm_err_col = s_cols[id]
-                sm_err_msg = "struct 实例 '" + cls_name + "' 的字段访问需要可寻址对象（变量/字段链），"
-                return -1
-            }
             var si = types.low(base)
             var off = cls_fldoff[si]
             var cnt = cls_nfld[si]
+            var field_found: bool = false
             var i: i64 = 0
             while i < cnt {
                 if intern.lookup(fld_names[off + i]) == fnm {
-                    node_types[id] = fld_tys[off + i]
-                    g_typed = g_typed + 1
-                    return fld_tys[off + i]
+                    field_found = true
+                    break
                 }
                 i = i + 1
+            }
+            if field_found {
+                // 普通字段路径（既有）：base 必须可寻址（P2a：表下标 t[i] 放行）
+                if !sstate.is_addressable(base_node) && s_tags[base_node] != 13 {
+                    var cls_name = sstate.struct_name_of(si)
+                    sm_err_line = s_lines[id]
+                    sm_err_col = s_cols[id]
+                    sm_err_msg = "struct 实例 '" + cls_name + "' 的字段访问需要可寻址对象（变量/字段链），"
+                    return -1
+                }
+                node_types[id] = fld_tys[off + i]
+                g_typed = g_typed + 1
+                return fld_tys[off + i]
+            }
+            // 计算属性 getter：<Struct>::<field名>，零额外参数（仅接收者），返回属性类型。
+            var gfull = sstate.struct_name_of(si) + "::" + fnm
+            var gsig = sstate.fn_sig(gfull)
+            if gsig >= 0 {
+                var grec = sp_tys[sg_off[gsig]]
+                if !stype.types_compatible(grec, base) {
+                    sm_err_line = s_lines[id]
+                    sm_err_col = s_cols[id]
+                    sm_err_msg = "计算属性 getter '" + gfull + "' 接收者类型不匹配：期望 " + types.type_name(grec) + "，实际 " + types.type_name(base)
+                    return -1
+                }
+                if sg_nparams[gsig] != 1 {
+                    sm_err_line = s_lines[id]
+                    sm_err_col = s_cols[id]
+                    sm_err_msg = "计算属性 getter '" + gfull + "' 必须恰好 1 个参数（仅接收者），实际 " + to_string(sg_nparams[gsig]) + " 个"
+                    return -1
+                }
+                var grt = sg_ret[gsig]
+                g_cmp_getter[id] = interner.intern(gfull)
+                node_types[id] = grt
+                g_typed = g_typed + 1
+                return grt
             }
             sm_err_line = s_lines[id]
             sm_err_col = s_cols[id]

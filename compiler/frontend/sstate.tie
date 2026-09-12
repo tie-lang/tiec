@@ -85,6 +85,14 @@ var tre_vals: table<i64>;     // 元素类型 id
 
 var node_types: table<i64>;   // 节点 id -> 类型 id（-1=未推断）
 
+// p.8.2.7 计算属性（computed property）：成员访问节点 id -> getter/setter 方法全名
+//（intern id）。读取 `obj.attr` 命中 getter（<Struct>::attr）或写入 `obj.attr=v`
+// 命中 setter（<Struct>::attr_set）时由语义层登记，irgen 据此发射方法调用而非
+// 存储槽访问。实现形态 = 子项 p.8.2.4 的结构绑定命名空间方法（getter/setter 复用
+// tig_op_overload 发射）。-1 = 普通字段（缺省，不产方法调用）。
+var g_cmp_getter: table<i64>;  // 节点 id -> 计算属性 getter 全名（intern id）；-1 = 无
+var g_cmp_setter: table<i64>;  // 节点 id -> 计算属性 setter 全名（intern id）；-1 = 无
+
 // ==================== 每函数重置的局部状态 ====================
 var lv_keys: table<i64>;      // 作用域变量名 id（升序）
 var lv_vals: table<i64>;      // 类型 id
@@ -538,6 +546,8 @@ pub func load_ast(ast_text: string) -> i64 {
     s_lines = table_new_i64()
     s_cols = table_new_i64()
     node_types = table_new_i64()
+    g_cmp_getter = table_new_i64()
+    g_cmp_setter = table_new_i64()
     var k: i64 = 0
     while k < cnt {
         table_push(s_tags, 0)
@@ -549,6 +559,8 @@ pub func load_ast(ast_text: string) -> i64 {
         table_push(s_lines, 0)
         table_push(s_cols, 0)
         table_push(node_types, -1)
+        table_push(g_cmp_getter, -1)
+        table_push(g_cmp_setter, -1)
         k = k + 1
     }
     // 逐行解析节点（parse_row 整行单次扫描直接累积 i64，零字段子串分配）
@@ -662,6 +674,8 @@ pub func append_ast(ast_text: string) -> i64 {
         table_push(s_lines, f[5])
         table_push(s_cols, f[6])
         table_push(node_types, -1)
+        table_push(g_cmp_getter, -1)
+        table_push(g_cmp_setter, -1)
         table_push(new_offs, 0)
         node_id = node_id + 1
         pos = line_end + 1
