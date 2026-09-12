@@ -96,6 +96,28 @@ func tig_binary(op: i64, lhs: i64, rhs: i64) -> i64 {
     if op == B_ELVIS {
         return tig_elvis(lhs, rhs)
     }
+    // p.8.2.4 运算符重载：任一操作数为用户 struct 且声明对应 op_ 方法 → 发射方法调用
+    //（调度规则与 sinfer.try_op_overload_binary 一致：左 struct 优先，其次右，两侧内置绝不）。
+    if op >= 0 && op <= 10 {
+        var olhs_t = node_types[lhs]
+        var orhs_t = node_types[rhs]
+        if olhs_t >= 0 && types.kind(olhs_t) == K_STRUCT {
+            var of = op_method_full_ir(olhs_t, op, 1)
+            if of != "" {
+                var oargs: table<i64> = table_new_i64()
+                table_push(oargs, rhs)
+                return tig_op_overload(of, lhs, olhs_t, oargs)
+            }
+        }
+        if orhs_t >= 0 && types.kind(orhs_t) == K_STRUCT {
+            var of2 = op_method_full_ir(orhs_t, op, 1)
+            if of2 != "" {
+                var oargs2: table<i64> = table_new_i64()
+                table_push(oargs2, lhs)
+                return tig_op_overload(of2, rhs, orhs_t, oargs2)
+            }
+        }
+    }
     // trit 判定先行（对齐 Rust tig_binary 分派顺序）：trit 的 &&/|| 是 Kleene
     // min/max（非短路），混合 trit×i64 走 gen_binary_trit——短路分支只服务 bool
     var lhs_t = node_types[lhs]
