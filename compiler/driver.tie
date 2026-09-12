@@ -53,6 +53,9 @@ var g_output: string = "";        // -o 指定（空 = 默认）
 var g_opt_level: i64 = 0;         // -O 显式（g_opt_set 为 true 时生效）
 var g_opt_set: bool = false;      // 是否显式指定 -O
 var g_target: string = "";        // --target（空 = 未指定）
+// p.9.1.2 编译资源可调（利好老电脑）：
+var g_mem_limit: i64 = 0;         // --mem-limit <MB>：内存上限（0 = 不限；>0 时 -O3 受限降为 O2）
+var g_jobs: i64 = 0;              // --jobs <N>：编译并发度（0 = 默认；预留配置 advanced.threads，并行在 p.9.1.3 增量/缓存一并落地）
 var g_emit_ir: bool = false;
 var g_keep_ir: bool = false;
 var g_prep_only: bool = false;
@@ -87,7 +90,10 @@ func usage() -> i64 {
     println("tiec —— tie 自举编译器（tie 语言自写）")
     println("用法: tiec <input.tie> [选项]")
     println("  -o <file>        输出可执行文件（logic 默认输入同名 .exe；library 默认 .a）")
-    println("  -O0|-O1|-O2|-O3  优化级别（默认 -O2）")
+    println("  -O0|-O1|-O2|-O3  优化级别（默认 -O2；-O 等价 -O2；优先级 CLI -O > 配置/profile > 默认）")
+    println("            注：头部旧 `// tie:opt=N` 指令已移除（legacy），opt 仅 CLI/config 控制")
+    println("  --mem-limit <MB>  内存上限（0 = 不限；>0 时优化档 O3 受限自动降为 O2，利好老电脑）")
+    println("  --jobs <N>       编译并发度（0 = 默认；预留配置 advanced.threads，并行随 p.9.1.3 增量/缓存落地）")
     println("  --target <三元组>  交叉编译目标（如 x86_64-pc-windows-msvc）")
     println("  --emit-ir        只生成 LLVM IR（.ll），不继续编译")
     println("  --keep-ir        保留中间 IR 文件（.ll / .opt.ll）")
@@ -142,6 +148,22 @@ func parse_args() -> i64 {
         } else if a == "-O3" {
             g_opt_level = 3
             g_opt_set = true
+        } else if a == "-O" {
+            // p.9.1.2：裸 -O 等价 -O2（release 默认）
+            g_opt_level = 2
+            g_opt_set = true
+        } else if a == "--mem-limit" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_mem_limit = parse_int(arg_string(i + 1))
+            i = i + 1
+        } else if a == "--jobs" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_jobs = parse_int(arg_string(i + 1))
+            i = i + 1
         } else if a == "--target" {
             if i + 1 >= n {
                 return -1
@@ -1276,6 +1298,14 @@ func main() -> i64 {
     if g_opt_set {
         g_cfg_root = config.apply_cli(g_cfg_root, "opt", to_string(g_opt_level))
     }
+    // p.9.1.2：编译资源可调——内存上限 / 并发度写入配置（降档逻辑在
+    // effective_opt_level，见 kpass_link）。（mem_limit>0 才覆盖；0=不限跳过）
+    if g_mem_limit != 0 {
+        g_cfg_root = config.apply_cli(g_cfg_root, "tiec.mem_limit", to_string(g_mem_limit))
+    }
+    if g_jobs != 0 {
+        g_cfg_root = config.apply_cli(g_cfg_root, "advanced.threads", to_string(g_jobs))
+    }
     if str_len(g_target) > 0 {
         g_cfg_root = config.apply_cli(g_cfg_root, "target", g_target)
     }
@@ -1429,15 +1459,11 @@ func kpass_emit() -> i64 {
     return 0
 }
 
-// 段 5 后端：opt → 链接/归档（lib→compile_library/compile_shared，其余→
-// compile_logic 三路 link 分支）。
-func kpass_link() -> i64 {
-    var ir_path = replace_ext(g_input, "ll")
-    if str_len(g_output) > 0 {
-        ir_path = replace_ext(g_output, "ll")
-    }
-    var opt_path = replace_ext(str.clone(ir_path), "opt.ll")
-    // S3.1：opt 优先级 CLI 显式 -O > 配置（含 profile 激活）> 默认 2
+// ==================== p.9.1.2 优化档解析（含内存上限降档） ====================
+// 生效优化档优先级：CLI -O 显式 > config（含 profile 激活）> 默认 2。
+// 内存上限（--mem-limit / config tiec.mem_limit）>0 表示节省内存意图，
+// 此时 -O3 自动降为 -O2（打印诊断警告）。0 = 不限，行为不变。
+func effective_opt_level() -> i64 {
     var level = g_opt_level
     if !g_opt_set {
         level = 2
@@ -1448,6 +1474,27 @@ func kpass_link() -> i64 {
             }
         }
     }
+    var limit = g_mem_limit
+    if limit == 0 && g_cfg_root >= 0 {
+        limit = config.get_int(g_cfg_root, "tiec.mem_limit")
+    }
+    if limit > 0 && level >= 3 {
+        println(diagcode.render_warning(-1, -1, "内存上限 " + to_string(limit) + "MB 下优化档 O3 受限，已自动降为 O2"))
+        level = 2
+    }
+    return level
+}
+
+// 段 5 后端：opt → 链接/归档（lib→compile_library/compile_shared，其余→
+// compile_logic 三路 link 分支）。
+func kpass_link() -> i64 {
+    var ir_path = replace_ext(g_input, "ll")
+    if str_len(g_output) > 0 {
+        ir_path = replace_ext(g_output, "ll")
+    }
+    var opt_path = replace_ext(str.clone(ir_path), "opt.ll")
+    // S3.1 + p.9.1.2：opt 优先级 CLI -O > 配置（含 profile）> 默认 2；受内存上限降档
+    var level = effective_opt_level()
     var orc = tc.opt(ir_path, opt_path, level)
     if orc != 0 {
         println(diagcode.render_error(-1, -1, "中间优化失败: " + tc_err_msg))
