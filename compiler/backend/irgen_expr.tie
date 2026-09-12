@@ -377,6 +377,11 @@ func tig_expr(id: i64) -> i64 {
     if tag == N_SWITCH_EXPR {
         return tig_switch_expr(id)
     }
+    // p.9.11.3 try 错误聚合块（N_TRY_BLOCK=157）：线性发射块体语句（块内 `?`
+    // 传播到当前函数），末表达式值为 try 块值。
+    if tag == 157 {
+        return tig_try_block(id)
+    }
     // 其他表达式后续扩展
     sm_err_line = s_lines[id]
     sm_err_col = s_cols[id]

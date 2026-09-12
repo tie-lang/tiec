@@ -299,6 +299,10 @@ func check_expr_read(e: i64) -> i64 {
     if tag == S_N_METHOD_CALL {
         return check_method_call(e)
     }
+    // p.9.11.3 try 错误聚合块：表达式位，块体为语句 → 按块遍历移动语义
+    if tag == S_N_TRY_BLOCK {
+        return check_block(sstate.child(e, 0))
+    }
     // Path/其他：无变量读取
     return 0
 }
