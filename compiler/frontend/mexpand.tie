@@ -39,6 +39,19 @@ var g_macro_isproc: table<i64>; // 过程宏标记（1 = #[macro] token 流宏�
 var g_macro_ispub: table<i64>;  // pub 导出标记（1 = pub macro 跨文件可见）
 var g_macro_file: table<i64>;   // 宏定义所属文件 id（g_file_roots 编号；主文件 0）
 
+// p.8.2.12 声明式宏表（与 g_macro_keys 平行索引）：g_macro_isdecl[mi] =
+// 1 = 声明式宏（裸形参模板宏，N_DECL_MACRO_DEF）；g_dbody[mi] = 宏体 StmtList
+// 的 AST 协议文本。声明式宏不注册进 interp（不编译期执行），展开时由 mexpand
+// 直接模板代换 + 卫生唯一化（形参名/个数每次展开从登记定义节点现场读取）。
+var g_macro_isdecl: table<i64>;
+var g_dbody: table<string>;
+// 声明式宏展开时的卫生改名映射（每次展开重置）：g_dhyk/g_dhyv 平行（原名字
+// id -> 唯一化后名字 id）；g_dhyseq = 序号生成器（跨展开单调，保证多处展开
+// 的卫生临时名互不冲突）。
+var g_dhyk: table<i64>;
+var g_dhyv: table<i64>;
+var g_dhyseq: i64 = 0;
+
 // ==================== s_* 池快照（宏执行隔离） ====================
 // 宏执行（interp.eval_proto / eval_macro / eval_code / .call()）内部会
 // sstate.load_ast **重建** s_* 池（宏定义/宏体是独立协议文本）——mexpand
@@ -119,20 +132,22 @@ func macro_find(name_id: i64) -> i64 {
 
 // 登记宏（name 池 id + 定义节点 id + 过程宏标记 + pub 标记 + 定义文件 id；
 // 重复登记覆盖——后定义优先）。
-func macro_put(name_id: i64, node: i64, isproc: i64, ispub: i64, file: i64) {
+func macro_put(name_id: i64, node: i64, isproc: i64, ispub: i64, file: i64) -> i64 {
     var i = macro_find(name_id)
     if i >= 0 {
         g_macro_nodes[i] = node
         g_macro_isproc[i] = isproc
         g_macro_ispub[i] = ispub
         g_macro_file[i] = file
-        return
+        return i
     }
     table_push(g_macro_keys, name_id)
     table_push(g_macro_nodes, node)
     table_push(g_macro_isproc, isproc)
     table_push(g_macro_ispub, ispub)
     table_push(g_macro_file, file)
+    table_push(g_macro_isdecl, 0)   // p.8.2.12 默认非声明式（collect 双层都对齐此长度）
+    return len(g_macro_keys) - 1
 }
 
 // ==================== 主入口 ====================
@@ -145,6 +160,9 @@ pub func expand_sstate() -> i64 {
     g_macro_keys = table_new_i64()
     g_macro_nodes = table_new_i64()
     g_macro_isproc = table_new_i64()
+    g_macro_isdecl = table_new_i64()
+    g_dbody = table_new_string()
+    g_dhyseq = 0
     // 1. 收集顶层宏定义并从顶层移除
     if collect_macros() < 0 {
         return -1
@@ -217,7 +235,7 @@ func collect_macros() -> i64 {
     var i: i64 = 0
     while i < n {
         var s = g_extra_tops[i]
-        if s_tags[s] == N_MACRO_DEF {
+        if s_tags[s] == N_MACRO_DEF || s_tags[s] == N_DECL_MACRO_DEF {
             var nm_id = s_names[s]
             if nm_id < 0 {
                 sm_err_line = s_lines[s]
@@ -225,16 +243,67 @@ func collect_macros() -> i64 {
                 sm_err_msg = "宏定义缺少名字"
                 return -1
             }
-            // val 位标志：bit0=过程宏（#[macro]），bit1=pub 导出
-            var isproc: i64 = 0
-            var ispub: i64 = 0
-            if s_vals[s] % 2 == 1 {
-                isproc = 1
+            if s_tags[s] == N_DECL_MACRO_DEF {
+                // p.8.2.12 声明式宏：登记模板 + 宏体 AST 协议 + 形参名表。
+                // 不注册进 interp（无编译期执行），展开由 decl 路径直接代换。
+                var dparams: table<i64> = table_new_i64()
+                var body_node = s_children[s_coff[s]]
+                if body_node < 0 {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "声明式宏 '" + interner.lookup(nm_id) + "' 缺少展开体"
+                    return -1
+                }
+                var body_proto = interp.sstate_subtree_protocol(body_node)
+                if g_err != "" {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "声明式宏 '" + interner.lookup(nm_id) + "' 展开体序列化失败: " + g_err
+                    return -1
+                }
+                var npar = s_nchild[s] - 1
+                if npar < 0 {
+                    npar = 0
+                }
+                var k: i64 = 0
+                while k < npar {
+                    var pp = s_children[s_coff[s] + 1 + k]
+                    if pp < 0 || s_names[pp] < 0 {
+                        sm_err_line = s_lines[s]
+                        sm_err_col = s_cols[s]
+                        sm_err_msg = "声明式宏 '" + interner.lookup(nm_id) + "' 形参缺少名字"
+                        return -1
+                    }
+                    table_push(dparams, s_names[pp])
+                    k = k + 1
+                }
+                var idx = macro_put(nm_id, s, 0, 0, node_file_of(s))
+                if idx < 0 {
+                    return -1
+                }
+                // 使 g_dbody 与宏表对齐（macro_put 只对齐 g_macro_isdecl；
+                // g_dbody 是 string 表，须按长度补齐后按索引写，防越界）
+                while len(g_dbody) < len(g_macro_keys) {
+                    table_push(g_dbody, "")
+                }
+                g_macro_isdecl[idx] = 1
+                g_dbody[idx] = body_proto
+            } else {
+                // val 位标志：bit0=过程宏（#[macro]），bit1=pub 导出
+                var isproc: i64 = 0
+                var ispub: i64 = 0
+                if s_vals[s] % 2 == 1 {
+                    isproc = 1
+                }
+                if s_vals[s] / 2 % 2 == 1 {
+                    ispub = 1
+                }
+                var idx = macro_put(nm_id, s, isproc, ispub, node_file_of(s))
+                if idx < 0 {
+                    return -1
+                }
+                g_macro_isdecl[idx] = 0
             }
-            if s_vals[s] / 2 % 2 == 1 {
-                ispub = 1
-            }
-            macro_put(nm_id, s, isproc, ispub, node_file_of(s))
         } else {
             table_push(kept, s)
         }
@@ -288,6 +357,12 @@ func file_root_find(root_id: i64) -> i64 {
 func register_macros() -> i64 {
     var i: i64 = 0
     while i < len(g_macro_keys) {
+        // p.8.2.12 声明式宏不注册进 interp（无编译期执行，模板代换在
+        // expand_one 声明式路径完成）。
+        if len(g_macro_isdecl) > i && g_macro_isdecl[i] == 1 {
+            i = i + 1
+            continue
+        }
         pool_restore()
         var node = g_macro_nodes[i]
         var proto = interp.sstate_subtree_protocol(node)
@@ -315,12 +390,17 @@ func register_macros() -> i64 {
 // eval_macro 会重建 s_* 池（宏体执行环境），故执行前恢复池快照（池 =
 // 主文件 AST + 已展开追加），执行后再恢复并追加结果。
 func expand_one(call_id: i64) -> i64 {
+    var nm_id = s_names[call_id]
+    var mi = macro_find(nm_id)
+    // p.8.2.12 声明式宏：模板代换 + 卫生唯一化（不编译期执行，不需要 interp，
+    // 直接在新树副本上改写后 splice）。
+    if mi >= 0 && len(g_macro_isdecl) > mi && g_macro_isdecl[mi] == 1 {
+        return expand_decl_one(call_id, mi)
+    }
     // 每次展开前重存工作池快照（当前 = 主文件 AST + 已展开追加；宏执行会
     // 重建/污染 s_* 池，须在进入前保存干净状态，供完成后恢复）。
     pool_save()
-    var nm_id = s_names[call_id]
     var name = interner.lookup(nm_id)
-    var mi = macro_find(nm_id)
     var isproc: i64 = 0
     if mi >= 0 {
         isproc = g_macro_isproc[mi]
@@ -816,6 +896,239 @@ func replace_range(node: i64, idx: i64, new_ids: table<i64>) -> i64 {
         i = i + 1
     }
     return 0
+}
+
+// ==================== p.8.2.12 声明式宏展开（模板代换 + 卫生） ====================
+// 与既有（函数式/过程式）宏的编译期执行不同，声明式宏 = 纯模板：宏体在每次
+// 展开时重新解析为 AST，做两件事后 splice 回调用点：
+//   1. 形参代换：体内与形参同名的 N_VAR（rvalue 引用槽）→ 调用实参子树的
+//      克隆（每次引用各克隆一份，保持严格树结构，语义 = 文本代换去重）。
+//   2. 卫生唯一化：体内 `__` 前缀标识符（宏作者引入的临时变量等）→ 追加
+//      `_m<序号>` 后缀唯一化。同一展开内同名一致（绑定与引用对齐）；不同
+//      展开序号不同 → 互不污染、不捕获调用处同名、不泄漏到调用处。
+// 未前缀的非形参标识符按作者原样保留（借外部名的逃逸通道）。表达式位置：
+// 宏体为单个表达式语句 StmtList 时解包为表达式（供表达式上下文）。
+
+// 追加一个新节点（照抄 splice_call 的手动 append 模式）。
+func decl_fresh(tag: i64, name: i64, val: i64, aux: i64, line: i64, col: i64) -> i64 {
+    var nd = len(s_tags)
+    table_push(s_tags, tag)
+    table_push(s_names, name)
+    table_push(s_vals, val)
+    table_push(s_aux, aux)
+    table_push(s_coff, len(s_children))
+    table_push(s_nchild, 0)
+    table_push(s_lines, line)
+    table_push(s_cols, col)
+    table_push(node_types, -1)
+    s_n = len(s_tags)
+    return nd
+}
+
+// 给池内节点写 children（段追加到 s_children 末尾）。
+func decl_set_children(node: i64, kids: table<i64>) {
+    s_coff[node] = len(s_children)
+    s_nchild[node] = len(kids)
+    var k: i64 = 0
+    while k < len(kids) {
+        table_push(s_children, kids[k])
+        k = k + 1
+    }
+}
+
+// 纯深拷贝（不做代换/卫生）——用于克隆实参子树（调用处代码保持原名）。
+func decl_clone_plain(node: i64) -> i64 {
+    var nd = decl_fresh(s_tags[node], s_names[node], s_vals[node], s_aux[node], s_lines[node], s_cols[node])
+    var kids: table<i64> = table_new_i64()
+    var nc = s_nchild[node]
+    var k: i64 = 0
+    while k < nc {
+        var cid = s_children[s_coff[node] + k]
+        if cid < 0 {
+            table_push(kids, -1)   // 类型实参槽等 -1 哨兵：保持原样不递归
+        } else {
+            table_push(kids, decl_clone_plain(cid))
+        }
+        k = k + 1
+    }
+    decl_set_children(nd, kids)
+    return nd
+}
+
+// 卫生临时名的唯一化 target 节点（N_VAR 引用 / N_VAR_DECL、N_FN_DEF 绑定 /
+// N_METHOD_CALL 方法名）。仅这些承载真实标识符 name 字段——避免误改字符串
+// 字面量 / 类型名等非标识符 name（保持数据与类型语义不变）。
+func decl_is_ident(tag: i64) -> bool {
+    if tag == N_VAR || tag == N_VAR_DECL || tag == N_FN_DEF || tag == N_METHOD_CALL || tag == N_ASSIGN {
+        return true
+    }
+    return false
+}
+
+// 名字是否以 "__" 前缀（卫生临时名约定）。
+func decl_hyg_pref(s: string) -> bool {
+    if str_len(s) >= 2 {
+        if str_char(s, 0) == "_" && str_char(s, 1) == "_" {
+            return true
+        }
+    }
+    return false
+}
+
+// 卫生唯一化：把名字 id 映射为展开内唯一新名 id（同一展开内同名复用同一新名，
+// 保证绑定与引用对齐；序号来自 g_dhyseq 生成器，跨展开不同）。
+func decl_hyg_name(nid: i64, nstr: string) -> i64 {
+    var i: i64 = 0
+    while i < len(g_dhyk) {
+        if g_dhyk[i] == nid {
+            return g_dhyv[i]
+        }
+        i = i + 1
+    }
+    var newname = nstr + "_m" + to_string(g_dhyseq)
+    g_dhyseq = g_dhyseq + 1
+    var nnid = interner.intern(newname)
+    table_push(g_dhyk, nid)
+    table_push(g_dhyv, nnid)
+    return nnid
+}
+
+// 代换 + 卫生深拷贝（宏体源子树 → 新树）：返回新子树根 id。
+func decl_transform(node: i64, params: table<i64>, argids: table<i64>) -> i64 {
+    var tag = s_tags[node]
+    // 1. 形参代换槽：N_VAR 名 == 某个形参名 → 克隆实参
+    if tag == N_VAR {
+        var nm = s_names[node]
+        var k: i64 = 0
+        while k < len(params) {
+            if params[k] == nm {
+                return decl_clone_plain(argids[k])
+            }
+            k = k + 1
+        }
+    }
+    // 2. 卫生唯一化（`__` 前缀标识符）
+    var nm2 = s_names[node]
+    if decl_is_ident(tag) && nm2 >= 0 {
+        var nstr = interner.lookup(nm2)
+        if nstr != "" && decl_hyg_pref(nstr) {
+            nm2 = decl_hyg_name(nm2, nstr)
+        }
+    }
+    var nd = decl_fresh(tag, nm2, s_vals[node], s_aux[node], s_lines[node], s_cols[node])
+    var kids: table<i64> = table_new_i64()
+    var nc = s_nchild[node]
+    var k: i64 = 0
+    while k < nc {
+        var cid = s_children[s_coff[node] + k]
+        if cid < 0 {
+            table_push(kids, -1)   // 类型实参槽等 -1 哨兵：保持原样不递归
+        } else {
+            table_push(kids, decl_transform(cid, params, argids))
+        }
+        k = k + 1
+    }
+    decl_set_children(nd, kids)
+    return nd
+}
+
+// 展开一个声明式宏调用。返回 1 = 已展开（池有变化需重扫）；0 = 无变化（孤儿
+// 调用点）；-1 = 错误（sm_err_* 已置）。
+func expand_decl_one(call_id: i64, mi: i64) -> i64 {
+    var nm_id = s_names[call_id]
+    var name = interner.lookup(nm_id)
+    var body_proto = g_dbody[mi]
+    // 形参名 id：从登记的定义节点（N_DECL_MACRO_DEF，仍在 s_* 池中，
+    // children = [body, 形参...]）现场读取——与 collect 时的 s_* 布局一致，
+    // 避免跨阶段状态丢失。
+    var mnode = g_macro_nodes[mi]
+    var nparams = s_nchild[mnode] - 1
+    if nparams < 0 {
+        nparams = 0
+    }
+    var params: table<i64> = table_new_i64()
+    var pk: i64 = 0
+    while pk < nparams {
+        var pnode = s_children[s_coff[mnode] + 1 + pk]
+        var pn = -1
+        if pnode >= 0 {
+            pn = s_names[pnode]
+        }
+        table_push(params, pn)
+        pk = pk + 1
+    }
+    // 实参 id（跳过类型实参槽——声明式宏不支持泛型）
+    var soff: i64 = 0
+    if s_nchild[call_id] > 0 {
+        var c0 = s_children[s_coff[call_id]]
+        if c0 < 0 {
+            soff = 1
+        } else if s_tags[c0] == N_TYPE_ARGS || s_tags[c0] == N_TYPE_PARAMS {
+            soff = 1
+        }
+    }
+    var argids: table<i64> = table_new_i64()
+    var k: i64 = soff
+    while k < s_nchild[call_id] {
+        var a = s_children[s_coff[call_id] + k]
+        if a < 0 {
+            sm_err_line = s_lines[call_id]
+            sm_err_col = s_cols[call_id]
+            sm_err_msg = "声明式宏 '" + name + "' 的实参缺失"
+            return -1
+        }
+        table_push(argids, a)
+        k = k + 1
+    }
+    if len(argids) != nparams {
+        sm_err_line = s_lines[call_id]
+        sm_err_col = s_cols[call_id]
+        sm_err_msg = "声明式宏 '" + name + "' 期望 " + to_string(nparams) + " 个实参，实际 " + to_string(len(argids)) + " 个"
+        return -1
+    }
+    // 宏体重新解析为 AST（fresh：每次展开独立副本，序号的卫生改名互相隔离）
+    var bodyroot = sstate.append_ast(body_proto)
+    if bodyroot < 0 {
+        sm_err_line = s_lines[call_id]
+        sm_err_col = s_cols[call_id]
+        sm_err_msg = "声明式宏 '" + name + "' 展开体解析失败（AST 协议错误）"
+        return -1
+    }
+    if s_tags[bodyroot] != N_STMTLIST {
+        sm_err_line = s_lines[call_id]
+        sm_err_col = s_cols[call_id]
+        sm_err_msg = "内部错误: 声明式宏 '" + name + "' 展开体根不是 StmtList（tag=" + to_string(s_tags[bodyroot]) + "）"
+        return -1
+    }
+    g_dhyk = table_new_i64()
+    g_dhyv = table_new_i64()
+    var new_root = decl_transform(bodyroot, params, argids)
+    if new_root < 0 || new_root >= len(s_tags) {
+        sm_err_line = s_lines[call_id]
+        sm_err_col = s_cols[call_id]
+        sm_err_msg = "内部错误: 声明式宏 '" + name + "' 展开体变换越界"
+        return -1
+    }
+    // 表达式位置支持：宏体 = 单表达式语句块 → 解包为内层表达式
+    if s_tags[new_root] == N_STMTLIST && s_nchild[new_root] == 1 {
+        var only = s_children[s_coff[new_root]]
+        if only >= 0 && s_tags[only] == N_EXPR_STMT && s_nchild[only] == 1 {
+            new_root = s_children[s_coff[only]]
+        }
+    }
+    // 找父节点与子下标并替换（调用点仍在活树中；本路径不做 pool_restore，
+    // 因为没进 interp 重建池——直接在当前池 append + splice）
+    var out: table<i64> = table_new_i64()
+    table_push(out, -1)
+    table_push(out, -1)
+    if find_parent(call_id, out) < 0 {
+        return 0   // 孤儿调用点（宏定义被移除后子树残留）：无变化
+    }
+    var rc2 = splice_call(out[0], out[1], call_id, new_root)
+    if rc2 < 0 {
+        return -1
+    }
+    return 1
 }
 
 }   // namespace mexpand
