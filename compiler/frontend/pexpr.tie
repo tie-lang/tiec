@@ -446,6 +446,12 @@ func parse_term() -> i64 {
             op = B_ADD
         } else if putil.peek_tag() == lex_minus {
             op = B_SUB
+        } else if putil.peek_tag() == lex_plusq {
+            // p.9.11.9 checked 加 `+?`（同 + 优先级）
+            op = B_CHECK_ADD
+        } else if putil.peek_tag() == lex_minusq {
+            // p.9.11.9 checked 减 `-?`（同 - 优先级）
+            op = B_CHECK_SUB
         } else {
             d = true
         }
@@ -476,6 +482,9 @@ func parse_factor() -> i64 {
             op = B_DIV
         } else if putil.peek_tag() == lex_percent {
             op = B_MOD
+        } else if putil.peek_tag() == lex_starq {
+            // p.9.11.9 checked 乘 `*?`（同 * 优先级）
+            op = B_CHECK_MUL
         } else {
             d = true
         }

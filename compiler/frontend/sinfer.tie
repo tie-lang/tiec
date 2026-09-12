@@ -710,12 +710,21 @@ pub func infer_expr(id: i64) -> i64 {
             return -1
         }
         // 按运算符分组校验
-        if op <= 4 || op == 13 || op == 14 || op == 15 || op == 16 || op == 17 {
-            // 算术/位运算：数字（位运算需整数）
+        if op <= 4 || op == 13 || op == 14 || op == 15 || op == 16 || op == 17 ||
+            (op >= 21 && op <= 23) {
+            // 算术/位运算：数字（位运算需整数）；p.9.11.9 checked 运算（21/22/23）仅整数
             if !types.is_number(lhs) && lhs != TK_STR && !(lhs == TK_TRIT || rhs == TK_TRIT) {
                 sm_err_line = s_lines[id]
                 sm_err_col = s_cols[id]
                 sm_err_msg = "算术运算符不能用于 " + types.type_name(lhs)
+                return -1
+            }
+            // p.9.11.9 checked 运算溢出检测仅对整数有效（f64 溢出 = inf 不属于
+            // checked 溢出语义；trit 饱和算术也无溢出可言）——非整数报错。
+            if op >= 21 && op <= 23 && !types.is_int(lhs) {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "checked 运算（+?/-?/*?）只支持整数，不能用于 " + types.type_name(lhs)
                 return -1
             }
             if op >= 13 && !types.is_int(lhs) {

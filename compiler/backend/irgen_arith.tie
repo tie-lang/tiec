@@ -149,6 +149,11 @@ func tig_binary(op: i64, lhs: i64, rhs: i64) -> i64 {
     if rv < 0 {
         return -1
     }
+    // p.9.11.9 checked 运算（+? -? *? op 21-23）：整数溢出即运行期报错。
+    // 语义层已保证两侧为整数；此处直接分派（lv/rv 已求值，避免二次求值副作用）。
+    if op >= 21 && op <= 23 {
+        return tig_check_bin(op, lv, rv, lhs_t, rhs_t)
+    }
     // 字符串判定（node_types 语义类型；driver 树比较/拼接两侧为 string）
     var lhs_str = lhs_t == types.named(TK_STR)
     var rhs_str = rhs_t == types.named(TK_STR)
@@ -769,6 +774,149 @@ func tig_checked(nm: string, id: i64) -> i64 {
         return -1
     }
     return make_tuple2(val, bt, ovf, types.named(TK_BOOL), agg)
+}
+
+// p.9.11.9 checked 二元运算（+? -? *?，op 21/22/23）：同普通整数算术，但**任一
+// 操作数/结果上溢或下溢时运行期报错**（不走静默 wrap）。溢出判定复刻 tig_checked
+// 的比较法（无 with.overflow 内建依赖：有符号 add/sub/mul 的符号位/反算整除，
+// 无符号用 ult/ugt/udiv 反算；sdiv/udiv poison 用 select 已在 tig_is_min 等规避）。
+// 报错路径 = 既有可捕获 panic 机制（@tie_panic_active 分派：受捕 longjmp 回跳 /
+// 未受捕 printf + exit）。f64 溢出 = inf，不属 checked 语义，语义层已拒绝非整数。
+// 说明：一元 `-?` 未实现（判负极值场景少，checked_neg 库函数随时可用）。
+// 块结构：当前块算 val+ovf → cond_br ovf → panicblk / valblk。panicblk 内再
+// 分派受捕/未受捕后 noreturn（longjmp/exit + 死 br），valblk 为延续，无需 phi。
+func tig_check_bin(op: i64, lv: i64, rv: i64, lt: i64, rt: i64) -> i64 {
+    var bt = lt
+    if stype.int_width(rt) > stype.int_width(lt) {
+        bt = rt
+    }
+    var l2 = tig_widen(lv, lt, bt)
+    if l2 < 0 {
+        return -1
+    }
+    var r2 = tig_widen(rv, rt, bt)
+    if r2 < 0 {
+        return -1
+    }
+    var signed = stype.is_signed(bt)
+    var val: i64 = -1
+    var ovf: i64 = -1
+    if op == B_CHECK_ADD {
+        var s = ir.new_inst(g_cur_block, 0, bt)  // add
+        ir.add_operand(s, l2, 0)
+        ir.add_operand(s, r2, 0)
+        val = ir.get_value(s)
+        if signed {
+            var a_pos = tig_cmp_const(l2, 3, 0, bt)
+            var b_pos = tig_cmp_const(r2, 3, 0, bt)
+            var s_neg = tig_cmp_const(val, 2, 0, bt)
+            var c1 = tig_and_i1(tig_and_i1(a_pos, b_pos), s_neg)
+            var a_neg = tig_cmp_const(l2, 2, 0, bt)
+            var b_neg = tig_cmp_const(r2, 2, 0, bt)
+            var s_ge = tig_cmp_const(val, 5, 0, bt)
+            var c2 = tig_and_i1(tig_and_i1(a_neg, b_neg), s_ge)
+            ovf = tig_or_i1(c1, c2)
+        } else {
+            ovf = tig_icmp_c(val, l2, 6)  // s < a（ult）
+        }
+    } else if op == B_CHECK_SUB {
+        var s = ir.new_inst(g_cur_block, 1, bt)  // sub
+        ir.add_operand(s, l2, 0)
+        ir.add_operand(s, r2, 0)
+        val = ir.get_value(s)
+        if signed {
+            var b_pos = tig_cmp_const(r2, 3, 0, bt)
+            var s_gt_a = tig_icmp_c(val, l2, 3)   // s > a
+            var b_neg = tig_cmp_const(r2, 2, 0, bt)
+            var s_lt_a = tig_icmp_c(val, l2, 2)   // s < a
+            ovf = tig_or_i1(tig_and_i1(b_pos, s_gt_a), tig_and_i1(b_neg, s_lt_a))
+        } else {
+            ovf = tig_icmp_c(val, l2, 7)  // s > a（ugt）
+        }
+    } else {  // B_CHECK_MUL
+        var s = ir.new_inst(g_cur_block, 2, bt)  // mul
+        ir.add_operand(s, l2, 0)
+        ir.add_operand(s, r2, 0)
+        val = ir.get_value(s)
+        if signed {
+            var a_m1 = tig_cmp_const(l2, 0, -1, bt)
+            var b_min = tig_is_min(r2, bt)
+            var ovf1 = tig_and_i1(a_m1, b_min)
+            var a_nz = tig_cmp_const(l2, 1, 0, bt)
+            var b_nz = tig_cmp_const(r2, 1, 0, bt)
+            var a_not_m1 = tig_cmp_const(l2, 1, -1, bt)
+            var q = ir.new_inst(g_cur_block, 3, bt)  // sdiv（select 保护见 tig_checked）
+            ir.add_operand(q, val, 0)
+            ir.add_operand(q, l2, 0)
+            var q_neq_b = tig_icmp_c(ir.get_value(q), r2, 1)
+            var ovf2 = tig_and_i1(tig_and_i1(tig_and_i1(a_nz, b_nz), a_not_m1), q_neq_b)
+            ovf = tig_or_i1(ovf1, ovf2)
+        } else {
+            var b_nz2 = tig_cmp_const(r2, 1, 0, bt)
+            var q2 = ir.new_inst(g_cur_block, 46, bt)  // udiv
+            ir.add_operand(q2, val, 0)
+            ir.add_operand(q2, r2, 0)
+            var q2_neq = tig_icmp_c(ir.get_value(q2), l2, 1)
+            ovf = tig_and_i1(b_nz2, q2_neq)
+        }
+    }
+    var msg_txt: string = "checked overflow"
+    if op == B_CHECK_ADD {
+        msg_txt = "checked add overflow"
+    } else if op == B_CHECK_SUB {
+        msg_txt = "checked sub overflow"
+    } else {
+        msg_txt = "checked mul overflow"
+    }
+    var msgv = tig_str_lit(interner.intern("\"" + msg_txt + "\""))
+    var panicblk = ir.new_block(g_cur_func, interner.intern("ck.p"))
+    var valblk = ir.new_block(g_cur_func, interner.intern("ck.v"))
+    var cb = ir.new_inst(g_cur_block, 31, -1)  // cond_br
+    ir.add_operand(cb, ovf, 0)
+    ir.add_operand(cb, panicblk, 1)
+    ir.add_operand(cb, valblk, 1)
+    // panic 块：catchable panic（读 @tie_panic_active → 受捕 longjmp / 未受捕 exit）
+    g_cur_block = panicblk
+    llvmgen.catch_enable()
+    var act_id = interner.intern("@tie_panic_active")
+    var lda = ir.new_inst(g_cur_block, 21, types.named(TK_BOOL))
+    ir.add_operand(lda, act_id, 3)
+    var active = ir.get_value(lda)
+    var cblk = ir.new_block(g_cur_func, interner.intern("ck.pc"))
+    var xblk = ir.new_block(g_cur_func, interner.intern("ck.px"))
+    var cb2 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb2, active, 0)
+    ir.add_operand(cb2, cblk, 1)
+    ir.add_operand(cb2, xblk, 1)
+    var fmt = interner.intern("%s\n")
+    // cblk（受捕）：printf 消息 + longjmp(@tie_panic_jb, 1)（noreturn，死 br）
+    g_cur_block = cblk
+    var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))
+    ir.add_operand(inst, fmt, 0)
+    ir.add_operand(inst, msgv, 0)
+    var jb_id = interner.intern("@tie_panic_jb")
+    var one32 = tig_int_lit_ty(1, types.named(TK_I32))
+    var lj = ir.new_inst(g_cur_block, 36, -1)
+    ir.add_operand(lj, interner.intern("longjmp"), 0)
+    ir.add_operand(lj, -1, 2)
+    ir.add_operand(lj, types.named(TK_STR), 2)
+    ir.add_operand(lj, jb_id, 3)
+    ir.add_operand(lj, types.named(TK_I32), 2)
+    ir.add_operand(lj, one32, 0)
+    var ljb = ir.new_inst(g_cur_block, 30, -1)  // 死 br → xblk（longjmp 不返回）
+    ir.add_operand(ljb, xblk, 1)
+    // xblk（未受捕）：printf + exit(1)（noreturn，死 br → valblk 满足 terminator）
+    g_cur_block = xblk
+    var inst2 = ir.new_inst(g_cur_block, 41, types.named(TK_I32))
+    ir.add_operand(inst2, fmt, 0)
+    ir.add_operand(inst2, msgv, 0)
+    var one = tig_int_lit_ty(1, types.named(TK_I64))
+    tig_ext_call1("exit", one, types.named(TK_I64), -1)
+    var dbx = ir.new_inst(g_cur_block, 30, -1)  // 死 br → valblk（exit 不返回）
+    ir.add_operand(dbx, valblk, 1)
+    // 延续块：返回运算结果（val 已在当前块前方算出，支配 valblk）
+    g_cur_block = valblk
+    return val
 }
 
 // 浮点二元运算（f64/f32）：算术 → fadd/fsub/fmul/fdiv/frem；比较 → fcmp（ordered）。
