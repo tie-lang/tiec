@@ -18,6 +18,8 @@ var g_pending_lexemes: table<i64>; // 虚拟 token 的旁路 lexeme 池 id（spl
 var g_last_tag: i64 = -1;      // 最近一次已消费 token 的 tag（expect_stmt_end 用）
 var g_last_line: i64 = -1;     // 最近一次已消费 token 的行号（'}' 后换行判定）
 
+var g_ctl_cond: i64 = 0;       // p.8.2.9 控制流条件上下文守卫计数（enter/exit/in_cond）
+
 // ---------- 泛型探测位置保存/恢复（try 回退，2026-08-14）----------
 // save_pos 快照 token 流（真实游标 + pending 队列完整内容 + 错误槽）到 g_save_*；
 // restore_pos 恢复到保存时刻（探测期间 split 追加/原位覆盖均被还原）。
