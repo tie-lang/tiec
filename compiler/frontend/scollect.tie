@@ -301,6 +301,8 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
     // **自动按引用传递**（对齐 Rust ir.rs：param_by_ref[0]，字段修改反映到调用方）。
     // `pub func inc(c: Counter)` 在 namespace Counter 内：c 首参标 ref，
     // c.inc() 转发时传 c 的槽地址，inc 内 c.count 修改写回调用方。
+    // p.9.11.20 enum 关联方法同约定：namespace <enum 名> 内函数首参 == 该
+    // enum 类型 → 首参自动 ref（方法分派 obj.method() → <enum>::method(obj)）。
     if nparams > 0 {
         var last2 = sstate.rfind_ns(full)
         if last2 >= 0 {
@@ -311,6 +313,14 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
                 var si2 = st_vals[sidx2]
                 if p_tys[0] == types.struct_of(si2) {
                     p_refs[0] = 1  // 首参按引用（接收者）
+                }
+            } else {
+                var eidx2 = sstate.bs_find(en_keys, snid)
+                if eidx2 >= 0 {
+                    var ei2 = en_vals[eidx2]
+                    if p_tys[0] == types.enum_of(ei2) {
+                        p_refs[0] = 1  // enum 接收者按引用（对齐 struct 方法）
+                    }
                 }
             }
         }
@@ -332,6 +342,10 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
 // p.9.11.15 生成器检测辅助：子树（语句/表达式）是否含 N_YIELD。
 // 递归扫描子节点；N_FN_LIT（闭包）与 N_FN_DEF（块内函数定义）为函数边界，
 // 不深入（闭包内 yield 由 scheck 在闭包体检查时报错，不属外层函数）。
+// **N_CASE_BIND 特判**（对齐 sgen.clone_inner）：children[1] 是**变量名池 id**
+//（非 AST 节点，parser 直接把 intern id 塞进 children）——不能当节点递归
+//（会把池 id 当节点 id 读 s_tags 递归进无关子树，可能成环 → 栈溢出崩溃，
+// 2026-09-13 enum 参数 + payload 解构实测 0xC0000409）；只递归 children[0]。
 func contains_yield(node: i64) -> bool {
     if node < 0 {
         return false
@@ -342,6 +356,9 @@ func contains_yield(node: i64) -> bool {
     }
     if tag == S_N_FN_LIT || tag == S_N_FN_DEF {
         return false
+    }
+    if tag == N_CASE_BIND {
+        return contains_yield(sstate.child(node, 0))
     }
     var nc = sstate.nchild(node)
     var k: i64 = 0
