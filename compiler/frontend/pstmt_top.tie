@@ -31,6 +31,13 @@ pub func parse_program() -> i64 {
                 return -1
             }
             ast.collect_stmt(stmts, s)
+        } else if tag == lex_inline {
+            // p.9.11.10 inline fn：`inline func ...`（inline 可跟 pub/const）
+            var s = parse_fn_def()
+            if s < 0 {
+                return -1
+            }
+            ast.collect_stmt(stmts, s)
         } else if tag == lex_pub {
             // pub 后：pub func / pub macro / pub #[macro]（dev33 批次10 任务29
             // 跨文件宏：pub macro 导出跨文件可见，非 pub 宏同文件私有）。
@@ -1015,6 +1022,12 @@ func parse_fn_def() -> i64 {
     // p.8.1.1：const fn 编译期求值——`const [pub] func/fn name(...)`（val bit4）。
     // const 位置：pub 前（`const func`）或 pub 后（`pub const func`）均接受。
     var is_const: i64 = 0
+    // p.9.11.10：`inline` 内联提示——`inline [pub] func name(...)`（val bit5）。
+    // inline 置于 pub/const 之前。
+    var is_inline: i64 = 0
+    if putil.eat(lex_inline) {
+        is_inline = 1
+    }
     if putil.eat(lex_const) {
         is_const = 1
     }
@@ -1153,7 +1166,7 @@ func parse_fn_def() -> i64 {
     if body < 0 {
         return -1
     }
-    var f = ast.new_node(N_FN_DEF, name, is_pub + is_unsafe * 2 + is_async * 4 + is_const * 16, len(params), line, col)
+    var f = ast.new_node(N_FN_DEF, name, is_pub + is_unsafe * 2 + is_async * 4 + is_const * 16 + is_inline * 32, len(params), line, col)
     var kids: table<i64> = table_new_i64()
     if fn_spec >= 0 {
         table_push(kids, fn_spec)   // p.8.1.3 显式特化：泛型槽存 N_TYPE_ARGS
