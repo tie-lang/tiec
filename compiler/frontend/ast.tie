@@ -220,6 +220,13 @@ const N_SPREAD_ARG: i64 = 152;
 // scheck 约束），随后不再继续；为真则继续向下。children=[cond, else_list]。
 // 语义等价 `if not(cond) { else_list }`（irgen 按 if-not 发射，复用 if AST/IR）。
 const N_GUARD_STMT: i64 = 153;
+// p.8.2.5 表/数组推导式（comprehension）：`[expr for 迭代变量 in 源表 if 条件]`
+//   —— 展开构建新表。name=循环变量名池 id（解构形态 `for (a,b) in` 为临时变量
+//   名 `_cN`，element/cond 内对解构名 `a`/`b` 的引用已在解析期改写为
+//   `_cN.Item1`/`_cN.Item2` 字段访问），aux 未用(= -1)，
+//   children=[源表达式, 元素表达式, 筛选条件或 -1]。语义等价：
+//     out = table_new(); for x in src { if !cond 跳过; out.push(expr) }
+const N_COMPREHENSION: i64 = 154;
 // S3.3 宏/元编程（三节点，布局约定见 mexpand.tie 头注释）：
 //   MacroDef[name=宏名, val=0, aux=nparams, children=[返回类型, 参数..., 函数体]]
 //     —— 布局与 FnDef 一致但**无泛型槽**（children[0] 即返回类型；形参从 1 起，
