@@ -166,6 +166,27 @@ func parse_arrow() -> i64 {
             }
         }
     }
+    // p.9.11.6 表不可变更新 `with`：二元运算符（保留字 lex_with），优先级低于
+    // 数据流箭头——置于箭头链之后。`t with {k: v}`：左 = 基表/记录表达式，右 =
+    // 更新 map 字面量（`{键: 值}`）→ N_WITH。链式左结合（`t with {a} with {b}`）。
+    // 右操作数用 parse_ternary（刻意不进入箭头层，避免 with 链右结合歧义；链由
+    // 本 while 循环左结合迭代处理）。裁决：with 走「表达式位二元 token」路径，
+    // 参照 p.9.11.1 `=>` 新 token 手法，不做语句位语境。
+    while putil.peek_tag() == lex_with {
+        putil.advance()   // 'with'
+        var wline = ast.line(lhs)
+        var wcol = ast.col(lhs)
+        var upd = parse_ternary()
+        if upd < 0 {
+            return -1
+        }
+        var w = ast.new_node(N_WITH, -1, -1, -1, wline, wcol)
+        var wet: table<i64> = table_new_i64()
+        table_push(wet, lhs)
+        table_push(wet, upd)
+        ast.set_children(w, wet)
+        lhs = w
+    }
     return lhs
 }
 

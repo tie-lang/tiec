@@ -719,6 +719,138 @@ func tig_case_struct_bind_body(subject: i64, subj_ty: i64, pat: i64) -> i64 {
     return 0
 }
 
+// p.9.11.6 表不可变更新 `t with {k: v}` → 新表/新映射（左表不被修改，值语义）。
+// 实现（映射/记录路径；数组 with 因 RHS 是 ident/string 键故不表达，留待）：
+//   1. s21_map_new 建新映射；
+//   2. 拷贝 base 全部键值对（map_keys → 循环 map_get + map_set 入新映射）——
+//      未变部分也逐对复制（裁决：容器为扁平数组无结构化共享，故全复制，
+//      非零拷贝共享）；
+//   3. 应用 with 右侧更新 map 字面量各 (键:值) → map_set 覆盖。
+// 值类型：base 的 map 值类型（scalar/string）；any 走 P2c 装箱路径。
+func tig_with(id: i64) -> i64 {
+    var base = sstate.child(id, 0)
+    var upd = sstate.child(id, 1)
+    var T64 = types.named(TK_I64)
+    var t = tig_expr(base)
+    if t < 0 {
+        return -1
+    }
+    // 值类型与槽类型：map 值类型（table_elem）；字符串/表/映射/端口 → ptr 槽
+    var vty: i64 = types.named(TK_I64)
+    var bt = node_types[base]
+    if types.is_map(bt) || types.is_table(bt) {
+        var le = types.table_elem(bt)
+        if le > 0 {
+            vty = le
+        }
+    }
+    var is_any: bool = (vty == types.named(TK_ANY))
+    var pty = types.named(TK_I64)
+    if vty == types.named(TK_STR) || vty == types.named(TK_BOOL) {
+        pty = vty
+    } else if is_any {
+        // any 值槽存堆指针 → ptr 槽
+        pty = types.named(TK_STR)
+    } else if types.is_table(vty) || types.is_map(vty) || types.kind(vty) == K_PORT {
+        pty = types.named(TK_STR)
+    }
+    var nm = s21_map_new()
+    // ---- 步骤 2：拷贝 base 键值对 ----
+    var keys = s21_map_extract(t, types.named(TK_STR), true)  // table<string> 键
+    if keys < 0 {
+        return -1
+    }
+    var klen = s21_table_len(keys)
+    var idx_a = ir.new_inst(g_cur_block, 20, T64)
+    ir.add_operand(idx_a, T64, 2)
+    var idx_p = ir.get_value(idx_a)
+    s21_store(idx_p, tig_int_lit(0), T64)
+    var kc = ir.new_block(g_cur_func, interner.intern("wth.c"))
+    var kb = ir.new_block(g_cur_func, interner.intern("wth.b"))
+    var ks = ir.new_block(g_cur_func, interner.intern("wth.s"))
+    var kx = ir.new_block(g_cur_func, interner.intern("wth.x"))
+    var b0 = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(b0, kc, 1)
+    g_cur_block = kc
+    var ci = s21_load(idx_p, T64)
+    var clt = tig_icmp_c(ci, klen, 2)  // idx < klen
+    var cb = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb, clt, 0)
+    ir.add_operand(cb, kb, 1)
+    ir.add_operand(cb, kx, 1)
+    g_cur_block = kb
+    var ok1 = ir.new_inst(g_cur_block, 20, types.named(TK_I8))
+    ir.add_operand(ok1, types.named(TK_I8), 2)
+    var kv = s21_table_at(keys, ci, ir.get_value(ok1), types.named(TK_STR))
+    if kv < 0 {
+        return -1
+    }
+    var srcv: i64 = -1
+    if is_any {
+        // any 读：值槽存堆指针 → 读堆还原 {i64,i64}（对齐 tig_index_read map<any>）
+        var hp0 = s21_map_get(t, kv, types.named(TK_STR))
+        srcv = s21_load(hp0, types.named(TK_ANY))
+    } else {
+        srcv = s21_map_get(t, kv, pty)
+    }
+    if srcv < 0 {
+        return -1
+    }
+    if is_any {
+        // any 写：装箱拷贝到新堆 → 存指针
+        var hp = s21_raw_alloc_str(tig_int_lit(16))
+        if hp < 0 {
+            return -1
+        }
+        s21_store(hp, srcv, types.named(TK_ANY))
+        s21_map_set(nm, kv, hp, types.named(TK_STR))
+    } else {
+        s21_map_set(nm, kv, srcv, pty)
+    }
+    var sb = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(sb, ks, 1)
+    g_cur_block = ks
+    var nxt_i = s21_bin(0, ci, tig_int_lit(1))
+    s21_store(idx_p, nxt_i, T64)
+    var sb2 = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(sb2, kc, 1)
+    g_cur_block = kx
+    // ---- 步骤 3：应用 RHS 覆盖 ----
+    var nc = sstate.nchild(upd)
+    var i: i64 = 0
+    while i < nc {
+        var cell = sstate.child(upd, i)
+        var cid = sstate.child(cell, 0)   // TableId（字符串键）
+        var keyname = sstate.name_str(cid)
+        var k2 = tig_str_lit(interner.intern(keyname))
+        var val = sstate.child(cell, 1)
+        var vv = tig_expr(val)
+        if vv < 0 {
+            return -1
+        }
+        if is_any {
+            var vt3 = node_types[val]
+            var sv: i64 = vv
+            if vt3 >= 0 && vt3 != types.named(TK_ANY) {
+                var bx = tig_box_any(vv, vt3)
+                if bx < 0 {
+                    return -1
+                }
+                sv = bx
+            }
+            var hp3 = s21_raw_alloc_str(tig_int_lit(16))
+            if hp3 < 0 {
+                return -1
+            }
+            s21_store(hp3, sv, types.named(TK_ANY))
+            s21_map_set(nm, k2, hp3, types.named(TK_STR))
+        } else {
+            s21_map_set(nm, k2, vv, pty)
+        }
+        i = i + 1
+    }
+    return nm
+}
 // 枚举构造：EnumName.Variant(args) → 聚合值。
 // eidx：en_keys 下标（构造名反查的枚举）；vname：变体名；id：AST 节点
 //（MethodCall 取实参；FieldAccess 无实参）；arg_start：实参起始 child
