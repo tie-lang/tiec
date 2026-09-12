@@ -217,17 +217,30 @@ func is_case_literal(n: i64) -> bool {
     return false
 }
 
-// switch case 检查
+// switch case 检查（语句位）。模式/守卫检查拆分到 check_arm_patterns（供
+// p.9.10.1 表达式位复用），此处统一走模式检查后校验分支体（语句块）。
 pub func check_switch_case(c: i64, subj_ty: i64) -> i64 {
+    var rp = check_arm_patterns(c, subj_ty)
+    if rp < 0 {
+        return -1
+    }
+    var body = sstate.child(c, 2)
+    return check_block(body)
+}
+
+// 模式 + when 守卫检查（不含分支体——供 p.9.10.1 表达式位 switch 复用）。
+// 按 subject 类型分派：枚举 → check_arm_patterns_enum；否则 → plain。
+pub func check_arm_patterns(c: i64, subj_ty: i64) -> i64 {
+    if types.kind(subj_ty) == K_ENUM {
+        return check_arm_patterns_enum(c, subj_ty)
+    }
+    return check_arm_patterns_plain(c, subj_ty)
+}
+
+// 非枚举 subject 的 case 模式/守卫检查（原 check_switch_case 非枚举段）。
+func check_arm_patterns_plain(c: i64, subj_ty: i64) -> i64 {
     var plist = sstate.child(c, 0)
     var when_n = sstate.child(c, 1)
-    var body = sstate.child(c, 2)
-    // 枚举对象：case 值必须是该枚举的变体引用（EnumName.Variant），解析为
-    // tag 常量走整数比较路径（与 subject 的 icmp 比较）；不调用 infer_expr
-    // （payload 变体的裸引用在值语境会报"需要 payload 参数"）
-    if types.kind(subj_ty) == K_ENUM {
-        return check_enum_switch_case(c, subj_ty)
-    }
     var np = sstate.nchild(plist)
     var i: i64 = 0
     while i < np {
@@ -389,21 +402,14 @@ pub func check_switch_case(c: i64, subj_ty: i64) -> i64 {
             return -1
         }
     }
-    var r = check_block(body)
-    if r < 0 {
-        return -1
-    }
     return 0
 }
 
-// 枚举 switch 的 case 检查（subject 类型为 K_ENUM）。
-// case 值必须是 `EnumName.Variant`（FieldAccess）且 EnumName 与 switch 对象
-// 是同一个枚举——解析为变体 tag 常量（整数值，后端与 tag 提取比较）；
-// 区间/类型匹配 pattern 不支持。when 守卫与 body 检查复用常规路径。
-func check_enum_switch_case(c: i64, subj_ty: i64) -> i64 {
+// 枚举 switch 的 case 模式/守卫检查（原 check_enum_switch_case 的枚举段，
+// 不含分支体检查）。
+func check_arm_patterns_enum(c: i64, subj_ty: i64) -> i64 {
     var plist = sstate.child(c, 0)
     var when_n = sstate.child(c, 1)
-    var body = sstate.child(c, 2)
     var ei = types.low(subj_ty)
     var ename = sstate.enum_name_of(ei)
     var np = sstate.nchild(plist)
@@ -538,17 +544,18 @@ func check_enum_switch_case(c: i64, subj_ty: i64) -> i64 {
             return -1
         }
     }
-    var r = check_block(body)
-    if r < 0 {
-        return -1
-    }
     return 0
+}
+
+// 重置 switch case 去重表（每个 switch 独立；表达式位由 sinfer 入口调用）。
+pub func reset_case_seen() {
+    g_case_seen = table_new_string()
 }
 
 // p.8.1.4 穷尽检查：无 default 的 enum switch 必须覆盖全部变体。
 // 带 when 守卫的 case 不视为穷尽（守卫可能失败 → 运行期仍可能无分支命中）。
-// 返回 0 通过 / -1 未穷尽（sm_err_* 已置）。
-func check_enum_exhaustive(subj_ty: i64, s: i64) -> i64 {
+// 返回 0 通过 / -1 未穷尽（sm_err_* 已置）。pub 供 p.9.10.1 表达式位复用。
+pub func check_enum_exhaustive(subj_ty: i64, s: i64) -> i64 {
     var ei = types.low(subj_ty)
     var ename = sstate.enum_name_of(ei)
     var varoff = en_varoff[ei]
