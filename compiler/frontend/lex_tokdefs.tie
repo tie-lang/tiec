@@ -87,6 +87,14 @@ const lex_fatarrow: i64 = 97;
 // 与 lex_fatarrow=97 错开；实际映射值在 lex_symtab.build_kw 关键字表登记）。
 // `t with {k: v}` 二元运算符 token，参照 p.9.11.1 `=>` 新 token 手法。
 const lex_with: i64 = 98;
+// p.9.11.9 checked 运算运算符 `+?`/`-?`/`*?`（符号表 3→2→1 最长匹配；
+// 与 `?` 解包/`?.`/`a?[i]` 前缀不冲突——各自的第二字符不同，最长匹配天然区分）。
+const lex_plusq: i64 = 99;    // `+?` checked 加（溢出即运行期报错）
+const lex_minusq: i64 = 100;  // `-?` checked 减
+const lex_starq: i64 = 101;   // `*?` checked 乘
+// p.9.11.10 `inline` 函数标注保留字（tag 102）；p.9.11.11 `immut` 只读形参保留字。
+const lex_inline: i64 = 102;  // `inline fn` 内联提示
+const lex_immut: i64 = 103;   // `fn f(immut t)` 只读形参修饰
 
 namespace lextok {
 
