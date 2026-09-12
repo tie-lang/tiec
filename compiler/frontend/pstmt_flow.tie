@@ -43,6 +43,16 @@ pub func parse_stmt() -> i64 {
         if is_loop_label_ahead() {
             return parse_labeled_loop()
         }
+        // p.8.2.11 guard else 早退：`guard <cond> else { ... }`。guard 非保留字
+        //（guard<cap> 是类型名），此处语境识别——语句位 `guard` 后不跟 `<`（该
+        // 情形是类型 `guard<cap>`，本就不该作语句）且不跟 `=`（guard 作变量赋值）
+        // 时按 guard 语句解析。
+        if putil.peek_lexeme() == "guard" {
+            var gn = putil.peek_n(1)
+            if gn != lex_lt && gn != lex_eq {
+                return parse_guard_else()
+            }
+        }
         return pstmt.parse_expr_or_assign()
     }
     if tag == lex_lbrace {
@@ -482,6 +492,36 @@ func parse_if() -> i64 {
     table_push(kids, cond)
     table_push(kids, then_list)
     table_push(kids, else_list)
+    ast.set_children(n, kids)
+    return n
+}
+
+// p.8.2.11 `guard <cond> else { stmts }` 早退语句。语法脱糖语义：
+//   guard c else { B } ≡ if not(c) { B }
+// 解析产出 N_GUARD_STMT[cond, else_list]（else 块必须跳转收尾由 scheck 校验，
+// irgen 按 if-not 发射）。游标停在 `guard` 上（调用方已验证后不跟 `<`/`=`）。
+func parse_guard_else() -> i64 {
+    var line = putil.peek_line()
+    var col = putil.peek_col()
+    putil.advance()   // guard
+    // 条件表达式（enter_cond 防尾随闭包把 else 块 `{` 误吞）
+    putil.enter_cond()
+    var cond = pexpr.parse_expr()
+    putil.exit_cond()
+    if cond < 0 {
+        return -1
+    }
+    if !putil.expect(lex_else, "'else'") {
+        return -1
+    }
+    var body = parse_block()
+    if body < 0 {
+        return -1
+    }
+    var n = ast.new_node(N_GUARD_STMT, -1, -1, -1, line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, cond)
+    table_push(kids, body)
     ast.set_children(n, kids)
     return n
 }
