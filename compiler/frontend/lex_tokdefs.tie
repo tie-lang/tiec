@@ -95,6 +95,9 @@ const lex_starq: i64 = 101;   // `*?` checked 乘
 // p.9.11.10 `inline` 函数标注保留字（tag 102）；p.9.11.11 `immut` 只读形参保留字。
 const lex_inline: i64 = 102;  // `inline fn` 内联提示
 const lex_immut: i64 = 103;   // `fn f(immut t)` 只读形参修饰
+// p.9.11.12 @注解起始符（tag 104）：`@name` / `@name(args)` 声明前置注解。
+// 映射值登记于 lex_symtab.build_sym（'@' = 0x40，介于 '?' 与 '[' 之间）。
+const lex_at: i64 = 104;      // @ 注解符（声明前置元数据）
 
 namespace lextok {
 

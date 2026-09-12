@@ -161,4 +161,57 @@ pub func sem_use_moved(name: string) -> string {
     return "变量 '" + name + "' 已移动（所有权已转移），不可再次使用（需要复制请用 clone）"
 }
 
+// ---------- p.9.11.12 @注解错误消息 ----------
+// 声明前置注解 `@name` / `@name(args)`：同名注解在同一个声明上重复 → 诊断。
+pub func syn_annot_dup(name: string) -> string {
+    return "注解 '" + name + "' 重复（同一声明上的同名注解只能出现一次）"
+}
+
+// 注解参数必须是编译期字面量（数字/字符串/字符/布尔/表字面量）。
+pub func syn_annot_arg_type() -> string {
+    return "注解参数必须是编译期字面量（数字/字符串/布尔/表字面量）"
+}
+
+// 悬空注解：@ 注解后必须紧跟函数/struct/enum 声明（import 等其它声明的
+// 注解留待后续批次）。
+pub func syn_annot_dangling() -> string {
+    return "悬空注解：@ 注解后必须是函数、struct 或 enum 声明"
+}
+
+// 注解暂不支持 extern 声明（本批次以 func/struct/enum 为界）。
+pub func syn_annot_extern() -> string {
+    return "注解暂不支持 extern 声明（p.9.11.12 以 func/struct/enum 为界）"
+}
+
+// ---------- p.9.11.13 #cfg 条件编译错误消息 ----------
+// #cfg 条件块未闭合（缺 #end/#endif）。
+pub func syn_cfg_unclosed() -> string {
+    return "#cfg 条件块未闭合（缺少 #end/#endif）"
+}
+
+// #cfg 不支持嵌套（单层；条件块内再出现 #cfg 报错）。
+pub func syn_cfg_nested() -> string {
+    return "#cfg 不支持嵌套（条件块内不能再出现 #cfg）"
+}
+
+// #else/#end/#endif 没有匹配的 #cfg（悬空指令）。
+pub func syn_cfg_unmatched() -> string {
+    return "#else/#end 没有匹配的 #cfg（悬空指令）"
+}
+
+// 一个 #cfg 块内 #else 只能出现一次。
+pub func syn_cfg_dup_else() -> string {
+    return "#else 重复（一个 #cfg 块只能有一个 #else）"
+}
+
+// #cfg 条件语法错误（应为 #cfg(键=值) / #cfg(debug) / #cfg(!debug)）。
+pub func syn_cfg_malformed() -> string {
+    return "#cfg 条件格式错误（应为 #cfg(键=值) 或 #cfg(debug)/#cfg(!debug)）"
+}
+
+// #cfg/#else/#end 指令后不允许尾随内容。
+pub func syn_cfg_trailing() -> string {
+    return "#cfg/#else/#end 指令后不允许尾随内容"
+}
+
 }   // namespace errors
