@@ -119,6 +119,24 @@ pub func run_lex(src: string) -> bool {
             continue
         } else if c == 47 {                // '/'：注释或除号
             r = lexscan.scan_slash(pos)
+        } else if c == 92 {                // '\'：p.9.11.18 行尾续行符
+            // 显式续行：token 边界的 '\' + 换行（LF 或 CRLF）→ 当作空白跳过，
+            // 不产 token、不触发 ASI（续行语义 = 与下一行拼接到同一行）。
+            // 字符串/注释内的 '\' 不在此路径（字符串由 scan_string 状态优先，
+            // 注释由 scan_slash 吞到行尾），转义语义不受影响。
+            if pos + 1 < g_n && g_codes[pos + 1] == 10 {
+                pos = pos + 2
+                continue
+            }
+            if pos + 1 < g_n && g_codes[pos + 1] == 13 {
+                if pos + 2 < g_n && g_codes[pos + 2] == 10 {
+                    pos = pos + 3    // CRLF
+                } else {
+                    pos = pos + 2    // 仅 CR（旧 Mac 换行）
+                }
+                continue
+            }
+            r = lexscan.scan_symbol(pos)   // '\' 后非换行 → 无法识别的字符
         } else if c == 34 {                // '"' 字符串
             r = lexscan.scan_string(pos)
         } else if c == 39 {                // '\'' 字符字面量
