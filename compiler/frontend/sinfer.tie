@@ -388,6 +388,52 @@ pub func infer_expr(id: i64) -> i64 {
         sm_err_msg = "展开实参 `...` 仅支持用于带变长形参 `...T` 的普通函数调用；当前调用语境不支持展开"
         return -1
     }
+    // p.8.2.5 表/数组推导式：`[expr for x in src if cond]` → table<ElemTy>。
+    // 校验源为表族、if 条件为 bool；循环变量以源表元素类型登记（解构形态在
+    // 解析期已改写为 `_cN.ItemK`，此处只需登记临时变量 `_cN` 为源元素类型）。
+    if tag == N_COMPREHENSION {
+        var cvname = sstate.name_str(id)
+        var cvnid = intern.intern(cvname)
+        var csrc = sstate.child(id, 0)
+        var celem = sstate.child(id, 1)
+        var ccond = sstate.child(id, 2)
+        var cst = infer_expr(csrc)
+        if cst < 0 {
+            return -1
+        }
+        if !types.is_table(cst) {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "推导式迭代源必须是表/数组，实际是 " + types.type_name(cst)
+            return -1
+        }
+        var celem_loop: i64 = types.named(TK_I64)
+        var cte = types.table_elem(cst)
+        if cte >= 0 {
+            celem_loop = cte
+        }
+        // 登记循环变量（源元素类型；解构临时变量同此登记——字段访问再取 ItemK）
+        lv_insert(cvnid, celem_loop, 0, -1, 0)
+        var celem_ty = infer_expr(celem)
+        if celem_ty < 0 {
+            return -1
+        }
+        if ccond >= 0 {
+            var ccond_ty = infer_expr(ccond)
+            if ccond_ty < 0 {
+                return -1
+            }
+            if ccond_ty != types.named(TK_BOOL) {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "推导式 if 筛选条件必须是 bool，实际是 " + types.type_name(ccond_ty)
+                return -1
+            }
+        }
+        node_types[id] = types.table_of(celem_ty)
+        g_typed = g_typed + 1
+        return types.table_of(celem_ty)
+    }
     // 字面量
     if tag == 0 {
         // S1.3 L3 后缀字面量：aux = 后缀类型 TyKw（-1 = 无后缀 → i64）
