@@ -122,8 +122,8 @@ pub func instantiate_fn(gti: i64, args: table<i64>, line: i64, col: i64) -> i64 
         if is_var == 1 {
             pt = types.table_of(pt)
         }
-        // ref 形参仅支持表（对齐 collect_fn 校验）
-        if s_vals[p] == 1 && !types.is_table(pt) {
+        // ref 形参仅支持表（对齐 collect_fn 校验；p.9.11.11 immut 存 bit1，掩码 & 1）
+        if (s_vals[p] & 1) == 1 && !types.is_table(pt) {
             g_inst_depth = g_inst_depth - 1
             sm_err_line = line
             sm_err_col = col
@@ -131,7 +131,7 @@ pub func instantiate_fn(gti: i64, args: table<i64>, line: i64, col: i64) -> i64 
             return -1
         }
         table_push(p_tys, pt)
-        table_push(p_refs, s_vals[p])
+        table_push(p_refs, s_vals[p] & 1)
         table_push(p_vars, is_var)
         var has_def: i64 = 0
         if sstate.nchild(p) > 1 {

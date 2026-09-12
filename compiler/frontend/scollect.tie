@@ -164,7 +164,7 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
             sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的指针/切片/原子类型 '" + types.type_name(pt) + "' 只能在 unsafe 函数中使用"
             return -1
         }
-        var is_ref = s_vals[p]
+        var is_ref = s_vals[p] & 1   // by_ref（p.9.11.11 immut 存 bit1，掩码 & 1）
         var is_var = s_aux[p]   // 变参标志（`name: ...T`，parser 写入 aux）
         var has_def: i64 = 0
         var def_node: i64 = -1
