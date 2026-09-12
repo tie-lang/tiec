@@ -1201,6 +1201,11 @@ func build_defaults() -> i64 {
     c_ivals[bc_n] = 0
     table_push(tiec_keys, "bounds_check")
     table_push(tiec_vals, bc_n)
+    // p.9.1.2：编译资源——内存上限（MB，0 = 不限）>-0 时 -O3 降为 O2
+    var ml_n = new_node(2)
+    c_ivals[ml_n] = 0
+    table_push(tiec_keys, "mem_limit")
+    table_push(tiec_vals, ml_n)
     var tiec = new_node(6)
     commit_map(tiec, tiec_keys, tiec_vals)
     // ---------- 子树：prep ----------
