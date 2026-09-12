@@ -582,6 +582,14 @@ pub func infer_expr(id: i64) -> i64 {
         }
         if op == 0 {
             // Neg：数字；trit 也允许（平衡取反 -1t/-(trit)，-1↔1、0 保持）
+            // p.8.2.4：操作数为用户 struct 且声明 op_neg → 重写为方法调用。
+            var ngres = try_op_overload_neg(sstate.child(id, 0), id)
+            if ngres >= 0 {
+                return ngres
+            }
+            if ngres < 0 && ngres != -2 {
+                return -1
+            }
             if !types.is_number(operand) && operand != types.named(TK_TRIT) {
                 sm_err_line = s_lines[id]
                 sm_err_col = s_cols[id]
@@ -638,6 +646,15 @@ pub func infer_expr(id: i64) -> i64 {
         }
         var rhs = infer_expr(sstate.child(id, 1))
         if rhs < 0 {
+            return -1
+        }
+        // p.8.2.4 运算符重载：任一操作数为用户 struct 且声明对应 op_ 方法 →
+        // 重写为方法调用（返回方法返回类型）；否则 -2 沿用原算术/比较路径。
+        var ores = try_op_overload_binary(op, sstate.child(id, 0), sstate.child(id, 1), id)
+        if ores >= 0 {
+            return ores
+        }
+        if ores < 0 && ores != -2 {
             return -1
         }
         // 枚举 ==/!= 比较拦截（一期）：枚举按 tag 比较语义未定义，报错
@@ -2602,6 +2619,160 @@ pub func infer_struct_method(recv: i64, recv_ty: i64, mname: string, args: table
     node_types[id] = rt
     g_typed = g_typed + 1
     return rt
+}
+
+// ==================== 运算符重载（p.8.2.4） ====================
+// 声明形式：struct 绑定命名空间函数 `namespace Struct { pub func op_add(self, other) ... }`
+// （命名约定：二元 op_add/op_sub/op_mul/op_div/op_mod、比较 op_eq/op_ne/op_lt/op_le/op_gt/op_ge、
+// 一元 op_neg；接收者 = 首参，右操作数 = 次参，一元仅接收者）。返回类型自由（== 类由用户
+// 保证 bool）。
+// 调度确定性规则（definite dispatch rule，勿破坏）：
+//   - 左操作数类型为用户 struct 且声明对应 op_ 方法 → 左优先：调 <左struct>::op_X，形参=[左,右]
+//   - 否则若右操作数类型为用户 struct 且声明对应 op_ 方法 → 调 <右struct>::op_X，形参=[右,左]
+//     （左侧为内置类型时启用；非交换运算由此规则决定参数顺序，用户方法签名掌控语义）
+//   - 两侧都为内置类型 -> 绝不重载，走原有运算路径（既有代码行为零变化）。
+//   - 未声明对应 op_ 方法的 struct：不重载，走原语义/诊断路径（== 未重载的 struct 保持原状）。
+// 返回：命中重载 -> 方法返回类型（node_types[id] 已登记）；不可重载 -> -2；错误已报 -> -1。
+func op_method_full(ty: i64, op: i64, is_bin: i64) -> string {
+    var si = types.low(ty)
+    var sname = sstate.struct_name_of(si)
+    var nm = ""
+    if is_bin == 1 {
+        if op == 0 {
+            nm = "op_add"
+        } else if op == 1 {
+            nm = "op_sub"
+        } else if op == 2 {
+            nm = "op_mul"
+        } else if op == 3 {
+            nm = "op_div"
+        } else if op == 4 {
+            nm = "op_mod"
+        } else if op == 5 {
+            nm = "op_eq"
+        } else if op == 6 {
+            nm = "op_ne"
+        } else if op == 7 {
+            nm = "op_lt"
+        } else if op == 8 {
+            nm = "op_gt"
+        } else if op == 9 {
+            nm = "op_le"
+        } else if op == 10 {
+            nm = "op_ge"
+        }
+    } else {
+        nm = "op_neg"
+    }
+    if nm == "" {
+        return ""
+    }
+    var full = sname + "::" + nm
+    if sstate.fn_sig(full) < 0 {
+        return ""
+    }
+    return full
+}
+
+// 共享收尾：以 struct 方法调用的常规类型检查（含首参接收者匹配 + 实参类型匹配 + 可见性）
+// 校验重载方法，成功则登记 node_types[id]=返回类型并返回。
+func finish_op_overload(full: string, recv_node: i64, recv_ty: i64, arg_nodes: table<i64>, id: i64) -> i64 {
+    var sig = sstate.fn_sig(full)
+    if sig < 0 {
+        return -2
+    }
+    var vr = sstate.check_visibility(full, sig, id)
+    if vr < 0 {
+        return -1
+    }
+    // 形参数：含接收者为 1+（二元）/1（一元）。required/total 均含接收者。
+    var req_m = sg_required[sig]
+    var total = sg_nparams[sig]
+    var has_var = sstate.fn_has_variadic(sig) == 1
+    var n_args = len(arg_nodes) + 1
+    if n_args < req_m || (!has_var && n_args > total) {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "运算符方法 '" + full + "' 形参数不匹配（期望含接收者 " + to_string(total) + " 个，实际 " + to_string(n_args) + " 个）"
+        return -1
+    }
+    var off = sg_off[sig]
+    var want = sp_tys[off]
+    if !stype.types_compatible(want, recv_ty) {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "运算符方法 '" + full + "' 接收者类型不匹配：期望 " + types.type_name(want) + "，实际 " + types.type_name(recv_ty)
+        return -1
+    }
+    var jj: i64 = 0
+    while jj < len(arg_nodes) {
+        var at = node_types[arg_nodes[jj]]
+        if at < 0 {
+            return -2
+        }
+        var want2 = sp_tys[off + 1 + jj]
+        if has_var {
+            if 1 + jj >= total - 1 {
+                want2 = sstate_fn_variadic_elem(sig)
+            }
+        }
+        if !stype.types_compatible(want2, at) && !stype.types_match(want2, at, arg_nodes[jj]) &&
+            !stype.types_narrow_int(want2, at, arg_nodes[jj]) {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "运算符方法 '" + full + "' 操作数类型不匹配：期望 " + types.type_name(want2) + "，实际 " + types.type_name(at)
+            return -1
+        }
+        jj = jj + 1
+    }
+    var rt = sg_ret[sig]
+    node_types[id] = rt
+    g_typed = g_typed + 1
+    return rt
+}
+
+// 二元重载入口（S_N_BINARY 分支内，lhs/rhs 类型已推断）：命中返回方法返回类型，否则 -2 / -1。
+func try_op_overload_binary(op: i64, lhs: i64, rhs: i64, id: i64) -> i64 {
+    if op < 0 || op > 10 {
+        return -2
+    }
+    var lhs_t = node_types[lhs]
+    var rhs_t = node_types[rhs]
+    if lhs_t < 0 {
+        return -2
+    }
+    if types.kind(lhs_t) == K_STRUCT {
+        var full = op_method_full(lhs_t, op, 1)
+        if full != "" {
+            var argn: table<i64> = table_new_i64()
+            table_push(argn, rhs)
+            return finish_op_overload(full, lhs, lhs_t, argn, id)
+        }
+    }
+    // 左为内置（或左 struct 未声明）→ 右操作数 struct 优先
+    if rhs_t >= 0 && types.kind(rhs_t) == K_STRUCT {
+        var full2 = op_method_full(rhs_t, op, 1)
+        if full2 != "" {
+            var argn2: table<i64> = table_new_i64()
+            table_push(argn2, lhs)
+            return finish_op_overload(full2, rhs, rhs_t, argn2, id)
+        }
+    }
+    return -2
+}
+
+// 一元取负重载入口（S_N_UNARY 分支内，op==0 且操作数类型已推断）。
+func try_op_overload_neg(operand: i64, id: i64) -> i64 {
+    var oty = node_types[operand]
+    if oty < 0 || types.kind(oty) != K_STRUCT {
+        return -2
+    }
+    var full = op_method_full(oty, 0, 0)
+    if full == "" {
+        return -2
+    }
+    var argn: table<i64> = table_new_i64()
+    return finish_op_overload(full, operand, oty, argn, id)
 }
 
 // ==================== 泛型方法调用（T3b） ====================

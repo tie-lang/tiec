@@ -639,6 +639,118 @@ func tig_struct_method_call(full: string, id: i64, recv: i64, rty: i64) -> i64 {
     return ir.get_value(inst)
 }
 
+// ============ 运算符重载（p.8.2.4）IR 发射 ============
+// 与 sinfer.op_method_full 对称：给定 struct 类型 + 运算 op，返回对应 op_ 方法全名
+// （"<Struct>::op_X"），未声明则返回 ""。is_bin=1 二元（0..10），否则一元 op_neg。
+func op_method_full_ir(ty: i64, op: i64, is_bin: i64) -> string {
+    var si = types.low(ty)
+    var sname = sstate.struct_name_of(si)
+    var nm = ""
+    if is_bin == 1 {
+        if op == 0 {
+            nm = "op_add"
+        } else if op == 1 {
+            nm = "op_sub"
+        } else if op == 2 {
+            nm = "op_mul"
+        } else if op == 3 {
+            nm = "op_div"
+        } else if op == 4 {
+            nm = "op_mod"
+        } else if op == 5 {
+            nm = "op_eq"
+        } else if op == 6 {
+            nm = "op_ne"
+        } else if op == 7 {
+            nm = "op_lt"
+        } else if op == 8 {
+            nm = "op_gt"
+        } else if op == 9 {
+            nm = "op_le"
+        } else if op == 10 {
+            nm = "op_ge"
+        }
+    } else {
+        nm = "op_neg"
+    }
+    if nm == "" {
+        return ""
+    }
+    var full = sname + "::" + nm
+    if sstate.fn_sig(full) < 0 {
+        return ""
+    }
+    return full
+}
+
+// 发射 struct 运算符方法调用：接收者 = recv_node（类型 recv_ty，须为用户 struct；
+// 首参按引用则传槽地址），随后逐个 arg_nodes 实参求值压参。返回方法返回类型值。
+func tig_op_overload(full: string, recv_node: i64, recv_ty: i64, arg_nodes: table<i64>) -> i64 {
+    var sig = sstate.fn_sig(full)
+    if sig < 0 {
+        sm_err_msg = "运算符方法 '" + full + "' 无签名（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var ret_ty = fn_ret_ty(sig)
+    var nparams = fn_nparams(sig)
+    var ptys = fn_param_tys(sig)
+    var sgo = sg_off[sig]
+    var first_ref = 0
+    if sgo >= 0 && sgo < len(sp_refs) {
+        first_ref = sp_refs[sgo]
+    }
+    var sym = interner.intern(full)
+    llvmgen.call_sym_reg(sym)
+    var argvals: table<i64> = table_new_i64()
+    var argtys: table<i64> = table_new_i64()
+    var rv: i64 = -1
+    if first_ref == 1 {
+        rv = tig_agg_addr(recv_node, recv_ty)
+    } else {
+        rv = tig_expr(recv_node)
+    }
+    if rv < 0 {
+        return -1
+    }
+    table_push(argvals, rv)
+    if first_ref == 1 {
+        table_push(argtys, types.named(TK_STR))  // 引用 → ptr
+    } else {
+        table_push(argtys, recv_ty)
+    }
+    var ai: i64 = 0
+    while ai < len(arg_nodes) {
+        var av = tig_expr(arg_nodes[ai])
+        if av < 0 {
+            return -1
+        }
+        table_push(argvals, av)
+        var apty = types.named(TK_I64)
+        if ai + 1 < nparams {
+            apty = ptys[ai + 1]
+        }
+        table_push(argtys, apty)
+        ai = ai + 1
+    }
+    var ty35x: i64 = -1
+    if ret_ty != types.named(TK_VOID) {
+        ty35x = ret_ty
+    }
+    var instx = ir.new_inst(g_cur_block, 35, ty35x)  // call
+    ir.add_operand(instx, sym, 0)
+    ir.add_operand(instx, ret_ty, 2)
+    var kk: i64 = 0
+    while kk < len(argvals) {
+        ir.add_operand(instx, argtys[kk], 2)
+        ir.add_operand(instx, argvals[kk], 0)
+        kk = kk + 1
+    }
+    if ret_ty == types.named(TK_VOID) {
+        return tig_int_lit(0)
+    }
+    return ir.get_value(instx)
+}
+
 // 外部桥调用（extern_call 36）通用生成。argtys/argv 并行表（实参 LLVM 类型 id + 值 id）。
 // p.6.8.3：extern repr(C) struct 实参按引用（C ABI 传指针）取地址值。
 // Var 实参 → 直接传变量槽地址 g_lookup_alloca（callee 就地写，调用方写可见）；

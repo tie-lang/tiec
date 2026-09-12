@@ -157,6 +157,15 @@ func tig_expr(id: i64) -> i64 {
         if op == 0 {
             // Neg：整数 → sub 0, x；浮点 → fsub 0.0, x（对齐 Rust fneg 语义）。
             // 立即数 0 在浮点上下文必须为 0.0（LLVM：fsub double 0, %x 非法）
+            // p.8.2.4：操作数为用户 struct 且声明 op_neg → 发射方法调用。
+            var noty = node_types[operand]
+            if noty >= 0 && types.kind(noty) == K_STRUCT {
+                var ofull = op_method_full_ir(noty, 0, 0)
+                if ofull != "" {
+                    var onone: table<i64> = table_new_i64()
+                    return tig_op_overload(ofull, operand, noty, onone)
+                }
+            }
             if oty == types.named(TK_TRIT) {
                 // trit 取反（-1↔1，0 保持）：i8 width，sub i8 0, x（与 Not 同款
                 // 平衡三值；对齐 interp eval_unary op==0 的 T_TRIT 分支）
