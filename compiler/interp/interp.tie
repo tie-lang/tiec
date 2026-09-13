@@ -63,6 +63,18 @@ var g_consume_outer_val: i64 = 0;       // 需上抛的 return 值 id（reset �
 var g_ns_segs: table<string>;
 // switch 模式辅助输出槽
 var g_subj_ok: bool = false;
+// tsh 脚本退出请求（脚本内 exit(n) 内建置位；eval_script 循环检测后停止，
+// tshell 宿主读取 exit_requested/exit_code_val 透传为进程退出码）
+var g_tsh_exit_req: bool = false;
+var g_tsh_exit_code: i64 = 0;
+// tsh 脚本参数（rn_run_script 在整文件求值前注入；脚本内 arg_count/arg_at 优先读
+// 此表——跳过 `-f <path>` 前缀，见 interp_call.tie。REPL/非脚本路径该模式关闭，
+// arg_count/arg_at 回退读进程 argv）
+var g_tsh_sargs: table<string>;
+var g_tsh_args_mode: bool = false;
+// split_top 累加槽（整文件脚本拆分；tie 无多返回值，经全局槽回写调用方）
+var g_split_defs: string = "";
+var g_split_stmts: string = "";
 
 // ==================== S3.3 宏执行环境状态 ====================
 // H2 词法卫生（默认）：宏体准引用内的绑定（var/func 声明名）克隆时改名
@@ -105,6 +117,28 @@ pub func reset() {
     // M4 token 流解析缓存清零
     g_tk_tags = table_new_i64()
     g_tk_lexemes = table_new_string()
+    // tsh 脚本退出请求清零
+    g_tsh_exit_req = false
+    g_tsh_exit_code = 0
+    // tsh 脚本参数清零
+    g_tsh_sargs = table_new_string()
+    g_tsh_args_mode = false
+}
+
+// 注入 tsh 脚本参数表并开启脚本参数模式（rn_run_script 整文件求值前调用）。
+pub func set_script_args(t: table<string>) {
+    g_tsh_sargs = t
+    g_tsh_args_mode = true
+}
+
+// 脚本参数可见标记（interp_call 的 arg_count/arg_at 读取；脚本模式关闭时不调用）。
+pub func script_args_active() -> bool {
+    return g_tsh_args_mode
+}
+
+// 读取脚本参数表（脚本参数模式下 arg_at 用）。
+pub func script_args() -> table<string> {
+    return g_tsh_sargs
 }
 
 // 求值一段代码：顶层定义注册，否则包装为 main 体执行，返回格式化结果或错误。
@@ -187,6 +221,367 @@ pub func eval(src: string) -> string {
         return ivalue.to_repl_string(last)
     }
     return ""
+}
+
+// ==================== 整文件脚本求值（tsh 角色，p.9.4） ====================
+// eval_script：把整个 `.tsh.tie` 脚本作为单一代码块求值——两趟：第一趟注册全部
+// 顶层定义（函数/命名空间/全局变量/extern），第二趟按源码顺序执行顶层可执行语句
+//（不压作用域 → var 落 globals、函数持久）。由此达成完整脚本语义：
+//   ① 函数定义跨行持久、多语句体/带参函数可靠；块内可缩进多行（多行 if/while/for）
+//   ② 函数声明先于调用成立（第一趟全注册）
+// 脚本内 exit(n) 内建置 g_tsh_exit_req/g_tsh_exit_code，循环检测到后即停止；
+// 宿主经 exit_requested()/exit_code_val() 透传为进程退出码。
+pub func eval_script(src: string) -> string {
+    g_err = ""
+    g_tsh_exit_req = false
+    g_tsh_exit_code = 0
+    // tie parser 顶层只接受定义语句、且函数体内不允许嵌套 `func` 定义（对齐 eval：
+    // 混合顶层会被拒绝，包装进 main 也会因嵌套函数定义被拒）。故先把源码分为
+    // ①顶层定义（func/struct/enum/namespace/import/using/extern/var）②顶层可执行
+    // 语句两部分（split_top，仅保留词法正确性所需的注释/字符串/括号识别），
+    // 再把①作顶层、②包装进 `func main()`——函数定义全在顶层注册（跨行持久、
+    // 声明先于调用成立），语句在 main 体内按序执行（不压作用域 → 顶层 var 落
+    // globals，可跨函数共享）。
+    var parts = split_top(src)
+    var combined = parts[0] + "\nfunc main() {\n" + parts[1] + "\n}\n"
+    var ok1 = lexer.run_lex(combined)
+    if !ok1 {
+        g_err = "词法错误 @" + to_string(g_err_line) + ":" + to_string(g_err_col) +
+            ": " + g_err_msg
+        return g_err
+    }
+    var proto = parser.parse("")
+    if has_str_prefix(proto, "ERR:") {
+        g_err = fmt_err(proto, "语法错误")
+        return g_err
+    }
+    if sstate.load_ast(proto) < 0 {
+        g_err = "内部错误: AST 协议加载失败"
+        return g_err
+    }
+    isess.archive_add()
+    env_ns = table_new_string()
+    env_base = 0
+    // 第一趟：注册顶层定义（函数/命名空间/全局变量/extern；main 也一并注册为函数，
+    // 但随后的第二趟只执行 main 体）
+    var rr = register_top_level()
+    if g_err != "" {
+        return g_err
+    }
+    // 第二趟：执行 main 体（顶层可执行语句）；不压作用域 → var 落 globals
+    var main = find_main()
+    if main < 0 {
+        g_err = "内部错误: 包装后的 main 未找到"
+        return g_err
+    }
+    var body = isess.nchild_at(main, isess.nchild(main) - 1)
+    var last: i64 = -1
+    var j: i64 = 0
+    while j < isess.nchild(body) {
+        var st = isess.nchild_at(body, j)
+        var tt = isess.ntag(st)
+        if tt == N_FN_DEF || tt == N_MACRO_DEF || tt == N_NAMESPACE || tt == N_EXTERN {
+            j = j + 1
+            continue
+        }
+        exec_stmt(st)
+        if g_err != "" {
+            return g_err
+        }
+        if g_tsh_exit_req {
+            break
+        }
+        if g_flow == FL_RETURN {
+            return ivalue.to_repl_string(g_flow_val)
+        }
+        if g_flow == FL_BREAK {
+            g_err = "break" + label_space(g_flow_label) + "只能出现在循环体内"
+            return g_err
+        }
+        if g_flow == FL_CONTINUE {
+            g_err = "continue" + label_space(g_flow_label) + "只能出现在循环体内"
+            return g_err
+        }
+        if g_lastval >= 0 {
+            last = g_lastval
+        }
+        j = j + 1
+    }
+    if last >= 0 {
+        return ivalue.to_repl_string(last)
+    }
+    return ""
+}
+
+// 把脚本源码分为 [顶层定义, 顶层语句] 两段。用轻量扫描器识别顶层语句边界：
+// 识别注释/字符串/圆括号/花括号，语句以 `;`、顶层 `}` 闭合、或顶层换行（ASI，
+// 前一显著符非续行符）终止。定义词（func/struct/enum/namespace/import/using/
+// extern/var）开头的语句入定义段，其余入语句段。重构后两段分别可被 tie parser
+// 接受（定义段全为顶层定义；语句段包进 main 体）。
+// 累加经模块全局 g_split_defs / g_split_stmts（tie 字符串不可变，按值传参无法
+// 回写调用方）。
+func split_top(src: string) -> table<string> {
+    g_split_defs = ""
+    g_split_stmts = ""
+    var n = str_len(src)
+    var i: i64 = 0
+    var brace: i64 = 0
+    var paren: i64 = 0
+    var stmt_start: i64 = 0
+    var first_word = ""
+    var have: bool = false
+    var in_str = ""
+    var in_linec: bool = false
+    var in_blockc: bool = false
+    var last_sig = ""
+    while i < n {
+        var c = str_char(src, i)
+        var c2 = ""
+        if i + 1 < n {
+            c2 = str_char(src, i + 1)
+        }
+        if in_linec {
+            if c == "\n" {
+                in_linec = false
+                i = i + 1
+            } else {
+                i = i + 1
+            }
+            continue
+        }
+        if in_blockc {
+            if c == "*" && c2 == "/" {
+                in_blockc = false
+                i = i + 2
+            } else {
+                i = i + 1
+            }
+            continue
+        }
+        if in_str != "" {
+            if c == "\\" {
+                i = i + 2
+            } else {
+                if c == in_str {
+                    in_str = ""
+                }
+                i = i + 1
+            }
+            continue
+        }
+        if c == "/" && c2 == "/" {
+            in_linec = true
+            i = i + 2
+            continue
+        }
+        if c == "/" && c2 == "*" {
+            in_blockc = true
+            i = i + 2
+            continue
+        }
+        if c == "\"" || c == "'" {
+            in_str = c
+            i = i + 1
+            continue
+        }
+        if c == "{" {
+            brace = brace + 1
+            last_sig = c
+            i = i + 1
+            continue
+        }
+        if c == "}" {
+            brace = brace - 1
+            last_sig = c
+            i = i + 1
+            if brace == 0 {
+                flush_statement(src, stmt_start, i, first_word, have)
+                stmt_start = i
+                first_word = ""
+                have = false
+                last_sig = ""
+            }
+            continue
+        }
+        if c == "(" {
+            paren = paren + 1
+            last_sig = c
+            i = i + 1
+            continue
+        }
+        if c == ")" {
+            paren = paren - 1
+            last_sig = c
+            i = i + 1
+            continue
+        }
+        if brace == 0 && paren == 0 {
+            if c == ";" {
+                flush_statement(src, stmt_start, i, first_word, have)
+                stmt_start = i
+                first_word = ""
+                have = false
+                last_sig = ""
+                i = i + 1
+                continue
+            }
+            if c == "\n" {
+                if !is_cont_char(last_sig) {
+                    flush_statement(src, stmt_start, i, first_word, have)
+                    stmt_start = i
+                    first_word = ""
+                    have = false
+                    last_sig = ""
+                }
+                i = i + 1
+                continue
+            }
+            if !have && !is_ws_c(c) {
+                // 捕获本语句首个词用于分类（吞掉整个词）
+                var w = ""
+                while i < n && is_ident_char(str_char(src, i)) {
+                    w = w + str_char(src, i)
+                    i = i + 1
+                }
+                first_word = w
+                have = true
+                last_sig = ""  // 首个词并入 stmt；若词后即换行则视为语句结束
+                continue
+            }
+            last_sig = c
+            i = i + 1
+            continue
+        }
+        last_sig = c
+        i = i + 1
+    }
+    // 尾随未终结语句
+    flush_statement(src, stmt_start, n, first_word, have)
+    var out: table<string> = table_new_string()
+    table_push(out, g_split_defs)
+    table_push(out, g_split_stmts)
+    return out
+}
+
+// 依据 first_word 把 src[lo:hi) 追加到 g_split_defs（定义词）或 g_split_stmts。
+func flush_statement(src: string, lo: i64, hi: i64, first_word: string, have: bool) {
+    if !have {
+        return
+    }
+    var slice = slice_str(src, lo, hi)
+    if is_def_word(first_word) {
+        g_split_defs = g_split_defs + slice + "\n"
+    } else {
+        g_split_stmts = g_split_stmts + slice + "\n"
+    }
+}
+
+func is_def_word(w: string) -> bool {
+    if w == "func" || w == "struct" || w == "enum" || w == "namespace" ||
+        w == "import" || w == "using" || w == "extern" || w == "var" {
+        return true
+    }
+    return false
+}
+
+func is_cont_char(c: string) -> bool {
+    if c == "=" || c == "+" || c == "-" || c == "*" || c == "/" || c == "%" ||
+        c == "&" || c == "|" || c == "<" || c == ">" || c == "!" || c == "," ||
+        c == ":" || c == "?" || c == "\\" || c == "." || c == "(" || c == "[" {
+        return true
+    }
+    return false
+}
+
+func is_ws_c(c: string) -> bool {
+    if c == " " || c == "\t" || c == "\r" || c == "\n" {
+        return true
+    }
+    return false
+}
+
+func is_ident_char(c: string) -> bool {
+    if c >= "a" && c <= "z" { return true }
+    if c >= "A" && c <= "Z" { return true }
+    if c >= "0" && c <= "9" { return true }
+    if c == "_" { return true }
+    return false
+}
+
+// 脚本退出已请求（tshell 宿主经 backend_interp 读取）。
+pub func exit_requested() -> bool {
+    return g_tsh_exit_req
+}
+
+// 脚本请求的显式退出码（exit(n)；缺省 0）。
+pub func exit_code_val() -> i64 {
+    return g_tsh_exit_code
+}
+
+// 顶层语句分类：是否定义节点（脚本第一趟注册，第二趟跳过）。
+func is_definition_node(t: i64) -> bool {
+    if t == N_FN_DEF || t == N_MACRO_DEF || t == N_NAMESPACE ||
+        t == N_VAR_DECL || t == N_EXTERN {
+        return true
+    }
+    return false
+}
+
+// 注册单个顶层定义节点（从 register_top_level 的 switch 主分支抽出，供
+// eval_script 两趟复用）。返回注册的函数个数；失败置 g_err 返回 -1。
+func reg_one_top(s: i64) -> i64 {
+    var t = isess.ntag(s)
+    if t == N_FN_DEF {
+        isess.f_put(isess.nname_str(s), s)
+        return 1
+    }
+    if t == N_MACRO_DEF {
+        isess.f_put(isess.nname_str(s), s)
+        isess.m_put(isess.nname_str(s))
+        return 1
+    }
+    if t == N_NAMESPACE {
+        var prefix = ns_segs_of_node(s)
+        var c = reg_ns_funcs(s, prefix)
+        if c < 0 {
+            return -1
+        }
+        return c
+    }
+    if t == N_VAR_DECL {
+        var init = isess.nchild_at(s, 1)
+        if init < 0 {
+            g_err = "顶层全局变量必须有初始化"
+            return -1
+        }
+        var val = gen_expr(init)
+        if g_err != "" {
+            return -1
+        }
+        isess.g_declare(isess.nname_str(s), val)
+        return 0
+    }
+    if t == N_EXTERN {
+        isess.e_add(isess.nname_str(s))
+        return 0
+    }
+    if t == N_STRUCT {
+        g_err = "REPL v1 暂不支持 struct 定义"
+        return -1
+    }
+    if t == N_ENUM {
+        g_err = "REPL v1 暂不支持 enum 定义"
+        return -1
+    }
+    if t == N_IMPORT {
+        g_err = "REPL v1 暂不支持 import"
+        return -1
+    }
+    if t == N_USING {
+        g_err = "REPL v1 暂不支持 using"
+        return -1
+    }
+    return 0
 }
 
 // 调用已注册的用户函数（顶层裸名或命名空间全名），传入一个字符串参数，
@@ -540,7 +935,15 @@ func exec_stmt_var_decl(id: i64) {
             }
         }
     }
-    if isess.var_declared(nm) {
+    var last_dup: bool = false
+    if isess.scope_top() < 0 {
+        // REPL/脚本顶层：重复声明判全（含 globals）
+        last_dup = isess.var_declared(nm)
+    } else {
+        // 函数/块体内：只判当前块（允许遮蔽顶层同名，命名冲突缓解 E）
+        last_dup = isess.scope_local_declared(nm)
+    }
+    if last_dup {
         g_err = "变量 '" + nm + "' 重复声明"
         g_flow = FL_NORMAL
         g_lastval = -1
