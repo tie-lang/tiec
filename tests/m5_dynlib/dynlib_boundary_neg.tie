@@ -3,7 +3,7 @@ type tie<class>
 // 动态库模式下导出函数（顶层 + 命名空间 pub func）的参数/返回允许标量/string/
 // slice<T>/repr(C) pod struct；但 table/map/enum/非 pod struct（含指针或字符串
 // 字段的堆布局 struct）不得跨动态库边界。
-// 由 scripts/regress-m5-dynlib.ps1 以 `--shared` 编译验证应报「动态库边界错误」。
+// 由 scripts/regress-m5-dynlib.tsh.tie 以 `--shared` 编译验证应报「动态库边界错误」。
 // 注意：本目录（tests/m5_dynlib/）不入 regress-s21 负例段——负例需 --shared 开关。
 
 // 违例 2 目标：非 pod struct 返回（含 string 字段 → 有指针的堆布局，非 pod 不可跨库）
