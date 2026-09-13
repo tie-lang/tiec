@@ -1,0 +1,8 @@
+type tie<logic>
+// compiler/dbug/_ok_probe.tie —— p.9.2.1 崩溃诊断验收探针（正常返回，不 panic）。
+func f1(x: i64) -> i64 {
+    return x + 1
+}
+func main() {
+    println("probe=" + to_string(f1(41)))
+}

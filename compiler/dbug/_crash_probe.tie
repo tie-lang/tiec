@@ -1,0 +1,24 @@
+type tie<logic>
+// compiler/dbug/_crash_probe.tie —— p.9.2.1 崩溃诊断验收探针：三层调用链，
+// 最内层触发运行期 panic（除零），验证 backtrace 捕获到 a->b->boom。
+
+func boom() -> i64 {
+    var x: i64 = 1
+    var y: i64 = 0
+    return x / y
+}
+
+func b(v: i64) -> i64 {
+    var z = boom()
+    return z + v
+}
+
+func a(n: i64) -> i64 {
+    var r = b(n)
+    return r * 2
+}
+
+func main() {
+    var r = a(5)
+    println("sum=" + to_string(r))
+}

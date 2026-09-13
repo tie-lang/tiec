@@ -46,6 +46,7 @@ import "./interp_bin.tie"    // 二元运算分区（eval_binary 及算术/比�
 import "./interp_call.tie"   // 函数调用分区（call_fn/参数绑定/call_builtin/join_print）
 import "./interp_macro.tie"  // 宏执行分区（eval_proto/eval_macro/eval_macro_proc/exec_code_proto）
 import "./interp_code.tie"   // code 值构造分区（gen_code_lit/卫生/插值/协议拼接）
+import "./interp_dbug.tie"   // p.9.2 工具链共享仪器（崩溃/DAP/剖析；默认关）
 import "../frontend/parser.tie"
 import "../frontend/sstate.tie"
 import "../middle/types.tie"   // S3.3：TK_TRIT 等类型关键字常量（树合并后
@@ -421,6 +422,9 @@ func exec_block(id: i64) {
 
 // 执行一条语句（分派；结果经流程槽）。
 func exec_stmt(id: i64) {
+    if dbg_on {
+        dbg_stmt_hook(id)
+    }
     var t = isess.ntag(id)
     if t == N_VAR_DECL {
         exec_stmt_var_decl(id)
