@@ -531,7 +531,7 @@ func is_builtin_name(nm: string) -> bool {
         return true
     }
     // ---------- channel 原语（p.6.5.7：ch_open/ch_send/ch_recv/ch_close，静态链接 trm_lite.a）----------
-    if nm == "ch_open" || nm == "ch_send" || nm == "ch_recv" || nm == "ch_close" || nm == "ch_select" {
+    if nm == "ch_open" || nm == "ch_send" || nm == "ch_send_block" || nm == "ch_recv" || nm == "ch_close" || nm == "ch_select" {
         return true
     }
     // ---------- WaitGroup 原语（p.6.7.11：wg_new/wg_add/wg_done/wg_wait/wg_count）----------
@@ -2998,6 +2998,33 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         table_push(ats, T64s); table_push(avs, c_v)
         table_push(ats, T64s); table_push(avs, v_v)
         g_builtin_res = tig_trmlite_call("trm_lite_chan$ch_send", ats, avs, T64s)
+        return 0
+    }
+    // ch_send_block(ch, v) → i64（p.9.5.x T3 背压：队满阻塞等待空位；0=已入队
+    // 1=通道关闭）。trm_lite_chan$ch_send_block 条件变量等待，Go 阻塞 send。
+    if nm == "ch_send_block" {
+        g_used_trmlite = true
+        if sstate.fn_def_node("trm_lite_chan::ch_send_block") >= 0 ||
+            sstate.fn_def_node("tl_runtime_ctx::ctx_ch_send") >= 0 {
+            sm_err_msg = "ch_send_block 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
+            return -1
+        }
+        var T64sb = types.named(TK_I64)
+        var c_nd2 = call_arg(id, 0)
+        var c_v2 = tig_expr(c_nd2)
+        if c_v2 < 0 {
+            return -1
+        }
+        var v_nd2 = call_arg(id, 1)
+        var v_v2 = tig_expr(v_nd2)
+        if v_v2 < 0 {
+            return -1
+        }
+        var ats2: table<i64> = table_new_i64()
+        var avs2: table<i64> = table_new_i64()
+        table_push(ats2, T64sb); table_push(avs2, c_v2)
+        table_push(ats2, T64sb); table_push(avs2, v_v2)
+        g_builtin_res = tig_trmlite_call("trm_lite_chan$ch_send_block", ats2, avs2, T64sb)
         return 0
     }
     // ch_recv(ch) → i64（消息值；0=空未关；-1=已关闭且空）。
