@@ -227,6 +227,13 @@ func is_builtin(name: string) -> bool {
         name == "exit" {
         return true
     }
+    // 批次④确定性内建：remove_file（确定删单文件，替代 exec del 的 flake）、
+    // sort_strings（字符串表按字节序排序）、regex_findstr（findstr 正则子集
+    // 命中判断）、sleep_ms（libc Sleep 短暂等待）。
+    if name == "remove_file" || name == "sort_strings" ||
+        name == "regex_findstr" || name == "sleep_ms" {
+        return true
+    }
     return false
 }
 
@@ -823,11 +830,88 @@ func call_builtin(name: string, args: table<i64>) -> i64 {
         g_tsh_exit_code = exit_code
         return ivalue.new_void()
     }
+    // ---- 批次④确定性内建 ----
+    // 确定删除单文件（转发底座 file_delete，内部确定删除；替代 exec del 的 flake）。
+    if name == "remove_file" {
+        if len(args) != 1 || ivalue.type_of(args[0]) != T_STR {
+            g_err = "remove_file 需要一个文件路径参数"
+            return -1
+        }
+        return ivalue.new_bool(file_delete(ivalue.str_val(args[0])))
+    }
+    // 字符串表按字节序（码点序）升序排序 → 新 Value::Table。
+    if name == "sort_strings" {
+        if len(args) != 1 || ivalue.type_of(args[0]) != T_TABLE {
+            g_err = "sort_strings 需要一个字符串表参数"
+            return -1
+        }
+        return b_sort_strings(args[0])
+    }
+    // findstr 风格正则命中：s 中匹配则 true。底层走 tie regex 引擎
+    //（regex_find 返回命中的子串；非空 = 命中）。pattern 支持 findstr /r
+    // 常用子集（. * ^ $ [类]）且为其超集（tie 正则能力更大，文档注明子集）。
+    if name == "regex_findstr" {
+        if len(args) != 2 || ivalue.type_of(args[0]) != T_STR || ivalue.type_of(args[1]) != T_STR {
+            g_err = "regex_findstr 需要两个字符串参数（s, pattern）"
+            return -1
+        }
+        var m = regex_find(ivalue.str_val(args[0]), ivalue.str_val(args[1]))
+        return ivalue.new_bool(str_len(m) > 0)
+    }
+    // 短暂睡眠（libc Sleep 毫秒级，供超时/等待用）。
+    if name == "sleep_ms" {
+        if len(args) != 1 || ivalue.type_of(args[0]) != T_INT {
+            g_err = "sleep_ms 需要一个整数毫秒参数"
+            return -1
+        }
+        if ivalue.int_val(args[0]) > 0 {
+            unsafe { Sleep(ivalue.int_val(args[0])) }
+        }
+        return ivalue.new_void()
+    }
     g_err = "内部错误: 未实现的内置函数 '" + name + "'"
     return -1
 }
 
 // ---- tsh 字符串/目录/哈希内建辅助（纯文本，无 Value 构造） ----
+
+// 字符串表按字节序（码点序）升序排序 → 新 Value::Table。
+// 先读入**局部** string 表（规避 tie-llvm 从 Value 表读串跨调用的缓冲 bug——
+// 对齐 value.tie 头注释的"局部表过渡"工作法），局部表内比较/交换安全，排序完
+// 再统一重建 Value 表。
+func b_sort_strings(tid: i64) -> i64 {
+    var cnt = ivalue.elem_count(tid)
+    var strs: table<string> = table_new_string()
+    var i: i64 = 0
+    while i < cnt {
+        var e = ivalue.elem_at(tid, i)
+        if ivalue.type_of(e) != T_STR {
+            g_err = "sort_strings 表必须全为字符串元素"
+            return -1
+        }
+        table_push(strs, ivalue.str_val(e))
+        i = i + 1
+    }
+    // 插入排序（稳定；元素少，O(n²) 可接受）
+    var a: i64 = 1
+    while a < cnt {
+        var key = strs[a]
+        var j = a - 1
+        while j >= 0 && strs[j] > key {
+            strs[j + 1] = strs[j]
+            j = j - 1
+        }
+        strs[j + 1] = key
+        a = a + 1
+    }
+    var nt = ivalue.new_table()
+    var k: i64 = 0
+    while k < cnt {
+        nt = ivalue.table_push_val(nt, ivalue.new_str(strs[k]))
+        k = k + 1
+    }
+    return nt
+}
 
 func b_has_prefix(s: string, pre: string) -> bool {
     var n = str_len(s)
