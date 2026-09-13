@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "tie debug (DAP via tiedap)",
+      "type": "tie",
+      "request": "launch",
+      // 被测程序：模块式（只定义函数），入口为无参 func main()。
+      "program": "${workspaceFolder}/__yours__.tie"
+    }
+  ]
+}

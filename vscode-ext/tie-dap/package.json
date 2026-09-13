@@ -1,0 +1,31 @@
+{
+  "name": "tie-dap",
+  "displayName": "tie debug (DAP adapter: tiedap)",
+  "description": "Minimal VS Code debug extension that launches the tie self-hosted DAP adapter (compiler/dbug/tiedap.exe) for debugging tie programs via the interp executor.",
+  "version": "0.1.0",
+  "publisher": "tie-lang",
+  "engines": { "vscode": "^1.84.0" },
+  "categories": ["Debuggers"],
+  "activationEvents": ["onDebugResolve:tie"],
+  "main": "./extension.js",
+  "contributes": {
+    "breakpoints": [{ "language": "plaintext" }],
+    "debuggers": [
+      {
+        "type": "tie",
+        "label": "tie (DAP via tiedap)",
+        "configurationAttributes": {
+          "launch": {
+            "required": ["program"],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Path to the tie program to debug (module-style: defines func main())."
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

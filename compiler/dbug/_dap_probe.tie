@@ -1,0 +1,25 @@
+type tie<logic>
+// compiler/dbug/_dap_probe.tie —— p.9.2.3 DAP 验收探针：带进程内状态，
+// 用于验证断点命中调用栈/变量。
+var g_count: i64 = 0;
+
+func inner(x: i64) -> i64 {
+    g_count = g_count + 1
+    return x * 2
+}
+
+func compute(n: i64) -> i64 {
+    var a = inner(n)
+    var b = inner(a)
+    return a + b
+}
+
+var g_msg: string = "dap-ok";
+
+func main() {
+    var total = compute(3)
+    // 注意：DAP 运行期程序 println 会写入协议 stdout 通道（当前进程内驱动，
+    // 运行至完成模型无法分离流）——被测程序在调试会话内不应直接 println，
+    // 如需观察输出用全局变量经 variables 查看。此处保持静默。
+    var _t = total
+}
