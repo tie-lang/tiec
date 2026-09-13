@@ -55,7 +55,7 @@ func closure_cap_slot_ty(t: i64) -> i64 {
         return t
     }
     var k = types.kind(t)
-    if k == K_TUPLE || k == K_STRUCT || k == K_ENUM || k == K_FN {
+    if k == K_TUPLE || k == K_STRUCT || k == K_ENUM || k == K_FN || k == K_ACTOR {
         return t
     }
     return types.named(TK_I64)
