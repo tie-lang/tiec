@@ -141,7 +141,13 @@ func call_fn(name: string, args: table<i64>, arg_nodes: table<i64>) -> i64 {
     }
     env_base = isess.scope_top()
     var body = isess.nchild_at(f, isess.nchild(f) - 1)
+    if dbg_on {
+        dbg_enter(name, isess.nline(body))
+    }
     exec_block(body)
+    if dbg_on {
+        dbg_leave()
+    }
     isess.ref_pop()
     isess.scope_pop()
     env_base = saved_base
