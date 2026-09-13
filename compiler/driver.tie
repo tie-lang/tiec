@@ -13,9 +13,11 @@ type tie<logic>
 //
 // 角色识别：**头部扫描**（`type tie` / `type tie<X>` 声明），不依赖
 // prep/core.tie 的 import（避免 import 路径与编译兼容性风险；prep 协议
-// 后续可替换）。识别 logic/script/class/type/data/ui/db/port/ir/zd；
+// 识别 logic/script/class/type/data/ui/db/port/ir/zd/tsh；
 // logic/script/class/type → 编译工具链，data → --compress-data 子命令
 // （tdzd.tie：表字面量 → zd record），zd → tiedb compact/decompress 处理，
+// tsh → 推荐由 tie 自己的 tshell 运行 .tsh.tie 脚本（扩展名 .tsh.tie 预判 +
+// `type tie<tsh>` 头部，经 exec_code 调 `tshell -f`，tshell 解析：TSHELL→PATH），
 // ui/db/port → 提示对应工具链未实现。zd 是 tie:data 的二进制压缩变体
 // （xxx.zd.tie），人类不可读，必须在 file_read（文本读取）之前按文件名
 // 预判并直接短接。
@@ -382,6 +384,7 @@ func role_registry_init_default() {
     reg_base("db", "pass", "schema,seed,vector")
     reg_base("port", "pass", "")
     reg_base("zd", "pass", "")
+    reg_base("tsh", "pass", "")
     reg_base("tieir", "", "")
     // 修饰角色
     reg_mod("unsafe")
@@ -694,6 +697,34 @@ func role_output(nm: string) -> string {
     }
     return ""
 }
+
+// tsh 角色：推荐由 tie 自己的 tshell 执行 .tsh.tie 脚本。解析 tshell 可执行
+// 路径（解析顺序）：环境变量 TSHELL（显式全路径/命令名，最高优先）→ PATH 中
+// 的默认命令名 `tshell`。找到则 `tshell -f "<path>"` 执行；exec_code 经 libc
+// system() 返回子进程退出码（Windows 未找到可执行典型 9009）。找不到/执行
+// 失败时打印手工运行提示；可找到但脚本自身非零退出时透传其退出码。
+func tsh_dispatch(path: string) -> i64 {
+    var shell = get_env("TSHELL")
+    var via = "环境变量 TSHELL"
+    if str_len(shell) == 0 {
+        shell = "tshell"
+        via = "PATH（默认命令名 tshell）"
+    }
+    var cmd = shell + " -f \"" + path + "\""
+    println("[tsh] 由 tshell 运行: " + cmd + "  （tshell 解析优先级: 环境变量 TSHELL → PATH）")
+    var rc = exec_code(cmd)
+    if rc == 0 {
+        return 0
+    }
+    if rc == 9009 {
+        println("[tsh] 未在 " + via + " 中找到 tshell（请设置 TSHELL 或将 tshell 加入 PATH）")
+        println("[tsh] 可手动运行: " + cmd)
+        return 1
+    }
+    println("[tsh] tshell 运行结束 exit=" + to_string(rc) + "（脚本主动退出码，透传）")
+    return rc
+}
+
 // 按逗号/冒号拆分角色声明 `db:vector, unsafe` → 全局槽。返回 0 成功。
 func parse_role_decl(sub: string) -> i64 {
     g_role_base = ""
@@ -1158,6 +1189,13 @@ func main() -> i64 {
         println("[预处理] 识别为 zd 压缩数据文件（头: " + g_input + "），tie:data 压缩格式，用 tiedb compact/decompress 处理")
         return 0
     }
+    // tsh 脚本预判：xxx.tsh.tie 是可读文本的 shell 脚本（由 tie 自己的 tshell
+    // 运行）。不短接（须走 file_read + 头部扫描验证 type tie<tsh>）；此处按扩展名
+    // 预写角色，保证在头部缺失/不一致时仍按 tsh 分派，也满足 R3 文件名-头部一致性。
+    var tsh_len: i64 = str_len(g_input)
+    if tsh_len >= 8 && slice(str.clone(g_input), tsh_len - 8, tsh_len) == ".tsh.tie" {
+        g_role = "tsh"
+    }
     var src = file_read(g_input)
     if str_len(src) == 0 {
         println("读取源码失败: " + g_input)
@@ -1271,6 +1309,9 @@ func main() -> i64 {
             println("[预处理] 识别为 port 端口文件（头: " + g_input + "），已转交端口工具链 —— v0.1 端口工具链尚未实现")
         } else if g_role == "zd" {
             println("[预处理] 识别为 zd 压缩数据文件（头: " + g_input + "），tie:data 压缩格式，用 tiedb compact/decompress 处理")
+        } else if g_role == "tsh" {
+            println("[预处理] 识别为 tsh 脚本文件（头: " + g_input + "），推荐由 tshell 运行")
+            return tsh_dispatch(g_input)
         } else {
             println("[预处理] 识别为 " + g_role + " 角色文件（头: " + g_input + "），已转交对应工具链 —— 由注册包提供，v0.1 尚未实现")
         }
