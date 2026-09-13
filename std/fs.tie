@@ -197,4 +197,201 @@ func str_char_slice(s: string, start: i64, end: i64) -> string {
     }
     return out
 }
+
+// ============================================================================
+// 增强（p.9.1.1.18）：file_size 别名 / 递归目录复制（含 exclude 前缀过滤）/
+// 目录递归大小聚合。全部在现有底座原语（walk_dir / file_is_file / file_size /
+// file_copy / mkdir_all）之上组合，纯 tie，向后兼容。
+// ============================================================================
+
+// 取首个子串位置（码点级）；未找到返回 -1。walk_dir 结果的相对路径切分用。
+func str_find_i(s: string, sub: string) -> i64 {
+    var n = str_len(s)
+    var m = str_len(sub)
+    if m == 0 {
+        return 0
+    }
+    if m > n {
+        return -1
+    }
+    var i: i64 = 0
+    while i <= n - m {
+        var j: i64 = 0
+        var ok = true
+        while j < m {
+            if str_char(s, i + j) != str_char(sub, j) {
+                ok = false
+            }
+            j = j + 1
+        }
+        if ok {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// 字符串 s 是否以 p 为前缀（码点级）。
+func str_has_prefix(s: string, p: string) -> bool {
+    var n = str_len(s)
+    var m = str_len(p)
+    if m > n {
+        return false
+    }
+    var i: i64 = 0
+    while i < m {
+        if str_char(s, i) != str_char(p, i) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// 把反斜杠统一为 "/"，供路径前缀比较（Windows 原生为 "\\"，二者等价比较）。
+func fwd(p: string) -> string {
+    var out: string = ""
+    var n = str_len(p)
+    var i: i64 = 0
+    while i < n {
+        var c = str_char(p, i)
+        if c == "\\" {
+            out = out + "/"
+        } else {
+            out = out + c
+        }
+        i = i + 1
+    }
+    return out
+}
+
+// 相对路径 rel 是否命中任一 exclude 前缀（"目录/子树" 或 "文件" 整体跳过）。
+// 匹配规则：rel == ex 或 rel 以 "ex/" 开头（边界感知，避免 "abc" 误匹配 "abcx"）。
+func is_excluded(rel: string, exclude: table<string>) -> bool {
+    var f = fwd(rel)
+    var n = len(exclude)
+    var i: i64 = 0
+    while i < n {
+        var ex = fwd(exclude[i])
+        if f == ex {
+            return true
+        }
+        if str_has_prefix(ex, "..") == false && str_has_prefix(f, ex + "/") {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// 对象大小别名：fs.file_size(path) （与 size 等价，Rust std::fs::metadata().len
+// 形态；失败/目录返回 -1）。
+pub func file_size(path: string) -> i64 {
+    return file_size(path)
+}
+
+// 目录递归总大小（字节）：累加 walk 结果中所有普通文件 size；目录/不存在返回 0。
+pub func dir_size(path: string) -> i64 {
+    var entries = walk_dir(path)
+    var n = len(entries)
+    var total: i64 = 0
+    var i: i64 = 0
+    while i < n {
+        var p = entries[i]
+        if p != path && file_is_file(p) {
+            var s = file_size(p)
+            if s >= 0 {
+                total = total + s
+            }
+        }
+        i = i + 1
+    }
+    return total
+}
+
+// 递归复制目录 src → dst（保留相对目录结构），exclude 内为相对路径前缀，
+// 命中即整体跳过（子树/文件）。exclude 为空表则全量复制。成功返回 true；
+// 任一子项失败置 false 并继续尝试其余（尽力而为）。
+pub func copy_tree(src: string, dst: string, exclude: table<string>) -> bool {
+    var all = walk_dir(src)
+    var n = len(all)
+    var ok: bool = true
+    var i: i64 = 0
+    while i < n {
+        var p = all[i]
+        var rel = rel_under(p, src)
+        if rel == "" {
+            // src 自身：确保 dst 目录存在
+            if !mkdir_all(dst) {
+                ok = false
+            }
+        } else if !is_excluded(rel, exclude) {
+            var dp = join_sep(dst, rel)
+            if file_is_dir(p) {
+                if !mkdir_all(dp) {
+                    ok = false
+                }
+            } else {
+                // 先确保目标文件父目录存在（walk 已含各目录，这里再兜底一次）
+                if !mkdir_all(parent_of(dp)) {
+                    ok = false
+                }
+                if !file_copy(p, dp) {
+                    ok = false
+                }
+            }
+        }
+        i = i + 1
+    }
+    return ok
+}
+
+// 判断绝对路径 p 是否在 src 之下：p==src 返回 ""，pc==src+"\\"+rel 时返回 rel，
+// 否则（恰好前缀重合但非子孙，如 src="a" p="ab"）返回空串并按"不复制该条目"处理。
+func rel_under(p: string, src: string) -> string {
+    if p == src {
+        return ""
+    }
+    var sep = norm_sep_char(p)
+    var pre = src + sep
+    if str_has_prefix(p, pre) {
+        return str_char_slice(p, str_len(pre), str_len(p))
+    }
+    return ""
+}
+
+// p 的实际路径分隔符（"\\" 或 "/" 均接受；用于拼接 dst 子路径）。
+func norm_sep_char(p: string) -> string {
+    if str_find_i(p, "\\") >= 0 {
+        return "\\"
+    }
+    return "/"
+}
+
+// 拼接 dst 与 rel（复用 dst 自身分隔符 repr 的目录分隔符；Windows 直反斜杠）。
+func join_sep(dst: string, rel: string) -> string {
+    if str_find_i(dst, "\\") >= 0 {
+        return dst + "\\" + rel
+    }
+    return dst + "/" + rel
+}
+
+// 取路径的父目录（最后一个分隔符之前；无分隔符返回空串）。
+func parent_of(p: string) -> string {
+    var n = str_len(p)
+    var idx: i64 = -1
+    var i: i64 = 0
+    while i < n {
+        var c = str_char(p, i)
+        if c == "\\" || c == "/" {
+            idx = i
+        }
+        i = i + 1
+    }
+    if idx < 0 {
+        return ""
+    }
+    return str_char_slice(p, 0, idx)
+}
 }
