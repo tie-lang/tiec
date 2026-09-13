@@ -56,6 +56,9 @@ var g_target: string = "";        // --target（空 = 未指定）
 // p.9.1.2 编译资源可调（利好老电脑）：
 var g_mem_limit: i64 = 0;         // --mem-limit <MB>：内存上限（0 = 不限；>0 时 -O3 受限降为 O2）
 var g_jobs: i64 = 0;              // --jobs <N>：编译并发度（0 = 默认；预留配置 advanced.threads，并行在 p.9.1.3 增量/缓存一并落地）
+// p.9.1.3 编译缓存：
+var g_no_cache: bool = false;     // --no-cache：关闭编译缓存（产物缓存到缓存目录，命中直接复制）
+var g_cache_salt: string = "tiec-cache-v1";  // 缓存键盐：编译器输出形态变更（如 optimizer 改动）时递增，强制旧缓存失效
 var g_emit_ir: bool = false;
 var g_keep_ir: bool = false;
 var g_prep_only: bool = false;
@@ -94,6 +97,7 @@ func usage() -> i64 {
     println("            注：头部旧 `// tie:opt=N` 指令已移除（legacy），opt 仅 CLI/config 控制")
     println("  --mem-limit <MB>  内存上限（0 = 不限；>0 时优化档 O3 受限自动降为 O2，利好老电脑）")
     println("  --jobs <N>       编译并发度（0 = 默认；预留配置 advanced.threads，并行随 p.9.1.3 增量/缓存落地）")
+    println("  --no-cache       关闭编译缓存（默认开启：产物缓存到 ~/.tiec-cache 或 cache.dir，命中直接复制跳过编译）")
     println("  --target <三元组>  交叉编译目标（如 x86_64-pc-windows-msvc）")
     println("  --emit-ir        只生成 LLVM IR（.ll），不继续编译")
     println("  --keep-ir        保留中间 IR 文件（.ll / .opt.ll）")
@@ -164,6 +168,8 @@ func parse_args() -> i64 {
             }
             g_jobs = parse_int(arg_string(i + 1))
             i = i + 1
+        } else if a == "--no-cache" {
+            g_no_cache = true
         } else if a == "--target" {
             if i + 1 >= n {
                 return -1
@@ -1620,6 +1626,109 @@ func keel_run_pipeline(pid: i64, max_steps: i64) -> i64 {
     return 0
 }
 
+// ==================== p.9.1.3 编译缓存 ====================
+// 缓存键 = 输入源码哈希 + 全部输出相关参数（优化档/目标/输出路径/角色/共享/
+// emit-ir）+ 编译器形态盐（g_cache_salt）。命中：从缓存目录复制产物到目标路径，
+// 跳过编译管线；--no-cache 关闭。缓存目录：config cache.dir；缺省 ~/.tiec-cache。
+
+// 缓存目录：config cache.dir 非空用它；否则 ~/.tiec-cache（USERPROFILE 或 HOME）。
+// 取不到 home 返回 ""（视为关闭缓存）。
+func cache_dir_value() -> string {
+    if g_cfg_root >= 0 {
+        var d = config.get_str(g_cfg_root, "cache.dir")
+        if str_len(d) > 0 {
+            return d
+        }
+    }
+    var home = get_env("USERPROFILE")
+    if str_len(home) == 0 {
+        home = get_env("HOME")
+    }
+    if str_len(home) == 0 {
+        return ""
+    }
+    return home + "/.tiec-cache"
+}
+
+// 31 位取模哈希（i64 无溢出风险；阶 *31+b mod M 足够散列且确定）。
+func str_hash(s: string) -> i64 {
+    var M: i64 = 2147483647
+    var h: i64 = 0
+    var i: i64 = 0
+    var n: i64 = str_len(s)
+    while i < n {
+        var b = str_byte(s, i)
+        if b < 0 {
+            b = b + 256
+        }
+        h = (h * 31 + b) % M
+        i = i + 1
+    }
+    if h < 0 {
+        h = 0 - h
+    }
+    return h
+}
+
+// 缓存键：把输入源码与全部输出相关参数织入哈希（改动任一即失效重编）。
+func cache_key_str(src: string) -> string {
+    var level = effective_opt_level()
+    var m = src + "\n" + g_input + "\n" + g_output + "\nO" + to_string(level) +
+        "\nT" + g_target + "\nR" + g_role
+    if g_shared {
+        m = m + "\nS1"
+    } else {
+        m = m + "\nS0"
+    }
+    if g_emit_ir {
+        m = m + "\nE1"
+    } else {
+        m = m + "\nE0"
+    }
+    m = m + "\nv" + g_cache_salt
+    return "tc" + to_string(str_hash(m))
+}
+
+// 目标产物路径（与 compile_logic/compile_library/compile_shared/kpass_emit 分歧
+// 一致）；无法判定（空输出 + 未知形态）返回 ""（此时不缓存）。
+func output_artifact_path() -> string {
+    if g_emit_ir {
+        if str_len(g_output) > 0 {
+            return replace_ext(g_output, "ll")
+        }
+        return replace_ext(g_input, "ll")
+    }
+    var disp = role_output(str.clone(g_role))
+    if disp == "lib" {
+        if str_len(g_output) > 0 {
+            return g_output
+        }
+        if g_shared {
+            if is_linux_target(g_target) {
+                return replace_ext(g_input, "so")
+            }
+            return replace_ext(g_input, "dll")
+        }
+        return replace_ext(g_input, "a")
+    }
+    // logic / script
+    if str_len(g_output) > 0 {
+        return g_output
+    }
+    if is_linux_target(g_target) {
+        return replace_ext(g_input, "")
+    }
+    return replace_ext(g_input, "exe")
+}
+
+// 编译缓存是否启用：非 --no-cache 且能解析到缓存目录。
+func cache_enabled() -> bool {
+    if g_no_cache {
+        return false
+    }
+    return str_len(cache_dir_value()) > 0
+}
+
 func compile_program(src: string) -> i64 {
     // base_dir：输入路径的目录（import 展开需要）；\\ 归一化为 /
     k_g_base_dir = dir_of(str.clone(g_input))
@@ -1628,19 +1737,42 @@ func compile_program(src: string) -> i64 {
     // 幂等：重复调用不重复登记（register 重名返回原 id）。
     keelboot.boot()
     var real_pid = keel_driver_boot()
-    // p.7.3.3 路线 B：--target=trm / --backend trm → 跑 trm 字节码管线
-    // （front→irgen→trmemit，3 步）。默认管线 pipeline_real 不动——
-    // 默认编译链路（原生路线 A）逐字节不变。
-    if g_trm_mode {
-        return keel_run_pipeline(g_trm_pipeline, 3)
-    }
     // --emit-ir：只跑 front→irgen→tieir→emit 前缀（emit 内成功停），跳过
-    // opt/link；否则全 5 段。keel 骨架按注册表引用前缀驱动。
+    // opt/link；否则全 5 段。
     var steps: i64 = 5
     if g_emit_ir {
         steps = 4
     }
-    return keel_run_pipeline(real_pid, steps)
+    // p.7.3.3 路线 B：trm 字节码目标（不缓存，产物 .tieir 独立分派）
+    if g_trm_mode {
+        return keel_run_pipeline(g_trm_pipeline, 3)
+    }
+    // p.9.1.3 编译缓存：命中直接复制产物跳过编译；未命中正常编译后入缓存。
+    var use_cache = cache_enabled()
+    var artifact = output_artifact_path()
+    var ck: string = ""
+    if use_cache && str_len(artifact) > 0 {
+        ck = cache_dir_value() + "/" + cache_key_str(src) + ".cache"
+        if file_exists(ck) {
+            if file_copy(ck, artifact) {
+                println("缓存命中（跳过编译）: " + artifact)
+                return 0
+            }
+        }
+    }
+    var rc = keel_run_pipeline(real_pid, steps)
+    if rc != 0 {
+        return rc
+    }
+    if str_len(ck) > 0 && file_exists(artifact) {
+        if !file_is_dir(cache_dir_value()) {
+            mkdir_all(cache_dir_value())
+        }
+        if file_copy(artifact, ck) {
+            println("已缓存编译产物: " + artifact)
+        }
+    }
+    return 0
 }
 
 // logic：clang 链接可执行文件；清理中间文件（除非 --keep-ir）。
