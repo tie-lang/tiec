@@ -68,8 +68,9 @@ var e_keys: table<string>;
 var env_keys: table<string>;
 var env_vals: table<i64>;
 var env_alive: table<i64>;
-var env_soff: table<i64>;   // 每层作用域段起点（env_keys 偏移）
-var env_scnt: table<i64>;   // 每层作用域条目数
+var env_soff: table<i64>;   // (活动段) 段起点（env_keys 偏移）；段索引 = 扁平表下标
+var env_scnt: table<i64>;   // (活动段) 段条目数
+var env_depth: i64 = 0;     // 活动作用域段数（逻辑栈深；env_soff[0..env_depth-1] 为活动段）
 var env_base: i64 = 0;      // 当前函数作用域起点（跨函数隔离；顶层为 0）
 var env_ns: table<string>;  // 当前执行函数的命名空间前缀段（裸调用补全用）
 
@@ -117,6 +118,7 @@ pub func reset() {
     env_alive = table_new_i64()
     env_soff = table_new_i64()
     env_scnt = table_new_i64()
+    env_depth = 0
     env_base = 0
     env_ns = table_new_string()
     r_keys = table_new_string()
@@ -345,35 +347,35 @@ pub func e_has(name: string) -> bool {
 
 // ==================== 作用域栈 ====================
 
-// 压一层空作用域（段起点 = 当前扁平表长度）。
+// 压一层作用域（段起点 = 当前扁平表长度）。采用**活动段计数**模型：
+// env_soff/env_scnt 的下标 0..env_depth-1 为活动段；弹层不新增哨兵段，而是把
+// 段索引归还给父作用域，因此遍历/声明永远只作用在活动段上（旧"哨兵占位"方案
+// 会在每层弹栈后把新哨兵段留在栈顶，使递归/嵌套调用返回后当前块的 `var` 落入
+// 废弃哨兵段——重入 bug 根因：作用域栈只增不减 + scope_top 取 len-1）。
 pub func scope_push() {
-    table_push(env_soff, len(env_keys))
-    table_push(env_scnt, 0)
+    var seg = env_depth
+    if seg == len(env_soff) {
+        table_push(env_soff, len(env_keys))
+        table_push(env_scnt, 0)
+    } else {
+        env_soff[seg] = len(env_keys)
+        env_scnt[seg] = 0
+    }
+    env_depth = env_depth + 1
 }
 
-// 弹一层作用域：段内条目全部标记死亡（墓碑；不缩表）。
+// 弹一层作用域：活动段数减一，段内条目不再被遍历（等效死亡；不缩表，段槽可被
+// 后续 push 复用）。
 pub func scope_pop() {
-    var n = len(env_soff)
-    if n == 0 {
+    if env_depth == 0 {
         return
     }
-    var off = env_soff[n - 1]
-    var cnt = env_scnt[n - 1]
-    var i: i64 = 0
-    while i < cnt {
-        env_alive[off + i] = 0
-        i = i + 1
-    }
-    // 不可缩表：用哨兵占位维持栈长一致性。哨兵偏移 = 当前扁平表长度
-    //（不是 0）——否则弹层后 `var x` 声明落入偏移 0 的哨兵段，段内条目
-    // 查不到（旧 bug：if 块后声明变量 → 后续赋值报"未声明"）。
-    table_push(env_soff, len(env_keys))
-    table_push(env_scnt, 0)
+    env_depth = env_depth - 1
 }
 
-// 当前作用域层下标（栈顶；无作用域返回 -1）。
+// 当前作用域层下标（活动栈顶段索引；无作用域返回 -1）。
 pub func scope_top() -> i64 {
-    return len(env_soff) - 1
+    return env_depth - 1
 }
 
 // 当前作用域声明变量（重复声明由调用方经 var_declared 校验）。
@@ -381,7 +383,10 @@ pub func var_declare(name: string, vid: i64) {
     table_push(env_keys, name)
     table_push(env_vals, vid)
     table_push(env_alive, 1)
-    var top = len(env_soff) - 1
+    var top = env_depth - 1
+    if top < 0 {
+        top = 0
+    }
     env_scnt[top] = env_scnt[top] + 1
 }
 
@@ -427,8 +432,8 @@ pub func lookup(name: string) -> i64 {
     if refname != "" {
         return lookup_caller(refname)
     }
-    // 函数作用域栈（env_base..顶部）逆序
-    var s = len(env_soff) - 1
+    // 函数作用域栈（env_base..顶部）逆序（只遍历活动段）
+    var s = env_depth - 1
     while s >= env_base {
         var idx = seg_find_rev(s, name)
         if idx >= 0 {
@@ -469,7 +474,7 @@ pub func assign(name: string, vid: i64) -> i64 {
     if refname != "" {
         return assign_caller(refname, vid)
     }
-    var s = len(env_soff) - 1
+    var s = env_depth - 1
     while s >= env_base {
         var idx = seg_find_rev(s, name)
         if idx >= 0 {
@@ -511,7 +516,7 @@ pub func var_declared(name: string) -> bool {
     if ref_find(name) != "" {
         return true
     }
-    var s = len(env_soff) - 1
+    var s = env_depth - 1
     while s >= env_base {
         if seg_find_rev(s, name) >= 0 {
             return true
@@ -525,7 +530,7 @@ pub func var_declared(name: string) -> bool {
 // 遮蔽顶层全局（对齐词法作用域惯例），重复声明判据只限当前块。
 // 无作用域（REPL/脚本顶层）回退到 globals 判据。
 pub func scope_local_declared(name: string) -> bool {
-    var top = len(env_soff) - 1
+    var top = env_depth - 1
     if top < 0 {
         return g_find(name) >= 0
     }

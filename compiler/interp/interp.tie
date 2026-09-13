@@ -52,6 +52,10 @@ import "../frontend/sstate.tie"
 import "../middle/types.tie"   // S3.3：TK_TRIT 等类型关键字常量（树合并后
 // 与 semantic 树共享 types——若本模块自持同名常量会重复定义）
 
+// 批次④：sleep_ms 内建所需的 kernel32 Sleep（Windows 目标，CRT 隐式链接；
+// 与 ext/spidey/polite.tie、ext/gfx/window.tie 的声明同款）。
+unsafe extern fn Sleep(ms: i64) -> i32
+
 // ==================== 模块级求值上下文 ====================
 // trit 类型关键字索引（TyKw 顺序，types.tie 权威；经 ../middle/types.tie
 // import 传递可达，TK_TRIT 常量来自 types）
