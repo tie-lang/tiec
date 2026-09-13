@@ -50,4 +50,78 @@ pub func exec_output(cmd: string) -> string {
     file_delete(tmp)
     return out
 }
+
+// ============================================================================
+// 双向管道增强（p.9.1.1.16）：spawn 子进程 + stdin 写 + stdout/stderr 读 + 退出码。
+// 说明：tie 无指针类型，无法解引用 libc `_popen` 返回的 FILE* 读缓冲，故沿用
+// 「重定向 + 临时文件读写回」的等价实现（与 exec_output 一致）提供双向语义。
+// 全部向后兼容：在既有 exec_code/exec_output 上新增函数。
+// ============================================================================
+
+// 生成唯一临时文件名（时间戳+随机数，避免并发冲突）。
+func tmpfile(tag: string) -> string {
+    return ".tie_pipe_" + tag + "_" + to_string(time_now()) + "_" + to_string(rand_range(10000, 99999)) + ".tmp"
+}
+
+// 便捷双向管道：把 input 写入子进程 stdin，捕获其退出码与输出（stdout+stderr 合并）。
+// 返回 (exit_code, stdout_str)；命令不存在等失败时退出码非 0、输出为已读内容。
+pub func pipe_run(cmd: string, input: string) -> (i32, string) {
+    var infile = tmpfile("in")
+    var out = tmpfile("out")
+    file_write(infile, input)
+    // `< in > out 2>&1`：stdin 重定向进，stdout+stderr 重定向出
+    var full = cmd + " < " + infile + " > " + out + " 2>&1"
+    var rc: i32 = 0
+    unsafe {
+        rc = system(full)
+    }
+    var result = file_read(out)
+    file_delete(infile)
+    file_delete(out)
+    return (rc, result)
+}
+
+// 只投喂 stdin（不捕获输出），返回退出码。
+pub func exec_stdin(cmd: string, input: string) -> i32 {
+    var infile = tmpfile("in")
+    file_write(infile, input)
+    var full = cmd + " < " + infile
+    var rc: i32 = 0
+    unsafe {
+        rc = system(full)
+    }
+    file_delete(infile)
+    return rc
+}
+
+// 双向管道 + stdout/stderr 分开捕获：返回 (exit_code, stdout, stderr)。
+pub func run_capture(cmd: string, input: string) -> (i32, string, string) {
+    var infile = tmpfile("in")
+    var out = tmpfile("out")
+    var err = tmpfile("err")
+    file_write(infile, input)
+    var full = cmd + " < " + infile + " > " + out + " 2> " + err
+    var rc: i32 = 0
+    unsafe {
+        rc = system(full)
+    }
+    var so = file_read(out)
+    var se = file_read(err)
+    file_delete(infile)
+    file_delete(out)
+    file_delete(err)
+    return (rc, so, se)
+}
+
+// 执行命令并单独捕获其 stderr（不投喂 stdin）。
+pub func read_stderr(cmd: string) -> string {
+    var err = tmpfile("err")
+    var full = cmd + " 2> " + err
+    unsafe {
+        system(full)
+    }
+    var se = file_read(err)
+    file_delete(err)
+    return se
+}
 }
