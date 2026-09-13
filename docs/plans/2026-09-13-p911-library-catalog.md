@@ -14,15 +14,25 @@
 
 ## §0 摘要 / Summary
 
+**四目录格局（内置库 = std/ext/rdu/sys 四套）：**
+- `std/` 标准库（语言核心：数据结构/字符串/数值/文件/网络/时间/加密等，命名空间 std_*）
+- `ext/` 扩展库（多媒体/压缩/图像/配置等按 namespace 分发）
+- `rdu/` **嵌入式开发库**（面向嵌入式/低资源场景的精简原语：bits/fixed/rdb/rnd/crc/math 等）
+- `sys/` 平台专用层（`sys/win32.tie` 等，命名空间 sys_*，直绑 OS ABI——kernel32/user32/POSIX）
+
+> 库级能力按上述四目录归位；平台差异下沉 sys，桌面/服务能力走 std/ext，嵌入式裁剪走 rdu。
+
 std/ 与 ext/ 已覆盖：数据结构、字符串/Unicode、文件/路径、网络/HTTP、
 WebSocket、正则、JSON/XML/TOML/CSV、SQLite、时间、随机数、全套密码学
 （哈希/对称/非对称/椭圆曲线）、压缩（brotli/lz4/zstd）、图像（png/jpeg/svg/qr）、
 HTML、TLS、GUI（gfx, 基于 skia）、爬虫（spidey）、向量检索（vecsearch）、
 LLM/日志/测试/模板等。
 
-缺口（Gap）聚焦在 **多媒体编解码（webp/avif/音频/视频）** 与若干工程便利库
-（zlib/gzip、JSON5、完整 datetime、GIF、色彩管理等）。本清单按 ROAD 提示与
-现状缺口，罗列 14 个候选库，按 **高 / 中 / 低** 三档优先级推进。
+缺口（Gap）聚焦在 **多媒体编解码（webp/avif/音频/视频）**、若干工程便利库
+（zlib/gzip、JSON5、完整 datetime、GIF、色彩管理等）与 **tsh 脚本运行时驱动
+的库级能力**（二进制 IO、进程管道/超时、fs 增强、zip、单调时钟、regex 语义——
+.15–.21，源自 p.9.3.7 缺陷清单剥离）。本清单共罗列 21 个候选库，按 **高 / 中 / 低**
+三档优先级推进。
 
 std/ and ext/ already cover data structures, string/Unicode, fs/path, network/HTTP,
 WebSocket, regex, JSON/XML/TOML/CSV, SQLite, time, RNG, a full crypto suite
@@ -109,6 +119,13 @@ implementations (mirroring how `ext/gfx` rides on skia via thunk).
 | p.9.1.1.12 | **rng-adv（统一随机/密码学封装）** | 低 | 复用 std/random+crypto | 现在 random/csprng 分散；聚合成统一种子/接口 | 纯tie |
 | p.9.1.1.13 | **QR 解码（读取）** | 低 | 依赖 ext/qr | ext/qr 现仅生成；读取补闭环 | 纯tie |
 | p.9.1.1.14 | **BMP 编解码** | 低 | 无 | 极简无损位图格式，教学/工具链兜底 | 纯tie |
+| p.9.1.1.15 | **bytes 增强（二进制数组操作）** | 高 | std/bytes | tsh 脚本/工具链缺二进制数组/substr 类操作（0-Rust 桥内联后）——字节 IO 为库级能力；解锁 verify-tiedap 帧解析 | 纯tie |
+| p.9.1.1.16 | **process 双向管道** | 高 | std/process（现 0-Rust 已用 libc） | 进程 stdin/stdout 交互管道（spawn + 双向读写 + 退出码），替代 exec_* 的捕获局限；解锁交互型测试/工具（verify-tiedap 等） | 纯tie（libc CreatePipe/popen 双向） |
+| p.9.1.1.17 | **process 超时强杀** | 中 | std/process | CreateProcess 句柄 + 超时 TerminateProcess/终止（现 exec_code_timeout 仅同步降级不强杀）；平台原语下沉 sys_win32/sys_posix | 纯tie + sys 平台层 |
+| p.9.1.1.18 | **fs 增强（大小/递归筛选复制/求和）** | 中 | std/fs | file_size/递归复制(exclude)/大小聚合；直接解锁 package 重构与工具链 | 纯tie |
+| p.9.1.1.19 | **zip（deflate+目录收包）** | 中 | 依赖 p.9.1.1.1 zlib + crc | 打包/发布链路（现 brotli/lz4/zstd 无 zip）；参考 bsdtar `tar -a` 等效内部实现 | 纯tie |
+| p.9.1.1.20 | **time 高分辨率单调时钟** | 中 | std/time（现 time_now Unix 秒） | QueryPerformanceCounter/CLOCK_MONOTONIC 单调毫秒，替代秒级 time_now 用于计时/超时判定 | 纯tie（sys 平台原语） |
+| p.9.1.1.21 | **regex 语义补全（`\|` 交替与替换）** | 中 | std/regex（联动 p.9.1.1.9 regex-pro） | findstr 子集缺 `\|` 交替与替换语义；脚本改写等价所需；与 .9 合并演进 | 纯tie |
 
 > 注：ROAD 提示的 WebP/AVIF/音频/视频 = 子项 .2/.3/.7/.8，均为高~中优先。
 > The ROAD-mentioned webp/avif/audio/video map to .2/.3/.7/.8 (high~medium).
@@ -117,10 +134,13 @@ implementations (mirroring how `ext/gfx` rides on skia via thunk).
 
 ## §3 优先级与推进顺序 / Priority & Sequencing
 
-- **第一梯队（高）**：zlib/gzip(.1)、WebP(.2)、AVIF(.3)、datetime(.4)、GIF(.5)。
-  网络与图片是最高频，且 zlib 是一批后续（xlsx）依赖的底座。
+- **第一梯队（高）**：zlib/gzip(.1)、WebP(.2)、AVIF(.3)、datetime(.4)、GIF(.5)、
+  bytes 增强(.15)、process 双向管道(.16)。
+  网络与图片是最高频，且 zlib 是一批后续（xlsx）依赖的底座；.15/.16 由 tsh 脚本
+  迁移（grep .ps1=0）直接驱动，属工具链刚需。
 - **第二梯队（中）**：JSON5(.6)、音频(.7)、视频容器(.8)、regex-pro(.9)、
-  xlsx(.10)、color(.11)。
+  xlsx(.10)、color(.11)、process 超时(.17)、fs 增强(.18)、zip(.19)、
+  单调时钟(.20)、regex 语义补全(.21)。
 - **第三梯队（低）**：rng-adv(.12)、QR 解码(.13)、BMP(.14)。
 
 推进顺序原则：**高优先纯tie 项先行**（自写、无外部运行时、可立即集成），
