@@ -702,6 +702,12 @@ func is_libc_sym(sym: string) -> bool {
         return true
     }
     // 一期并发 A4 执行层：kernel32 线程 + 同步原语（系统库默认自动链入，非 interp 桥）
+    // Sleep：kernel32 毫秒休眠（interp sleep_ms 内建底层，批次⑤）。Windows 目标下
+    // 未登记会被 tig_ext_call_typed 误判为 interp 桥 → 置 g_used_interp → driver
+    // 编译链（interp 内嵌）假阳性 need_interp。于此处无条件登记（kernel32 恒可链）。
+    if sym == "Sleep" {
+        return true
+    }
     if sym == "CreateThread" || sym == "WaitForSingleObject" || sym == "CloseHandle" ||
         sym == "GetCurrentThreadId" ||
         sym == "InitializeCriticalSection" || sym == "DeleteCriticalSection" ||
