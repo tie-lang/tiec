@@ -203,6 +203,16 @@ func is_builtin(name: string) -> bool {
         name == "token_tag_at" || name == "token_lexeme_at" {
         return true
     }
+    // tsh 脚本运行时（shell 角色，p.9.4）：把过程/环境/文件桥开放给解释器
+    // 求值——tsh 脚本可直接 `var x = get_env("K")`、`exec_code("cmd")` 等。
+    // 这些基础原语在编译端内联到 libc/win32（无 tie_interp 依赖），解释器直调。
+    if name == "get_env" || name == "set_env" || name == "exec_code" ||
+        name == "exec_output" || name == "cwd" || name == "time_now" ||
+        name == "file_read" || name == "file_write" || name == "file_append" ||
+        name == "file_exists" || name == "path_join" ||
+        name == "mkdir_all" || name == "remove_dir_all" {
+        return true
+    }
     return false
 }
 
@@ -595,6 +605,47 @@ func call_builtin(name: string, args: table<i64>) -> i64 {
             return -1
         }
         return ivalue.new_str(g_tk_lexemes[i])
+    }
+    // tsh 脚本运行时桥（过程/环境/文件；与 is_builtin 同集，直接转发基础原语）
+    if name == "get_env" {
+        return ivalue.new_str(get_env(ivalue.str_val(args[0])))
+    }
+    if name == "set_env" {
+        set_env(ivalue.str_val(args[0]), ivalue.str_val(args[1]))
+        return ivalue.new_bool(true)
+    }
+    if name == "exec_code" {
+        return ivalue.new_int(exec_code(ivalue.str_val(args[0])))
+    }
+    if name == "exec_output" {
+        return ivalue.new_str(exec_output(ivalue.str_val(args[0])))
+    }
+    if name == "cwd" {
+        return ivalue.new_str(cwd())
+    }
+    if name == "time_now" {
+        return ivalue.new_int(time_now())
+    }
+    if name == "file_read" {
+        return ivalue.new_str(file_read(ivalue.str_val(args[0])))
+    }
+    if name == "file_write" {
+        return ivalue.new_bool(file_write(ivalue.str_val(args[0]), ivalue.str_val(args[1])))
+    }
+    if name == "file_append" {
+        return ivalue.new_bool(file_append(ivalue.str_val(args[0]), ivalue.str_val(args[1])))
+    }
+    if name == "file_exists" {
+        return ivalue.new_bool(file_exists(ivalue.str_val(args[0])))
+    }
+    if name == "path_join" {
+        return ivalue.new_str(path_join(ivalue.str_val(args[0]), ivalue.str_val(args[1])))
+    }
+    if name == "mkdir_all" {
+        return ivalue.new_bool(mkdir_all(ivalue.str_val(args[0])))
+    }
+    if name == "remove_dir_all" {
+        return ivalue.new_bool(remove_dir_all(ivalue.str_val(args[0])))
     }
     g_err = "内部错误: 未实现的内置函数 '" + name + "'"
     return -1
