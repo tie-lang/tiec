@@ -843,6 +843,13 @@ pub func replace(s: string, pattern: string, repl: string) -> string {
     return sb_build(sb)
 }
 
+// p.9.1.1.21 regex_replace 别名：经典三参名（replace/replace 底层完全一致）。
+// fmt 支持 $N/$0 捕获组引用。与编译器内置 regex_replace 同名语义提供记忆点
+//（在此命名空间为 regex.regex_replace；regexpx.regex_replace 亦透传本实现）。
+pub func regex_replace(s: string, pattern: string, fmt: string) -> string {
+    return replace(s, pattern, fmt)
+}
+
 func rx_append_repl(sb: i64, repl: string, s: string, slots: ref table<i64>) {
     var rl = len(repl)
     var i: i64 = 0
