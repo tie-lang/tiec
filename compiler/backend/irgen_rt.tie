@@ -822,17 +822,16 @@ func tig_cb_ptr(id: i64) -> i64 {
 // ---------- 一期并发 A4 执行层：per-actor 运行期（纯 codegen 零运行时） ----------
 // per-actor record 布局（字节偏移；纯 codegen 直接分配原始缓冲）：
 //   @0   : i64 magic（0xAC70524E 校验句柄/记录）
-//   @8   : CRITICAL_SECTION lock（40 字节）
-//   @48  : CONDITION_VARIABLE cv（8 字节）
-//   @56  : mailbox_ch（per-actor 消息通道句柄，ch_open() 返回值；消息入口经
+//   @8   : mailbox_ch（per-actor 消息通道句柄，ch_open() 返回值；消息入口经
 //           ch_send 入队 method_id 令牌，actor_task 经 ch_recv 取出）
+// p.9.5.x 零锁清理：废弃 @8 lock(40B)/@48 cv 死字段，状态零锁约束。
 // 布局常量用内联字面量（namespace 体内不允许 const/var 声明）。
 
 // `run<Actor>(实参...)` 生成：求值实参（step4 起作初始消息）→ 分配 per-actor
-// record（s21_raw_alloc_str，安全堆 + 尾部填充）→ 初始化 CRITICAL_SECTION 与
-// CONDITION_VARIABLE（kernel32 extern，is_libc_sym 免 interp）→ 返回句柄
-//（record 指针 ptrtoint → i64，K_ACTOR 槽承载）。
-// Step3：仅分配 + 锁/条件变量就绪 + 返回真实句柄（不再占位 0）；线程消息循环
+// record（s21_raw_alloc_str，安全堆 + 尾部填充）→ 初始化 mailbox 通道
+//（trm-lite ch_open，actor 由简单执行体承载，零锁不初始化 OS 锁/条件变量）→
+// 返回句柄（record 指针 ptrtoint → i64，K_ACTOR 槽承载）。
+// Step3：仅分配 + mailbox 就绪 + 返回真实句柄（不再占位 0）；线程消息循环
 // （mailbox + dispatch + 同步 RPC）在 Step4 于 record 上接续。
 func tig_actor_run(id: i64) -> i64 {
     // 实参求值（丢弃；Step4 起作为初始消息/构造入队）
@@ -854,14 +853,15 @@ func tig_actor_run(id: i64) -> i64 {
         return -1
     }
     var T64 = types.named(TK_I64)
-    // B 组固定头：@0 magic|@8 lock(40B)|@48 cv|@56 mailbox_ch|@64 pending|
-    // @72 method_id|@80 args[0..8)（8 槽多参数消息槽）|@144 result|@152 done|
-    // @160 dispatch_addr|@168 fail|@176 字段区起（scollect FIELD_BASE 同步）。
-    var FIELD_BASE = 176
-    // record 大小 = 固定头 176 + 字段区（空则至少 184）
+    // B 组固定头（p.9.5.x 零锁清理：废弃 @8 lock(40B)/@48 cv，状态零锁约束）：
+    // @0 magic|@8 mailbox_ch|@16 pending|@24 method_id|@32 args[0..8)
+    // （8 槽多参数消息槽）|@96 result|@104 done|@112 dispatch_addr|@120 fail|
+    // @128 字段区起（scollect FIELD_BASE 同步）。
+    var FIELD_BASE = 128
+    // record 大小 = 固定头 128 + 字段区（空则至少 136）
     var recsz = FIELD_BASE + sstate.actor_field_bytes(aidx)
-    if recsz < 184 {
-        recsz = 184
+    if recsz < 136 {
+        recsz = 136
     }
     var rec = s21_raw_alloc_str(tig_int_lit_ty(recsz, T64))
     if rec < 0 {
@@ -882,20 +882,20 @@ func tig_actor_run(id: i64) -> i64 {
         fk = fk + 1
     }
     // 阶段1块2：actor 默认由简单执行体承载（trm-lite 静态链接）。record 单消息槽
-    //（@64 pending/@72 mid/@80 args/@144 result/@152 done/@160 dispatch/@168 fail），
+    //（@16 pending/@24 mid/@32 args/@96 result/@104 done/@112 dispatch/@120 fail），
     // 消息处理 = trm-lite 调度任务（gen_actor_task_eager 生成通用 actor_task），
-    // 不再初始化 OS 锁/条件变量、不再起 1:1 线程。
+    // 不再初始化 OS 锁/条件变量、不再起 1:1 线程（p.9.5.x 零锁清理后无死字段）。
     g_used_trmlite = true
     if sstate.fn_def_node("trm_lite_sched::spawn_task") >= 0 {
         sm_err_msg = "actor 与 import trm-lite 冲突：actor 默认由 trm-lite 简单执行体承载，与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
         return -1
     }
-    s21_store(s21_gep(rec, 64, true), tig_int_lit_ty(0, T64), T64)
-    s21_store(s21_gep(rec, 152, true), tig_int_lit_ty(0, T64), T64)
-    s21_store(s21_gep(rec, 160, true), tig_func_addr("actor_disp_" + to_string(aidx)), T64)
-    // @56 mailbox_ch：per-actor 消息通道句柄（ch_open()）。消息发送经 ch_send 入队
+    s21_store(s21_gep(rec, 16, true), tig_int_lit_ty(0, T64), T64)
+    s21_store(s21_gep(rec, 104, true), tig_int_lit_ty(0, T64), T64)
+    s21_store(s21_gep(rec, 112, true), tig_func_addr("actor_disp_" + to_string(aidx)), T64)
+    // @8 mailbox_ch：per-actor 消息通道句柄（ch_open()）。消息发送经 ch_send 入队
     // method_id 令牌，actor_task 经 ch_recv 从该通道取 method_id（mailbox 队列）。
-    s21_store(s21_gep(rec, 56, true), tig_trmlite_call("trm_lite_chan$ch_open", tig_empty_types(), tig_empty_vals(), T64), T64)
+    s21_store(s21_gep(rec, 8, true), tig_trmlite_call("trm_lite_chan$ch_open", tig_empty_types(), tig_empty_vals(), T64), T64)
     // 句柄 = ptrtoint record（i64；var-decl 槽类型 K_ACTOR = i64，LLVM 类型匹配）
     var pi = ir.new_inst(g_cur_block, 24, T64)  // ptrtoint → i64
     ir.add_operand(pi, rec, 0)
@@ -906,10 +906,10 @@ func tig_actor_run(id: i64) -> i64 {
 // actor 消息任务 `actor_task` 生成（fn(ptr rec) -> i64）。**急切生成**：模块
 // 生成开始（tig_ast 内、任何用户函数之前）调用一次，避免指令编号交错。
 // 阶段1块2＋mailbox：actor 由简单执行体承载——每条消息 = trm-lite 调度任务
-// （spawn_task）；消息入口走 mailbox 通道：ch_recv(record@56 的 ch) 取 method_id
-// 令牌（发送方 ch_send 入队，替换读 record@72）。本函数是通用消息处理任务：
-// setjmp 捕获 handler panic → ch_recv 取 mi → 清 pending@64 → 间接调 dispatch
-// （record@160）→ 写 result@144/fail@168 → 置 done@152 → 返回 0。单线程协作
+// （spawn_task）；消息入口走 mailbox 通道：ch_recv(record@8 的 ch) 取 method_id
+// 令牌（发送方 ch_send 入队，替换读 record@24）。本函数是通用消息处理任务：
+// setjmp 捕获 handler panic → ch_recv 取 mi → 清 pending@16 → 间接调 dispatch
+// （record@112）→ 写 result@96/fail@120 → 置 done@104 → 返回 0。单线程协作
 // 模型下无锁无竞态（调用方先 ch_send 入队、再 spawn，故任务内通道必有消息）。
 func gen_actor_task_eager() {
     if len(ac_keys) == 0 {
@@ -930,11 +930,11 @@ func gen_actor_task_eager() {
     var entry = ir.new_block(fid, interner.intern("at.entry"))
     g_cur_block = entry
     var recp = ir.param_val(fid, 0)
-    var pendp = s21_gep(recp, 64, true)
-    var resp = s21_gep(recp, 144, true)
-    var donep = s21_gep(recp, 152, true)
-    var dispp = s21_gep(recp, 160, true)
-    var failp = s21_gep(recp, 168, true)
+    var pendp = s21_gep(recp, 16, true)
+    var resp = s21_gep(recp, 96, true)
+    var donep = s21_gep(recp, 104, true)
+    var dispp = s21_gep(recp, 112, true)
+    var failp = s21_gep(recp, 120, true)
     // setjmp 捕获点（handler panic → longjmp 回此，任务照常收尾）
     llvmgen.catch_enable()
     var fa2 = ir.new_inst(g_cur_block, 36, types.ptr_of(types.named(TK_I8)))  // frameaddress
@@ -972,9 +972,9 @@ func gen_actor_task_eager() {
     ir.add_operand(stA1, types.named(TK_BOOL), 2)
     ir.add_operand(stA1, trA, 0)
     ir.add_operand(stA1, act_id, 3)
-    // 消息入口 = mailbox：ch_recv(record@56 的 ch) 取 method_id（发送方先 ch_send 入队再
+    // 消息入口 = mailbox：ch_recv(record@8 的 ch) 取 method_id（发送方先 ch_send 入队再
     // spawn，任务跑时通道必有消息，故单次 recv 即得 token；返回值直接作 method_id）。
-    var mchp = s21_gep(recp, 56, true)
+    var mchp = s21_gep(recp, 8, true)
     var mch = s21_load(mchp, T64)
     var recv_ats: table<i64> = table_new_i64()
     var recv_avs: table<i64> = table_new_i64()
@@ -1028,8 +1028,8 @@ func gen_actor_task_eager() {
 // handler 签名 fn(i64 rec, 方法形参...) -> ret，内部把 actor 私有状态字段绑定到
 // record 槽（scope_put 字段 → gep(rec, foff)），再编译方法 body（tig_block_stmts）。
 // 二者于模块生成开始时急切生成（gen_actor_dispatch_eager），run 把 dispatch 地址
-// 存 record @160；@actor_loop 持锁等 pending → 置 0 → 解锁跑 dispatch → 存 result@144/
-// done@152 → 唤醒调用方。方法实参从 record 消息槽段 @80+k*8 读出（可变参数）。
+// 存 record @112；actor_task 零锁等 pending → 置 0 → 跑 dispatch → 存 result@96/
+// done@104 → 唤醒调用方。方法实参从 record 消息槽段 @32+k*8 读出（可变参数）。
 
 // 取 actor 节点的第 mi 个方法 FnDef 节点（children 中按 N_FN_DEF 声明序；字段在前）
 func actor_method_node(anode: i64, mi: i64) -> i64 {
@@ -1173,7 +1173,7 @@ func gen_actor_dispatch(aidx: i64, anode: i64) -> i64 {
     var rec_i64 = ir.get_value(recpi)
     // 生成比较链：rest = 入口块；对每个方法 i，rest 里 icmp eq(mid, i) →
     // 命中块（调 handler+ret）/ 下一 rest；最后一个 rest = 缺省 ret 0。
-    // B 组：方法实参从 record 消息槽段（@80 + k*8，k=0..npar-1）读出，
+    // B 组：方法实参从 record 消息槽段（@32 + k*8，k=0..npar-1）读出，
     // 每参 load i64 后传给 handler（handler 形参 i64 槽）。
     var mi: i64 = 0
     while mi < nmeth {
@@ -1204,7 +1204,7 @@ func gen_actor_dispatch(aidx: i64, anode: i64) -> i64 {
         var argvals: table<i64> = table_new_i64()
         var ak0: i64 = 0
         while ak0 < hnpar {
-            var argslot = s21_gep(env_p, 80 + ak0 * 8, true)
+            var argslot = s21_gep(env_p, 32 + ak0 * 8, true)
             table_push(argvals, s21_load(argslot, T64))
             ak0 = ak0 + 1
         }
@@ -1634,34 +1634,34 @@ func gen_actor_sync_call(rech: i64, mi: i64, args: table<i64>, ret_ty: i64, is_a
     var rp = ir.new_inst(g_cur_block, 25, P)  // inttoptr rech → rec_ptr
     ir.add_operand(rp, rech, 0)
     var rec_ptr = ir.get_value(rp)
-    var pendp = s21_gep(rec_ptr, 64, true)
-    var midp = s21_gep(rec_ptr, 72, true)
-    var resp = s21_gep(rec_ptr, 144, true)
-    var donep = s21_gep(rec_ptr, 152, true)
+    var pendp = s21_gep(rec_ptr, 16, true)
+    var midp = s21_gep(rec_ptr, 24, true)
+    var resp = s21_gep(rec_ptr, 96, true)
+    var donep = s21_gep(rec_ptr, 104, true)
     var is_void = (ret_ty == types.named(TK_VOID))
-    // ① 等 pending 空闲（yield 驱动前一消息任务跑完，腾出单消息槽 args@80）——mailbox
+    // ① 等 pending 空闲（yield 驱动前一消息任务跑完，腾出单消息槽 args@32）——mailbox
     // 通道提供消息入口，但单槽 args 仍须串行：async 连续发消息时，若不等前一任务
     // 消费完槽就覆写，dispatch 会用错的参数。故保留 tig_actor_wait(pendp, true)。
     tig_actor_wait(pendp, true)
-    // ② 写消息槽（mid + 多参数消息槽段 @80+k*8）+ done=0 + pending=1
+    // ② 写消息槽（mid + 多参数消息槽段 @32+k*8）+ done=0 + pending=1
     s21_store(midp, tig_int_lit_ty(mi, T64), T64)
     var nargs = len(args)
     var argk: i64 = 0
     while argk < nargs {
-        s21_store(s21_gep(rec_ptr, 80 + argk * 8, true), args[argk], T64)
+        s21_store(s21_gep(rec_ptr, 32 + argk * 8, true), args[argk], T64)
         argk = argk + 1
     }
     s21_store(donep, tig_int_lit_ty(0, T64), T64)
     s21_store(pendp, tig_int_lit_ty(1, T64), T64)
-    // ③ mailbox 入队：ch_send(ch, mi) 把 method_id 令牌入通道（record@56 的 ch；actor_task 经 ch_recv 取出）
-    var chp2 = s21_gep(rec_ptr, 56, true)
+    // ③ mailbox 入队：ch_send(ch, mi) 把 method_id 令牌入通道（record@8 的 ch；actor_task 经 ch_recv 取出）
+    var chp2 = s21_gep(rec_ptr, 8, true)
     var ch_h = s21_load(chp2, T64)
     var send_ats: table<i64> = table_new_i64()
     var send_avs: table<i64> = table_new_i64()
     table_push(send_ats, T64); table_push(send_avs, ch_h)
     table_push(send_ats, T64); table_push(send_avs, tig_int_lit_ty(mi, T64))
     tig_trmlite_call("trm_lite_chan$ch_send", send_ats, send_avs, T64)
-    // ④ spawn 消息任务：actor_task(rec)（通用任务，dispatch 地址存 record@160）
+    // ④ spawn 消息任务：actor_task(rec)（通用任务，dispatch 地址存 record@112）
     var rec_i = ir.new_inst(g_cur_block, 24, T64)  // ptrtoint rec_ptr → i64
     ir.add_operand(rec_i, rec_ptr, 0)
     // task 入口地址：op63 const_global 不能直接作 call 实参（arg_ref 会直引 @sym
@@ -1689,7 +1689,7 @@ func gen_actor_sync_call(rech: i64, mi: i64, args: table<i64>, ret_ty: i64, is_a
     // ⑤ 同步：等 done=1 → 读 result/fail（fail≠0 → raise）
     tig_actor_wait(donep, false)
     var res = s21_load(resp, T64)
-    var failp = s21_gep(rec_ptr, 168, true)
+    var failp = s21_gep(rec_ptr, 120, true)
     var fv = s21_load(failp, T64)
     var fz = tig_int_lit_ty(0, T64)
     var isf = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp ne
