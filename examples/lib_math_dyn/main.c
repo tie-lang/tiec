@@ -2,7 +2,7 @@
  * 用 LoadLibrary + GetProcAddress 加载 tie 编译的 .dll，调用导出函数。
  * 符号名约定：命名空间全名转 $（mathdyn::add → "mathdyn$add"）。
  *
- * 构建（由 run.ps1 调用）：
+ * 构建（由 run.tsh.tie 调用，原 run.ps1 已迁移为 tie/tsh）：
  *   clang main.c -o main.exe          # 或用 cl / clang 任意 C 编译器
  * 运行：main.exe lib_math_dyn.dll
  */
