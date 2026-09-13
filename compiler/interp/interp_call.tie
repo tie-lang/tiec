@@ -1017,7 +1017,12 @@ func find_here(s: string, si: i64, pat: string, pi: i64) -> i64 {
             quant = qc
         }
     }
-    var irest = pi + tok_len(pat, pi, plen)
+    // rest 起始：token 之后（含 token 全长的码点位置 qpos）。量词存在时须再 +1
+    // 跳过量词字符本身（qpos 正指向 * / + / ?）；否则 rest 即 qpos。
+    var irest: i64 = qpos
+    if quant != "" {
+        irest = qpos + 1
+    }
     if quant == "" {
         // 无量子词：单次匹配，硬失败传播
         var r = find_tok(s, si, pat, tokpi, plen, slen)
