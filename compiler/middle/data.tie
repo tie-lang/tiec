@@ -245,7 +245,7 @@ func ensure_builtins() {
     }
     var names: table<string> =  ["arg_count", "arg_string", "bit_read", "bit_write", "byte_concat",
         "byte_read", "byte_write", "ceil", "ch_close", "ch_open",
-        "ch_recv", "ch_send", "char_code", "collect", "copy_dir", "cos",
+        "ch_recv", "ch_send", "ch_send_block", "char_code", "collect", "copy_dir", "cos",
         "cwd", "eval", "eval_call",
         "exec_code", "exec_output", "exit", "exp", "file_append",
         "file_copy", "file_delete", "file_exists", "file_move", "file_read",
@@ -261,7 +261,7 @@ func ensure_builtins() {
         "time_now", "to_string", "untar_gz", "unzip", "walk_dir",
         "yield", "to_trit", "trit_val", "gosched", "wg_new", "wg_add", "wg_done", "wg_wait", "wg_count"]
     // 参数个数（-1 = 任意，println/print）
-    var nargs: table<i64> =  [0, 1, 2, 3, 2, 1, 2, 1, 1, 0, 1, 2, 1, 0, 2, 1, 0, 1, 2,
+    var nargs: table<i64> =  [0, 1, 2, 3, 2, 1, 2, 1, 1, 0, 1, 2, 2, 1, 0, 2, 1, 0, 1, 2,
         1, 1, 1, 1, 2, 2, 1, 1, 2, 1, 2, 1, 1, 1, 2,
         1, 1, 1, 1, 0, 3, 1, 1, 2, 1, 1, 1, 2, 2, -1,
         1, -1, 2, 0, 2, 2, 3, 2, 3, 1, 1, 2, 1, 1, 1,
