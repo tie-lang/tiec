@@ -521,6 +521,17 @@ pub func var_declared(name: string) -> bool {
     return g_find(name) >= 0
 }
 
+// 仅检查最顶层作用域段（当前块）是否已声明同名变量——函数/块体内 `var` 允许
+// 遮蔽顶层全局（对齐词法作用域惯例），重复声明判据只限当前块。
+// 无作用域（REPL/脚本顶层）回退到 globals 判据。
+pub func scope_local_declared(name: string) -> bool {
+    var top = len(env_soff) - 1
+    if top < 0 {
+        return g_find(name) >= 0
+    }
+    return seg_find_rev(top, name) >= 0
+}
+
 // ==================== by_ref 引用槽层 ====================
 
 // 压一层引用槽（进入被调函数时；记录段起点）。
