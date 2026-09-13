@@ -142,9 +142,8 @@ if file_exists(rtExe) {
     }
 }
 
-// ---------- 4. Rust 通道引用回归（已退役） ----------
-println("[SKIP] Rust 通道引用回归（repl-parity / interp 套件）——0-Rust 目标下已退役（2026-09-10 决定）")
-println("       若需手动运行：<tsh> scripts/repl-parity.tsh.tie / scripts/run-interp-tests.tsh.tie")
+// ---------- 4. Rust 通道引用回归（已退役，2026-09-13 删除脚本） ----------
+println("[SKIP] Rust 通道引用回归（repl-parity / interp 套件）——0-Rust 目标下已退役（2026-09-10 决定，2026-09-13 删除 repl-parity.ps1 / run-interp-tests.ps1）")
 
 println("")
 if len(fails) == 0 {
