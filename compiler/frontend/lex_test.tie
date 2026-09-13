@@ -10,7 +10,7 @@ type tie<logic>
 //      样例 dump_docs 附随验证。
 //   2) 带文件参数运行：lex_test.exe <file> 打印该文件 token 总数（首行与
 //      Rust 同格式「共 N 个 token（含 Eof）:」）与逐 token 可读流，供
-//      compare_tokens.ps1 逐文件比对（proto 同款模式）。
+//      compare_tokens.tsh.tie 逐文件比对（proto 同款模式；原 .ps1 已归档）。
 // 编译运行：target\release\tie-llvm.exe compiler\frontend\lex_test.tie
 //           运行：compiler\frontend\lex_test.exe （从仓库根目录）
 // 全部断言通过输出「lexer 自检通过」exit 0。
