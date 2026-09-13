@@ -81,7 +81,7 @@ type tie<class>
 //   —— Rust 种子编译器（tie-llvm.exe）编译 tie 自写 driver.tie 得到 tiec.exe。
 //   这是**唯一的 Rust 接触点**。G3 0-Rust 承诺：种子之后的一切（编译用户程序、
 //   链接运行时、REPL 运行、解释器求值）不触碰 cargo/target 的 Rust 产物
-//   （scripts/zero-rust-check.ps1 验证 7 项全 PASS，报告见 docs/bench/zero-rust.md）。
+//   （scripts/zero-rust-check.tsh.tie 验证 7 项全 PASS，报告见 docs/bench/zero-rust.md）。
 // 二阶自举（自举闭环证明）：
 //   compiler/tiec.exe compiler/driver.tie -o compiler/tiec2.exe
 //   —— tiec 编译自身源码得到 tiec2.exe（T5.2 irgen 最小集扩展修复 13 bug 后
