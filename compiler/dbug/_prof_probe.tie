@@ -1,0 +1,26 @@
+type tie<logic>
+// compiler/dbug/_prof_probe.tie —— p.9.2.4 剖析器验收探针：热点 fib（慢）+ hot 循环
+// （快），验证调用计数与折叠栈体现出 hot > fib 的频次分布。
+var g_sum: i64 = 0;
+
+func fib(n: i64) -> i64 {
+    if n < 2 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+
+func hot(k: i64) -> i64 {
+    var s: i64 = 0
+    var i: i64 = 0
+    while i < k {
+        s = s + g_sum
+        i = i + 1
+    }
+    return s
+}
+
+func main() {
+    g_sum = hot(200)
+    var f = fib(12)
+    var total = g_sum + f
+    var _r = total
+}
