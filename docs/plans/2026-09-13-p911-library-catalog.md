@@ -132,6 +132,21 @@ implementations (mirroring how `ext/gfx` rides on skia via thunk).
 
 ---
 
+## §2b 落地状态 / Landing Status（2026-09-13 更新）
+
+本清单 21 个候选库**全部落地**（tiec p.7，探针全绿，随批次陆续推送）：
+
+| 状态 | 子项 |
+| --- | --- |
+| ✅ 已实现（纯 tie 为主） | .1 zlib/gzip · .2 WebP(VP8L 子集) · .4 datetime · .5 GIF · .6 JSON5 · .7 WAV · .9 regex-pro · .10 xlsx · .11 color · .12 rng-adv · .13 QR 解码 · .14 BMP · .15 bytes · .16 process 管道 · .17 process 超时 · .18 fs · .19 zip · .20 mono 时钟 · .21 regex 语义 |
+| ⏳ 登记待库到位 | .3 AVIF（本环境无 libavif/libaom；FFI 解码待库到位后落地，`available()=false`） |
+| ⏳ 边界待续 | .8 视频容器（MP4/MKV 解析器，依赖 zlib 已备，按 ROAD 提示待专项批次） |
+
+> 子项 .8（视频容器解析）本轮未在清单 §2 表内逐一实现，保留为后续专项；其余 20 项已按清单优先级落地。
+> As of 2026-09-13 the 21-candidate catalog is landed except .3 (AVIF pending env lib) and .8 (video container, to be a dedicated batch).
+
+---
+
 ## §3 优先级与推进顺序 / Priority & Sequencing
 
 - **第一梯队（高）**：zlib/gzip(.1)、WebP(.2)、AVIF(.3)、datetime(.4)、GIF(.5)、
