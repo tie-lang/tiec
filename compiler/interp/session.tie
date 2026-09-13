@@ -68,6 +68,9 @@ var e_keys: table<string>;
 var env_keys: table<string>;
 var env_vals: table<i64>;
 var env_alive: table<i64>;
+var env_seg: table<i64>;    // 每条目所属的活动段索引（扁平表并非连续段：内层作用域
+                            // 追加的条目会穿插在外层段条目之间——据此逐条归属定位，杜绝
+                            // 「递归/内层块后第二个外层 var 错值」的天然非连续 bug）
 var env_soff: table<i64>;   // (活动段) 段起点（env_keys 偏移）；段索引 = 扁平表下标
 var env_scnt: table<i64>;   // (活动段) 段条目数
 var env_depth: i64 = 0;     // 活动作用域段数（逻辑栈深；env_soff[0..env_depth-1] 为活动段）
@@ -116,6 +119,7 @@ pub func reset() {
     env_keys = table_new_string()
     env_vals = table_new_i64()
     env_alive = table_new_i64()
+    env_seg = table_new_i64()
     env_soff = table_new_i64()
     env_scnt = table_new_i64()
     env_depth = 0
@@ -387,19 +391,24 @@ pub func var_declare(name: string, vid: i64) {
     if top < 0 {
         top = 0
     }
+    table_push(env_seg, top)      // 记录条目所属段（扁平表非连续，须逐条标记归属）
     env_scnt[top] = env_scnt[top] + 1
 }
 
-// 段内逆序查找存活条目：命中返回扁平表下标，未命中 -1。
+// 段内变量查找：从扁平表尾部回溯到该段起点，只匹配归属该段（env_seg）的存活条目。
+// 旧实现假设段内条目在 env_keys 中**连续**（[soff..soff+scnt) 区间）——但内层作用域
+// （嵌套块/循环/递归调用）追加的条目会穿插在外层段条目之间，破坏连续性，使「段内的
+// 后续外层 var」落到区间外而查不到（变量未声明）。改为按逐条归属标记定位，天然免疫
+// 穿插：内层段条目 env_seg 更大而被跳过，本段条目无论穿插到哪里都被命中。
 func seg_find_rev(seg: i64, name: string) -> i64 {
     var off = env_soff[seg]
-    var cnt = env_scnt[seg]
-    var i = cnt - 1
-    while i >= 0 {
-        var idx = off + i
-        if env_alive[idx] != 0 {
-            if env_keys[idx] == name {
-                return idx
+    var i = len(env_keys) - 1
+    while i >= off {
+        if env_alive[i] != 0 {
+            if env_seg[i] == seg {
+                if env_keys[i] == name {
+                    return i
+                }
             }
         }
         i = i - 1
