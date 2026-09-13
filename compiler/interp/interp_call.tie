@@ -847,16 +847,16 @@ func call_builtin(name: string, args: table<i64>) -> i64 {
         }
         return b_sort_strings(args[0])
     }
-    // findstr 风格正则命中：s 中匹配则 true。底层走 tie regex 引擎
-    //（regex_find 返回命中的子串；非空 = 命中）。pattern 支持 findstr /r
-    // 常用子集（. * ^ $ [类]）且为其超集（tie 正则能力更大，文档注明子集）。
+    // findstr 风格正则命中：s 中匹配则 true。0-Rust：不再经语言级 regex_find
+    //（Rust 桥 tie_regex_find，驱动 driver 编译时置 g_used_interp）——改为纯 tie
+    // 内联 findstr 子集匹配器（b_findstr，str_char/str_len 等内联原语，零桥）。
+    // pattern 支持 findstr /r 常用子集（. * + ? ^ $ [类-范围] 与 "\\" 转义）。
     if name == "regex_findstr" {
         if len(args) != 2 || ivalue.type_of(args[0]) != T_STR || ivalue.type_of(args[1]) != T_STR {
             g_err = "regex_findstr 需要两个字符串参数（s, pattern）"
             return -1
         }
-        var m = regex_find(ivalue.str_val(args[0]), ivalue.str_val(args[1]))
-        return ivalue.new_bool(str_len(m) > 0)
+        return ivalue.new_bool(b_findstr(ivalue.str_val(args[0]), ivalue.str_val(args[1])))
     }
     // 短暂睡眠（libc Sleep 毫秒级，供超时/等待用）。
     if name == "sleep_ms" {
@@ -874,6 +874,216 @@ func call_builtin(name: string, args: table<i64>) -> i64 {
 }
 
 // ---- tsh 字符串/目录/哈希内建辅助（纯文本，无 Value 构造） ----
+
+// findstr /r 子集正则命中（0-Rust 纯 tie，零桥）。语义：s 中存在匹配即 true。
+// 支持子集（对齐 findstr /r 常用语法）：
+//   普通字符（字面量）、. （任意单字符）、[…] 字符类（含范围 a-z / 0-9、
+//   ^ 开头取反）、^ 行首锚（仅整体首 token）、$ 行尾锚（仅整体末 token）、
+//   * + ? 量词（贪婪 + 回溯）、\c 转义字面量（\. \\ \* 等）。
+// 注：跨码点按码点匹配；逐字节语义见 str_char（内联原语）。零 Rust 依赖。
+// fsm 匹配：递归回溯。find_here(s, si, pat, pi) = 以 si/pi 为起点，让 pat[pi..]
+// 完整消费成功则返回 (匹配覆盖的 s 结束码点索引+1)，失败返回 -1。
+func b_findstr(s: string, pat: string) -> bool {
+    var slen = str_len(s)
+    var plen = str_len(pat)
+    if plen == 0 {
+        return true
+    }
+    // ^ 锚定：仅从起点 0 尝试，且 pat 以 ^ 开头（后随体）
+    if str_char(pat, 0) == "^" {
+        if plen == 1 {
+            return false
+        }
+        return find_here(s, 0, pat, 1) >= 0
+    }
+    var i: i64 = 0
+    while i <= slen {
+        if find_here(s, i, pat, 0) >= 0 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// 单 token 匹配：pat 在 pi 处的 token 是否匹配 s 的 si 码点。成功返回消费的
+// s 码点数（1 或 0，视 token 语义）；token 无对应 s 则返回 -1（硬不匹配）。
+// 同时返回 (是否消耗一个 s 字符) —— 用返回值编码：>=0 已匹配（值为消费数），
+// -1 未匹配。token 后续量词由 find_here 统一处理。
+func find_tok(s: string, si: i64, pat: string, pi: i64, plen: i64, slen: i64) -> i64 {
+    var c = str_char(pat, pi)
+    // 转义 \c：下一个字符按字面量处理（若 pi+1 越界 → 转义无效，匹空失败）
+    if c == "\\" {
+        if pi + 1 >= plen {
+            return -1
+        }
+        var lit = str_char(pat, pi + 1)
+        if si >= slen {
+            return -1  // 空串上字面量须有字符 → 硬失败
+        }
+        if str_char(s, si) == lit {
+            return 1
+        }
+        return -1
+    }
+    if c == "." {
+        if si >= slen {
+            return -1  // . 须至少一字符
+        }
+        return 1  // 任意单字符
+    }
+    if c == "[" {
+        // 解析字符类 [^]? 内容…[] 支持范围与转义。返回匹配单个 s 字符的结果。
+        return find_cls(s, si, pat, pi, plen, slen)
+    }
+    // 普通字面量字符
+    if si >= slen {
+        return -1  // 空串上字面量须有字符 → 硬失败
+    }
+    if str_char(s, si) == c {
+        return 1
+    }
+    return -1
+}
+
+// 字符类内匹配：从 pat[pi]=='[' 解析到 ']'，判断 s[si] 是否命中。
+// 返回 1（命中）/ -1（未命中）。
+func find_cls(s: string, si: i64, pat: string, pi: i64, plen: i64, slen: i64) -> i64 {
+    var j = pi + 1
+    var neg = false
+    if j < plen && str_char(pat, j) == "^" {
+        neg = true
+        j = j + 1
+    }
+    var hit = false
+    // 收集类内是否命中 s[si]（si 越界时视为"无字符"，仅负类可命中）
+    if si < slen {
+        var sc = str_char(s, si)
+        var running = true
+        while running && j < plen && str_char(pat, j) != "]" {
+            var lo = str_char(pat, j)
+            var hi = lo
+            if j + 2 < plen && str_char(pat, j + 1) == "-" &&
+                str_char(pat, j + 2) != "]" {
+                hi = str_char(pat, j + 2)
+                j = j + 2
+            }
+            if sc >= lo && sc <= hi {
+                hit = true
+                running = false
+            } else {
+                j = j + 1
+            }
+        }
+    }
+    if neg {
+        if hit {
+            return -1
+        }
+        return 1  // 负类：si 越界亦视为命中（无该字符）
+    }
+    if hit {
+        return 1
+    }
+    return -1
+}
+
+// 递归回溯核心：让 pat[pi..] 从 s[si] 起完整匹配。成功返回匹配结束的 s 码点索引
+//（即 s 中后续继续的位置），失败返回 -1。处理量词 * + ?（贪婪 + 回溯）。
+func find_here(s: string, si: i64, pat: string, pi: i64) -> i64 {
+    var slen = str_len(s)
+    var plen = str_len(pat)
+    if pi >= plen {
+        return si  // pat 消费完 → 匹配到 si（可为 slen，即允许 s 耗尽）
+    }
+    var c = str_char(pat, pi)
+    // $ 行尾锚：必须是整体末 token，且 si 已达 s 尾（或其后续空匹配）
+    if c == "$" {
+        if pi == plen - 1 {
+            if si >= slen {
+                return si
+            }
+            return -1
+        }
+        return -1  // $ 非末 token → 非法，视不匹配
+    }
+    // 量词检查：token 后是否紧跟 * / + / ?
+    var tokpi = pi
+    var quant = ""
+    var qpos = pi + tok_len(pat, pi, plen)
+    if qpos < plen {
+        var qc = str_char(pat, qpos)
+        if qc == "*" || qc == "+" || qc == "?" {
+            quant = qc
+        }
+    }
+    var irest = pi + tok_len(pat, pi, plen)
+    if quant == "" {
+        // 无量子词：单次匹配，硬失败传播
+        var r = find_tok(s, si, pat, tokpi, plen, slen)
+        if r < 0 {
+            return -1
+        }
+        // r==0（空字符上）；continue 到下一 token
+        return find_here(s, si + r, pat, irest)
+    }
+    // 有量词：贪婪回溯
+    if quant == "?" {
+        // 0 或 1 次：先试 1（若 token 能匹配），失败回退 0
+        var r1 = find_tok(s, si, pat, tokpi, plen, slen)
+        if r1 >= 0 {
+            var m1 = find_here(s, si + r1, pat, irest)
+            if m1 >= 0 {
+                return m1
+            }
+        }
+        return find_here(s, si, pat, irest)
+    }
+    // * 与 +：循环先取尽 token 单次匹配（贪婪），再回溯递减
+    var min = 0
+    if quant == "+" {
+        min = 1
+    }
+    var consumed: i64 = 0
+    var cur = si
+    var proceed = true
+    while proceed {
+        var rr = find_tok(s, cur, pat, tokpi, plen, slen)
+        if rr < 0 || rr == 0 {
+            proceed = false
+        } else {
+            consumed = consumed + 1
+            cur = cur + 1
+        }
+    }
+    // 回溯：从 consumed 递减到 min，每档试剩余 pat
+    var k = consumed
+    while k >= min {
+        var mres = find_here(s, si + k, pat, irest)
+        if mres >= 0 {
+            return mres
+        }
+        k = k - 1
+    }
+    return -1
+}
+
+// pat[pi] 处单 token 在 pat 中所占的码点长度（不含后续量词）。
+func tok_len(pat: string, pi: i64, plen: i64) -> i64 {
+    var c = str_char(pat, pi)
+    if c == "\\" {
+        return 2  // \ + 字面量
+    }
+    if c == "[" {
+        // 字符类：扫描到 ']'
+        var j = pi + 1
+        while j < plen && str_char(pat, j) != "]" {
+            j = j + 1
+        }
+        return j - pi + 1
+    }
+    return 1
+}
 
 // 字符串表按字节序（码点序）升序排序 → 新 Value::Table。
 // 先读入**局部** string 表（规避 tie-llvm 从 Value 表读串跨调用的缓冲 bug——
