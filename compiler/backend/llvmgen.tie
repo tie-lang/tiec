@@ -19,7 +19,7 @@ type tie<class>
 // import 去重生效（此前 "./../middle/ir.tie" 得 "compiler/backend/../middle/
 // ir.tie"，双入口时 ir 全局常量重复定义）
 import "../middle/ir.tie"
-import "../../std/utf.tie"
+import "/std/utf.tie"
 import "./llvmgen_str.tie"  // 字符串自省+extern 声明+类型映射 子文件（同 namespace 跨文件拆分）
 import "./llvmgen_inst.tie"  // 指令映射 子文件（同 namespace 跨文件拆分）
 

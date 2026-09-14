@@ -13,12 +13,12 @@ type tie<logic>
 // 由编译器输出"运行时错误"并 exit(1)（tie 无可捕获异常，std 层无法转空串），
 // 故本测试不实际发起网络请求（会退出导致验收失败）；真实网络用例需在可访问
 // HTTP 服务的环境运行。http 段仅验证不联网的 url_encode/url_decode 纯函数。
-import "../../std/result.tie"
-import "../../std/assert.tie"
-import "../../std/http.tie"
-import "../../std/regex.tie"
-import "../../std/random.tie"
-import "../../std/bytes.tie"
+import "/std/result.tie"
+import "/std/assert.tie"
+import "/std/http.tie"
+import "/std/regex.tie"
+import "/std/random.tie"
+import "/std/bytes.tie"
 using assert;
 using http;
 using regex;

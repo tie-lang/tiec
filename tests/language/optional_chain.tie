@@ -16,7 +16,7 @@ type tie<logic>
 // 期望输出（逐行，与 println 一一对应）：
 //   42 / -1 / hi / def / 20 / -1 / -1 / 5 / -1 / 100 / 7 / -1
 // ============================================================
-import "../../std/result.tie"
+import "/std/result.tie"
 
 // 可空链结果作为函数返回（Option 传播）
 func safe_first2(t: Option<table<i64>>) -> Option<i64> {

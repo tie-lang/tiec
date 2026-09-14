@@ -6,12 +6,12 @@ type tie<class>
 // 列式 token 表/doc 收集）。tag 常量与全局变量（tok_*/doc_*/g_* 来自
 // ./lex_state.tie）按 tie 约束留顶层，namespace lextok 内函数裸名访问。
 // 依赖：./lex_state.tie（共享状态）+ ../lib/interner.tie（字符串池）
-// + ../../std/string.tie（str 前缀字符串函数）。
+// + /std/string.tie（str 前缀字符串函数）。
 // 由 lex_scan.tie import（传递可达 lexer）。
 
 import "./lex_state.tie"
 import "../lib/interner.tie"
-import "../../std/string.tie"
+import "/std/string.tie"
 
 // ---------- tag 常量（与 Rust TokenKind 顺序对齐，lex_ 前缀防冲突）----------
 const lex_int: i64 = 0; const lex_float: i64 = 1;

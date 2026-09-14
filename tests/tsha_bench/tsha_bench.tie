@@ -14,7 +14,7 @@ type tie<logic>
 //   `_hex` 与默认输出差异仅在编码后处理层（内部哈希字节不变），故本探针只测默认输出。
 //   - 大消息用 2^k 倍增拼接构造（rep2），拼接成本在计时循环**外**，只计哈希循环；
 //     0B 尺寸 throughput 未定义（0 字节），该格输出 “—”（以 µs/call 比较）。
-import "../../std/tsha1.tie"
+import "/std/tsha1.tie"
 using tsha;
 
 // 固定宽度填充（右补空格，中文按字节计——本表全 ASCII 列头/数字，安全）。

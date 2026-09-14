@@ -6,10 +6,10 @@ type tie<class>
 // 共享状态（g_codes/g_n/g_src/g_line_starts/g_err_*）来自 ./lex_state.tie
 // （经 ./lex_tokdefs.tie 传递可达），tag 常量来自 ./lex_tokdefs.tie，
 // 关键字/符号查表走 ./lex_symtab.tie，错误消息走 ./errors.tie，
-// 字符串函数走 ../../std/string.tie，池化走 ../lib/interner.tie。
+// 字符串函数走 /std/string.tie，池化走 ../lib/interner.tie。
 // 依赖：./lex_tokdefs.tie（tag 常量 + 列式表 + 字符分类 + 行列反推，
 // 经其传递可达 ./lex_state.tie 共享全局 + ../lib/interner.tie 池 +
-// ../../std/string.tie 字符串函数）+ ./lex_symtab.tie（关键字/符号查表）
+// /std/string.tie 字符串函数）+ ./lex_symtab.tie（关键字/符号查表）
 // + ./errors.tie（错误消息）。树状无环，唯一 import 路径。
 // 由 lexer.tie import。
 

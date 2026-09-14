@@ -45,7 +45,7 @@ type tie<class>
 
 import "./ir_meta.tie"
 import "../lib/interner.tie"
-import "../../std/bytes.tie"
+import "/std/bytes.tie"
 
 // ---------- 格式常量（字面量 + 注释，防 import 合并顶层重名）----------
 // 魔数 "TIEIR" 的 5 个 ASCII 码点

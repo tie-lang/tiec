@@ -5,7 +5,7 @@ type tie<logic>
 //   `if let Some(x) = n`——n 是 i64（非 Option），Some 解构模式不适用。
 //   期望编译报 error[E...]
 // ============================================================
-import "../../std/result.tie"
+import "/std/result.tie"
 
 func main() {
     var n = 42

@@ -3,7 +3,7 @@ type tie<logic>
 // 编译运行：cargo run -p tie -- examples/graph_demo.tie
 // library-v2：图数据改用真表传参（n×n 矩阵行优先展平 table<i64>，无边=999）；距离等返回表。
 
-import "../std/graph.tie"
+import "/std/graph.tie"
 
 func main() {
     // ---- Dijkstra：4 顶点图，src=0 ----

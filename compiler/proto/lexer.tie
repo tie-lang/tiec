@@ -52,8 +52,8 @@ type tie<class>
 // 不补：二元运算符、逗号/冒号/双冒号/点/点点/开括号/左右大括号/分号/else/in。
 
 // ---------- 字符串池与字符串库（T0.6 / 标准库）----------
-import "../../std/intern.tie"
-import "../../std/string.tie"
+import "/std/intern.tie"
+import "/std/string.tie"
 using str;
 
 // ---------- tag 常量（与 Rust TokenKind 枚举顺序对齐）----------

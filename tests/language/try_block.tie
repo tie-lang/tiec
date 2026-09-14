@@ -16,7 +16,7 @@ type tie<logic>
 // 期望输出（逐行，与 println 一一对应）：
 //   ok:2 / err:div0 / some:15 / none-at / nest:115 / stmt-try / p.9.11.3 try 全过
 // ============================================================
-import "../../std/result.tie"
+import "/std/result.tie"
 
 // `?` 传播点：除法（b==0 → Err）
 func try_div(a: i64, b: i64) -> Result<i64, string> {

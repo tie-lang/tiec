@@ -2,7 +2,7 @@ type tie<logic>
 // radix_demo.tie：std/radix 通用进制转换库演示
 // 编译运行：cargo run -p tie -- examples/radix_demo.tie
 
-import "../std/radix.tie"
+import "/std/radix.tie"
 
 func main() {
     // 整数 → 各进制字符串
