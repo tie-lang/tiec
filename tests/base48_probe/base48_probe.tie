@@ -5,7 +5,7 @@ type tie<logic>
 // 覆盖：空串、1 字节（含 0x00/0x2f/0xff）、6 字节、22 字节（max）、33 字节（尾块 0）、
 //   非法负例（奇数 hex、非 hex 字符、字符集外字符（大写 M..Z、大写 O 等）、
 //   无可对应字节长的长度、值溢出 256^L）。期望输出全部 PASS。
-import "../../std/base48.tie"
+import "/std/base48.tie"
 using b48;
 
 func check(name: string, got: string, want: string) {

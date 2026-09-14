@@ -5,9 +5,9 @@ type tie<logic>
 //   - 修复后：全部成功，解码结果与期望逐字节一致；JSON 序列化往返保持字节一致。
 // 注意：json/yaml 每次 parse 重置节点表，句柄跨 parse 失效——值须紧接 parse 捕获。
 // 编译运行：compiler\tiec.exe tests\_r153_probe\unesc_probe.tie -o <exe> && <exe>
-import "../../std/json.tie" as json
-import "../../std/yaml.tie" as yaml
-import "../../std/utf.tie" as utf
+import "/std/json.tie" as json
+import "/std/yaml.tie" as yaml
+import "/std/utf.tie" as utf
 
 func chk(name: string, got: string, want: string) {
     if got == want {

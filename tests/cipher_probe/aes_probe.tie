@@ -1,7 +1,7 @@
 type tie<logic>
 // aes 探针：AES-128/256 ECB 已知向量（FIPS 197）+ pycryptodome CBC（PKCS7）向量 + 往返。
 // key/iv/block/msg 均以 hex 字符串传（小写）。期望输出：全部 PASS + "aes 探针全部通过"。
-import "../../ext/aes.tie"
+import "/ext/aes.tie"
 using aes;
 
 func check(name: string, got: string, want: string) {

@@ -8,7 +8,7 @@ type tie<logic>
 // 断言 strong_bytes 语义：返回长度正确、元素域 [0,255]、随机源非全零（不成块/低频不可信
 // 到全零概率可忽略）；另以 2048 字节大样本单次成块调用冒烟（性能纪律：单次调用 + 结果表
 // 预购并，禁止循环拼接）。期望全部 PASS / exit 0。
-import "../../std/csprng.tie" as csrnd
+import "/std/csprng.tie" as csrnd
 
 var fails: i64 = 0
 

@@ -7,7 +7,7 @@ type tie<logic>
 //   4. copy_tree 含 exclude 前缀过滤（排除整个子树）；
 //   5. exclude 单文件排除。
 // 期望全部 PASS / exit 0。
-import "../../std/fs.tie" as fs
+import "/std/fs.tie" as fs
 
 var fails: i64 = 0
 

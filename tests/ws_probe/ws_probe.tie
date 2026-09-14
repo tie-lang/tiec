@@ -3,7 +3,7 @@ type tie<logic>
 // 全离线确定性探针（不连网）：RFC 6455 握手接受键向量、字节表 base64 往返、
 // 帧编解码（differ 长度档位 + 掩码往返）、服务端无掩码帧、分片/控制帧帧级解析。
 // 期望全部 PASS / exit 0。
-import "../../std/ws.tie" as ws
+import "/std/ws.tie" as ws
 
 var fails: i64 = 0
 

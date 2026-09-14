@@ -1,6 +1,6 @@
 type tie<logic>
 // tests/s15/set_using_probe.tie —— 验证 using 引入后裸名调用（add/remove）不误报移动
-import "../../std/set.tie"
+import "/std/set.tie"
 using set;
 
 func main() {

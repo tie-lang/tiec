@@ -16,7 +16,7 @@ type tie<logic>
 //   ⑥ f/b/x/r 同一消息摘要互异（多档分别断言）。
 //   ⑦ 新增默认参数通路：省略 base 的 tsha1f(msg,n) == 显式 base=48 的 tsha1f(msg,n,48)；
 //      显式 base=0 亦经 encode 兜底后 == base=48。
-import "../../std/tsha1.tie"
+import "/std/tsha1.tie"
 using tsha;
 
 var N_SET: table<i64>;      // 合法 bit48 位长集合（main 里 init_globals 填充）

@@ -3,7 +3,7 @@ type tie<logic>
 // 编译运行：cargo run -p tie -- examples/exmath_num_demo.tie
 // library-v2：数值函数改用真表（table<f64>）传采样数据，取代旧的逗号分隔字符串序列。
 
-import "../std/exmath.tie"
+import "/std/exmath.tie"
 
 func main() {
     // library-v2：采样/样本数据用真表传参（table<f64>），取代旧的逗号分隔字符串序列

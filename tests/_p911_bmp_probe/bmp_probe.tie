@@ -7,7 +7,7 @@ type tie<logic>
 //   3. 8bpp 调色板 BMP（4 色：黑/红/绿/蓝，2x4 索引图）→ 解码展开为 RGB 对拍。
 //   4. 负例：坏魔数 / 截断 → ok=false（不 hang）。
 // 期望全部 PASS / exit 0。
-import "../../ext/bmp/bmp.tie" as bmp
+import "/ext/bmp/bmp.tie" as bmp
 
 var fails: i64 = 0
 

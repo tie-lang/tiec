@@ -13,8 +13,8 @@ type tie<logic>
 //      key=85d6be78… msg="Cryptographic Forum Research Group" tag=a8061dc1305136c6c22b8baf0c0127a9
 // 期望输出：全部 PASS + "chacha_poly 探针全部通过"。
 // ============================================================================
-import "../../ext/tls/aead.tie"
-import "../../ext/tls/tool.tie"
+import "/ext/tls/aead.tie"
+import "/ext/tls/tool.tie"
 
 // hex 字符串 → 字节表。
 func bh(h: string) -> table<i64> {

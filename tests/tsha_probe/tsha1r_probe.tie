@@ -5,7 +5,7 @@ type tie<logic>
 // 消息集：empty/abc/a1000/a55/a56/a63/a64/a65/a127/a128/a129/a256。
 // 位长抽检：{2,8,16,48,64,69,88,92,96,128,144}。
 // 非法位长（0/46/23）与非法 base（5/7）断言返回空串（无 XOF，非法拒绝）。
-import "../../std/tsha1.tie"
+import "/std/tsha1.tie"
 using tsha;
 
 func check(name: string, got: string, want: string) {

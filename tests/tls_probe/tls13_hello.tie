@@ -17,12 +17,12 @@ type tie<logic>
 //   （用 -rev 使 s_server 回显收到的应用数据——逐字节反转；回环断言其等于
 //   发送字节的反转 "tset-gnop\n"，即真实双向 TLS 应用数据回环）
 // ============================================================================
-import "../../ext/tls/tool.tie" as tbt
-import "../../ext/tls/hash.tie" as thash
-import "../../ext/tls/tls1_3.tie" as tls13
-import "../../ext/tls/x509.tie" as x509
-import "../../ext/tls/chain.tie" as chn
-import "../../std/net.tie" as net
+import "/ext/tls/tool.tie" as tbt
+import "/ext/tls/hash.tie" as thash
+import "/ext/tls/tls1_3.tie" as tls13
+import "/ext/tls/x509.tie" as x509
+import "/ext/tls/chain.tie" as chn
+import "/std/net.tie" as net
 
 func bh(h: string) -> table<i64> {
     return tbt.hex_to_bytes(h)

@@ -16,12 +16,12 @@ type tie<logic>
 // 期望：全部 PASS + "tls12 握手回环探针全部通过"，退出码 0。
 // 前置：openssl s_server -accept 19845 -tls1_2 -cert c.pem -key k.pem -rev
 // ============================================================================
-import "../../ext/tls/tool.tie" as tbt
-import "../../ext/tls/hash.tie" as thash
-import "../../ext/tls/gcm.tie" as gcm
-import "../../ext/tls/tls1_2.tie" as tls12
-import "../../std/x25519.tie" as x25519
-import "../../std/net.tie" as net
+import "/ext/tls/tool.tie" as tbt
+import "/ext/tls/hash.tie" as thash
+import "/ext/tls/gcm.tie" as gcm
+import "/ext/tls/tls1_2.tie" as tls12
+import "/std/x25519.tie" as x25519
+import "/std/net.tie" as net
 
 func bh(h: string) -> table<i64> {
     return tbt.hex_to_bytes(h)

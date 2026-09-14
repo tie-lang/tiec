@@ -12,8 +12,8 @@ type tie<logic>
 //   - 统一查询 API：同一 get/get_int/get_bool 对 KV/INI/TOML 三格式同行为；
 //   - 既有 KV/INI 回归：parse_kv/parse_ini/parse_file 行为完全不变。
 // ============================================================================
-import "../../ext/config.tie" as cfg
-import "../../ext/config/toml.tie" as toml
+import "/ext/config.tie" as cfg
+import "/ext/config/toml.tie" as toml
 
 var g_count: i64 = 0
 

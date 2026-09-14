@@ -1,7 +1,7 @@
 type tie<logic>
 // S1.5 探针6：1:1 复现 driver scan_header 段（裸函数 + std import 链）
 // 目标：定位 @173:55 rest moved 触发点
-import "../../std/string.tie"
+import "/std/string.tie"
 
 func has_prefix(s: string, prefix: string) -> bool {
     var n: i64 = str_len(s)

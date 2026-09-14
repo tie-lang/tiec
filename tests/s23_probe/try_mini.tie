@@ -1,6 +1,6 @@
 type tie<logic>
 
-import "../../std/result.tie"
+import "/std/result.tie"
 
 func div(a: i64, b: i64) -> Result<i64, string> {
     if b == 0 {

@@ -1,7 +1,7 @@
 type tie<logic>
 // 提升语义边界探针（自动 StringBuilder 提升）：break/continue/if 分支/
 // 多变量并行/段表达式函数调用。全部断言 PASS 否则退出码 1。
-import "../../std/string.tie"
+import "/std/string.tie"
 using str;
 
 func tail(s: string) -> string {

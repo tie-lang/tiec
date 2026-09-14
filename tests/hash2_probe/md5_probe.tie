@@ -1,7 +1,7 @@
 type tie<logic>
 // md5 探针：RFC 1321 向量（空串/abc）+ 块边界。向量来源：Python hashlib.md5。
 // 注意该算法已破译，仅遗留互操作——请勿用于安全场景。
-import "../../std/md5.tie"
+import "/std/md5.tie"
 using md5;
 func check(name: string, got: string, want: string) {
     if got == want { println("PASS " + name) }

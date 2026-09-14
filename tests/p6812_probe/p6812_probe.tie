@@ -13,7 +13,7 @@ type tie<logic>
 //
 // 坐标期望均为**手算**给出（见每节注释），不依赖任何渲染像素/迭代容差。
 
-import "../../ext/gfx/layout.tie" as lay
+import "/ext/gfx/layout.tie" as lay
 
 var fails: i64 = 0
 var total: i64 = 0

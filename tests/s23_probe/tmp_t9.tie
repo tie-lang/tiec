@@ -4,7 +4,7 @@ type tie<logic>
 //   1. Result<string, string> 的 Ok(payload) `?` 解包 → 还原 string 指针
 //   2. 解包后的 string 可正常参与字符串操作（长度/拼接/打印）
 //   3. `?` 作为实参表达式参与调用（解包结果直接传参）
-import "../../std/result.tie"
+import "/std/result.tie"
 
 // 返回 Result<string, string> 的基础函数
 func read_cfg(ok: bool) -> Result<string, string> {

@@ -5,7 +5,7 @@ type tie<logic>
 // 位长抽检：{2,8,16,48,64,69,88,92,96,128,144}，含 W≥16 档 88/92/96/128/144 以覆盖
 //   海绵率/LFSR 常量路径。非法位长一律返回空串。
 // 语义源：tests/tsha_probe/gen_tsha1_core.py（逐式镜像；无 _hex，无 XOF）。
-import "../../std/tsha1.tie"
+import "/std/tsha1.tie"
 using tsha;
 
 func check(name: string, got: string, want: string) {

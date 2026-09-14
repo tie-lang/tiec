@@ -1,5 +1,5 @@
 type tie<logic>
-import "../../std/result.tie"
+import "/std/result.tie"
 func a() -> Result<i64, string> {
     return Result.Ok(7)
 }

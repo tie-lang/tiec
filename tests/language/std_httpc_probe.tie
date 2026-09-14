@@ -12,8 +12,8 @@ type tie<logic>
 //   （19445 大文件：openssl s_server -accept 19445 -tls1_3 -cert ... -key ... -WWW，
 //    cwd=tests\_p6_probe\httpsfx，请求 /big.txt（72000B）验证跨记录重组）
 // ============================================================================
-import "../../std/httpc.tie" as httpc
-import "../../std/string.tie" as str
+import "/std/httpc.tie" as httpc
+import "/std/string.tie" as str
 
 func chk(name: string, got: string, want: string) {
     if got == want {

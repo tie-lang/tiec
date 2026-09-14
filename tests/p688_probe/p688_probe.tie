@@ -17,9 +17,9 @@ type tie<logic>
 // 像素读回 pattern 沿用 p686/p687（不经 std byte_read）：解引用 peek 返回比缓冲。
 // 期望全部 PASS / exit 0。
 
-import "../../ext/gfx/gfx.tie" as gfx
-import "../../ext/gfx/commands.tie" as commands
-import "../../ext/gfx/thunk_binding.tie" as tb
+import "/ext/gfx/gfx.tie" as gfx
+import "/ext/gfx/commands.tie" as commands
+import "/ext/gfx/thunk_binding.tie" as tb
 using tb;
 
 var W: i64 = 200

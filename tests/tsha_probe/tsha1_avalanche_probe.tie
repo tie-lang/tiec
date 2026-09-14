@@ -10,7 +10,7 @@ type tie<logic>
 //   ③ f@n=92（W17 档，base16 ⌊92·698121/1e6⌋·2 hex = 512 位）抽样 20 块 × 512 翻转，
 //      聚合均值 ∈ [0.44, 0.56]。
 // 提示：汉明距离对 hex 逐字符异或计位；翻转块逐字节重建（StringBuilder 二进制安全）。
-import "../../std/tsha1.tie"
+import "/std/tsha1.tie"
 using tsha;
 
 var PASS_COUNT: table<i64>;

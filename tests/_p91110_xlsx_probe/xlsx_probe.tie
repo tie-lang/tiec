@@ -9,8 +9,8 @@ type tie<logic>
 //   6. 空槽补齐（B 跳空 → ""）；
 //   7. 多字节 UTF-8 共享串往返。
 // 期望全部 PASS / exit 0。
-import "../../std/xlsx.tie" as xlsx
-import "../../std/zip.tie" as zip
+import "/std/xlsx.tie" as xlsx
+import "/std/zip.tie" as zip
 
 var fails: i64 = 0
 

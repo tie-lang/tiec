@@ -8,7 +8,7 @@ type tie<logic>
 //   PASS empty
 //   PASS count
 //   PASS to_chars
-import "../../std/utf.tie" as utf
+import "/std/utf.tie" as utf
 using utf;
 func main() {
     // ASCII：5 个码点

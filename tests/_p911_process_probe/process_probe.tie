@@ -8,7 +8,7 @@ type tie<logic>
 //   5. read_stderr：单独捕获 stderr；
 //   6. 既有 exec_code 回归（向后兼容）。
 // 期望全部 PASS / exit 0。
-import "../../std/process.tie" as process
+import "/std/process.tie" as process
 
 var fails: i64 = 0
 

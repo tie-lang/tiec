@@ -11,7 +11,7 @@ type tie<logic>
 // 验证命令：TIE_MOVE_CHECK=1 tiec tests/s15/extern_move_check_probe.tie
 // 预期输出：
 //   extern move check ok
-import "../../std/string.tie"
+import "/std/string.tie"
 using str;
 
 func concat_ok(a: string, b: string) -> string {

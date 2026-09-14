@@ -2,8 +2,8 @@ type tie<logic>
 // tests/diff_probe/diff_probe.tie —— p.6.6.17 验收：std/diff 文本行级 diff。
 // 全离线确定性探针：9 组用例覆盖相等/纯增/纯删/尾部插入/修改/空白保形/
 // unified 精确串/2K 行性能/前后缀剥离。期望全部 PASS / exit 0。
-import "../../std/diff.tie" as diff
-import "../../std/time.tie" as time
+import "/std/diff.tie" as diff
+import "/std/time.tie" as time
 
 var fails: i64 = 0
 

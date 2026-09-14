@@ -1,7 +1,7 @@
 type tie<logic>
 // ecdsa_lib_probe.tie：ext/ecdsa.tie 库的端到端验证（跨文件 extern 链）。
 // keygen() → sign() → verify() 往返 + 微变敏感（篡改签名 1 字节 → 拒绝）。
-import "../../ext/ecdsa.tie" as ecdsa
+import "/ext/ecdsa.tie" as ecdsa
 using ecdsa;
 
 func main() {

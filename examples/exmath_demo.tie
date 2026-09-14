@@ -2,7 +2,7 @@ type tie<logic>
 // exmath_demo.tie：std/exmath 高级数学算法库演示（霍夫曼编码/解码 + 数论/组合）
 // 编译运行：cargo run -p tie -- examples/exmath_demo.tie
 
-import "../std/exmath.tie"
+import "/std/exmath.tie"
 
 // 打印字符串动态表（"字符|编码" 条目）
 func dump_table(t: table) -> string {

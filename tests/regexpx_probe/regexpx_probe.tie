@@ -13,7 +13,7 @@ type tie<logic>
 // 数据平面：全 string/bool/i64。夹具内联。
 // 编译运行：compiler\tiec.exe tests\regexpx_probe\regexpx_probe.tie
 // ============================================================================
-import "../../std/regexpx.tie" as rxp
+import "/std/regexpx.tie" as rxp
 
 func chk_true(name: string, v: bool) {
     if v {

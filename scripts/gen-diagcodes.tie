@@ -14,8 +14,8 @@ type tie<logic>
 //   compiler\tiec.exe scripts\gen-diagcodes.tie -o scripts\gen-diagcodes.exe
 //   scripts\gen-diagcodes.exe [RepoRoot]        # 默认当前目录
 
-import "../std/fs.tie"
-import "../std/args.tie"
+import "/std/fs.tie"
+import "/std/args.tie"
 
 // ---------- 全局（文件顶层；命名空间体内只允许函数/类） ----------
 var g_root: string = ""

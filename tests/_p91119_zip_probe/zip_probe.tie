@@ -7,7 +7,7 @@ type tie<logic>
 //   4. crc32 校验（篡改数据 → zip_unpack ok=false）；
 //   5. zip_list 按名列列、zip_get 按名取；缺失名 → 空表。
 // 期望全部 PASS / exit 0。
-import "../../std/zip.tie" as zip
+import "/std/zip.tie" as zip
 
 var fails: i64 = 0
 

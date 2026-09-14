@@ -2,8 +2,8 @@ type tie<logic>
 // rdu_poly1305 交叉一致性探针：rdu_poly 版与 std poly 版输出一致，并复核 RFC 向量。
 // key 以 64 位 hex 传；msg 为原始字符串。
 // 期望输出：全部 PASS + "rdu_poly1305 交叉一致性探针全部通过"。
-import "../../std/poly1305.tie"
-import "../../rdu/rdu_poly1305.tie"
+import "/std/poly1305.tie"
+import "/rdu/rdu_poly1305.tie"
 
 func check(name: string, got: string, want: string) {
     if got == want {

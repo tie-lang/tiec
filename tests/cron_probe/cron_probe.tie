@@ -6,7 +6,7 @@ type tie<logic>
 // 时区约定：cron 语义按 UTC 日期推进（见 std/cron.tie 头注释），因此所有
 // 期望 epoch 均按 UTC 生成（datetime(..., tz=UTC).timestamp()），与实现对齐、
 // 与运行机器本地时区（Asia/Shanghai）无关。
-import "../../std/cron.tie" as cron
+import "/std/cron.tie" as cron
 
 var fails: i64 = 0
 

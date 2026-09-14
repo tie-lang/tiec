@@ -2,7 +2,7 @@ type tie<logic>
 // bytes 原语回归（byte_read/byte_write/byte_concat/bit_read/bit_write 原生实现，
 // 2026-08-26 起零 Rust 桥跨平台 libc/malloc 重写）：write→read 往返、concat、
 // 位操作、空表边界。失败路径 byte_read 打不开 → 打印路径并 exit(1)，不入正例如料。
-import "../../std/bytes.tie"
+import "/std/bytes.tie"
 using bytes;
 
 func main() {

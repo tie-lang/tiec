@@ -7,8 +7,8 @@ type tie<logic>
 //   2) dh(dA, pbB) == Z（大端共享 x 坐标 32 字节）
 //   3) dh(dB, pbA) == Z（ECDH 对称性）
 //   4) 篡改对端点 → 失败（空表）
-import "../../ext/tls/p256.tie" as p256
-import "../../ext/tls/tool.tie" as tbt
+import "/ext/tls/p256.tie" as p256
+import "/ext/tls/tool.tie" as tbt
 
 var dA: string = "4036f83ce4e056eac3af7fe97eaacd1472dbb8585b22e99ab24b7344e19deb0f"
 var dB: string = "2c53fe83b33a1cda689a40c366ff6c2aa8fe8fc2c3b28eb9e533a23e66212875"

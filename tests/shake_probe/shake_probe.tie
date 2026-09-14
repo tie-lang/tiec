@@ -2,7 +2,7 @@ type tie<logic>
 // shake 探针：SHAKE128/256 XOF 向量（NIST FIPS 202 官方前 32B）+
 //   非 32 倍 / 非 8 倍 / 跨 rate 边界（Python hashlib.shake_128/_256 交叉）。
 // 输入约定：hex 小写字符串（字节级），"abc" 传 "616263"；outlen 为输出字节数。
-import "../../std/shake.tie"
+import "/std/shake.tie"
 using shake;
 
 func check(name: string, got: string, want: string) {

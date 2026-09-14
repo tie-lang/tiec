@@ -44,7 +44,7 @@ type tie<class>
 //   import 后 ivalue.new_int(...) / ivalue.to_print_string(...)。
 //   命名规范：命名空间内函数不加 iv_ 前缀；内部工具私有（非 pub）。
 
-import "../../std/utf.tie"
+import "/std/utf.tie"
 
 // ==================== 类型码常量 ====================
 const T_INT: i64 = 0;

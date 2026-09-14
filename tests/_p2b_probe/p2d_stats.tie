@@ -1,7 +1,7 @@
 type tie<logic>
 // P2d-D1 探针：coll 统计（mean/median/variance/stddev，i64+f64）+ sort_f64
 
-import "../../std/collection.tie"
+import "/std/collection.tie"
 
 func main() {
     var t: table<i64> = [1, 2, 3, 4, 5]

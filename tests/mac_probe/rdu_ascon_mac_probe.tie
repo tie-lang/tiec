@@ -2,8 +2,8 @@ type tie<logic>
 // rdu_ascon_mac 交叉一致性探针：rdu_ascon 版与 std ascon_mac 版输出一致，并复核向量。
 // key 以 32 位 hex 传；msg 为原始字符串。
 // 期望输出：全部 PASS + "rdu_ascon_mac 交叉一致性探针全部通过"。
-import "../../std/ascon_mac.tie"
-import "../../rdu/rdu_ascon_mac.tie"
+import "/std/ascon_mac.tie"
+import "/rdu/rdu_ascon_mac.tie"
 
 func check(name: string, got: string, want: string) {
     if got == want {

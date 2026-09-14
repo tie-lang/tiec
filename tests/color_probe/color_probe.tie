@@ -14,7 +14,7 @@ type tie<logic>
 // 数据平面：全部 f64/string。夹具内联。
 // 编译运行：compiler\tiec.exe tests\color_probe\color_probe.tie
 // ============================================================================
-import "../../std/color.tie" as color
+import "/std/color.tie" as color
 
 // ---- 断言工具（f64 容差）----
 func chk_str(name: string, got: string, want: string) {

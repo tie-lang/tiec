@@ -8,7 +8,7 @@ type tie<logic>
 //   5. inflate 外部 zlib 生成向量（stored/fixed/dynamic 三型，Python 开发期生成）；
 //   6. 负例：坏 zlib 头 / 坏 gzip 魔数 / 坏 adler 尾 → 返回 false 不挂死。
 // 期望全部 PASS / exit 0。
-import "../../std/zlib.tie" as zlib
+import "/std/zlib.tie" as zlib
 
 var fails: i64 = 0
 

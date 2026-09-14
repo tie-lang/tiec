@@ -6,7 +6,7 @@ type tie<logic>
 //   2. `?` 解包类型引导（node_types[id] = Ok payload 类型）
 //   3. panic("消息") 语句：打印消息并退出
 //   4. string payload 解包（inttoptr 还原）
-import "../../std/result.tie"
+import "/std/result.tie"
 
 func desc(r: Result<i64, string>) -> string {
     switch r {

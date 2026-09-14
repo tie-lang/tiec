@@ -6,8 +6,8 @@ type tie<logic>
 // 参数可用、enum 模板参数不可用——语义层缺口，见 error-model.md §10）。本探针
 // 用非泛型组合子（具体 Result<i64,string>）验证组合子机制全链路：
 // switch 解构 payload 绑定 + fn 类型参数 + Result 构造/透传。
-import "../../std/result.tie"
-import "../../std/assert.tie"
+import "/std/result.tie"
+import "/std/assert.tie"
 using assert;
 
 // 非泛型组合子：map（Ok 转换 / Err 透传）

@@ -8,8 +8,8 @@ type tie<logic>
 //   5. 模块级 id 自增；
 //   6. 真实 UDP 查询（环境变量 TIE_DNS_LIVE=1 才执行，默认跳过）。
 // 期望全部 PASS / exit 0。
-import "../../std/dns.tie" as dns
-import "../../std/string.tie" as str
+import "/std/dns.tie" as dns
+import "/std/string.tie" as str
 
 var fails: i64 = 0
 

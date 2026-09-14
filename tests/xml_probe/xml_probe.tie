@@ -17,10 +17,10 @@ type tie<logic>
 // 数据平面：全 string（UTF-8）；无字节表。夹具全部内联（不入库）。
 // 编译运行：compiler\tiec.exe tests\xml_probe\xml_probe.tie（勿用根旧 tiec3.exe）
 // ============================================================================
-import "../../ext/xml/xml.tie" as xml
-import "../../ext/html/token.tie" as mltok
-import "../../std/string.tie" as str
-import "../../std/time.tie" as time
+import "/ext/xml/xml.tie" as xml
+import "/ext/html/token.tie" as mltok
+import "/std/string.tie" as str
+import "/std/time.tie" as time
 
 // ---- 断言工具 ----
 func chk(name: string, got: string, want: string) {

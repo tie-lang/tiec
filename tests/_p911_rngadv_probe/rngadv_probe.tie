@@ -9,8 +9,8 @@ type tie<logic>
 //   6. crypto：crypto_bytes → 系统 CSPRNG（bcrypt.dll::BCryptGenRandom，运行期动态
 //      加载，与 csprng 同源同契约）长度正确、非全零；n<=0 → 空表哨兵。
 //   7. 种子派生：seed_str 确定性；new_str 同串同序；new_entropy 熵驱动可用。
-import "../../std/rng_adv.tie" as rng
-import "../../std/random.tie" as rnd
+import "/std/rng_adv.tie" as rng
+import "/std/random.tie" as rnd
 
 var fails: i64 = 0
 

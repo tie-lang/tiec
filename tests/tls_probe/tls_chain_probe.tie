@@ -13,13 +13,13 @@ type tie<logic>
 // 前置：openssl 3.x 在 PATH；打包版默认 config 路径损坏（Strawberry），故所有
 // req 生成命令须显式 -config tests/tls_probe/_openssl.cnf。
 // ============================================================================
-import "../../ext/tls/tool.tie" as tbt
-import "../../ext/tls/der.tie" as der
-import "../../ext/tls/x509.tie" as x509
-import "../../ext/tls/chain.tie" as chn
-import "../../ext/tls/ca.tie" as ca
-import "../../std/process.tie" as proc
-import "../../std/fs.tie" as fs
+import "/ext/tls/tool.tie" as tbt
+import "/ext/tls/der.tie" as der
+import "/ext/tls/x509.tie" as x509
+import "/ext/tls/chain.tie" as chn
+import "/ext/tls/ca.tie" as ca
+import "/std/process.tie" as proc
+import "/std/fs.tie" as fs
 
 var fails: i64 = 0
 

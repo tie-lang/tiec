@@ -20,9 +20,9 @@ type tie<logic>
 // 运行：先按 tiec 编译 build.tie → build.exe（探针依赖它做干净重建），再编本探针运行。
 // Run: pre-compile ext/gfx/skia/build.exe, then compile+run this probe.
 
-import "../../std/process.tie" as process
-import "../../std/fs.tie" as fs
-import "../../ext/config.tie" as cfg
+import "/std/process.tie" as process
+import "/std/fs.tie" as fs
+import "/ext/config.tie" as cfg
 
 // ---------- 字符串工具（全部内联，避免多余 std import——fs+sort co-import 有运作缺陷） ----------
 func to_bs(s: string) -> string {

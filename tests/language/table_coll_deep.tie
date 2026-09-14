@@ -12,7 +12,7 @@ type tie<logic>
 //   PASS stats / PASS pred / PASS map_hof / PASS map_any
 // ============================================================
 
-import "../../std/collection.tie"
+import "/std/collection.tie"
 
 func is_even(x: i64) -> bool {
     return x % 2 == 0

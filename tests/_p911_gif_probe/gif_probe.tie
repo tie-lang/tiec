@@ -7,7 +7,7 @@ type tie<logic>
 //   3. encode(rgb, palette) → decode → 经 palette 还原 RGB，颜色逐点一致；
 //   4. 负例：坏魔数 / 截断 → ok=false 不挂死。
 // 期望全部 PASS / exit 0。
-import "../../std/gif.tie" as gif
+import "/std/gif.tie" as gif
 
 var fails: i64 = 0
 

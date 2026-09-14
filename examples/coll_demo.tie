@@ -7,8 +7,8 @@ type tie<logic>
 //   strset: 2 / true
 //   deque: 1 / 3 / 0 / 3 / 2 / 2
 
-import "../std/set.tie"
-import "../std/deque.tie"
+import "/std/set.tie"
+import "/std/deque.tie"
 
 func main() {
     // ---- set（i64）----

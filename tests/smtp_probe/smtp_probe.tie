@@ -3,9 +3,9 @@ type tie<logic>
 // 全离线确定性探针（不连真实网络）：脚本化假服务器驱动注入会话核心 session()，
 // 覆盖 AUTH LOGIN / AUTH PLAIN / 匿名 / DATA 点填充 / 认证与 MAIL 失败 / base64 端到端。
 // 期望全部 PASS / exit 0。
-import "../../std/encoding.tie" as enc
-import "../../std/string.tie" as str
-import "../../std/smtp.tie" as smtp
+import "/std/encoding.tie" as enc
+import "/std/string.tie" as str
+import "/std/smtp.tie" as smtp
 
 var fails: i64 = 0
 

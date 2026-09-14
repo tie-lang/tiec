@@ -16,8 +16,8 @@ type tie<logic>
 // 解引用。字节序 = Skia N32 premul（x86 little-endian）：内存 [B,G,R,A]。
 // 期望全部 PASS / exit 0。
 
-import "../../ext/gfx/gfx.tie" as gfx
-import "../../ext/gfx/thunk_binding.tie" as tb
+import "/ext/gfx/gfx.tie" as gfx
+import "/ext/gfx/thunk_binding.tie" as tb
 using tb;
 
 var W: i64 = 96

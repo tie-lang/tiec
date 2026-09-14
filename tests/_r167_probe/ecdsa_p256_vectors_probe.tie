@@ -16,7 +16,7 @@ type tie<logic>
 // 性能纪律：向量循环复用预分配缓冲，无 O(n²) 字符串累积。
 // ============================================================================
 
-import "../../std/ecdsa_p256.tie" as ep
+import "/std/ecdsa_p256.tie" as ep
 
 // RFC 6979 A.2.5 固定私钥
 var xkey: string = "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721"

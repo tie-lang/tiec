@@ -1,7 +1,7 @@
-import "../../std/result.tie"
-import "../../std/assert.tie"
-import "../../std/fs.tie"
-import "../../std/path.tie"
+import "/std/result.tie"
+import "/std/assert.tie"
+import "/std/fs.tie"
+import "/std/path.tie"
 using assert;
 using fs;
 using path;

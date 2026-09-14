@@ -15,7 +15,7 @@ type tie<logic>
 // 不与并发子代理改 compiler/ 冲突。p.6.8.11 只新增 tie 模块（app.tie / port.tie）+ 探针，
 // 不改 thunk.cpp / win.h / win.cpp（同 6.8.10 惯例，thunk.obj + win.obj 并入探针 exe）。
 
-import "../../std/process.tie" as process
+import "/std/process.tie" as process
 
 func logmsg(m: string) {
     println("[build_p6811.tie] " + m)

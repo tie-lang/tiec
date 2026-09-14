@@ -18,8 +18,8 @@ type tie<logic>
 // 断言 110+ 条；全 PASS 后最后一行打印 done（exit 0）。
 // 编译运行：compiler\tiec.exe tests\svg_probe\svg_probe.tie
 // ============================================================================
-import "../../ext/xml/xml.tie" as xml
-import "../../ext/svg/svg.tie" as svg
+import "/ext/xml/xml.tie" as xml
+import "/ext/svg/svg.tie" as svg
 
 // ---- 断言工具 ----
 func chk(name: string, got: string, want: string) {

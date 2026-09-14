@@ -10,9 +10,9 @@ type tie<logic>
 // 同时命中。本探针实现标准行为（secret 先 base64url 解码为 64 字节密钥；header
 // 固定紧凑 {"alg":"HS256","typ":"JWT"}），对任务给定的紧凑 header/payload 计算
 // 出**正确**签名（d6nM...），并断言 encode 精确等于该正确 token。详见报告。
-import "../../std/jwt.tie" as jwt
-import "../../std/time.tie" as time
-import "../../std/utf.tie" as utf
+import "/std/jwt.tie" as jwt
+import "/std/time.tie" as time
+import "/std/utf.tie" as utf
 
 var fails: i64 = 0
 

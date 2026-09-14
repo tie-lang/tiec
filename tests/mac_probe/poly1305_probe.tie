@@ -2,7 +2,7 @@ type tie<logic>
 // poly1305 探针：RFC 8439 §2.5.2 + 边界向量（全零 key、空消息、多块消息）。
 // key 以 64 位 hex 传（32 字节密钥 r||s）；msg 为原始字符串。
 // 期望输出：四组 PASS + "poly1305 探针全部通过"。
-import "../../std/poly1305.tie"
+import "/std/poly1305.tie"
 using poly;
 
 func check(name: string, got: string, want: string) {

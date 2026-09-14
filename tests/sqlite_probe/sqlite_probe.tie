@@ -3,7 +3,7 @@ type tie<logic>
 // 全离线确定性探针：只用内存库 ":memory:"（不落盘、不联网），覆盖 create/insert/
 // select、列名/列数、多行遍历、错误 SQL（负码 + last_err 非空）、close。
 // 期望全部 PASS / exit 0（main 正常返回）。
-import "../../std/sqlite.tie" as sqlite
+import "/std/sqlite.tie" as sqlite
 
 var fails: i64 = 0
 var asserts: i64 = 0

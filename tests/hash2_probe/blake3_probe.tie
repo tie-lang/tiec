@@ -2,7 +2,7 @@ type tie<logic>
 // blake3-256 探针：空串/abc + 块边界（单块 55/56/64、多块单 chunk 65/128/129、
 // 256；另含一个多 chunk 树形长度 2048）。向量来源：blake3 官方参考库（Python
 // blake3 包，b3sum 同源）——列表见 tests/hash2_probe/gen_vectors.py。
-import "../../std/blake3.tie"
+import "/std/blake3.tie"
 using blake3;
 
 func check(name: string, got: string, want: string) {

@@ -4,7 +4,7 @@ type tie<logic>
 // 行内标记（粗/斜/链接/行内代码嵌在段落块）、表格行列断言、代码块原样保留
 // （含换行/空格/语言标注）、畸形容错（空输入、未闭合代码块、孤立/错位符号）。
 // 期望逐条 PASS，最后一行 done，exit 0。
-import "../../std/markdown.tie" as md
+import "/std/markdown.tie" as md
 
 var fails: i64 = 0
 

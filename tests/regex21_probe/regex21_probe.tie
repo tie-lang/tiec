@@ -16,7 +16,7 @@ type tie<logic>
 // 数据平面：全 string/bool/i64。夹具内联。
 // 编译运行：compiler\tiec.exe tests\regex21_probe\regex21_probe.tie
 // ============================================================================
-import "../../std/regex.tie" as regex
+import "/std/regex.tie" as regex
 
 func chk_true(name: string, v: bool) {
     if v {

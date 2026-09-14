@@ -19,7 +19,7 @@ type tie<logic>
 //   探针自用 ed25519 的 keygen/sign（命名空间前缀 ed25519.，无需 using）。
 
 import "../../compiler/keel/keel_auditor.tie"
-import "../../std/ed25519.tie"
+import "/std/ed25519.tie"
 
 var fails: i64 = 0
 

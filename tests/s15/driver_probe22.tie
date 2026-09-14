@@ -1,6 +1,6 @@
 type tie<logic>
 // S1.5 探针18：probe17 + if str_len(rest) == 0 块（rest 保持字面量，无 has_prefix 调用）
-import "../../std/string.tie"
+import "/std/string.tie"
 func slice(s: string, start: i64, end: i64) -> string {
     var out: string = ""
     var i: i64 = start

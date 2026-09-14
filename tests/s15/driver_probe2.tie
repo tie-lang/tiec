@@ -1,7 +1,7 @@
 type tie<logic>
 // tests/s15/driver_probe2.tie —— 1:1 复现 driver.tie scan_header（裸顶层函数形态）
 // 目的：定位裸函数形态下 ln 被移动的精确路径
-import "../../std/string.tie"
+import "/std/string.tie"
 
 var g_role: string = "logic"
 

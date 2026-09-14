@@ -1,7 +1,7 @@
 type tie<logic>
 // sha1 探针：FIPS 180-1 向量（空串/abc）+ 块边界。向量来源：Python hashlib.sha1。
 // 注意该算法已可碰撞，仅遗留互操作——请勿用于安全场景。
-import "../../std/sha1.tie"
+import "/std/sha1.tie"
 using sha1;
 func check(name: string, got: string, want: string) {
     if got == want { println("PASS " + name) }

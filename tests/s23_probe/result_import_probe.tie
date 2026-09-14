@@ -6,7 +6,7 @@ type tie<logic>
 //   2. Result.Ok(42) / Result.Err("bad") 构造（string payload）
 //   3. Option.Some(1) / Option.None 构造
 //   4. 跨文件泛型 enum 单态化（Result<i64,string> 双参数）
-import "../../std/result.tie"
+import "/std/result.tie"
 
 func desc(r: Result<i64, string>) -> string {
     switch r {

@@ -1,7 +1,7 @@
 type tie<logic>
 // p.6.1.8 公网 https 回归探针：httpc.get_bytes 对多个 https 目标全量正文。
 // 修复前 https 走 ext/tls 公网握手即崩（0xC0000005）；修复后 3 站全量正文可下载。
-import "../../std/httpc.tie" as httpc
+import "/std/httpc.tie" as httpc
 
 func test(url: string) {
     println("== " + url + " ==")

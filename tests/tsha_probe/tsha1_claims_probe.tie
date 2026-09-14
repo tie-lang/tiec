@@ -8,7 +8,7 @@ type tie<logic>
 //       base16 行 == 状态池前缀 b0 字节（同位关系），且 2·b0·4 ≥ n·L48·0.98
 //       （输出位 ≈ 名义位；L48 = log2(48) ≈ 5.5849625007，0.98 容差系数）；
 //   (d) n=48/69/92 三档升档：tsha1f("abc",48,16)、69、92 两两不同。
-import "../../std/tsha1.tie" as tsha
+import "/std/tsha1.tie" as tsha
 
 var PASS_COUNT: table<i64>
 

@@ -3,8 +3,8 @@ type tie<logic>
 // 运行：format_demo.exe → 打印各格式化结果，并用断言核对期望值
 // M2.1 起 std 库使用命名空间形式：format.format_int / assert.assert 等。
 
-import "../std/format.tie"
-import "../std/assert.tie"
+import "/std/format.tie"
+import "/std/assert.tie"
 
 func main() {
     // ---- format.format_int：委托 to_string ----

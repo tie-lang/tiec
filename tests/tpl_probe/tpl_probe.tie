@@ -3,9 +3,9 @@ type tie<logic>
 // 全离线确定性探针：变量/缺值容错、if/else、逻辑短路、for（含 list 编码约定）、
 // 原文透传、畸形容错、比较 < >、字面量、200KB 性能、嵌套混合。
 // 期望全部 PASS / exit 0。
-import "../../std/tpl.tie" as tpl
-import "../../std/string.tie" as str
-import "../../std/time.tie" as time
+import "/std/tpl.tie" as tpl
+import "/std/string.tie" as str
+import "/std/time.tie" as time
 
 var fails: i64 = 0
 

@@ -1,7 +1,7 @@
 type tie<logic>
 // siphash（SipHash-2-4）探针：key=0 多向量 + 块边界（0/3/55/56/64/65/128/129）。
 // 向量来源：参考 siphashc（SipHash-2-4）交叉核对，列表见 gen_vectors.py。
-import "../../std/siphash.tie"
+import "/std/siphash.tie"
 using siph;
 func check(name: string, got: string, want: string) {
     if got == want { println("PASS " + name) }

@@ -7,8 +7,8 @@ type tie<logic>
 // - lookup(id) 对未登记 id 返回空串 "" 哨兵（编译器侧 -1 是"无名字"另一哨兵）；
 // - 池为模块级全局状态：跨函数调用 id 稳定。
 // 预期输出：intern 验收通过（全部断言通过，无 assert 失败退出）。
-import "../../std/assert.tie"
-import "../../std/intern.tie"
+import "/std/assert.tie"
+import "/std/intern.tie"
 using intern;
 using assert;
 

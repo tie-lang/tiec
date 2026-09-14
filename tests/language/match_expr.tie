@@ -16,8 +16,8 @@ type tie<logic>
 //   zero / one / many / greet / 15 / -1 / pos-one / zero / other /
 //   [one] / inner-three
 // ============================================================
-import "../../std/result.tie"
-import "../../std/assert.tie"
+import "/std/result.tie"
+import "/std/assert.tie"
 using assert;
 
 // 整数 switch 表达式（值/区间/`_` 通配）

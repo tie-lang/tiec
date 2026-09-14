@@ -4,7 +4,7 @@ type tie<logic>
 // 注：tie 编译期对超长表达式链（如 10 段 to_string 拼接）有栈深度限制，
 // 打印用短拼接；断言用下标读取。
 
-import "../std/optsearch.tie"
+import "/std/optsearch.tie"
 
 func main() {
     var ms = opt.merge_sort([5,2,8,1,9,3,7,4,6,0])

@@ -7,12 +7,12 @@ type tie<logic>
 //   - 等价：多字节（中文/é/😀）键与值的解析/序列化/行内解析逐字节一致；
 //     \uXXXX 代理对 / \b \f 转义（r.1.5.3 语义）不得回归。
 // 编译运行：compiler\tiec.exe tests\_r13_probe\r13_perf_probe.tie -o <exe> && <exe>
-import "../../std/json.tie" as json
-import "../../std/yaml.tie" as yaml
-import "../../std/markdown.tie" as md
-import "../../std/string.tie" as str
-import "../../std/time.tie" as time
-import "../../std/utf.tie" as utf
+import "/std/json.tie" as json
+import "/std/yaml.tie" as yaml
+import "/std/markdown.tie" as md
+import "/std/string.tie" as str
+import "/std/time.tie" as time
+import "/std/utf.tie" as utf
 
 func chk(name: string, got: string, want: string) {
     if got == want {

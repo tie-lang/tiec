@@ -2,7 +2,7 @@ type tie<logic>
 // hmac 探针：RFC 4231 前三个验证向量（HMAC-SHA256）。
 // 输入约定：hmac.hmac_sha256 的 key/msg 均为 hex 小写字符串（字节级）。
 // 期望输出：三组 PASS + "hmac 探针全部通过"。
-import "../../std/hmac.tie"
+import "/std/hmac.tie"
 using hmac;
 
 // 便捷断言：打印 PASS/FAIL 并比较

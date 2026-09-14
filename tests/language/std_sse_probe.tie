@@ -13,7 +13,7 @@ type tie<logic>
 //   python tests\_p6_probe\sse_server.py        （127.0.0.1:19180）
 // 编译运行：compiler\tiec.exe tests\language\std_sse_probe.tie（勿用根旧 tiec3.exe）
 // ============================================================================
-import "../../std/sse.tie" as sse
+import "/std/sse.tie" as sse
 
 func chk(name: string, got: string, want: string) {
     if got == want {

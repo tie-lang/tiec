@@ -10,8 +10,8 @@ type tie<logic>
 //   5. 超容量 → -1 + err_msg 非空；非法 ECL → -1。
 //   6. to_png 与 png.decode 回环。
 // 期望全部 PASS / exit 0，最后一行 done。
-import "../../ext/qr/qr.tie" as qr
-import "../../ext/png/png.tie" as png
+import "/ext/qr/qr.tie" as qr
+import "/ext/png/png.tie" as png
 
 var fails: i64 = 0
 

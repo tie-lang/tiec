@@ -5,8 +5,8 @@ type tie<logic>
 // table<string> 构造读写、字符串元素容器释放路径（大量临时表无泄漏/无 AV）、
 // fs+sort 同程序 co-import 大负载。
 // 确定性：夹具根目录固定,C:/Users/Jiro/AppData/Local/Temp/tie_fsstr_fx；PASS/FAIL/done,exit 0。
-import "../../std/fs.tie"
-import "../../std/sort.tie"
+import "/std/fs.tie"
+import "/std/sort.tie"
 using fs;
 using sort;
 

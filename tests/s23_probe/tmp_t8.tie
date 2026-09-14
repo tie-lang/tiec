@@ -4,7 +4,7 @@ type tie<logic>
 //   1. Option.Some(v) 的 `?` 解包 → 拿到 payload
 //   2. Option.None 的 `?` 解包 → 提前 return（返回类型为 Option<T> 的函数）
 //   3. 混合使用：Result 与 Option 各自独立解包链
-import "../../std/result.tie"
+import "/std/result.tie"
 
 func desc(r: Option<i64>) -> string {
     switch r {

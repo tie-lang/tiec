@@ -1,7 +1,7 @@
 type tie<logic>
 // blake2 探针：覆盖 blake2s-256 与 blake2b-512 的 RFC 7693 向量 + 长消息与
 // 块边界（55/56/63/64/128/257 字节，触及满块/末块/零填充分支）。
-import "../../std/blake2.tie"
+import "/std/blake2.tie"
 using blake;
 
 func check(name: string, got: string, want: string) {

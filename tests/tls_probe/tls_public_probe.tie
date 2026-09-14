@@ -3,9 +3,9 @@ type tie<logic>
 // 期望行为：握手成功的域返回 handle>0 且可收发应用数据；不兼容域优雅失败（handle<0），
 // 绝不进程崩溃 0xC0000005（修复前 cloudflare 等 100% 崩——根因见
 // docs/bugreports/2026-09-05-p6.1.8-tls-https-public-av.md §七）。
-import "../../ext/tls/tls.tie" as tls
-import "../../ext/tls/tool.tie" as tbt
-import "../../std/net.tie" as net
+import "/ext/tls/tls.tie" as tls
+import "/ext/tls/tool.tie" as tbt
+import "/std/net.tie" as net
 
 func test_host(host: string) {
     var s = tls.connect(host, 443)

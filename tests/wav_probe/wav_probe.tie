@@ -7,7 +7,7 @@ type tie<logic>
 //   4. 混音 mix / 增益 gain（钳位）行为；
 //   5. 非法/截断输入返回 ok=false。
 // 期望全部 PASS / exit 0。
-import "../../ext/audio/wav.tie" as wav
+import "/ext/audio/wav.tie" as wav
 
 var fails: i64 = 0
 

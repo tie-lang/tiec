@@ -2,7 +2,7 @@ type tie<logic>
 // version_demo.tie：std/version semver 版本库演示
 // 编译运行：cargo run -p tie -- examples/version_demo.tie
 
-import "../std/version.tie"
+import "/std/version.tie"
 
 func main() {
     // ---- 版本比较 ----

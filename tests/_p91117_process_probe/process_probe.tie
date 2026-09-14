@@ -6,7 +6,7 @@ type tie<logic>
 //   3. 显式退出码命令（exit 7）→ timed_out=false、exit==7；
 //   4. exec_code_timeout 别名与 timeout_run 等价。
 // 期望全部 PASS / exit 0。
-import "../../std/process.tie" as process
+import "/std/process.tie" as process
 
 var fails: i64 = 0
 

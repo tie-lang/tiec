@@ -4,7 +4,7 @@ type tie<logic>
 // 说明：argon2-cffi 本机不可装，无权威向量可比对；本实现为简化单通道自洽版，
 //   不承诺与 RFC 9106 正式实现逐字节一致（见 ext/argon2.tie 文件头）。故探针
 //   以「确定性 + 微变敏感性 + 长度」作为功能与安全性质的最小门槛探针。
-import "../../ext/argon2.tie"
+import "/ext/argon2.tie"
 using argon2;
 
 func show(name: string, cond: bool) {

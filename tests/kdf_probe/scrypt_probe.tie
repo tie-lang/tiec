@@ -1,7 +1,7 @@
 type tie<logic>
 // scrypt 探针：RFC 7914 权威向量 + p>1/r>1 交叉向量（Python ishlib） + 确定性。
 // 探针用保守参数 N=16（约 2 KiB 内存）确保纯 tie 可跑；生产建议 N≥2^14。
-import "../../ext/scrypt.tie"
+import "/ext/scrypt.tie"
 using scrypt;
 
 func check(name: string, got: string, want: string) {

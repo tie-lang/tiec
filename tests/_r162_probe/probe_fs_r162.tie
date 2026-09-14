@@ -8,8 +8,8 @@ type tie<logic>
 // stat / unlink-rmdir）。
 // 夹具：相对路径 _r162_fx/（当前工作目录下；运行前清理旧残留）。
 // 输出 PASS/FAIL 逐项 + done,exit 0。
-import "../../std/fs.tie"
-import "../../std/result.tie"
+import "/std/fs.tie"
+import "/std/result.tie"
 using fs;
 
 var asserts: i64 = 0

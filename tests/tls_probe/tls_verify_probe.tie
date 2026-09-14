@@ -14,14 +14,14 @@ type tie<logic>
 // 运行方式：在仓库根目录运行（相对路径约定，同 tls_chain_probe）。
 // 前置：openssl 3.x 在 PATH（同 tls_chain_probe）。
 // ============================================================================
-import "../../ext/tls/tls.tie" as tls
-import "../../ext/tls/tool.tie" as tbt
-import "../../ext/tls/x509.tie" as x509
-import "../../ext/tls/ca.tie" as ca
-import "../../std/net.tie" as net
-import "../../std/process.tie" as proc
-import "../../std/fs.tie" as fs
-import "../../std/time.tie" as time
+import "/ext/tls/tls.tie" as tls
+import "/ext/tls/tool.tie" as tbt
+import "/ext/tls/x509.tie" as x509
+import "/ext/tls/ca.tie" as ca
+import "/std/net.tie" as net
+import "/std/process.tie" as proc
+import "/std/fs.tie" as fs
+import "/std/time.tie" as time
 
 var fails: i64 = 0
 

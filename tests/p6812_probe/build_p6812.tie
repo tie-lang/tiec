@@ -7,7 +7,7 @@ type tie<logic>
 // thunk.obj/win.obj/skia.lib，仅需 trm_lite.a（table<T> 运行时）与 compiler-rt。
 // 编译器固定用稳定现役 tiec_7A6100.exe（SHA256 7A6100FC…BC44），不与 RCA 子代理并发改 compiler/。
 
-import "../../std/process.tie" as process
+import "/std/process.tie" as process
 
 func logmsg(m: string) {
     println("[build_p6812.tie] " + m)

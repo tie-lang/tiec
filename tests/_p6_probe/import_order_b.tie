@@ -1,8 +1,8 @@
 type tie<logic>
 // p.6.2.2 探针：import result.tie 与 assert.tie 的扫描顺序依赖
 // 场景 B：assert 在 result 之前（文档称此为破坏顺序）
-import "../../std/assert.tie"
-import "../../std/result.tie"
+import "/std/assert.tie"
+import "/std/result.tie"
 
 func read_id() -> Result<i64, string> {
     return Result.Ok(42)

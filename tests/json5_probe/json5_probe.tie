@@ -15,7 +15,7 @@ type tie<logic>
 // 数据平面：节点 id / string。夹具内联。
 // 编译运行：compiler\tiec.exe tests\json5_probe\json5_probe.tie
 // ============================================================================
-import "../../std/json5.tie" as json5
+import "/std/json5.tie" as json5
 
 // ---- 断言工具 ----
 func chk_i64(name: string, got: i64, want: i64) {

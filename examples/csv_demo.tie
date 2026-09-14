@@ -4,8 +4,8 @@ type tie<logic>
 // 注意：csv.tie 内部已展开 string.tie，本文件不要再重复导入 string.tie
 // （当前 import 展开不做去重，重复导入会导致 str 命名空间内函数重复定义）。
 
-import "../std/csv.tie"
-import "../std/assert.tie"
+import "/std/csv.tie"
+import "/std/assert.tie"
 
 func main() {
 // ---- str.split 基础（string.tie，随 csv.tie 展开）----

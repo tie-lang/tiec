@@ -1,7 +1,7 @@
 type tie<logic>
 // chacha20 探针：RFC 8439 §2.3.2 官方向量 + 独立 Python 参考向量 + 往返（流自逆）。
 // key/nonce/msg 均以 hex 传。期望输出：全部 PASS + "chacha20 探针全部通过"。
-import "../../ext/chacha20.tie"
+import "/ext/chacha20.tie"
 using chacha;
 
 func check(name: string, got: string, want: string) {

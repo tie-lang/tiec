@@ -1,6 +1,6 @@
 type tie<logic>
 // S1.5 探针17：probe16 结构 + scan_header(s: string) -> i64 签名（带参带返回）
-import "../../std/string.tie"
+import "/std/string.tie"
 func slice(s: string, start: i64, end: i64) -> string {
     var out: string = ""
     var i: i64 = start

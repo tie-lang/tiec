@@ -8,7 +8,7 @@ type tie<logic>
 //   4) render_error / render_err_proto：error[E#####] @行:列: 格式；
 //   5) 警告目录：warn_code_of / render_warning（warning[W#####] + 坏处建议）。
 import "../../compiler/frontend/diagcode.tie"
-import "../../std/string.tie"
+import "/std/string.tie"
 
 var g_fails: i64 = 0
 

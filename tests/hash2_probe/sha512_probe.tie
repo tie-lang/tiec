@@ -2,7 +2,7 @@ type tie<logic>
 // sha512（FIPS 180-4）探针：向量断言（空串/abc/块边界/长消息）+ sha512_bytes 原始字节路径。
 // 向量来源：FIPS 180-4 标准向量与 Python hashlib.sha512（NIST 参考实现）交叉核对。
 // 覆盖 128 字节块 rate 与 pad10*1 的 0x80 / 128 位长度区边界（100/111/112/113/127/128）。
-import "../../std/sha512.tie"
+import "/std/sha512.tie"
 using sha512;
 
 func check(name: string, got: string, want: string) {

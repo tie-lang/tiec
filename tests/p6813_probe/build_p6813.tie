@@ -17,7 +17,7 @@ type tie<logic>
 // 系统库：user32 gdi32 shell32 dwrite ole32 oleaut32 advapi32 windowscodecs + compiler-rt；
 // CRT 静态 /MT 与 skia.lib 一致。
 
-import "../../std/process.tie" as process
+import "/std/process.tie" as process
 
 func logmsg(m: string) {
     println("[build_p6813.tie] " + m)

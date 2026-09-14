@@ -8,9 +8,9 @@ type tie<logic>
 //   ② δ=整个字节 0x01（某字节 ^ 0x01）：抽样 20 对，均值 ∈ [0.40,0.60]（样本更少放宽）。
 // 消息经二进制安全 string_builder 构造（任意 0..255 字节），与 std/tsha1.tie 及
 // tests/tsha_probe/tsha1_avalanche_probe.tie 的二进制安全惯例一致。
-import "../../std/tsha1.tie"
+import "/std/tsha1.tie"
 using tsha;
-import "../../std/random.tie"
+import "/std/random.tie"
 using rnd;
 
 var PASS_COUNT: table<i64>

@@ -1,7 +1,7 @@
 type tie<logic>
 // P2d 探针：coll 表操作（reverse/to_string/join/sum/product/max/min）
 
-import "../../std/collection.tie"
+import "/std/collection.tie"
 
 func main() {
     var t: table<i64> = [3, 1, 4, 1, 5]

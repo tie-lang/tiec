@@ -10,7 +10,7 @@ type tie<logic>
 //      且不同消息同参数输出不同 —— 印证四档为同一 base 结构、仅参数层(IV/RCON/
 //      S-盒/SPN 强化度)不同而区分（不逐字比对 BLAKE2，因 tsha1 经 trit 位平面扰
 //      动重排，输出基/长不同，属异构换形而非同构等价）。
-import "../../std/tsha1.tie"
+import "/std/tsha1.tie"
 using tsha;
 
 var PASS_COUNT: table<i64>

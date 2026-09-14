@@ -1,7 +1,7 @@
 type tie<logic>
 // P2d-D2 探针：coll 谓词/查找（count_if/any/all/find_index/contains，i64+string）
 
-import "../../std/collection.tie"
+import "/std/collection.tie"
 
 func is_even(x: i64) -> bool {
     return x % 2 == 0

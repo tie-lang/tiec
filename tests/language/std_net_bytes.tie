@@ -9,7 +9,7 @@ type tie<logic>
 // 数据平面验证：全部字节值 0..255 经 recv_bytes/send_bytes 往返无损
 // （tie 字符串不可承载 ≥0x80，二进制必须走字节表——本探针即其地基证明）。
 // 期望输出：PASS / done / exit 0
-import "../../std/net.tie"
+import "/std/net.tie"
 import "../../../trm-lite/core/runtime/tl_runtime_ctx.tie"
 using net;
 

@@ -12,7 +12,7 @@ type tie<logic>
 //   PASS hof / PASS pipe / PASS ops / PASS nested / PASS nested_deep
 // ============================================================
 
-import "../../std/collection.tie"
+import "/std/collection.tie"
 
 func double(x: i64) -> i64 {
     return x * 2

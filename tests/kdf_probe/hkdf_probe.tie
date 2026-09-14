@@ -1,7 +1,7 @@
 type tie<logic>
 // hkdf 探针：RFC 5869 Test Case 1 权威向量 + extract/expand 边界。
 // 输入约定：全部 hex 小写字符串（字节级）。
-import "../../std/hkdf.tie"
+import "/std/hkdf.tie"
 using hkdf;
 
 func check(name: string, got: string, want: string) {

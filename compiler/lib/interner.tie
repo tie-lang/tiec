@@ -122,7 +122,7 @@ type tie<class>
 //   - 哨兵：name_str(-1) == ""；is_valid(-1) == false；
 //   - 预登记：init() 后 intern("main") >= 0。
 
-import "../../std/intern.tie"
+import "/std/intern.tie"
 
 namespace interner {
 

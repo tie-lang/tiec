@@ -8,7 +8,7 @@ type tie<logic>
 //   5. f64 位模式读写回环、f32 普通数回环（含 ±0/±Inf）；
 //   6. 既有 from_ascii / concat 回归（向后兼容）。
 // 期望全部 PASS / exit 0。
-import "../../std/bytes.tie" as bytes
+import "/std/bytes.tie" as bytes
 
 var fails: i64 = 0
 

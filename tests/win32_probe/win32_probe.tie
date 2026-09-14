@@ -6,7 +6,7 @@ type tie<logic>
 //   - env_set 只写探针专属名 TIE_WIN32_PROBE（进程本地，无需恢复）；
 //   - 注册表只读（reg_read HKLM ProductName）。
 // 期望全部 PASS / exit 0。
-import "../../sys/win32.tie" as sys_win32
+import "/sys/win32.tie" as sys_win32
 
 var fails: i64 = 0
 var total: i64 = 0

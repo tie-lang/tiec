@@ -2,7 +2,7 @@ type tie<logic>
 // tests/webp_probe/webp_probe.tie —— p.9.1.1.2 验收：ext/webp（纯 tie VP8L 无损子集）。
 // 全离线确定性探针；因本机无 libwebp，以 encode→decode 纯 tie 回环为验收依据。
 // 期望全部 PASS / exit 0。
-import "../../ext/webp/webp.tie" as webp
+import "/ext/webp/webp.tie" as webp
 
 var fails: i64 = 0
 

@@ -2,7 +2,7 @@ type tie<logic>
 // bigint_probe.tie：bigint 大数库交叉向量探针（Python 整数预生成，硬编码断言）。
 // 覆盖：from/to_hex 往返、add/sub 进位借位、mul 多 limb、divrem、powmod、invmod、
 // and/or/shl/shr/bitlen，及边界（0 除、模 0/模 1、奇偶模、无逆元）。
-import "../../std/bigint.tie"
+import "/std/bigint.tie"
 using bigint;
 
 func chk(name: string, got: string, want: string) {

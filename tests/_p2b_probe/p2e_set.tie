@@ -1,7 +1,7 @@
 type tie<logic>
 // P2e-T1 探针：coll set 集合（add/contains/remove/union/intersect/diff，i64+string）
 
-import "../../std/collection.tie"
+import "/std/collection.tie"
 
 func main() {
     // i64 set：添加去重 + 有序

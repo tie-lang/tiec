@@ -7,9 +7,9 @@ type tie<logic>
 // 局限说明（见 std/json.tie 头注释）：\uXXXX 支持任意合法 Unicode 码点
 // （含代理对合成）；\b \f 按字节构造；浮点输出用 to_string 近似。
 // 预期输出：std_json 验收通过（全部断言通过，无 assert 失败退出）。
-import "../../std/result.tie"
-import "../../std/assert.tie"
-import "../../std/json.tie"
+import "/std/result.tie"
+import "/std/assert.tie"
+import "/std/json.tie"
 using assert;
 using json;
 

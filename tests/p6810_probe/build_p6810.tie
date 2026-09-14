@@ -17,7 +17,7 @@ type tie<logic>
 // 系统库（PostMessageW/SetTimer/GetMessageTime 均 user32，已在链接清单）。
 // 本驱动不改动既有 thunk 构建文件，独立登记 win.obj 源。
 
-import "../../std/process.tie" as process
+import "/std/process.tie" as process
 
 func logmsg(m: string) {
     println("[build_p6810.tie] " + m)

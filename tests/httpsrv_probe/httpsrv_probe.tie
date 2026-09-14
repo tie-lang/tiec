@@ -8,9 +8,9 @@ type tie<logic>
 // 走 net.tcp_send，离线无法注入假 conn）——按任务允许的「降级断言」处理：注册 handler
 // 后仅断言 match_route 返回的路由下标 + 参数表；handler 响应体测试留在服务端循环集成
 // 层（env TIE_HTTPSRV_LIVE=1 的 live 段，默认跳过）。
-import "../../std/http_server.tie" as httpsrv
-import "../../std/jwt.tie" as jwt
-import "../../std/time.tie" as time
+import "/std/http_server.tie" as httpsrv
+import "/std/jwt.tie" as jwt
+import "/std/time.tie" as time
 
 var fails: i64 = 0
 

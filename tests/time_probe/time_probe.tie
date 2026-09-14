@@ -13,7 +13,7 @@ type tie<logic>
 // 数据平面：全部 i64。夹具内联。
 // 编译运行：compiler\tiec.exe tests\time_probe\time_probe.tie
 // ============================================================================
-import "../../std/time.tie" as time
+import "/std/time.tie" as time
 
 func chk_ok(name: string, ok: bool) {
     if ok {

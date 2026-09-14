@@ -17,9 +17,9 @@ type tie<logic>
 // 数据平面：全 string（UTF-8）。夹具全部内联（不入库）。
 // 编译运行：compiler\tiec.exe tests\yaml_probe\yaml_probe.tie
 // ============================================================================
-import "../../std/yaml.tie" as yaml
-import "../../std/string.tie" as str
-import "../../std/time.tie" as time
+import "/std/yaml.tie" as yaml
+import "/std/string.tie" as str
+import "/std/time.tie" as time
 
 // ---- 断言工具 ----
 func chk(name: string, got: string, want: string) {

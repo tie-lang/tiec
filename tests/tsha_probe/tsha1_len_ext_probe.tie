@@ -11,9 +11,9 @@ type tie<logic>
 //   (c) W（字宽）档级边界：f/b/x 的 n=92(64B=128hex) 与 n=96(67B=134hex) 同 W=17 即
 //       同一内部状态 → base16 为同一状态池前缀，n96 前 128 hex == n92 全 128 hex；
 //       f 在 W12→13（n64/69）、W16→17（n88/92）摘要（base16）必不同。
-import "../../std/tsha1.tie"
+import "/std/tsha1.tie"
 using tsha;
-import "../../std/random.tie"
+import "/std/random.tie"
 using rnd;
 
 var PASS_COUNT: table<i64>

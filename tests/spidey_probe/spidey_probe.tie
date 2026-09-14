@@ -3,11 +3,11 @@ type tie<logic>
 // 全离线确定性探针（无网络）：robots 解析/匹配（RFC 9309 子集）、polite 限速
 // （假时钟）、seen 去重（含扩容）、crawl 编排四场景（假抓取）、spidey 入口。
 // 期望全部 PASS / exit 0。
-import "../../ext/spidey/robots.tie" as robots
-import "../../ext/spidey/polite.tie" as polite
-import "../../ext/spidey/seen.tie" as seen
-import "../../ext/spidey/crawl.tie" as crawl
-import "../../ext/spidey/spidey.tie" as spidey
+import "/ext/spidey/robots.tie" as robots
+import "/ext/spidey/polite.tie" as polite
+import "/ext/spidey/seen.tie" as seen
+import "/ext/spidey/crawl.tie" as crawl
+import "/ext/spidey/spidey.tie" as spidey
 
 var fails: i64 = 0
 

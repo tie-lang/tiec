@@ -14,7 +14,7 @@ type tie<logic>
 //   6. 负例形态保留：struct/嵌套 enum 仍编译不过（见 tests/errors/golden/err_064）
 // ============================================================
 
-import "../../std/result.tie"
+import "/std/result.tie"
 
 // ---- 1/2/5: table payload（经泛型 Result 实例化）----
 func read_bytes(path: string) -> Result<table<i64>, string> {

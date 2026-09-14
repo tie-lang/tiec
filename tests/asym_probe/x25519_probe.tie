@@ -3,7 +3,7 @@ type tie<logic>
 // 覆盖：RFC 7748 §5.2 vector 1/2（sk·u → shared）、keygen(sk)=pub（基点 u=9）、
 //   DH 对称性（sk1·pk2 == sk2·pk1）。向量由 gen_vectors.py（PyNaCl 的 scmult, 
 //   RFC 7748 独立实现）生成。
-import "../../std/x25519.tie"
+import "/std/x25519.tie"
 using x25519;
 
 func chk(name: string, got: string, want: string) {

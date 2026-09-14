@@ -1,6 +1,6 @@
 type tie<logic>
-import "../../ext/tls/tool.tie" as tbt
-import "../../ext/tls/der.tie" as der
+import "/ext/tls/tool.tie" as tbt
+import "/ext/tls/der.tie" as der
 
 var fails: i64 = 0
 func t(cond: bool, msg: string) {

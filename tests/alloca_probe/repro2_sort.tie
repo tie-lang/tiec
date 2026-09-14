@@ -4,7 +4,7 @@ type tie<logic>
 // 临时 alloca 未被提升到入口块（g_hoisted_allocas 跨函数累积 bug，见 CHANGELOG p.6.8.14
 // RCA），N≥~2900 时逐迭代动态栈分配 → 0xC00000FD。**本文件用现役 tiec 编译运行预期
 // 栈溢出崩溃（非 exit 0），仅作缺陷复现文档；修复发布后再回归为 PASS。**
-import "../../std/sort.tie" as sort
+import "/std/sort.tie" as sort
 
 func main() {
     var n: i64 = 3000

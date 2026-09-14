@@ -2,7 +2,7 @@ type tie<logic>
 // xxh3-64 探针：空串/abc + 边界（单步 55/56/64、中长 65/128/129、长 256）。
 // 以 xxh3_hex（无符号 16 hex）比对，规避 i64 符号。向量来源：xxHash 官方 /
 // Python xxhash 包（xxh3_64），列表见 tests/hash2_probe/gen_vectors.py。
-import "../../std/xxh3.tie"
+import "/std/xxh3.tie"
 using xxh3;
 
 func check(name: string, got: string, want: string) {

@@ -8,7 +8,7 @@ type tie<logic>
 //   4. crc32/adler32 与已知向量对拍；
 //   5. 非法/截断输入返回 ok=false 不挂死。
 // 期望全部 PASS / exit 0。
-import "../../ext/png/png.tie" as png
+import "/ext/png/png.tie" as png
 
 var fails: i64 = 0
 

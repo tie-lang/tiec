@@ -2,7 +2,7 @@ type tie<logic>
 // pbkdf2 探针：PBKDF2-HMAC-SHA256 三组权威向量（Python hashlib 交叉生成）。
 // 密码 "password"、盐 "salt"、dklen=32；iter=1/2/4096。
 // 覆盖：单块（dklen=32，一个 T 块）+ 迭代拉伸；另加 dklen=33（跨 2 个 T 块，验证截断）。
-import "../../std/pbkdf2.tie"
+import "/std/pbkdf2.tie"
 using pbkdf2;
 
 // ASCII 文本 → hex 小写字符串（逐字节）。

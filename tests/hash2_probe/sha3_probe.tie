@@ -2,7 +2,7 @@ type tie<logic>
 // sha3（Keccak-256/512）探针：正例多向量 + 块边界（空串/abc/55/56/64/65/128/
 // 129/256 字节，触及 pad10*1 的 0x06/0x80 分支与 136/72 字节速率边界）。
 // 向量来源：Python 标准库 hashlib.sha3_256/_512（NIST 参考实现）。
-import "../../std/sha3.tie"
+import "/std/sha3.tie"
 using sha3;
 
 func check(name: string, got: string, want: string) {

@@ -1,3 +1,3 @@
 type tie<class>
-import "../../std/intern.tie"
+import "/std/intern.tie"
 

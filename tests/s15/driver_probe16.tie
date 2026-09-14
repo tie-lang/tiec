@@ -1,6 +1,6 @@
 type tie<logic>
 // S1.5 探针14：probe12 + 表变量 + trim(lines[i])（无 import，无 g_role）
-import "../../std/string.tie"
+import "/std/string.tie"
 
 func slice(s: string, start: i64, end: i64) -> string {
     var out: string = ""

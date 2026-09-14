@@ -5,8 +5,8 @@ type tie<logic>
 // 期望：最近 id=4（[0.5,0.5]），次近 id=3（[1,1]）——输出 "4 / 3"
 // 距离验证：l2([1,0],[0.5,0.5]) = 0.7071；cosine([1,0],[0,1]) = 1.0
 
-import "../ext/vecsearch/flat.tie"
-import "../std/string.tie"
+import "/ext/vecsearch/flat.tie"
+import "/std/string.tie"
 
 func main() {
     var ids: table<i64> = table_new_i64()

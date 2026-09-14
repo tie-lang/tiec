@@ -7,9 +7,9 @@ type tie<logic>
 //   lap 一步计时、summary 按登记序输出。秒级精度下单次耗时多为 0ms（>=0 恒成立）。
 // 预期输出：两轮 [FAIL]（bad/strbad 故意失败）后 reset 清零，最终
 // "3 passed, 0 failed / 测试完成: PASS / ext_test_bench 验收通过"。
-import "../../ext/test.tie"
-import "../../ext/bench.tie"
-import "../../std/string.tie"
+import "/ext/test.tie"
+import "/ext/bench.tie"
+import "/std/string.tie"
 using test;
 using bench;
 using str;

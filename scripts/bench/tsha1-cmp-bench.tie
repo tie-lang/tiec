@@ -20,13 +20,13 @@ type tie<logic>
 //      tsha1-cmp-bench.exe
 // ============================================================================
 
-import "../../std/tsha1.tie" as tsha
+import "/std/tsha1.tie" as tsha
 using tsha;
-import "../../std/sha256.tie" as sha
+import "/std/sha256.tie" as sha
 using sha;
-import "../../std/sha512.tie" as sha512
+import "/std/sha512.tie" as sha512
 using sha512;
-import "../../std/blake2.tie" as blake
+import "/std/blake2.tie" as blake
 using blake;
 
 var total_chars: i64 = 0;   // 累计输出字符数（被最终 println 消费，防 -O2 消除哈希调用）

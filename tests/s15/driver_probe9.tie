@@ -1,6 +1,6 @@
 type tie<logic>
 // S1.5 探针9：probe8 + import std/string（无裸函数定义）
-import "../../std/string.tie"
+import "/std/string.tie"
 func main() {
     var i: i64 = 0
     while i < 1 {

@@ -7,7 +7,7 @@ type tie<logic>
 //   3. `a?[i]` 载荷非表 → 编译错误
 //   4. `?.` 左侧非 Option → 编译错误
 // ============================================================
-import "../../std/result.tie"
+import "/std/result.tie"
 
 func main() {
     // 负例 1：?: 左侧非 Option（i64）

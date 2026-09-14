@@ -3,8 +3,8 @@ type tie<logic>
 // 直接 table_push(ref参数, v) / 下标交换 / 原地算法（编译器按目标表元素静态
 // 类型选桥，不再误选 string 桥）。期望输出逐行：
 //   1 42 / 1 hi / 3 1 / 3 2 / 3 3 / 3 a / 3 b / 3 c / 5 / 4 1 2 3
-import "../../std/collection.tie"
-import "../../std/sort.tie"
+import "/std/collection.tie"
+import "/std/sort.tie"
 
 func push_i64(t: ref table<i64>, v: i64) {
     table_push(t, v)

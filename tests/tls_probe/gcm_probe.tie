@@ -10,8 +10,8 @@ type tie<logic>
 //   3) 篡改 ct / tag / aad 任一字节 → open 返回空表（认证失败）
 // 期望输出：全部 PASS + "gcm 探针全部通过"。
 // ============================================================================
-import "../../ext/tls/gcm.tie"
-import "../../ext/tls/tool.tie"
+import "/ext/tls/gcm.tie"
+import "/ext/tls/tool.tie"
 
 // hex 字符串 → 字节表。
 func bh(h: string) -> table<i64> {

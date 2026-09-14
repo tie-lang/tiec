@@ -3,7 +3,7 @@ type tie<logic>
 // 本环境无 libavif/libaom，本库不实现伪解码；探针断言其诚实登记状态：
 //   available()==false；decode 对任意输入恒 ok=false（绝不伪解码）；
 //   probe() 返回稳定诊断串。期望全部 PASS / exit 0。
-import "../../ext/avif/avif.tie" as avif
+import "/ext/avif/avif.tie" as avif
 
 var fails: i64 = 0
 

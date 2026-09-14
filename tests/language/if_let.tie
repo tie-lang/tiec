@@ -17,7 +17,7 @@ type tie<logic>
 // 期望输出（逐行，与 println 一一对应）：
 //   42 / none2 / many42 / 7 / err2 / 3 / ab / 9 / chain-2
 // ============================================================
-import "../../std/result.tie"
+import "/std/result.tie"
 
 enum Point2 {
     Pt(i64, string)

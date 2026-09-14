@@ -8,8 +8,8 @@ type tie<logic>
 //   3. RS 纠错：qrdec.correct 全码字流（data||ecc）对承载体达 5 处字节损坏 →
 //      数据码字完整还原（v1-Q：13/13）。
 //   4. 负例：非法尺寸 / 垃圾矩阵 → 返回 ""（不挂死）。
-import "../../ext/qr/qr.tie" as qr
-import "../../ext/qrdec/qrdec.tie" as qrdec
+import "/ext/qr/qr.tie" as qr
+import "/ext/qrdec/qrdec.tie" as qrdec
 
 var fails: i64 = 0
 

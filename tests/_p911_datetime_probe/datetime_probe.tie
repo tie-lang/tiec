@@ -6,7 +6,7 @@ type tie<logic>
 //   3. 跨月/闰年/跨年算术（add_seconds 回绕）与闰年判定；
 //   4. 时区偏移换算（同一 epoch，不同 offset 墙钟一致、UTC 反解正确）。
 // 期望全部 PASS / exit 0。
-import "../../std/datetime.tie" as datetime
+import "/std/datetime.tie" as datetime
 
 var fails: i64 = 0
 

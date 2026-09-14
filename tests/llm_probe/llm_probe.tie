@@ -3,9 +3,9 @@ type tie<logic>
 // 全离线确定性探针（不连真实网络）：脚本化假服务器经注入收发函数对驱动 complete，
 // 覆盖请求 JSON 构造精确断言 / SSE 行解析 / content 提取（流式+非流式）/ 注入完整
 // 会话成功拼接 / 非 200 与坏 JSON 失败负码。
-import "../../std/string.tie" as str
-import "../../std/json.tie" as json
-import "../../std/llm.tie" as llm
+import "/std/string.tie" as str
+import "/std/json.tie" as json
+import "/std/llm.tie" as llm
 
 var fails: i64 = 0
 

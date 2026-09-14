@@ -1,5 +1,5 @@
 type tie<logic>
-import "../../std/ed25519.tie"
+import "/std/ed25519.tie"
 using ed25519;
 func main() {
     var i: i64 = 0

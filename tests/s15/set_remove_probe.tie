@@ -1,6 +1,6 @@
 type tie<logic>
 // tests/s15/set_remove_probe.tie —— 复现 set.remove 内部 set.find 的移动误报
-import "../../std/set.tie"
+import "/std/set.tie"
 using set;
 
 func main() {

@@ -1,7 +1,7 @@
 type tie<logic>
 // tests/s15/driver_probe.tie —— 复现 driver.tie scan_header 的 has_prefix(str.clone(ln)) 模式
 // 目的：确定 str.clone 点号调用在顶层裸函数内是否触发借用特判
-import "../../std/string.tie"
+import "/std/string.tie"
 
 func has_prefix(s: string, prefix: string) -> bool {
     return str_len(s) >= str_len(prefix) && str.slice(s, 0, str_len(prefix)) == prefix

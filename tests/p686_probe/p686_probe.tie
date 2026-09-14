@@ -15,7 +15,7 @@ type tie<logic>
 // （byte_read 对部分 PNG 中段字节崩溃的 std 缺陷，本探针用 ptr 读取规避）。
 // 期望全部 PASS / exit 0。
 
-import "../../ext/gfx/thunk_binding.tie" as tb
+import "/ext/gfx/thunk_binding.tie" as tb
 using tb;
 
 var W: i64 = 96

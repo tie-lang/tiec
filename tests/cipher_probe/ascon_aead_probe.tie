@@ -1,7 +1,7 @@
 type tie<logic>
 // ascon_aead 探针：Ascon-128a AEAD（官方 pyascon 交叉向量）+ 往返 + 认证失败负例。
 // key/nonce/assoc/msg 均以 hex 传。期望输出：全部 PASS + "ascon_aead 探针全部通过"。
-import "../../ext/ascon_aead.tie"
+import "/ext/ascon_aead.tie"
 using ascon_aead;
 
 func check(name: string, got: string, want: string) {
