@@ -21,6 +21,17 @@ namespace irgen {
 func tig_index_read(id: i64) -> i64 {
     var base = sstate.child(id, 0)
     var idx = sstate.child(id, 1)
+    // p.9.12.6 行池读：base 是登记过行池变量 → 逐字段取 + 聚合构造（rp_read）
+    if s_tags[base] == 6 {
+        var rpn = interner.intern(sstate.name_str(base))
+        if rp_is(rpn) {
+            var iv0 = tig_expr(idx)
+            if iv0 < 0 {
+                return -1
+            }
+            return rp_read(rpn, iv0)
+        }
+    }
     var t = tig_expr(base)
     if t < 0 {
         return -1
@@ -248,6 +259,25 @@ func tig_index_assign(id: i64) -> i64 {
     // 目标必须是 Index：children=[base, index]
     var base = sstate.child(target, 0)
     var idx = sstate.child(target, 1)
+    // p.9.12.6 行池写：base 是登记过行池变量 → 负下标诊断 + 多列同步扩 + 逐字段写
+    if s_tags[base] == 6 {
+        var rpn2 = interner.intern(sstate.name_str(base))
+        if rp_is(rpn2) {
+            if op >= 0 {
+                sm_err_msg = "行池不支持下标复合赋值（p.9.12.6 边界，函数 " + g_cur_fn_name + "）"
+                return -1
+            }
+            var iv1 = tig_expr(idx)
+            if iv1 < 0 {
+                return -1
+            }
+            var vv1 = tig_expr(val)
+            if vv1 < 0 {
+                return -1
+            }
+            return rp_write(rpn2, iv1, vv1)
+        }
+    }
     var t = tig_expr(base)
     if t < 0 {
         return -1
@@ -1123,6 +1153,15 @@ func tig_stmt(id: i64) -> i64 {
             }
         }
         // alloca + store
+        // p.9.12.6 行池变量：声明类型是 table<struct>（struct 元素）→ 列式行池
+        //（多列聚合表示），不入通用表变量路径（单句柄 + retain/release 假设）。
+        // row pool 仅存在符号存储位，无面向值传递；读写/len 由 rp_* 分支处理。
+        if types.is_table(ty) {
+            var te_rp = types.table_elem(ty)
+            if te_rp > 0 && types.kind(te_rp) == K_STRUCT {
+                return rp_decl(nm, ty)
+            }
+        }
         var alloca = ir.new_inst(g_cur_block, 20, ty)  // alloca
         ir.add_operand(alloca, ty, 2)  // 类型立即数（占位）
         var av = ir.get_value(alloca)
@@ -1380,7 +1419,15 @@ func tig_stmt(id: i64) -> i64 {
             // p.6.1.7-RCA-2【2026-09-06】：tuple 返回含表元素 → 构造时对表元素 retain
             //（交给调用方），出口析构减回；先判 tuple 再求值（rty 须在 tig_expr 前）。
             var vty = node_types[v]
-            var tup_ret: bool = (vty >= 0 && types.kind(vty) == K_TUPLE)
+        // p.9.12.6 边界：行池 table<R> 不能作函数返回值（无运行期值形态）
+        if vty >= 0 && types.is_table(vty) {
+            var tev = types.table_elem(vty)
+            if tev > 0 && types.kind(tev) == K_STRUCT {
+                sm_err_msg = "行池 table<R> 不能作函数返回值（p.9.12.6 边界，函数 " + g_cur_fn_name + "）"
+                return -1
+            }
+        }
+        var tup_ret: bool = (vty >= 0 && types.kind(vty) == K_TUPLE)
             if tup_ret {
                 g_ret_tup_tbl = 1
             }
