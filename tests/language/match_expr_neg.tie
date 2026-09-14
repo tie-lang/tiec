@@ -14,7 +14,7 @@ enum Tag {
 func main() {
     var x = Tag.A(1)
     var r = switch x {
-        A(v) => v
+        A(v) -> v
     }
     println(r)
 }
