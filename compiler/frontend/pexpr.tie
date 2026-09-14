@@ -81,6 +81,32 @@ pub func parse_expr() -> i64 {
     return lhs
 }
 
+// p.9.13.1 单箭头统一：switch 臂的**模式/守卫**用「不消费顶层 `->`」的表达式解析。
+// 顶层 `->` 属臂分隔符（而非数据流管道），故 base/range-end 均止于 parse_ternary；
+// 区间 `a..b -> expr` 可正确把 `a..b` 收为模式、留下 `->` 作分隔符。臂体仍在
+// 分隔符消费后用 parse_expr 解析（体内 `->` 才是管道）。需要管道/嵌套区间则加括号。
+pub func parse_case_arm_pattern() -> i64 {
+    var lhs = parse_ternary()
+    if lhs < 0 {
+        return -1
+    }
+    if putil.eat(lex_dotdot) {
+        var line = ast.line(lhs)
+        var col = ast.col(lhs)
+        var end = parse_ternary()
+        if end < 0 {
+            return -1
+        }
+        var n = ast.new_node(N_RANGE, -1, -1, -1, line, col)
+        var kids: table<i64> = table_new_i64()
+        table_push(kids, lhs)
+        table_push(kids, end)
+        ast.set_children(n, kids)
+        return n
+    }
+    return lhs
+}
+
 // P1 数据流箭头（左结合，优先级低于三目）：`a -> f(...)`（传参，数据作末参）
 // 与 `x <- a`（赋值，镜像）。Fwd(->)：数据在 LHS、目标在 RHS；Rev(<-)：
 // 数据在 RHS、目标在 LHS。
@@ -171,7 +197,7 @@ func parse_arrow() -> i64 {
     // 更新 map 字面量（`{键: 值}`）→ N_WITH。链式左结合（`t with {a} with {b}`）。
     // 右操作数用 parse_ternary（刻意不进入箭头层，避免 with 链右结合歧义；链由
     // 本 while 循环左结合迭代处理）。裁决：with 走「表达式位二元 token」路径，
-    // 参照 p.9.11.1 `=>` 新 token 手法，不做语句位语境。
+    // 参照单箭头 `->` 的 token 手法，不做语句位语境。
     while putil.peek_tag() == lex_with {
         putil.advance()   // 'with'
         var wline = ast.line(lhs)
@@ -191,7 +217,10 @@ func parse_arrow() -> i64 {
 }
 
 // 三目运算符（右结合）：cond ? then : else
-func parse_ternary() -> i64 {
+// p.9.13.1 单箭头统一：公开为「不消费顶层 `->`」的表达式解析——switch 臂的
+// `when 守卫` 用它解析（守卫是布尔表达式，顶层 `->` 属臂分隔符，不得当管道吃掉）。
+// 返回位/管道/臂体仍走 parse_expr（臂体在分隔符消费后才解析，其中 `->` 是管道）。
+pub func parse_ternary() -> i64 {
     var lhs = parse_or()
     if lhs < 0 {
         return -1
@@ -1069,7 +1098,7 @@ func parse_primary() -> i64 {
     if tag == lex_func {
         return parse_fn_lit(line, col)
     }
-    // p.9.10.1 match/switch 表达式：`switch <subject> { pat => expr, _ => expr }`。
+    // p.9.13.1 单箭头统一：match/switch 表达式：`switch <subject> { pat -> expr, _ -> expr }`。
     // 表达式位模式匹配——分支体为表达式（见 pstmt_flow.parse_switch_expr）。
     // switch 为保留字 token，表达式位置出现即表达式分支式 switch。
     if tag == lex_switch {
