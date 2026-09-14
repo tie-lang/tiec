@@ -301,6 +301,33 @@ func global_is_table(nm: string) -> i64 {
     return 0
 }
 
+// p.9.12.1：查询已登记的**标量**全局是否已折叠及其折叠值。
+// 供 irgen.global_init_fold 解析跨全局引用（`var B = A + lit`，A 为先前折叠的
+// 标量全局）——此前不折叠导致引用全局的字符串/整型初值静默变空/零。
+// 返回 (ok, kind, val)：ok=1 才有效；kind：0=整型(intv)、1=字符串(sid)、2=浮点(原文池 id)。
+pub func global_folded_of(nid: i64) -> (i64, i64, i64) {
+    var i: i64 = 0
+    while i < len(g_global_names) {
+        if g_global_names[i] == nid {
+            if g_global_is_table[i] == 1 {
+                return (0, 0, 0)
+            }
+            if g_global_inits_ok[i] == 1 {
+                if g_global_strs[i] != -1 {
+                    return (1, 1, g_global_strs[i])
+                }
+                if g_global_fps[i] != -1 {
+                    return (1, 2, g_global_fps[i])
+                }
+                return (1, 0, g_global_inits[i])
+            }
+            return (0, 0, 0)
+        }
+        i = i + 1
+    }
+    return (0, 0, 0)
+}
+
 // 输出聚合类型段（模块头 declare 之后、全局变量之前）：
 // 遍历语义层已登记的 struct（st_keys/st_vals + cls_* + fld_*），
 // 输出 `%struct.<名> = type { 字段类型... }`（元组内联在 llvm_ty，无需定义）。

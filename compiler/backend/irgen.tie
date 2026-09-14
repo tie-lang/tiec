@@ -1181,8 +1181,9 @@ func fold_char_code(name_id: i64) -> i64 {
 // 顶层标量初始化的**编译期常量折叠**（bounded subset）：
 // 支持 INT_LIT / FLOAT_LIT / CHAR_LIT / BOOL_LIT / STR_LIT（经
 // str_unescape_quoted 去引号反转义）/ UNARY 取负（整数/浮点）/
-// BINARY + - * / %（字符串 + 走拼接；整数走算术）。跨全局引用（VAR 节点）
-// 不折叠 → 返回 has=false（保持既有零值语义，勿在顶层依赖引用表达式初始化）。
+// BINARY + - * / %（字符串 + 走拼接；整数走算术）。跨全局引用（S_N_VAR 节点）
+// p.9.12.1：对先前已折叠的标量全局做引用折叠（`var B = A + lit` 正确继承
+// A 而非变空/零）；未登记的全局/表全局不折叠 → 返回 has=false（保持原语义）。
 // 返回 (has, is_str, is_fp, intv, sid)：is_str 用 sid（纯文本池 id）；
 // is_fp 用 sid（浮点字面量文本池 id，原文）；否则 intv（整数/码点/bool 0-1）。
 func global_init_fold(id: i64) -> (bool, bool, bool, i64, i64) {
@@ -1190,6 +1191,23 @@ func global_init_fold(id: i64) -> (bool, bool, bool, i64, i64) {
         return (false, false, false, 0, -1)
     }
     var tag = s_tags[id]
+    if tag == S_N_VAR {
+        // p.9.12.1：跨全局引用折叠。`var B = A + "..."/A` 中 A 是先前定义的
+        // 标量全局（字符串/整型/浮点）——解析其已折叠初值，使 B 正确继承而非
+        // 变空/零。若 A 尚未登记（后置引用/表全局）→ 不折叠（保持原语义）。
+        var nid = interner.intern(sstate.name_str(id))
+        var (fok, fkind, fval) = llvmgen.global_folded_of(nid)
+        if fok == 1 {
+            if fkind == 1 {
+                return (true, true, false, 0, fval)
+            }
+            if fkind == 2 {
+                return (true, false, true, 0, fval)
+            }
+            return (true, false, false, fval, -1)
+        }
+        return (false, false, false, 0, -1)
+    }
     if tag == 0 {
         // INT_LIT
         return (true, false, false, s_vals[id], -1)

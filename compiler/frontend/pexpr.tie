@@ -956,12 +956,44 @@ pub func parse_args_after_lparen(args: ref table<i64>) -> bool {
     return true
 }
 
+// p.9.12.1：插值字符串文本段的花括号转义折叠（{{→{ / }}→}）。
+// lexer 不再折叠（JSON/模板字面必须逐字保留 `}}`）；仅在此对**插值**段应用
+// 折叠。lid 为带引号 lexeme 的池 id；逐字扫描非 `\` 转义区间的 `{`/`}`。
+func interp_brace_collapse(lid: i64) -> i64 {
+    var raw = interner.lookup(lid)
+    var n: i64 = str_len(raw)
+    var is_raw = is_raw_str_lit(raw)
+    var out: string = ""
+    var i: i64 = 0
+    while i < n {
+        var c = str_char(raw, i)
+        if !is_raw && c == "{" && i + 1 < n && str_char(raw, i + 1) == "{" {
+            out = out + "{"
+            i = i + 2
+        } else if !is_raw && c == "}" && i + 1 < n && str_char(raw, i + 1) == "}" {
+            out = out + "}"
+            i = i + 2
+        } else {
+            out = out + c
+            i = i + 1
+        }
+    }
+    return interner.intern(out)
+}
+
+// 判断带引号 lexeme 是否为 raw 字符串（r"..."，无插值、不折叠花括号）
+func is_raw_str_lit(raw: string) -> bool {
+    var n = str_len(raw)
+    return n >= 3 && str_char(raw, 0) == "r" && str_char(raw, 1) == "\"" && str_char(raw, n - 1) == "\""
+}
+
 // p.8.2.3 插值字符串组装：lexer 已把 `"a{expr}b"` 拆为 STR("a") { expr } STR("b")
 // token 序列（插值 `{` 是 lex_interp_lbrace 专用 tag，块开括号 lex_lbrace 不误入）
 // ——这里组装为 `"a" + to_string(expr) + "b"` 拼接链（to_string 对
 // string 实参返回自身，irgen 已补分支）。`{}` 空插值由 parse_expr 对 `}` 报错。
 func parse_interp_chain(first_lid: i64, line: i64, col: i64) -> i64 {
-    var acc = ast.new_node(N_STR_LIT, first_lid, -1, -1, line, col)
+    var fl = interp_brace_collapse(first_lid)
+    var acc = ast.new_node(N_STR_LIT, fl, -1, -1, line, col)
     var d = false
     while !d {
         if putil.peek_tag() != lex_interp_lbrace {
@@ -988,7 +1020,7 @@ func parse_interp_chain(first_lid: i64, line: i64, col: i64) -> i64 {
             d = true
             break
         }
-        var lid2 = interner.intern(putil.peek_lexeme())
+        var lid2 = interp_brace_collapse(interner.intern(putil.peek_lexeme()))
         putil.advance()
         var seg = ast.new_node(N_STR_LIT, lid2, -1, -1, line, col)
         acc = mk_binary(B_ADD, acc, seg)
