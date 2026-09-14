@@ -1028,7 +1028,7 @@ pub func tig_ast() -> i64 {
     while i < n {
         var s = g_extra_tops[i]
         if s_tags[s] == 100 {
-            tig_global_var(s)
+            tig_global_var(s, sstate.name_str(s))
         }
         i = i + 1
     }
@@ -1104,7 +1104,7 @@ pub func tig_src(src: string, base_dir: string) -> i64 {
     while i < n {
         var s = g_extra_tops[i]
         if s_tags[s] == 100 {
-            tig_global_var(s)
+            tig_global_var(s, sstate.name_str(s))
         }
         i = i + 1
     }
@@ -1393,8 +1393,10 @@ func g_ginit_node_of(nid: i64) -> i64 {
 // 表全局 → @g = global ptr null（main 入口运行时创建，对齐 T0.4）；
 //   非空表字面量初值（r.1.1.3）→ 记录节点，main 入口创建后逐元素 push。
 // 标量全局 → @g = global T <折叠初值>。
-func tig_global_var(s: i64) {
-    var nm = sstate.name_str(s)
+// 全局变量 IR 登记（p.9.12.4：full 参数 = 登记全名——顶层传裸名；
+// 命名空间内 const 传 "ns::NAME" 全名，llvmgen 发射时 ns_replace 转 $）
+func tig_global_var(s: i64, full: string) -> i64 {
+    var nm = full
     var ty = sgen.parse_generic_type_node(sstate.child(s, 0))
     if ty < 0 {
         ty = types.named(TK_I64)  // 无标注：语义已推断，兜底 i64
@@ -1467,6 +1469,12 @@ func tig_ns(ns_node: i64, prefix: string) -> i64 {
         } else if tag == 112 {
             var nr = tig_ns(st, full_pre)
             if nr < 0 {
+                return -1
+            }
+        } else if tag == 100 {
+            // p.9.12.4：命名空间内 const 常量 → 全名登记全局（@ns$NAME 发射）
+            var gr = tig_global_var(st, full_pre + "::" + sstate.name_str(st))
+            if gr < 0 {
                 return -1
             }
         }

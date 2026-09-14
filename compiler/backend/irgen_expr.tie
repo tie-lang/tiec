@@ -61,6 +61,19 @@ func tig_expr(id: i64) -> i64 {
         }
         return tig_var_ref(vnid6)
     }
+    if tag == 16 {
+        // p.9.12.4：命名空间路径作值 = 命名空间常量引用（ns::NAME → 全名
+        // 查全局 gb_*，与 sinfer S_N_PATH 分支对齐；标量全局 load @ns$NAME）
+        var pfull = sinfer.recv_path_name(id)
+        var pnid = interner.intern(pfull)
+        if scope_get_global(pnid) >= 0 {
+            return tig_var_ref(pnid)
+        }
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "命名空间路径 '" + pfull + "' 不能作为值使用（只能用于调用，如 'x::f()'）"
+        return -1
+    }
     if tag == 9 {
         // Binary
         return tig_binary(s_vals[id], sstate.child(id, 0), sstate.child(id, 1))

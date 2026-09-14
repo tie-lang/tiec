@@ -110,7 +110,8 @@ func global_ref(v: i64) -> string {
     var i: i64 = 0
     while i < len(g_global_names) {
         if g_global_names[i] == nid {
-            return "@" + nm
+            // p.9.12.4：命名空间内 const 全名 "ns::NAME" → LLVM 符号转 $（@ns$NAME）
+            return "@" + ns_replace(nm)
         }
         i = i + 1
     }

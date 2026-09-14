@@ -395,8 +395,11 @@ func emit_globals() {
     var i: i64 = 0
     while i < len(g_global_names) {
         var nm = intern.lookup(g_global_names[i])
+        // p.9.12.4：命名空间内 const 以全名 "ns::NAME" 登记 → LLVM 符号经
+        // ns_replace 转 $（@ns$NAME），对齐命名空间函数符号规则
+        var lv_nm = ns_replace(nm)
         if g_global_is_table[i] == 1 {
-            line("@" + nm + " = global ptr null")
+            line("@" + lv_nm + " = global ptr null")
         } else {
             var ty = llvm_ty(g_global_tys[i])
             var init = "0"
@@ -424,7 +427,7 @@ func emit_globals() {
                         var empty_id = interner.intern("")
                         eslot = str_slot(empty_id)
                     }
-                    line("@" + nm + " = global ptr " + str_data_ref(eslot))
+                    line("@" + lv_nm + " = global ptr " + str_data_ref(eslot))
                     i = i + 1
                     continue
                 }
@@ -443,7 +446,7 @@ func emit_globals() {
                     init = intern.lookup(g_global_fps[i])
                 }
             }
-            line("@" + nm + " = global " + ty + " " + init)
+            line("@" + lv_nm + " = global " + ty + " " + init)
         }
         i = i + 1
     }
