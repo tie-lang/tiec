@@ -1145,16 +1145,29 @@ func tig_struct_construct(id: i64, nm: string) -> i64 {
             vt = node_types[an]
         } else if off + i < len(fld_defs) && fld_defs[off + i] >= 0 {
             // 字段默认值（`var y: i64 = 10` → Point(5) 缺省 y 用 10）
-            v = tig_expr(fld_defs[off + i])
+            var dn = fld_defs[off + i]
+            v = tig_expr(dn)
             if v < 0 {
                 return -1
             }
-            // 默认值多数字面量：语义已把字面量节点类型收窄为字段类型（node_types
-            // == fty），但 tig_expr 对整型字面量恒定产出 i64（浮点 f64）。故按
-            // 实际产出类型定 vt：int fty → i64，float fty → f64，其余与 fty 一致。
-            if types.is_int(fty) {
-                vt = types.named(TK_I64)
-            } else if types.is_float(fty) {
+            // 默认值多为字面量：vt 取「tig_expr 实际发射类型」，与 tig_expr 对
+            // IntLit/FloatLit 的发射规则逐字对齐——
+            //   · IntLit（tag 0）：node_types 若为窄整型（语义收窄且非 i64）则
+            //     发射该窄型；否则恒定 i64。**f64/f32 字段的整数字面量默认值
+            //     （`var w: f64 = 5`）node_types 会被收窄为浮点 fty，非 int →
+            //     发射 i64**——旧逻辑按 fty 类别猜 vt（float fty 一律记 F64），
+            //     把该 i64 误当作 f64，致下方 S1.3 收窄跳过、i64 直 store 到
+            //     double 槽 → opt 崩溃（%2 defined i64 but expected double）。
+            //   · FloatLit（tag 1）：恒定 f64。
+            //   其余表达式按语义节点类型 fty 记。
+            var dn_ty = node_types[dn]
+            if s_tags[dn] == 0 {
+                if dn_ty >= 0 && dn_ty != types.named(TK_I64) && types.is_int(dn_ty) {
+                    vt = dn_ty
+                } else {
+                    vt = types.named(TK_I64)
+                }
+            } else if s_tags[dn] == 1 {
                 vt = types.named(TK_F64)
             } else {
                 vt = fty
