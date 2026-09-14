@@ -144,6 +144,14 @@ var g_param_nids: table<i64>;
 // 在非 entry 块，排除以避免 LLVM「instruction does not dominate」）。
 var g_entry_block: i64 = 0;
 var g_tblcand_allocas: table<i64>;
+// p.9.12.6 行池（table<R>，R 为 struct）登记表：name 池 id → 结构化行池。
+// 行池变量降为 R 各字段的平行列（每字段一根 table<fld>）+ 共享行数（各列恒齐平，
+// len 取第 0 列句柄长度）。rp_keys/rp_si/rp_ncol 并行；rp_allocas[r] = 该行池各
+// 字段列 alloca（TK_STR ptr 槽，存列表句柄）。scope 槽存第 0 列 alloca（len 直用）。
+var rp_keys: table<i64>;
+var rp_si: table<i64>;
+var rp_ncol: table<i64>;
+var rp_allocas: table<table<i64>>;
 // p.6.1.7-RCA-2【2026-09-06】：tuple **返回**路径需要对表元素 retain 的标记（见
 // irgen_stmt Return / irgen_agg tig_tuple_lit_typed）——返回的元组表元素 retain 后
 // 交给调用方，出口析构减回；普通 tuple 构造不置位。
@@ -1402,6 +1410,15 @@ func tig_global_var(s: i64, full: string) -> i64 {
         ty = types.named(TK_I64)  // 无标注：语义已推断，兜底 i64
     }
     var telem = sinfer.gb_telem_of(intern.intern(nm))
+    // p.9.12.6 边界：全局行池 table<R> v1 不支持（列式行池需每字段列 @g 全局，成本高，
+    // 先局部；显式拒绝，不静默降级为单表语义）
+    if types.is_table(ty) {
+        var gtr = types.table_elem(ty)
+        if gtr > 0 && types.kind(gtr) == K_STRUCT {
+            sm_err_msg = "行池 table<R> 全局变量 v1 暂不支持（p.9.12.6 边界；仅局部行池可用）"
+            return -1
+        }
+    }
     // 表全局登记：llvmgen 输出 global ptr null + main 入口初始化
     if types.is_table(ty) || telem >= 0 {
         llvmgen.global_table_reg(nm)
@@ -1633,6 +1650,14 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
         var p = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + i)
         var pname = sstate.name_str(p)
         var pty = params[i]
+        // p.9.12.6 边界：行池 table<R> 不能作函数形参（含 ref 形参；无值形态）
+        if types.is_table(pty) {
+            var tep = types.table_elem(pty)
+            if tep > 0 && types.kind(tep) == K_STRUCT {
+                sm_err_msg = "行池 table<R> 不能作函数形参/ref 形参（p.9.12.6 边界，函数 " + full_name + "）"
+                return -1
+            }
+        }
         // by_ref 标志：sstate sp_refs（语义层已收集）。
         // sig0 < 0（函数签名缺失，如命名空间函数拼接异常）时禁止取 sg_off[-1]——
         // 负索引垃圾值会误判参数为 ref，绑定参数寄存器导致运行时崩溃
@@ -1708,6 +1733,11 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
         while gi < len(gb_keys) {
             var gte = gb_telem[gi]
             if gte >= 0 {
+                // p.9.12.6 边界：全局行池 table<R> v1 不支持（列式行池需每字段列 @g 全局）
+                if types.kind(gte) == K_STRUCT {
+                    sm_err_msg = "行池 table<R> 全局变量 v1 暂不支持（p.9.12.6 边界；仅局部行池可用）"
+                    return -1
+                }
                 var gv: i64 = -1
                 var ginit_node = g_ginit_node_of(gb_keys[gi])
                 if ginit_node >= 0 {

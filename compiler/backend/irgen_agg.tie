@@ -1221,6 +1221,331 @@ func tig_struct_construct(id: i64, nm: string) -> i64 {
     return ir.get_value(ld)
 }
 
+// ==================== p.9.12.6：table<R> 结构化行池（列式 SoA）====================
+// 行池变量 = R 各字段的平行列表（每字段一根 table<fld>），共享行数（各列恒齐平，
+// len 取第 0 列句柄长度）。以下为 irgen 发射辅助：默认行构造 / 整行写（多列同步
+// 扩）+ 整行读（逐字段取 + 聚合）共用。字段默认值/零值语义与 tig_struct_construct
+// 对齐（f64 整数字面量默认 → sitofp 等），表字段默认缺省时补有效空表（非 null）。
+
+// 行池登记查询：name 池 id → 登记序号；-1 未登记（非行池）。
+func rp_find(nm: i64) -> i64 {
+    var i: i64 = 0
+    while i < len(rp_keys) {
+        if rp_keys[i] == nm {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+func rp_is(nm: i64) -> bool {
+    return rp_find(nm) >= 0
+}
+func rp_fld_ty(si: i64, fi: i64) -> i64 {
+    return fld_tys[cls_fldoff[si] + fi]
+}
+// struct si 字段 fi 是否有显式默认值
+func rp_fld_has_default(si: i64, fi: i64) -> bool {
+    var off = cls_fldoff[si]
+    var nf = cls_nfld[si]
+    if fi >= nf {
+        return false
+    }
+    return off + fi < len(fld_defs) && fld_defs[off + fi] >= 0
+}
+// 字段默认值（含 S1.3 收窄/浮点转整数字面量，对齐 tig_struct_construct）；表字段
+// 无显式默认 → 有效空表（非 tig_default_val 的 "" 伪句柄）。fele 表元素类型。
+func rp_fld_default_val(si: i64, fi: i64, fty: i64) -> i64 {
+    var off = cls_fldoff[si]
+    var has_def: bool = off + fi < len(fld_defs) && fld_defs[off + fi] >= 0
+    var v: i64 = -1
+    var vt: i64 = fty
+    if has_def {
+        var dn = fld_defs[off + fi]
+        v = tig_expr(dn)
+        if v < 0 {
+            return -1
+        }
+        var nt = node_types[dn]
+        if s_tags[dn] == 0 {
+            // IntLit：f64/f32 字段的整数字面量默认（`var w: f64 = 5`）发射 i64；窄整数收窄
+            if nt >= 0 && nt != types.named(TK_I64) && types.is_int(nt) {
+                vt = nt
+            } else {
+                vt = types.named(TK_I64)
+            }
+        } else if s_tags[dn] == 1 {
+            vt = types.named(TK_F64)
+        } else {
+            vt = fty
+        }
+    } else if types.is_table(fty) {
+        // 表字段无显式默认 → 有效空表（零值表柄；null 非合法句柄，读会崩）
+        var fele = types.table_elem(fty)
+        if fele <= 0 {
+            fele = types.named(TK_I64)
+        }
+        v = s21_table_new_ty(fele, tig_int_lit_ty(elem_size(fele), types.named(TK_I64)))
+        vt = fty
+    } else {
+        v = tig_default_val(fty)
+        if types.is_float(fty) {
+            vt = types.named(TK_F64)
+        } else if fty == types.named(TK_I8) {
+            vt = fty
+        } else if types.is_int(fty) {
+            vt = types.named(TK_I64)
+        } else {
+            vt = fty
+        }
+    }
+    // S1.3 收窄：默认字面量按目标字段类型转换（f64 整数字面量默认 → sitofp；窄型 → trunc）
+    if vt >= 0 && (types.is_int(vt) || types.is_float(vt)) &&
+        (types.is_int(fty) || types.is_float(fty)) && vt != fty {
+        v = tig_coerce(v, vt, fty)
+    }
+    return v
+}
+// 构造默认行（R 各字段取默认值）的 struct **值**（供读越界返回默认行）。
+func rp_default_row_val(si: i64) -> i64 {
+    var agg = types.struct_of(si)
+    var alloca = ir.new_inst(g_cur_block, 20, agg)
+    ir.add_operand(alloca, agg, 2)
+    var ap = ir.get_value(alloca)
+    var nf = cls_nfld[si]
+    var fi: i64 = 0
+    while fi < nf {
+        var fty = rp_fld_ty(si, fi)
+        var v = rp_fld_default_val(si, fi, fty)
+        if v < 0 {
+            return -1
+        }
+        var gp = ir.new_inst(g_cur_block, 27, agg)
+        ir.add_operand(gp, ap, 0)
+        ir.add_operand(gp, fi, 2)
+        var gpp = ir.get_value(gp)
+        var st = ir.new_inst(g_cur_block, 22, -1)
+        ir.add_operand(st, fty, 2)
+        ir.add_operand(st, v, 0)
+        ir.add_operand(st, gpp, 0)
+        fi = fi + 1
+    }
+    var ld = ir.new_inst(g_cur_block, 21, agg)
+    ir.add_operand(ld, ap, 0)
+    return ir.get_value(ld)
+}
+// 单列扩写：need = i+1；handle 长 < need → 逐槽 push 字段默认值扩到 need，再
+// tbl_set(handle, i, &src_addr)。表字段每槽补**新**空表（值语义，防默认行共享）。
+func rp_col_grow_set(handle: i64, i: i64, need: i64, fty: i64, defv: i64, src_addr: i64) {
+    var T64 = types.named(TK_I64)
+    var lenv = s21_table_len(handle)
+    var growc = tig_icmp_c(need, lenv, 3)  // need > len
+    var gt = ir.new_block(g_cur_func, interner.intern("rp.gt"))
+    var ge = ir.new_block(g_cur_func, interner.intern("rp.ge"))
+    var cb = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb, growc, 0)
+    ir.add_operand(cb, gt, 1)
+    ir.add_operand(cb, ge, 1)
+    g_cur_block = gt
+    var idx_a = ir.new_inst(g_cur_block, 20, T64)
+    ir.add_operand(idx_a, T64, 2)
+    var idx_p = ir.get_value(idx_a)
+    s21_store(idx_p, lenv, T64)
+    var lc = ir.new_block(g_cur_func, interner.intern("rp.gc"))
+    var lb = ir.new_block(g_cur_func, interner.intern("rp.gb"))
+    var le = ir.new_block(g_cur_func, interner.intern("rp.gx"))
+    var bj = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(bj, lc, 1)
+    g_cur_block = lc
+    var cur = s21_load(idx_p, T64)
+    var lcnd = tig_icmp_c(cur, need, 2)  // cur < need
+    var lcb = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(lcb, lcnd, 0)
+    ir.add_operand(lcb, lb, 1)
+    ir.add_operand(lcb, le, 1)
+    g_cur_block = lb
+    if types.is_table(fty) {
+        // 表字段：每槽新建空表（值语义隔离）
+        var fele = types.table_elem(fty)
+        if fele <= 0 {
+            fele = types.named(TK_I64)
+        }
+        s21_table_push(handle, fty, s21_table_new_ty(fele, tig_int_lit_ty(elem_size(fele), T64)))
+    } else {
+        s21_table_push(handle, fty, defv)
+    }
+    s21_store(idx_p, s21_bin(0, cur, tig_int_lit(1)), T64)  // cur+1
+    var bb = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(bb, lc, 1)
+    g_cur_block = le
+    var brg = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(brg, ge, 1)
+    g_cur_block = ge
+    tl_void_3("tl_tbl$tbl_set", t21_ptri(handle), i, t21_ptri(src_addr))
+    return
+}
+// 行池整行写 t[i]=v：负下标诊断；need=i+1；各字段列同步扩（rp_col_grow_set）到
+// need 后逐字段 set。字段值取自 row alloca（store v 后 agg_gep）。
+func rp_write(nm: i64, i: i64, v: i64) -> i64 {
+    var r = rp_find(nm)
+    if r < 0 {
+        sm_err_msg = "内部错误：行池变量未登记（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var si = rp_si[r]
+    var agg = types.struct_of(si)
+    var nf = cls_nfld[si]
+    // 落 row alloca 供字段 GEP 取地址
+    var row_a = ir.new_inst(g_cur_block, 20, agg)
+    ir.add_operand(row_a, agg, 2)
+    var row_p = ir.get_value(row_a)
+    var rst = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(rst, agg, 2)
+    ir.add_operand(rst, v, 0)
+    ir.add_operand(rst, row_p, 0)
+    // 负下标诊断（复用 s21_index_raise，p.9.12.2 裁决）
+    var negc = tig_icmp_c(i, tig_int_lit(0), 2)  // i < 0
+    var nb = ir.new_block(g_cur_func, interner.intern("rp.n"))
+    var mg = ir.new_block(g_cur_func, interner.intern("rp.m"))
+    var cb0 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb0, negc, 0)
+    ir.add_operand(cb0, nb, 1)
+    ir.add_operand(cb0, mg, 1)
+    g_cur_block = nb
+    s21_index_raise(mg)
+    g_cur_block = mg
+    var need = s21_bin(0, i, tig_int_lit(1))  // i+1
+    var k: i64 = 0
+    while k < nf {
+        var fty = rp_fld_ty(si, k)
+        var ch = s21_load(rp_allocas[r][k], types.named(TK_STR))  // 列句柄
+        var defv = rp_fld_default_val(si, k, fty)
+        if defv < 0 {
+            return -1
+        }
+        var gp = ir.new_inst(g_cur_block, 27, agg)  // agg_gep 字段 k
+        ir.add_operand(gp, row_p, 0)
+        ir.add_operand(gp, k, 2)
+        var src_addr = ir.get_value(gp)
+        rp_col_grow_set(ch, i, need, fty, defv, src_addr)
+        k = k + 1
+    }
+    return 0
+}
+// 行池整行读 r = rows[i]：id >= len → 默认行；否则逐字段 tbl_at + 聚合构造赋值。返回 R 值。
+func rp_read(nm: i64, i: i64) -> i64 {
+    var r = rp_find(nm)
+    if r < 0 {
+        sm_err_msg = "内部错误：行池变量未登记（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var si = rp_si[r]
+    var agg = types.struct_of(si)
+    var nf = cls_nfld[si]
+    var h0 = s21_load(rp_allocas[r][0], types.named(TK_STR))
+    var len = s21_table_len(h0)
+    var res_a = ir.new_inst(g_cur_block, 20, agg)
+    ir.add_operand(res_a, agg, 2)
+    var res_p = ir.get_value(res_a)
+    var inb = ir.new_block(g_cur_func, interner.intern("rp.r1"))
+    var outb = ir.new_block(g_cur_func, interner.intern("rp.r0"))
+    var merge = ir.new_block(g_cur_func, interner.intern("rp.rm"))
+    var chk = tig_icmp_c(i, len, 2)  // i < len
+    var cbr = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cbr, chk, 0)
+    ir.add_operand(cbr, inb, 1)
+    ir.add_operand(cbr, outb, 1)
+    g_cur_block = inb
+    var agg_a = ir.new_inst(g_cur_block, 20, agg)
+    ir.add_operand(agg_a, agg, 2)
+    var agg_p = ir.get_value(agg_a)
+    var j: i64 = 0
+    while j < nf {
+        var fty = rp_fld_ty(si, j)
+        var chj = s21_load(rp_allocas[r][j], types.named(TK_STR))
+        var ok = ir.new_inst(g_cur_block, 20, types.named(TK_I8))
+        ir.add_operand(ok, types.named(TK_I8), 2)
+        var fv = s21_table_at(chj, i, ir.get_value(ok), fty)
+        if fv < 0 {
+            return -1
+        }
+        var gp = ir.new_inst(g_cur_block, 27, agg)
+        ir.add_operand(gp, agg_p, 0)
+        ir.add_operand(gp, j, 2)
+        var gpp = ir.get_value(gp)
+        var st = ir.new_inst(g_cur_block, 22, -1)
+        ir.add_operand(st, fty, 2)
+        ir.add_operand(st, fv, 0)
+        ir.add_operand(st, gpp, 0)
+        j = j + 1
+    }
+    var in_val = ir.new_inst(g_cur_block, 21, agg)
+    ir.add_operand(in_val, agg_p, 0)
+    var st_in = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(st_in, agg, 2)
+    ir.add_operand(st_in, ir.get_value(in_val), 0)
+    ir.add_operand(st_in, res_p, 0)
+    var bi = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(bi, merge, 1)
+    g_cur_block = outb
+    var drow = rp_default_row_val(si)
+    if drow < 0 {
+        return -1
+    }
+    var st_out = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(st_out, agg, 2)
+    ir.add_operand(st_out, drow, 0)
+    ir.add_operand(st_out, res_p, 0)
+    var bo = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(bo, merge, 1)
+    g_cur_block = merge
+    var rv = ir.new_inst(g_cur_block, 21, agg)
+    ir.add_operand(rv, res_p, 0)
+    return ir.get_value(rv)
+}
+// 行池变量声明：各字段建空列表句柄存独立 alloca；scope 槽存第 0 列 alloca；登记；
+// 全部字段列 alloca 入 g_tblcand_allocas（出口 release 释放各列）。返回 0。ty = 完整
+// table<R> 类型（scope 登记 + 元素取用）。
+func rp_decl(nm: i64, ty: i64) -> i64 {
+    var elem = types.table_elem(ty)
+    // struct 类型 id = 3<<40 | struct 索引（types.struct_of(si)），故 si = elem - 3<<40。
+    // 该 si 与 sstate st_vals/cls_fldoff 的行号一致（tig_struct_construct 同用）。
+    var si = elem - (3 << 40)
+    var agg = types.struct_of(si)
+    var nf = cls_nfld[si]
+    var colh: table<i64> = table_new_i64()
+    var first_alloca: i64 = -1
+    var k: i64 = 0
+    while k < nf {
+        var fty = rp_fld_ty(si, k)
+        var fele: i64 = fty
+        var h = s21_table_new_ty(fele, tig_int_lit_ty(elem_size(fele), types.named(TK_I64)))
+        var ac = ir.new_inst(g_cur_block, 20, types.named(TK_STR))
+        ir.add_operand(ac, types.named(TK_STR), 2)
+        var acp = ir.get_value(ac)
+        var sts = ir.new_inst(g_cur_block, 22, -1)
+        ir.add_operand(sts, types.named(TK_STR), 2)
+        ir.add_operand(sts, h, 0)
+        ir.add_operand(sts, acp, 0)
+        if k == 0 {
+            first_alloca = acp
+        }
+        table_push(colh, acp)
+        table_push(g_tblcand_allocas, acp)
+        k = k + 1
+    }
+    table_push(rp_keys, nm)
+    table_push(rp_si, si)
+    table_push(rp_ncol, nf)
+    table_push(rp_allocas, colh)
+    // scope 存第 0 列 alloca（类型 = 完整 table<R>，读/写/len 经 rp_* 或 len 直读第 0 列）
+    if first_alloca < 0 {
+        return 0
+    }
+    scope_put(nm, first_alloca, ty)
+    return 0
+}
+
 // 表字面量 → 动态表指针（tie_table_new + 逐元素 push）。
 // 元素类型：语义 node_types 首元素推断；空表 → i64 兜底。
 func tig_table_lit(id: i64) -> i64 {
