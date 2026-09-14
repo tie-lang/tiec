@@ -802,6 +802,16 @@ func gen_inst(inst_id: i64) {
         line("store i8 0, ptr " + endp)
         // 返回数据指针（ptrtoint i64 指针整数，{ptr,len} 的 ptr 位）
         line(reg + " = ptrtoint ptr " + d0 + " to i64")
+        // p.9.12.7：companion 真 ptr 转换必须在**定义块**内生成（与上方 ptrtoint
+        // 同块）——字符串 phi（分支合流）的 incoming 引用它。旧路径在 phi 处
+        // （合并块）临时 inttoptr 会 ① 插在 phi 之前 → LLVM opt 报
+        // "PHI nodes not grouped at top of basic block"；② 引用分支块内定义的
+        // i64 值在合并块使用 → 多臂合流时该分支块不支配合并块 →
+        // "Instruction does not dominate all uses!"（p.9.12.7 崩源）。
+        // %spN 以结果值 id 定名（非纯数字后缀，renumber 不动；%sp 前缀独用，
+        // 不与 %sc/%ext 冲突）；opt 的 InstCombine 折叠 inttoptr(ptrtoint x) → x，
+        // 编译产物零性能开销。
+        line("%sp" + to_string(ir.get_value(inst_id)) + " = inttoptr i64 " + reg + " to ptr")
         // p.6.7.5 生命周期确定性：链式临时释放——操作数若是前一 str_cat 的
         // 结果值（op56 def）且全函数仅本次拼接一处使用（SSA 纯表达式临时，
         // 无其它 load/store/传参引用），则结果就绪后按长度释放其堆缓冲。
@@ -994,11 +1004,10 @@ func typed_ref(inst_id: i64, k: i64) -> string {
             return str_data_ref(slot)
         }
         if ir.ins_op(def) == 56 {
-            // str_cat 结果（i64 指针整数）→ inttoptr 转 ptr（extern_call 字符串参数）
-            g_str_reg_cnt = g_str_reg_cnt + 1
-            var r = "%sc" + to_string(g_str_reg_cnt)
-            line(r + " = inttoptr i64 %" + to_string(v) + " to ptr")
-            return r
+            // p.9.12.7：复用定义块内 companion 真 ptr 寄存器（%spN，与 to_ptr
+            // 同约定）——旧路径在调用点临时 inttoptr（同块虽无支配问题，但
+            // 每处调用点重复生成指令）；语义零变化。
+            return "%sp" + to_string(v)
         }
         if ir.ins_op(def) == 63 {
             // const_global（S2.2 函数地址）→ 直引 @sym（ptr 类型）
@@ -1034,11 +1043,11 @@ func to_ptr(v: i64) -> string {
             return str_data_ref(slot)
         }
         if ir.ins_op(def) == 56 {
-            // str_cat 结果（i64 指针整数）→ inttoptr 转 ptr
-            g_str_reg_cnt = g_str_reg_cnt + 1
-            var r = "%sc" + to_string(g_str_reg_cnt)
-            line(r + " = inttoptr i64 %" + to_string(v) + " to ptr")
-            return r
+            // p.9.12.7：返回定义块内 companion 真 ptr 寄存器（%spN，op56 发射时
+            // 已在同一块内生成）——旧路径在此处（可能为分支合流 phi 的合并块）
+            // 临时 inttoptr → PHI 未分组 + 支配违规（多臂合流）；companion 与
+            // ptrtoint 同块，支配成立，语义零变化。
+            return "%sp" + to_string(v)
         }
         if ir.ins_op(def) == 63 {
             // const_global（S2.2 函数地址）→ 直引 @sym（ptr 类型）
