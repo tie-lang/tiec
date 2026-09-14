@@ -128,8 +128,11 @@ pub func scan_string(pos: i64) -> i64 {
     if !cont {
         pos = pos + 1   // 跳过开引号 '"'
     }
-    // 段文本构建（{{ → '{'、}} → '}' 在 lexer 阶段还原；\X 转义原样保留，
-    // 由 parser 的 str_unescape_quoted 统一还原）
+    // 段文本构建（字面 `{`/`}` 原样保留；`{{`/`}}` **不**在 lexer 折叠——
+    // p.9.12.1：字符串字面量里的 `}}` 是 JSON/模板合法字节，逐字保留，不能
+    // 折叠成 `}`（曾致 tsp 等 JSON 响应缺尾括号）。插值字符串段的花括号
+    // 转义（{{→{ / }}→}）改由 parser 的 parse_interp_chain 折叠；\X 转义原样
+    // 保留，由 parser 的 str_unescape_quoted 统一还原）
     var sb = string_builder()
     var done = false
     while pos < g_n {
@@ -153,10 +156,11 @@ pub func scan_string(pos: i64) -> i64 {
             done = true
             break
         } else if g_codes[pos] == 123 && pos + 1 < g_n && g_codes[pos + 1] == 123 {
+            // '{{' → '{'：插值字符串里 `{{` 表字面 `{`（且防 `{literal}` 起插值）。
+            // p.9.12.1：仅折叠 `{{`；**不**折叠 `}}`——JSON/模板里的 `}}` 是合法
+            // 字节，逐字保留（曾致 tsp 等 JSON 响应缺尾括号）。`}}`→`}` 的
+            // 插值段转义改由 parse_interp_chain 折叠。
             sb_append_byte(sb, 123)    // '{{' → '{' 字面
-            pos = pos + 2
-        } else if g_codes[pos] == 125 && pos + 1 < g_n && g_codes[pos + 1] == 125 {
-            sb_append_byte(sb, 125)    // '}}' → '}' 字面
             pos = pos + 2
         } else if g_codes[pos] == 123 {
             // 插值开始判定（前瞻）：`{` 后**紧邻**字符是表达式起始（数字/_/(/[/!/~/$
