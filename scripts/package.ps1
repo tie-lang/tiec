@@ -234,20 +234,28 @@ if (Test-Path $ExamplesSrc) {
     Write-Host "  examples/ ✔" -ForegroundColor DarkGray
 }
 
-# std/、ext/ 与 rdu/：标准库、扩展库与嵌入式基础层（tie 语言自写，随发行版内置；
-# 用户程序 import "../std/..." 或 "../ext/..." 或 "../rdu/..." 依赖本地库目录。
+# std/、ext/、rdu/ 与 sys/：标准库、扩展库、嵌入式基础层与平台层（tie 语言自写；
+# p.9.13.7-B 零副本迁出到 tie-lang/tlib，经内置库根（--lib-root / TIE_LIB_ROOT /
+#   ~/.tiec-lib/tlib）由编译器按 /std /ext /rdu /sys 别名解析，详见 scripts/fetch-lib.ps1。
 # rdu 为嵌入式基础层（Rudimentary），独立于 std/ext（不 import 任何东西），
 # 无栈纪律（零原语/零动态内存/无递归/无全局状态），随发行版内置）
-foreach ($lib in @("std", "ext", "rdu")) {
-    $LibSrc = Join-Path $Root $lib
+$LibRoot = $env:TIE_LIB_ROOT
+if ([string]::IsNullOrWhiteSpace($LibRoot)) { $LibRoot = Join-Path $env:USERPROFILE ".tiec-lib\tlib" }
+foreach ($lib in @("std", "ext", "rdu", "sys")) {
+    $LibSrc = Join-Path $LibRoot $lib
     if (Test-Path $LibSrc) {
         $LibTarget = Join-Path $DistDir $lib
         New-Item -ItemType Directory -Path $LibTarget -Force | Out-Null
-        Get-ChildItem $LibSrc -Filter "*.tie" | ForEach-Object {
-            Copy-Item $_.FullName $LibTarget
+        Get-ChildItem $LibSrc -Filter "*.tie" -Recurse | ForEach-Object {
+            $rel = $_.FullName.Substring($LibSrc.Length).TrimStart("\")
+            $dest = Join-Path $LibTarget $rel
+            New-Item -ItemType Directory -Path (Split-Path $dest) -Force | Out-Null
+            Copy-Item $_.FullName $dest
         }
         # std/runtime.a 已退役：exec_code/get_env/time_now 内联 libc，无运行时静态库要打包
         Write-Host "  $lib/ ✔" -ForegroundColor DarkGray
+    } else {
+        Write-Host "  $lib/ 跳过（库根缺失: $LibRoot，先运行 scripts/fetch-lib.ps1）" -ForegroundColor DarkYellow
     }
 }
 
