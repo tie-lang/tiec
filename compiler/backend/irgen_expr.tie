@@ -2070,6 +2070,11 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         // push parse_float 结果）会误判为 i64 导致 push_i64(double) 类型错
         var te: i64 = -1
         var tnid = interner.intern(tname)
+        // p.9.12.6 边界：table_push 不支持作用于行池 table<R>（行池无"追加"，只有按 id 写）
+        if rp_is(tnid) {
+            sm_err_msg = "table_push 不支持作用于行池 table<R>（p.9.12.6 边界，函数 " + g_cur_fn_name + "）"
+            return -1
+        }
         var tv_own = tblvar_get(tnid)
         if tv_own >= 0 {
             te = tv_own  // irgen 自维护登记（最可靠）
