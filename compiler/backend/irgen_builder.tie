@@ -123,6 +123,30 @@ func scope_get_global(name_id: i64) -> i64 {
         return 0
     }
     var ty = global_ty(name_id)
+    // p.9.12.4：裸名全局未命中 → 当前函数命名空间前缀逐级外层补全
+    //（对齐 irgen.resolve_call_name 候选 2 / sinfer.gb_find_ns_key）——
+    // 命名空间内 const 以 ns::NAME 全名登记 gb_*，函数体内裸名引用须补全
+    if ty < 0 {
+        var full = g_cur_fn_name
+        while str_len(full) > 0 {
+            var last = sstate.rfind_ns(full)
+            if last < 0 {
+                break
+            }
+            var prefix = ig_slice(full, 0, last)
+            if prefix == "" {
+                break
+            }
+            var cand = prefix + "::" + intern.lookup(name_id)
+            var cid = interner.intern(cand)
+            ty = global_ty(cid)
+            if ty >= 0 {
+                name_id = cid
+                break
+            }
+            full = prefix  // 再往上一层
+        }
+    }
     if ty < 0 {
         return -1
     }

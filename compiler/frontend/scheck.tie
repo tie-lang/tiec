@@ -869,18 +869,23 @@ pub func check_stmt(s: i64) -> i64 {
         var nid = intern.intern(nm)
         var target_ty = sinfer.lv_find(nid)
         var is_global: bool = false
+        var gkey: i64 = -1
         if target_ty < 0 {
-            target_ty = sinfer.gb_find(nid)
-            if target_ty < 0 {
+            // p.9.12.4：全局目标查带命名空间前缀补全（命名空间内 const 以
+            // ns::NAME 全名登记 gb_*，函数体内裸名重赋值须命中该键才能走
+            // const 只读拦截；命中键存 gkey 供 gb_const_of 查询）
+            gkey = sinfer.gb_find_ns_key(nid)
+            if gkey < 0 {
                 sm_err_line = s_lines[s]
                 sm_err_col = s_cols[s]
                 sm_err_msg = "赋值目标 '" + nm + "' 未声明"
                 return -1
             }
+            target_ty = sinfer.gb_find(gkey)
             is_global = true
         }
         if is_global {
-            if sinfer.gb_const_of(nid) == 1 {
+            if sinfer.gb_const_of(gkey) == 1 {
                 sm_err_line = s_lines[s]
                 sm_err_col = s_cols[s]
                 sm_err_msg = "不能给 const 变量 '" + nm + "' 赋值"

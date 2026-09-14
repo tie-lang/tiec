@@ -974,6 +974,14 @@ pub func collect_ns(ns_node: i64) -> i64 {
             if ra < 0 {
                 return -1
             }
+        } else if tag == S_N_VAR_DECL {
+            // p.9.12.4：命名空间内 const 常量 → 以命名空间全名登记全局
+            //（ns::NAME，gb_* 表，与命名空间函数同前缀规则）
+            var vfull = sstate.ns_full_name(sstate.name_str(s))
+            var rv = collect_global_var(s, vfull)
+            if rv < 0 {
+                return -1
+            }
         }
         j = j + 1
     }
@@ -986,9 +994,11 @@ pub func collect_ns(ns_node: i64) -> i64 {
     return 0
 }
 
-// 顶层全局变量收集
-pub func collect_global_var(v: i64) -> i64 {
-    var nm = sstate.name_str(v)
+// 顶层全局变量收集（p.9.12.4：full 参数 = 登记全名——顶层传裸名；
+// 命名空间内 const 传 ns_full_name 拼接的全名 "ns::NAME"，与命名空间
+// 函数同前缀规则，引用端 ns::NAME / 裸名+前缀补全命中）
+pub func collect_global_var(v: i64, full: string) -> i64 {
+    var nm = full
     var is_const = s_vals[v]
     var ty_node = sstate.child(v, 0)
     var init = sstate.child(v, 1)
@@ -1247,7 +1257,7 @@ pub func collect_top() -> i64 {
                 return -1
             }
         } else if tag == S_N_VAR_DECL {
-            var r = collect_global_var(s)
+            var r = collect_global_var(s, sstate.name_str(s))
             if r < 0 {
                 return -1
             }

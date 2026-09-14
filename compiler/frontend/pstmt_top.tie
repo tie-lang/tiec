@@ -938,6 +938,23 @@ func parse_namespace() -> i64 {
                     return -1
                 }
                 table_push(body_stmts, st)
+            } else if tag == lex_const {
+                // p.9.12.4：`const fn` / `const func`（命名空间内）→ const fn 定义；
+                // 否则 const 命名空间常量（以 ns::NAME 全名登记全局符号，
+                // 语义/IR 复用顶层 const 全局通道；引用端 ns::NAME / 裸名 + 前缀补全）
+                if putil.peek_lexeme_n(1) == "fn" || putil.peek_lexeme_n(1) == "func" {
+                    var st = parse_fn_def()
+                    if st < 0 {
+                        return -1
+                    }
+                    table_push(body_stmts, st)
+                } else {
+                    var st = pstmt.parse_var_decl(1)
+                    if st < 0 {
+                        return -1
+                    }
+                    table_push(body_stmts, st)
+                }
             } else {
                 putil.set_err(putil.peek_line(), putil.peek_col(), "命名空间体内只允许函数定义、类定义或嵌套命名空间，实际是 " + putil.describe(tag))
                 return -1
