@@ -811,7 +811,103 @@ func s21_table_push(t: i64, elem_llvm_ty: i64, v: i64) {
     tl_void_2("tl_tbl$tbl_push", t21_ptri(t), t21_ptri(ir.get_value(slot)))
 }
 
-// 表下标读：tl_tbl$tbl_at(t, i, out) 越界写零 + 返回 ok；结果槽 load 返回。
+// p.9.12.2 负下标统一裁决：i<0 属编程错误 → 运行时诊断（表 N 下标 N 越界），
+// 打印后 exit(1)（与高侧越界读返回零值对齐裁决；负下标原为越界访存 UB、静默丢
+// 数据，现统一报错，不得静默也不得越界读/写）。noreturn；next_blk 供死 br 收尾
+//（LLVM 要求块有 terminator；opt 会 DCE 死 br）。
+func s21_index_raise(next_blk: i64) {
+    var msg = tig_str_lit(interner.intern("\"运行时错误: 表下标越界（负索引）\""))
+    var fmt = interner.intern("%s\n")  // 与 s21_map_missing_raise 同渲染路径
+    var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // printf vararg
+    ir.add_operand(inst, fmt, 0)
+    ir.add_operand(inst, msg, 0)
+    tig_ext_call1("exit", tig_int_lit_ty(1, types.named(TK_I32)), types.named(TK_I32), -1)
+    var db = ir.new_inst(g_cur_block, 30, -1)  // 死 br（exit noreturn）
+    ir.add_operand(db, next_blk, 1)
+}
+
+// 元素零值（扩容新槽填充）：string → 有效空串指针 ""（null 指针不是合法字符串，
+// len() 会崩溃）；其余按 t21_zero（数值 0 / 0.0 / false / ptr null / any 零聚合）。
+func s21_elem_zero(ty: i64) -> i64 {
+    if ty == types.named(TK_STR) {
+        return tig_str_lit(interner.intern("\"\""))  // 常量空串
+    }
+    return t21_zero(ty)
+}
+
+// 表下标写（p.9.12.2：越界自动扩容，杜绝静默丢弃）：
+//   - 负下标(i<0) → 运行时诊断（不得静默/不得越界写）；
+//   - i >= len → 按元素零值逐槽 push 扩容 need = max(len, i+1) 后写 target；
+//   - 否则直接 tl_tbl$tbl_set(t, i, src)。
+// 值先落槽再传指针整数。编译期 IR 发射层展开，零改运行期 tbl_set（自举不动点
+// 只随 tiec 源码变化）。用 tbl_push 零值逐个追加（string 槽得有效 "" 而非 null）。
+func s21_table_set(t: i64, i: i64, elem_llvm_ty: i64, v: i64) {
+    g_used_trmlite = true
+    var T64 = types.named(TK_I64)
+    var t_i = t21_ptri(t)
+    // 值槽（alloca elem type + store v）
+    var slot = ir.new_inst(g_cur_block, 20, elem_llvm_ty)
+    ir.add_operand(slot, elem_llvm_ty, 2)
+    var sv = ir.get_value(slot)
+    s21_store(sv, v, elem_llvm_ty)
+    // 负下标守卫
+    var negc = tig_icmp_c(i, tig_int_lit(0), 2)  // slt i, 0 → i<0
+    var nb = ir.new_block(g_cur_func, interner.intern("ts.neg"))
+    var mg = ir.new_block(g_cur_func, interner.intern("ts.mg"))
+    var cb0 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb0, negc, 0)
+    ir.add_operand(cb0, nb, 1)
+    ir.add_operand(cb0, mg, 1)
+    g_cur_block = nb
+    s21_index_raise(mg)
+    g_cur_block = mg
+    // 长度检查：need = i+1；need > len → 逐槽 push 零值到 need
+    var lenv = s21_table_len(t)
+    var need = s21_bin(0, i, tig_int_lit(1))  // i+1
+    var growc = tig_icmp_c(need, lenv, 3)     // sgt
+    var gt = ir.new_block(g_cur_func, interner.intern("ts.gt"))
+    var ge = ir.new_block(g_cur_func, interner.intern("ts.ge"))
+    var cb1 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb1, growc, 0)
+    ir.add_operand(cb1, gt, 1)
+    ir.add_operand(cb1, ge, 1)
+    g_cur_block = gt
+    // 零值 + 循环游标（alloca）
+    var zeroval = s21_elem_zero(elem_llvm_ty)
+    var idx_a = ir.new_inst(g_cur_block, 20, T64)
+    ir.add_operand(idx_a, T64, 2)
+    var idx_p = ir.get_value(idx_a)
+    s21_store(idx_p, lenv, T64)
+    var lc = ir.new_block(g_cur_func, interner.intern("ts.gc"))
+    var lb = ir.new_block(g_cur_func, interner.intern("ts.gb"))
+    var le = ir.new_block(g_cur_func, interner.intern("ts.gx"))
+    var bj = ir.new_inst(g_cur_block, 30, -1)  // br lc
+    ir.add_operand(bj, lc, 1)
+    // 循环条件：cur < need → 继续 push
+    g_cur_block = lc
+    var cur = s21_load(idx_p, T64)
+    var lcnd = tig_icmp_c(cur, need, 2)  // slt
+    var lcb = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(lcb, lcnd, 0)
+    ir.add_operand(lcb, lb, 1)
+    ir.add_operand(lcb, le, 1)
+    // 循环体：push 一个零值，cur += 1
+    g_cur_block = lb
+    s21_table_push(t, elem_llvm_ty, zeroval)
+    s21_store(idx_p, s21_bin(0, cur, tig_int_lit(1)), T64)  // cur+1
+    var bb = ir.new_inst(g_cur_block, 30, -1)  // br lc
+    ir.add_operand(bb, lc, 1)
+    // 出口 → merge
+    g_cur_block = le
+    var brg = ir.new_inst(g_cur_block, 30, -1)  // br ge
+    ir.add_operand(brg, ge, 1)
+    g_cur_block = ge
+    tl_void_3("tl_tbl$tbl_set", t_i, i, t21_ptri(sv))
+}
+
+// 表下标读：tl_tbl$tbl_at(t, i, out) 高侧越界(>=len)写零 + 返回 ok；结果槽 load。
+// p.9.12.2 裁决：越界读（含负下标）语义不变（高侧返零；负下标为既有 UB，编译器
+// 自举运行期有惰性负下标读，禁加负下标守卫以防自举失稳）；仅写路径负下标报错。
 func s21_table_at(t: i64, i: i64, ok_ptr: i64, elem_llvm_ty: i64) -> i64 {
     g_used_trmlite = true
     var T64 = types.named(TK_I64)
@@ -823,17 +919,6 @@ func s21_table_at(t: i64, i: i64, ok_ptr: i64, elem_llvm_ty: i64) -> i64 {
     var ok = tl_i64_3("tl_tbl$tbl_at", t_i, i, t21_ptri(sv))
     s21_store(ok_ptr, s21_trunc_i8(ok), types.named(TK_I8))  // 越界标志 → 出参 i8
     return s21_load(sv, elem_llvm_ty)
-}
-
-// 表下标写：tl_tbl$tbl_set(t, i, src) 越界静默；值先落槽再传指针整数。
-func s21_table_set(t: i64, i: i64, elem_llvm_ty: i64, v: i64) {
-    g_used_trmlite = true
-    var t_i = t21_ptri(t)
-    var slot = ir.new_inst(g_cur_block, 20, elem_llvm_ty)
-    ir.add_operand(slot, elem_llvm_ty, 2)
-    var sv = ir.get_value(slot)
-    s21_store(sv, v, elem_llvm_ty)
-    tl_void_3("tl_tbl$tbl_set", t_i, i, t21_ptri(sv))
 }
 
 // ==================== 字典容器批次 7（去 tie_map_* 桥） ====================
