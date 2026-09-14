@@ -912,9 +912,8 @@ func parse_switch() -> i64 {
     return n
 }
 
-// p.9.10.1 switch **表达式**（表达式位模式匹配）：`switch <subject> { <arm>* }`。
-// 复用语句位模式语法（parse_case_pattern：值/区间/类型/枚举变体 payload 解构），
-// 但分支体为**表达式**，用 `=>` 分隔；`_` 作通配缺省臂。臂之间用 `,` 分隔
+// p.9.13.1 单箭头统一：switch 表达式分支臂分隔符由 `=>` 改为 `->`（p.8.2.8
+// 数据流箭头 lex_arrow），语义零变化。`_` 作通配缺省臂。臂之间用 `,` 分隔
 // （不允许多模式臂——逗号即臂分隔，避免歧义）。产出：
 //   N_SWITCH_EXPR[aux=ncases, val=1=含 `_` 通配臂,
 //                 children=[subject, caseExpr1..caseExprN, defaultExpr 或 -1]]
@@ -949,8 +948,8 @@ pub func parse_switch_expr(line: i64, col: i64) -> i64 {
             var cc = putil.peek_col()
             var pats: table<i64> = table_new_i64()
             var is_wild: bool = false
-            // `_` 通配臂：仅当 `_` 后直接跟 `=>` 才算通配（否则落普通表达式/模式）
-            if tag == lex_ident && putil.peek_lexeme() == "_" && putil.peek_n(1) == lex_fatarrow {
+            // `_` 通配臂：仅当 `_` 后直接跟 `->` 才算通配（否则落普通表达式/模式）
+            if tag == lex_ident && putil.peek_lexeme() == "_" && putil.peek_n(1) == lex_arrow {
                 is_wild = true
                 putil.advance()   // 消费 `_`
             } else {
@@ -962,12 +961,15 @@ pub func parse_switch_expr(line: i64, col: i64) -> i64 {
             }
             var when_expr = -1
             if putil.eat(lex_when) {
-                when_expr = pexpr.parse_expr()
+                // p.9.13.1 单箭头统一：守卫用 parse_ternary（不消费顶层 `->`），
+                // 保证紧随的臂分隔符 `->` 不被管道判定吃走；臂体在 `->` 之后用
+                // parse_expr 解析（体内 `->` 才是数据流管道）。
+                when_expr = pexpr.parse_ternary()
                 if when_expr < 0 {
                     return -1
                 }
             }
-            if !putil.expect(lex_fatarrow, "'=>'") {
+            if !putil.expect(lex_arrow, "'->'") {
                 return -1
             }
             var body_expr = pexpr.parse_expr()
@@ -993,7 +995,7 @@ pub func parse_switch_expr(line: i64, col: i64) -> i64 {
                 table_push(cases, c)
             }
             // 臂分隔：`,`（向后继续）或 `}` / 文件尾（结束）。tie 的 ASI 在臂体
-            // 非逗号/花括号收尾换行时行尾补分号（如末臂 `_ => "many"` 换行后紧跟
+            // 非逗号/花括号收尾换行时行尾补分号（如末臂 `_ -> "many"` 换行后紧跟
             // `}`），先吃掉可能的分号再判分隔符。
             putil.eat(lex_semi)
             if putil.eat(lex_comma) {
@@ -1099,7 +1101,7 @@ func parse_case_pattern() -> i64 {
         }
         putil.restore_pos()
     }
-    return pexpr.parse_expr()
+    return pexpr.parse_case_arm_pattern()
 }
 
 // 枚举变体引用链：Ident(.Ident)* → N_VAR / N_FIELD_ACCESS（case pattern 专用；

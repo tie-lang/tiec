@@ -568,6 +568,13 @@ pub func scan_ident(pos: i64) -> i64 {
 // 符号：3→2→1 字符最长匹配查符号表；未命中报「无法识别的字符」
 pub func scan_symbol(pos: i64) -> i64 {
     var start = pos
+    // p.9.13.1 单箭头统一：`=>` 已移除。在最长匹配之前显式判定「`=` 后紧跟 `>`」，
+    // 提前报精确诊断（避免退化成 `=` `>` 两个 token 的隐性误配误指）。相邻 `>=`
+    //（首字符 `>`）、`==`、`=` 因首字符/第二字符不同不受影响。
+    if pos + 1 < g_n && g_codes[pos] == 61 && g_codes[pos + 1] == 62 {
+        set_err(lextok.line_of(start), lextok.col_of(start), errors.lex_fatarrow_removed())
+        return -1
+    }
     var want: i64 = 3
     while want >= 1 {
         if pos + want <= g_n {

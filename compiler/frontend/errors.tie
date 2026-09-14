@@ -94,6 +94,12 @@ pub func lex_unknown_escape(e: string) -> string {
     return "未知转义序列 \\" + e
 }
 
+// p.9.13.1 单箭头统一：`=>` 已移除，请用 `->`（零兼容别名）。scan_symbol 对上
+// 述字符对直接报本消息（不再产出 `=>` token，也不退化为 `=` `>` 两 token）。
+pub func lex_fatarrow_removed() -> string {
+    return "`=>` 已移除，请用 `->`"
+}
+
 // 统一错误协议：ERR:<line> <col> <message>（T1.2 词法/语法错误协议）。
 // stderr 显示格式「词法错误 @行:列: 消息」由上层 CLI 拼装（fmt_error）。
 pub func err_lex_err(line: i64, col: i64, msg: string) -> string {
