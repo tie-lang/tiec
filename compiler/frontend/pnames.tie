@@ -69,9 +69,9 @@ func ensure_tok_names() {
         i = i + 1
     }
     // 补齐保留段 token 名（90=hash,91=actor,92=larrow... 现有序列只推到 Dollar=89）：
-    // p.9.10.1 新增 lex_fatarrow=97（`=>`）可读名。
+    // p.9.13.1 单箭头统一：lex_fatarrow（原 tag 97）已删除，不再登记可读名。
     var pad: table<i64> = [90, 91, 92, 93, 94, 95, 96]
-    var pn: table<string> = ["Hash", "Actor", "Async", "Goto", "LArrow", "InterpL", "FatArrow"]
+    var pn: table<string> = ["Hash", "Actor", "Async", "Goto", "LArrow", "InterpL"]
     var p: i64 = 0
     while p < len(pad) {
         while len(g_tok_names) < pad[p] {
@@ -80,10 +80,6 @@ func ensure_tok_names() {
         table_push(g_tok_names, pn[p])
         p = p + 1
     }
-    while len(g_tok_names) <= 97 {
-        table_push(g_tok_names, "")
-    }
-    g_tok_names[97] = "FatArrow"
 }
 
 // 节点 tag 的可读名称（parse_debug 用）
