@@ -12,8 +12,8 @@ type tie<logic>
 // 运行时拼接（"a%" + "20b"），避免 % 与数字在源码字面量中相邻；"%G" 这类 % 后非数字
 // 不受影响，可直接写字面量。
 // 预期输出：std_encoding 验收通过（全部断言通过，无 assert 失败退出）。
-import "../../std/assert.tie"
-import "../../std/encoding.tie"
+import "/std/assert.tie"
+import "/std/encoding.tie"
 using assert;
 using enc;
 

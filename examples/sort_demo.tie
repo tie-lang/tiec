@@ -5,8 +5,8 @@ type tie<logic>
 // contains_*/index_of_* 只读；断言用 assert 泛型 + 逐元素比较。
 // 编译运行：cargo run -p tie -- examples/sort_demo.tie
 
-import "../std/sort.tie"
-import "../std/assert.tie"
+import "/std/sort.tie"
+import "/std/assert.tie"
 
 // 比较 i64 表 t 与期望表 vals 是否逐元素相等
 func i64_seq_eq(t: table<i64>, vals: table<i64>) -> bool {

@@ -6,10 +6,10 @@ type tie<logic>
 // - cfg：parse_kv/parse_ini/get/get_int/get_bool/has（交错表约定）
 // - pretty：table/simple/kv（单元格 '|' 分隔约定）
 // 预期输出：ext_ui_cfg 验收通过（全部断言通过，无 assert 失败退出）。
-import "../../std/assert.tie"
-import "../../ext/tui.tie"
-import "../../ext/config.tie"
-import "../../ext/pretty.tie"
+import "/std/assert.tie"
+import "/ext/tui.tie"
+import "/ext/config.tie"
+import "/ext/pretty.tie"
 using assert;
 using tui;
 using cfg;

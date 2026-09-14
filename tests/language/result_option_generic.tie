@@ -14,8 +14,8 @@ type tie<logic>
 // 期望输出（逐行，与 println 一一对应）：
 //   p.8.1.2 泛型 Result/Option + ? 解包链全过
 // ============================================================
-import "../../std/result.tie"
-import "../../std/assert.tie"
+import "/std/result.tie"
+import "/std/assert.tie"
 using assert;
 
 // 泛型 Result 组合子：map（Ok 转换 / Err 透传）——enum 模板形参（p.8.1.2）

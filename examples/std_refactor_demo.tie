@@ -7,10 +7,10 @@ type tie<logic>
 // 运行：tie examples/std_refactor_demo.tie
 
 // 注意：csv.tie 已随同展开 string.tie（import 不做去重），此处不重复导入 string.tie
-import "../std/math.tie"
-import "../std/format.tie"
-import "../std/assert.tie"
-import "../std/csv.tie"
+import "/std/math.tie"
+import "/std/format.tie"
+import "/std/assert.tie"
+import "/std/csv.tie"
 
 func main() {
     // 1. str 大小写 / trim 拆分 / join / repeat

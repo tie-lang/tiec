@@ -6,10 +6,10 @@ type tie<logic>
 // - path：路径处理——basename / dirname / ext / stem / join / abs / cwd
 //   （extern fn C ABI 桥 + 纯 tie 实现）。
 // 预期输出：std_fs_path 验收通过（全部断言通过，无 assert 失败退出）。
-import "../../std/result.tie"
-import "../../std/assert.tie"
-import "../../std/fs.tie"
-import "../../std/path.tie"
+import "/std/result.tie"
+import "/std/assert.tie"
+import "/std/fs.tie"
+import "/std/path.tie"
 using assert;
 using fs;
 using path;

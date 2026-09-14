@@ -13,7 +13,7 @@ type tie<logic>
 //           运行：compiler/proto/lexer_test.exe （从仓库根目录）
 // 全部断言通过输出「lexer 验收通过：16/16 文件 token 计数与 Rust 一致」。
 import "./lexer.tie"
-import "../../std/assert.tie"
+import "/std/assert.tie"
 using lexer;
 using assert;
 
