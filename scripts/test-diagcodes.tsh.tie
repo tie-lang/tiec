@@ -32,7 +32,9 @@ var skipF = false
 var wname = ""
 
 // 警告语料（与 .ps1 逐字一致；tie 字符串 \n 换行）
-var warnText = "type tie<logic>\nfunc main() {\n    var s: string = \"\"\n    var i: i64 = 0\n    while i < 100 {\n        s = s + \"x\"\n        i = i + 1\n    }\n    var a: table<i64> = table_new_i64()\n    var b = a\n    var f: f64 = 1.5\n    var g: f64 = 2.5\n    if f == g {\n        println(\"eq\")\n    }\n    var q: i64 = 7 / 2\n    println(s + to_string(len(b)) + to_string(q))\n}\n"
+// 语料内容带时间戳：tiec 缓存按路径+内容命中，若每次都写同一份固定语料，
+// 二次运行会命中缓存跳过编译 → 拿不到警告输出 → 误判「警告缺失」。
+var warnText = "type tie<logic>\n// diagcodes warn probe " + to_string(time_now()) + "\nfunc main() {\n    var s: string = \"\"\n    var i: i64 = 0\n    while i < 100 {\n        s = s + \"x\"\n        i = i + 1\n    }\n    var a: table<i64> = table_new_i64()\n    var b = a\n    var f: f64 = 1.5\n    var g: f64 = 2.5\n    if f == g {\n        println(\"eq\")\n    }\n    var q: i64 = 7 / 2\n    println(s + to_string(len(b)) + to_string(q))\n}\n"
 var wcodes = ["W00001", "W00002", "W00003", "W00004"]
 
 // ---------- (1) golden 错误语料覆盖 ----------
