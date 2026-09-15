@@ -34,6 +34,85 @@ var g_cur_blkidx: i64 = 0;      // 当前块内语句序号（check_block 循环
 var g_cur_blknode: i64 = -1;    // 当前块 StmtList 节点（R3 扫描用）
 var g_gt_seq_cnt: i64 = 0;      // 函数内语句全局序号
 var g_gt_blk_seq: i64 = 0;      // 块 id 计数器（函数级）
+// 警告辅助：当前块内已声明名集合（控制变量遮蔽 vs 重复声明的判定）。
+// check_block 进入/退出 save/restore，使同名内层声明可被识别为遮蔽外层。
+var g_block_names: table<i64> = []
+// 警告辅助：控制流嵌套深度（W00017，进入 if/while/for/switch/try/... 体 +1）
+var g_cf_depth: i64 = 0
+
+// W00008 / W00005 判定：声明同名变量 / for 变量时调用（lv_insert 之前）。
+// 已存在 lv_keys 的绑定：若也在当前块声明集合 g_block_names → 同块重复声明
+//（W00005）；否则为内层遮蔽外层（W00008）。最后把本名记入当前块集合。
+func decl_warn(nid: i64, line: i64, col: i64) {
+    var ex = sstate.bs_find(lv_keys, nid)
+    if ex >= 0 {
+        if sstate.seg_has(g_block_names, 0, len(g_block_names), nid) == 1 {
+            sm_warn_add(line, col, "变量重复声明（同名变量再次声明，后者覆盖前者）")
+        } else {
+            sm_warn_add(line, col, "变量遮蔽（内层同名变量遮蔽外层）")
+        }
+    }
+    table_push(g_block_names, nid)
+}
+
+// W00010：完全空的块（StmtList nchild==0）报警。仅用于控制流体
+//（if/while/for/try/defer/unsafe/guard），函数体与 switch 缺省分支不报
+//（合法空实现，且无法读取注释区分占位，宁可漏报避免误伤）。
+func warn_empty_block(blk: i64, s: i64) {
+    if blk >= 0 && sstate.nchild(blk) == 0 {
+        var ln = s_lines[blk]
+        var cl = s_cols[blk]
+        if ln <= 0 {
+            ln = s_lines[s]
+            cl = s_cols[s]
+        }
+        sm_warn_add(ln, cl, "空语句块（无内容且无注释占位）")
+    }
+}
+
+// W00011 / W00015 子树遍历：收集可变 var 声明节点、被赋值目标名、被读取名。
+// 递归覆盖闭包体（FN_LIT 子树），故闭包内对外层变量的读取/修改均计入，
+// 避免对捕获变量误报「未使用 / 未修改」。
+func diag_walk(node: i64, mvars: table<i64>, assigned: table<i64>, reads: table<i64>) {
+    if node < 0 {
+        return
+    }
+    var t = s_tags[node]
+    if t == S_N_VAR_DECL {
+        if s_vals[node] == 0 {
+            table_push(mvars, node)
+        }
+    } else if t == S_N_VAR {
+        var nid = s_names[node]
+        if nid >= 0 {
+            table_push(reads, nid)
+        }
+    } else if t == S_N_ASSIGN {
+        var nid = s_names[node]
+        if nid >= 0 {
+            table_push(assigned, nid)
+        }
+    } else if t == S_N_FIELD_ASSIGN {
+        var root = sstate.im_root(sstate.child(node, 0))
+        if root >= 0 {
+            table_push(assigned, root)
+        }
+    } else if t == S_N_INDEX_ASSIGN {
+        var tgt = sstate.child(node, 0)
+        if tgt >= 0 {
+            var root = sstate.im_root(sstate.child(tgt, 0))
+            if root >= 0 {
+                table_push(assigned, root)
+            }
+        }
+    }
+    var nc = sstate.nchild(node)
+    var k: i64 = 0
+    while k < nc {
+        diag_walk(sstate.child(node, k), mvars, assigned, reads)
+        k = k + 1
+    }
+}
 
 namespace scheck {
 
@@ -66,26 +145,54 @@ pub func check_block(blk: i64) -> i64 {
     var saved_chain = g_cur_chain
     var saved_depth = g_cur_depth
     var saved_blknode = g_cur_blknode
+    var saved_bn = g_block_names
     g_gt_blk_seq = g_gt_blk_seq + 1
     g_cur_chain = g_cur_chain + "/" + to_string(g_gt_blk_seq)
     g_cur_depth = g_cur_depth + 1
     g_cur_blknode = blk
+    g_block_names = table_new_i64()
     var n = sstate.nchild(blk)
     var i: i64 = 0
+    var reachable: bool = true
     while i < n {
         g_cur_blkidx = i
         g_gt_seq_cnt = g_gt_seq_cnt + 1
         var s = sstate.child(blk, i)
+        // W00009：不可达语句（return/panic/goto/break/continue 之后的语句）
+        if !reachable {
+            sm_warn_add(s_lines[s], s_cols[s], "return 后不可达语句（语句恒不执行）")
+        }
         var r = check_stmt(s)
         if r < 0 {
             return -1
+        }
+        // 更新可达性：块级无条件终止语句使后续语句不可达
+        if reachable {
+            var t = s_tags[s]
+            if t == S_N_RETURN || t == S_N_PANIC || t == S_N_GOTO ||
+                t == S_N_BREAK || t == S_N_CONTINUE {
+                reachable = false
+            }
         }
         i = i + 1
     }
     g_cur_chain = saved_chain
     g_cur_depth = saved_depth
     g_cur_blknode = saved_blknode
+    g_block_names = saved_bn
     return 0
+}
+
+// W00017：控制流嵌套深度计数包装。进入控制流体 +1，深度 > 5 报警。
+// 位置要求：check_block 之后（依赖它）、所有控制流调用点之前（tie 先定义后使用）。
+func check_cf_block(blk: i64, s: i64) -> i64 {
+    g_cf_depth = g_cf_depth + 1
+    if g_cf_depth > 5 {
+        sm_warn_add(s_lines[s], s_cols[s], "嵌套过深（控制流嵌套超过 5 层）")
+    }
+    var r = check_block(blk)
+    g_cf_depth = g_cf_depth - 1
+    return r
 }
 
 // p.8.2.11：guard else 块（N_STMTLIST）是否以跳转语句收尾。
@@ -120,7 +227,8 @@ func check_defer(s: i64) -> i64 {
         return 0
     }
     // 再类型检查块体语句（表达式/赋值/读作用域变量正常推断）
-    return check_block(body)
+    warn_empty_block(body, s)
+    return check_cf_block(body, s)
 }
 
 // 递归校验 defer 块体。返回 0 成功，-1 失败（诊断）。
@@ -185,7 +293,8 @@ func check_defer_sub(n: i64) -> i64 {
 // 仅作语句）。供 infer_expr(S_N_TRY_BLOCK) 调用（sinfer 无 check_block 能力）。
 pub func check_try(s: i64) -> i64 {
     var body = sstate.child(s, 0)
-    var r = check_block(body)
+    warn_empty_block(body, s)
+    var r = check_cf_block(body, s)
     if r < 0 {
         return -1
     }
@@ -331,7 +440,8 @@ pub func check_switch_case(c: i64, subj_ty: i64) -> i64 {
         return -1
     }
     var body = sstate.child(c, 2)
-    return check_block(body)
+    warn_empty_block(body, c)
+    return check_cf_block(body, c)
 }
 
 // 模式 + when 守卫检查（不含分支体——供 p.9.10.1 表达式位 switch 复用）。
@@ -758,7 +868,8 @@ pub func check_stmt(s: i64) -> i64 {
         var blk2 = sstate.child(s, 0)
         var r2: i64 = 0
         if blk2 >= 0 {
-            r2 = check_block(blk2)
+            warn_empty_block(blk2, s)
+            r2 = check_cf_block(blk2, s)
         }
         g_unsafe_depth = saved2
         return r2
@@ -790,7 +901,8 @@ pub func check_stmt(s: i64) -> i64 {
         var body_u = sstate.child(s, 0)
         var r_u: i64 = 0
         if body_u >= 0 {
-            r_u = check_block(body_u)
+            warn_empty_block(body_u, s)
+            r_u = check_cf_block(body_u, s)
         }
         g_unsafe_depth = saved_u
         return r_u
@@ -816,7 +928,8 @@ pub func check_stmt(s: i64) -> i64 {
         var body_w = sstate.child(s, 1)
         var r_w: i64 = 0
         if body_w >= 0 {
-            r_w = check_block(body_w)
+            warn_empty_block(body_w, s)
+            r_w = check_cf_block(body_w, s)
         }
         g_unsafe_depth = saved_w
         return r_w
@@ -1171,13 +1284,16 @@ pub func check_stmt(s: i64) -> i64 {
                 sm_warn_add(s_lines[s], s_cols[s], "条件恒真（if/while 条件为常量 true/非零值）")
             }
         }
-        var r = check_block(sstate.child(s, 1))
+        var then_blk = sstate.child(s, 1)
+        warn_empty_block(then_blk, s)
+        var r = check_cf_block(then_blk, s)
         if r < 0 {
             return -1
         }
         var els = sstate.child(s, 2)
         if els >= 0 {
-            r = check_block(els)
+            warn_empty_block(els, s)
+            r = check_cf_block(els, s)
             if r < 0 {
                 return -1
             }
@@ -1199,7 +1315,8 @@ pub func check_stmt(s: i64) -> i64 {
             return -1
         }
         var gbody = sstate.child(s, 1)
-        var gr = check_block(gbody)
+        warn_empty_block(gbody, s)
+        var gr = check_cf_block(gbody, s)
         if gr < 0 {
             return -1
         }
@@ -1253,7 +1370,9 @@ pub func check_stmt(s: i64) -> i64 {
             table_push(lp_stack, lbl)
         }
         lp_top = lp_top + 1
-        var r = check_block(sstate.child(s, 1))
+        var wbody = sstate.child(s, 1)
+        warn_empty_block(wbody, s)
+        var r = check_cf_block(wbody, s)
         lp_top = lp_top - 1
         if r < 0 {
             return -1
@@ -1303,10 +1422,8 @@ pub func check_stmt(s: i64) -> i64 {
                 return -1
             }
         }
-        // p.6.9.15 警告 W0005：for 迭代变量遮蔽外层同名变量（覆盖语义）
-        if sstate.bs_find(lv_keys, vnid) >= 0 {
-            sm_warn_add(s_lines[s], s_cols[s], "变量重复声明（同名变量再次声明，后者覆盖前者）")
-        }
+        // W00008 / W00005：for 迭代变量重名判定（覆盖语义）
+        decl_warn(vnid, s_lines[s], s_cols[s])
         // for 迭代变量：lv_insert 已实现覆盖
         sinfer.lv_insert(vnid, elem_ty, 0, -1, 0)
         var lbl = s_aux[s]
@@ -1317,7 +1434,9 @@ pub func check_stmt(s: i64) -> i64 {
             table_push(lp_stack, lbl)
         }
         lp_top = lp_top + 1
-        var r = check_block(sstate.child(s, 1))
+        var fbody = sstate.child(s, 1)
+        warn_empty_block(fbody, s)
+        var r = check_cf_block(fbody, s)
         lp_top = lp_top - 1
         if r < 0 {
             return -1
@@ -1424,7 +1543,7 @@ pub func check_stmt(s: i64) -> i64 {
         // 无 default：parser 对缺省 default 生成**空 StmtList** 节点（nchild==0）
         var has_default: bool = dflt >= 0 && sstate.nchild(dflt) > 0
         if has_default {
-            var r = check_block(dflt)
+            var r = check_cf_block(dflt, s)
             if r < 0 {
                 return -1
             }
@@ -1685,10 +1804,8 @@ pub func check_var_decl(s: i64) -> i64 {
                 sm_err_msg = "port 对象变量 '" + nm + "' 的初始化必须是实现了该 port 的具体类型实例（提升）或同 port 对象，实际是 " + types.type_name(it_p)
                 return -1
             }
-            // p.6.9.15 警告 W0005：同名变量再次声明（作用域覆盖语义，后者遮蔽前者）
-            if sstate.bs_find(lv_keys, nid) >= 0 {
-                sm_warn_add(s_lines[s], s_cols[s], "变量重复声明（同名变量再次声明，后者覆盖前者）")
-            }
+            // W00008 / W00005：同名变量再次声明（作用域覆盖语义，后者遮蔽前者）
+            decl_warn(nid, s_lines[s], s_cols[s])
             // 登记局部变量（port 对象 = ptr 槽）
             sinfer.lv_insert(nid, ty, is_const, -1, 0)
             return 0
@@ -1807,10 +1924,8 @@ pub func check_var_decl(s: i64) -> i64 {
                 return -1
             }
         }
-        // p.6.9.15 警告 W0005：同名变量再次声明（作用域覆盖语义，后者遮蔽前者）
-        if sstate.bs_find(lv_keys, nid) >= 0 {
-            sm_warn_add(s_lines[s], s_cols[s], "变量重复声明（同名变量再次声明，后者覆盖前者）")
-        }
+        // W00008 / W00005：同名变量再次声明（作用域覆盖语义，后者遮蔽前者）
+        decl_warn(nid, s_lines[s], s_cols[s])
         sinfer.lv_insert(nid, ty, is_const, telem, dyn)
         // S2.2 闭包：闭包体内声明的局部登记到当前闭包局部段（捕获遮蔽判定用）
         if g_clo_depth > 0 && g_clo_cur >= 0 {
@@ -1888,10 +2003,8 @@ pub func check_var_decl(s: i64) -> i64 {
             }
         }
     }
-    // p.6.9.15 警告 W0005（无标注路径）：同名变量再次声明（作用域覆盖语义）
-    if sstate.bs_find(lv_keys, nid) >= 0 {
-        sm_warn_add(s_lines[s], s_cols[s], "变量重复声明（同名变量再次声明，后者覆盖前者）")
-    }
+    // W00008 / W00005（无标注路径）：同名变量再次声明（作用域覆盖语义）
+    decl_warn(nid, s_lines[s], s_cols[s])
     sinfer.lv_insert(nid, it2, is_const, telem2, dyn2)
     // S2.2 闭包：闭包体内声明的局部登记到当前闭包局部段（捕获遮蔽判定用）
     if g_clo_depth > 0 && g_clo_cur >= 0 {
@@ -1936,6 +2049,8 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     g_cur_blknode = -1
     g_gt_seq_cnt = 0
     g_gt_blk_seq = 0
+    g_cf_depth = 0
+    g_block_names = table_new_i64()
     var nparams = sg_nparams[sig]
     var off = sg_off[sig]
     var i: i64 = 0
@@ -1982,6 +2097,40 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     g_unsafe_depth = saved_depth
     if r < 0 {
         return -1
+    }
+    // W00011 / W00015：遍历函数体子树收集「参数读取 / 可变绑定重赋值 /
+    // 可变声明」信息。闭包体作为函数体子树的一部分一并遍历，故闭包内读取 /
+    // 修改外层变量也会计入，避免对捕获变量误报「未使用 / 未修改」。
+    var dw_mvars: table<i64> = table_new_i64()
+    var dw_assigned: table<i64> = table_new_i64()
+    var dw_reads: table<i64> = table_new_i64()
+    diag_walk(body, dw_mvars, dw_assigned, dw_reads)
+    // W00011：函数参数从未被读取（或写入）
+    var pi2: i64 = 0
+    while pi2 < nparams {
+        var pnode = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + pi2)
+        var pnid = intern.intern(sstate.name_str(pnode))
+        var used: bool = false
+        if sstate.seg_has(dw_reads, 0, len(dw_reads), pnid) == 1 {
+            used = true
+        }
+        if sstate.seg_has(dw_assigned, 0, len(dw_assigned), pnid) == 1 {
+            used = true
+        }
+        if !used {
+            sm_warn_add(s_lines[pnode], s_cols[pnode], "函数参数未使用（参数从未被读取）")
+        }
+        pi2 = pi2 + 1
+    }
+    // W00015：可变绑定（var）声明后从未被重赋值
+    var mi: i64 = 0
+    while mi < len(dw_mvars) {
+        var dv = dw_mvars[mi]
+        var dnid = intern.intern(sstate.name_str(dv))
+        if sstate.seg_has(dw_assigned, 0, len(dw_assigned), dnid) == 0 {
+            sm_warn_add(s_lines[dv], s_cols[dv], "可变绑定未修改（var 声明后从未赋值）")
+        }
+        mi = mi + 1
     }
     // 三期 goto（§7.1.5）：函数体检查完后统一校验 goto（标签表已收集全——
     // goto 可前向/后向任意位置，须全表收集后判定 R1/R2/R3）
@@ -2370,6 +2519,7 @@ func check_closure_body(ci: i64) -> i64 {
     // 闭包体：children[slot+1+nparams]（泛型槽0、返回类型1、参数2..、体末尾）
     var slot = sstate.slot_off(fn_node)
     var body = sstate.child(fn_node, slot + 1 + nparams)
+    g_cf_depth = 0   // 闭包嵌套深度独立计（不继承外层函数）
     var r = check_block(body)
     // 退出闭包体上下文
     g_clo_depth = g_clo_depth - 1
