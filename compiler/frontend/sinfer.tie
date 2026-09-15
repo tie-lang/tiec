@@ -1809,13 +1809,6 @@ pub func infer_expr(id: i64) -> i64 {
             if s_tags[an_bc] == S_N_BOOL_LIT {
                 sm_warn_add(s_lines[an_bc], s_cols[an_bc], "布尔参数调用（实参为 bool 字面量，语义不明）")
             }
-            // W00012：魔法数字（非 0/1/-1 的整数字面量直接作实参）
-            if s_tags[an_bc] == S_N_INT_LIT {
-                var mv_bc = s_vals[an_bc]
-                if mv_bc != 0 && mv_bc != 1 && mv_bc != -1 {
-                    sm_warn_add(s_lines[an_bc], s_cols[an_bc], "魔法数字（非 0/1 的字面量直接参与运算）")
-                }
-            }
             k_bc = k_bc + 1
         }
         return infer_call(id)
