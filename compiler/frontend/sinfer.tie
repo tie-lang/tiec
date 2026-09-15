@@ -930,19 +930,30 @@ pub func infer_expr(id: i64) -> i64 {
                 // 左字面量、右变量：左常量在右类型范围 → 右类型；否则宽者
                 if lit_in_range(s_vals[l_node], rhs) {
                     rt = rhs
-                } else if rw > lw {
-                    rt = rhs
                 } else {
-                    rt = lhs
+                    // W00018：字面量落在窄类型范围外（i64 不会溢出，不报）
+                    if rw < 64 {
+                        sm_warn_add(s_lines[id], s_cols[id], "大整数字面量溢出风险（超出目标窄类型范围）")
+                    }
+                    if rw > lw {
+                        rt = rhs
+                    } else {
+                        rt = lhs
+                    }
                 }
             } else if r_lit && !l_lit {
                 // 右字面量、左变量：右常量在左类型范围 → 左类型；否则宽者
                 if lit_in_range(s_vals[r_node], lhs) {
                     rt = lhs
-                } else if lw > rw {
-                    rt = lhs
                 } else {
-                    rt = rhs
+                    if lw < 64 {
+                        sm_warn_add(s_lines[id], s_cols[id], "大整数字面量溢出风险（超出目标窄类型范围）")
+                    }
+                    if lw > rw {
+                        rt = lhs
+                    } else {
+                        rt = rhs
+                    }
                 }
             } else if !l_lit && !r_lit {
                 // 两侧变量：宽者
