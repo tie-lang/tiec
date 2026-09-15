@@ -2013,6 +2013,45 @@ pub func check_var_decl(s: i64) -> i64 {
     return 0
 }
 
+// W00012 收窄版的统计遍历：递归收集整数字面量的值 / 出现次数 / 首次位置。
+// 只覆盖单棵函数体子树（含闭包 FN_LIT 子树），因此计数天然是「同一函数内」。
+// 0 / 1 / -1 不计（正常用法）。
+func lit_scan(node: i64, vals: table<i64>, cnts: table<i64>, lns: table<i64>, cls_ln: table<i64>) {
+    if node < 0 {
+        return
+    }
+    if s_tags[node] == S_N_INT_LIT {
+        var v = s_vals[node]
+        if v != 0 && v != 1 && v != -1 {
+            var idx: i64 = -1
+            var i: i64 = 0
+            var nv = len(vals)
+            while i < nv {
+                if vals[i] == v {
+                    idx = i
+                    i = nv
+                } else {
+                    i = i + 1
+                }
+            }
+            if idx >= 0 {
+                cnts[idx] = cnts[idx] + 1
+            } else {
+                table_push(vals, v)
+                table_push(cnts, 1)
+                table_push(lns, s_lines[node])
+                table_push(cls_ln, s_cols[node])
+            }
+        }
+    }
+    var n = sstate.nchild(node)
+    var k: i64 = 0
+    while k < n {
+        lit_scan(sstate.child(node, k), vals, cnts, lns, cls_ln)
+        k = k + 1
+    }
+}
+
 // 函数体检查
 pub func check_fn(fn_node: i64, full: string) -> i64 {
     var sig = sstate.fn_sig(full)
@@ -2092,6 +2131,20 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     var saved_depth = g_unsafe_depth
     if sstate.sig_unsafe(sig) == 1 {
         g_unsafe_depth = g_unsafe_depth + 1
+    }
+    // W00012（收窄版）：同一函数内同一整数字面量出现 >= 3 次才报——单次或两次
+    // 出现属正常写法，只有反复出现的无名常量才对应「局部修改易遗漏」。
+    var w12_vals: table<i64> = table_new_i64()
+    var w12_cnts: table<i64> = table_new_i64()
+    var w12_lns: table<i64> = table_new_i64()
+    var w12_cls: table<i64> = table_new_i64()
+    lit_scan(body, w12_vals, w12_cnts, w12_lns, w12_cls)
+    var w12_i: i64 = 0
+    while w12_i < len(w12_vals) {
+        if w12_cnts[w12_i] >= 3 {
+            sm_warn_add(w12_lns[w12_i], w12_cls[w12_i], "魔法数字（非 0/1 的字面量直接参与运算）")
+        }
+        w12_i = w12_i + 1
     }
     var r = check_block(body)
     g_unsafe_depth = saved_depth
