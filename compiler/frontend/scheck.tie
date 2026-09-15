@@ -59,14 +59,11 @@ func decl_warn(nid: i64, line: i64, col: i64) {
 //（if/while/for/try/defer/unsafe/guard），函数体与 switch 缺省分支不报
 //（合法空实现，且无法读取注释区分占位，宁可漏报避免误伤）。
 func warn_empty_block(blk: i64, s: i64) {
-    if blk >= 0 && sstate.nchild(blk) == 0 {
-        var ln = s_lines[blk]
-        var cl = s_cols[blk]
-        if ln <= 0 {
-            ln = s_lines[s]
-            cl = s_cols[s]
-        }
-        sm_warn_add(ln, cl, "空语句块（无内容且无注释占位）")
+    if blk >= 0 && blk != s && s_tags[blk] == S_N_STMTLIST && sstate.nchild(blk) == 0 {
+        // 位置取父语句而非块节点：块节点（StmtList）不记录自身位置，
+        // s_lines[blk] 拿到的是继承/默认值，会把空块报到上一条语句上
+        // （实测 `if n>0 {}` 报成前一行 @4:14 / @4:5）。父语句行列可靠。
+        sm_warn_add(s_lines[s], s_cols[s], "空语句块（无内容且无注释占位）")
     }
 }
 
@@ -1291,7 +1288,10 @@ pub func check_stmt(s: i64) -> i64 {
             return -1
         }
         var els = sstate.child(s, 2)
-        if els >= 0 {
+        // 注意：`if` 无 else 时 els 不是 -1 而是空 StmtList（nchild==0），
+        // 仅判 els >= 0 会把"没有 else"误报成空语句块。故要求 if 实际
+        // 有第三个子节点才检查。
+        if els >= 0 && sstate.nchild(s) > 2 {
             warn_empty_block(els, s)
             r = check_cf_block(els, s)
             if r < 0 {
