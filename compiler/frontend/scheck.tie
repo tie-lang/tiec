@@ -1162,6 +1162,15 @@ pub func check_stmt(s: i64) -> i64 {
             sm_err_msg = "if 条件必须是 bool"
             return -1
         }
+        // p.6.9.15 警告 W0006/W0007：if 条件为布尔常量（恒真/恒假）
+        var cond_node = sstate.child(s, 0)
+        if s_tags[cond_node] == S_N_BOOL_LIT {
+            if s_vals[cond_node] == 0 {
+                sm_warn_add(s_lines[s], s_cols[s], "条件恒假（if/while 条件为常量 0/false）")
+            } else {
+                sm_warn_add(s_lines[s], s_cols[s], "条件恒真（if/while 条件为常量 true/非零值）")
+            }
+        }
         var r = check_block(sstate.child(s, 1))
         if r < 0 {
             return -1
@@ -1217,6 +1226,24 @@ pub func check_stmt(s: i64) -> i64 {
             sm_err_col = s_cols[s]
             sm_err_msg = "while 条件必须是 bool"
             return -1
+        }
+        // p.6.9.15 警告 W0006/W0007：while 条件为常量（布尔/整数字面量，恒真/恒假）
+        var wcond_node = sstate.child(s, 0)
+        var wval: i64 = -1
+        var wconst: bool = false
+        if s_tags[wcond_node] == S_N_BOOL_LIT {
+            wconst = true
+            wval = s_vals[wcond_node]
+        } else if s_tags[wcond_node] == S_N_INT_LIT {
+            wconst = true
+            wval = s_vals[wcond_node]
+        }
+        if wconst {
+            if wval == 0 {
+                sm_warn_add(s_lines[s], s_cols[s], "条件恒假（if/while 条件为常量 0/false）")
+            } else {
+                sm_warn_add(s_lines[s], s_cols[s], "条件恒真（if/while 条件为常量 true/非零值）")
+            }
         }
         var lbl = s_names[s]
         // 逻辑压栈：复用槽位（lp_stack 表不截断，lp_top 游标定位）
@@ -1275,6 +1302,10 @@ pub func check_stmt(s: i64) -> i64 {
                 sm_err_msg = "for 迭代对象仅支持范围（0..10）、表变量或迭代器协议对象（struct 实现 has_next/next），实际是 " + types.type_name(it)
                 return -1
             }
+        }
+        // p.6.9.15 警告 W0005：for 迭代变量遮蔽外层同名变量（覆盖语义）
+        if sstate.bs_find(lv_keys, vnid) >= 0 {
+            sm_warn_add(s_lines[s], s_cols[s], "变量重复声明（同名变量再次声明，后者覆盖前者）")
         }
         // for 迭代变量：lv_insert 已实现覆盖
         sinfer.lv_insert(vnid, elem_ty, 0, -1, 0)
@@ -1528,7 +1559,7 @@ pub func check_stmt(s: i64) -> i64 {
         if vt < 0 {
             return -1
         }
-        if !types.is_table(base) && base != TK_STR {
+        if !types.is_table(base) && base != TK_STR && !types.is_array(base) {
             sm_err_line = s_lines[s]
             sm_err_col = s_cols[s]
             sm_err_msg = "下标赋值的对象必须是表，实际是 " + types.type_name(base)
@@ -1542,6 +1573,32 @@ pub func check_stmt(s: i64) -> i64 {
                 sm_err_col = s_cols[s]
                 sm_err_msg = "下标必须是整数，实际是 " + types.type_name(idx)
                 return -1
+            }
+        }
+        // L1 定长数组写：编译期常量越界检查 + 值类型须与元素类型匹配
+        //（LLVM store 是类型化 store，类型不符会在 llvmgen/opt 报错前崩溃）。
+        if types.is_array(base) {
+            var elem_a = types.array_elem(base)
+            if !stype.types_match(elem_a, vt, sstate.child(s, 1)) && !stype.types_compatible(elem_a, vt) {
+                sm_err_line = s_lines[s]
+                sm_err_col = s_cols[s]
+                sm_err_msg = "数组元素赋值类型不匹配：期望 " + types.type_name(elem_a) + "，实际 " + types.type_name(vt)
+                return -1
+            }
+            var (ciw, cvw) = stype.arr_const_index(idx_node)
+            if ciw {
+                if cvw < 0 {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "数组下标越界：索引为负数"
+                    return -1
+                }
+                if cvw >= types.array_len(base) {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "数组下标越界：索引 " + to_string(cvw) + " ≥ 长度 " + to_string(types.array_len(base))
+                    return -1
+                }
             }
         }
         return 0
@@ -1627,6 +1684,10 @@ pub func check_var_decl(s: i64) -> i64 {
                 sm_err_col = s_cols[s]
                 sm_err_msg = "port 对象变量 '" + nm + "' 的初始化必须是实现了该 port 的具体类型实例（提升）或同 port 对象，实际是 " + types.type_name(it_p)
                 return -1
+            }
+            // p.6.9.15 警告 W0005：同名变量再次声明（作用域覆盖语义，后者遮蔽前者）
+            if sstate.bs_find(lv_keys, nid) >= 0 {
+                sm_warn_add(s_lines[s], s_cols[s], "变量重复声明（同名变量再次声明，后者覆盖前者）")
             }
             // 登记局部变量（port 对象 = ptr 槽）
             sinfer.lv_insert(nid, ty, is_const, -1, 0)
@@ -1738,9 +1799,17 @@ pub func check_var_decl(s: i64) -> i64 {
                 !stype.types_narrow_int(ty, it, init) {
                 sm_err_line = s_lines[s]
                 sm_err_col = s_cols[s]
-                sm_err_msg = "变量 '" + nm + "' 类型不匹配：标注 " + types.type_name(ty) + "，表达式推导为 " + types.type_name(it)
+                if types.kind(ty) == K_ARRAY && s_tags[init] == S_N_TABLE_LIT {
+                    sm_err_msg = "变量 '" + nm + "' 类型不匹配：标注 " + types.type_name(ty) + "；数组字面量元素个数必须为 " + to_string(types.array_len(ty)) + "（实际 " + to_string(sstate.nchild(init)) + "），且元素类型必须与 " + types.type_name(types.array_elem(ty)) + " 一致"
+                } else {
+                    sm_err_msg = "变量 '" + nm + "' 类型不匹配：标注 " + types.type_name(ty) + "，表达式推导为 " + types.type_name(it)
+                }
                 return -1
             }
+        }
+        // p.6.9.15 警告 W0005：同名变量再次声明（作用域覆盖语义，后者遮蔽前者）
+        if sstate.bs_find(lv_keys, nid) >= 0 {
+            sm_warn_add(s_lines[s], s_cols[s], "变量重复声明（同名变量再次声明，后者覆盖前者）")
         }
         sinfer.lv_insert(nid, ty, is_const, telem, dyn)
         // S2.2 闭包：闭包体内声明的局部登记到当前闭包局部段（捕获遮蔽判定用）
@@ -1818,6 +1887,10 @@ pub func check_var_decl(s: i64) -> i64 {
                 sm_warn_add(s_lines[s], s_cols[s], "表变量拷贝共享底层数组（var b = a 后 b 的修改会反映到 a）")
             }
         }
+    }
+    // p.6.9.15 警告 W0005（无标注路径）：同名变量再次声明（作用域覆盖语义）
+    if sstate.bs_find(lv_keys, nid) >= 0 {
+        sm_warn_add(s_lines[s], s_cols[s], "变量重复声明（同名变量再次声明，后者覆盖前者）")
     }
     sinfer.lv_insert(nid, it2, is_const, telem2, dyn2)
     // S2.2 闭包：闭包体内声明的局部登记到当前闭包局部段（捕获遮蔽判定用）
