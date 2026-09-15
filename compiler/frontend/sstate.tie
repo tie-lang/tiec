@@ -170,6 +170,18 @@ var gty_is_struct: table<i64>; // 模板索引 -> 0=函数模板 1=struct 模板
 var gtyp_conoff: table<i64>;  // 模板索引 -> 约束段偏移（gtyp_cons）
 var gtyp_cons: table<i64>;    // 约束 port 名 id 扁平段（-1 = 无约束）
 
+// v2 值参数（容量参数）段：gtyp_kindoff[模板索引] -> gtyp_kinds 段偏移；段长 =
+// gtyp_nparams（每参数 1 槽：0=类型参数，1=值参数(i64)）。值参数不占约束槽
+//（cons = -1），其默认值节点（N_INT_LIT / N_VAR，取自 N_TYPE_PARAM.children[1]）
+// 存于 gtyp_defs 段——语义层对值参数槽按「整型常量」解析而非类型。
+var gtyp_kindoff: table<i64>;  // 模板索引 -> 参数 kind 段偏移（gtyp_kinds）
+var gtyp_kinds: table<i64>;    // 参数 kind 扁平段（0=类型参数，1=值参数）
+
+// 整型常量表（v2 数组长度/值参数求值）：gval_kkeys[名 id] -> gval_kvals[整型值]。
+// const 名在数组长度 / 值参数默认值处引用时按此解析（编译期常量，值 > 0）。
+var gval_kkeys: table<i64>;
+var gval_kvals: table<i64>;
+
 // p.8.2.6 泛型默认类型参数段：gtyp_defoff[模板索引] -> gtyp_defs 段偏移；
 // 段长 = gtyp_nparams（每类型参数 1 槽）。槽值 = 默认类型**类型节点 id**
 //（N_NAMED_TYPE/N_TABLE_TYPE/N_STRUCT_TYPE 等，取自 N_TYPE_PARAM.children[1]；
@@ -392,6 +404,7 @@ const S_N_PANIC: i64 = 134;         // panic 语句（S2.3，与 ast.tie N_PANIC
 const S_N_FN_LIT: i64 = 132;        // func 字面量（S2.2 闭包，与 ast.tie N_FN_LIT 同号）
 const S_N_CALL_EXPR: i64 = 148;     // 调用表达式（P2a，与 ast.tie N_CALL_EXPR 同号）
 const S_N_FN_TYPE: i64 = 205;       // 函数值类型（S2.2，与 ast.tie N_FN_TYPE 同号）
+const S_N_ARRAY_TYPE: i64 = 206;    // L1 定长数组类型（与 ast.tie N_ARRAY_TYPE 同号）
 // S2.4 port 接口模型（与 ast.tie N_PORT/N_IMPL 同号权威）：
 //   编号 138/139：与 S3.3 宏节点（135-137）错开（整合时统一，见 ast.tie）。
 const S_N_PORT: i64 = 138;          // port 声明：Port[name=port 名, children=[泛型槽(-1), 方法 FnDef...]]
@@ -1341,10 +1354,13 @@ pub func reg_generic(full_name: string, node: i64, is_struct: i64) -> i64 {
     // port）由 sgen.check_generic_constraints 在实例化时校验。
     var con_off = len(gtyp_cons)
     var def_off = len(gtyp_defs)
+    var kind_off = len(gtyp_kinds)
     var i: i64 = 0
     while i < npar {
         var p = child(tp, i)  // N_TYPE_PARAM 节点（name = 类型参数名 id）
         table_push(gtyp_names, s_names[p])
+        // v2 值参数：N_TYPE_PARAM.val = 1（整型容量参数）；0 = 类型参数
+        table_push(gtyp_kinds, s_vals[p])
         var cons: i64 = -1
         if s_nchild[p] > 0 {
             var cnode = child(p, 0)
@@ -1373,6 +1389,7 @@ pub func reg_generic(full_name: string, node: i64, is_struct: i64) -> i64 {
     table_push(gtyp_off, off)
     table_push(gtyp_conoff, con_off)
     table_push(gtyp_defoff, def_off)
+    table_push(gtyp_kindoff, kind_off)
     table_push(gty_node, node)
     table_push(gty_is_struct, is_struct)
     table_push(gty_full, intern.intern(full_name))
@@ -1761,6 +1778,62 @@ pub func gt_param_names(gti: i64) -> table<i64> {
     }
     return out
 }
+
+// v2 模板参数 kind 表（按声明顺序；0=类型参数 1=值参数；返回新表）
+pub func gt_param_kinds(gti: i64) -> table<i64> {
+    var out: table<i64> = table_new_i64()
+    if gti < 0 || gti >= len(gtyp_nparams) {
+        return out
+    }
+    var n = gtyp_nparams[gti]
+    var off = gtyp_kindoff[gti]
+    var k: i64 = 0
+    while k < n {
+        table_push(out, gtyp_kinds[off + k])
+        k = k + 1
+    }
+    return out
+}
+
+// ==================== v2 整型常量表（数组长度/值参数求值）====================
+// 编译期整型常量名 → 整值。登记与查询均按 intern 名 id；值 ≤ 0 视为无效
+//（数组长度/容量参数语义只允许正整数；-1 返回 = 未登记）。表声明见文件头。
+pub func gval_lookup(nid: i64) -> i64 {
+    var idx = bs_find(gval_kkeys, nid)
+    if idx < 0 {
+        return -1
+    }
+    return gval_kvals[idx]
+}
+
+pub func gval_register(nid: i64, v: i64) {
+    var idx = bs_find(gval_kkeys, nid)
+    if idx >= 0 {
+        gval_kvals[idx] = v
+        return
+    }
+    sorted_insert(gval_kkeys, gval_kvals, nid, v)
+}
+
+// v2：整型常量节点 → 编译期整值。N_INT_LIT 取字面量；N_VAR 查整型常量表
+//（gval，const 名在数组长度/值参数默认值处引用时登记与查询）；其余 -1。
+pub func resolve_int_len_node(id: i64) -> i64 {
+    if id < 0 {
+        return -1
+    }
+    if s_tags[id] == S_N_INT_LIT {
+        return s_vals[id]
+    }
+    if s_tags[id] == S_N_VAR {
+        return gval_lookup(s_names[id])
+    }
+    return -1
+}
+
+// v2 数组长度上限（内存安全护栏）：定长数组元素数不得超过此值——超过即拒绝，
+// 防超大数组拖垮 LLVM 后端/clang（既有已知边界 N≥65536 编译崩溃，取 2^18 作
+// 全局硬上限，留足容量池语义余量）。可调：与容量档位族共同治理。
+const MAX_ARRAY_LEN: i64 = 262144
 
 // p.8.2.6 默认类型参数节点 id 表（按声明顺序；-1 = 无默认；返回新表）。
 // 槽值 = 类型 AST 节点 id，调用处用 sgen.parse_generic_type_node 解析为类型 id。

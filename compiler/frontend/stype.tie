@@ -150,6 +150,41 @@ pub func parse_type_node(tid: i64) -> i64 {
         }
         return types.tuple_of(idx)
     }
+    if tag == S_N_ARRAY_TYPE {
+        // L1 定长数组：array<elem, N>（children = [元素类型, N_INT_LIT | N_VAR]）。
+        // N_VAR = const 名（v2，查整型常量表）或值参数（实例化后已被替换为
+        // N_INT_LIT——若残留 N_VAR 且查表失败即报错，防跨档错配）。
+        // 内存安全：长度受 MAX_ARRAY_LEN 上限约束（护栏，防后端爆炸）。
+        var elem = parse_type_node(sstate.child(tid, 0))
+        if elem < 0 {
+            return -1
+        }
+        var len_node = sstate.child(tid, 1)
+        if len_node < 0 || (s_tags[len_node] != S_N_INT_LIT && s_tags[len_node] != S_N_VAR) {
+            sm_err_line = s_lines[tid]
+            sm_err_col = s_cols[tid]
+            sm_err_msg = "数组长度必须是编译期整数字面量或常量名（array<T, N>）"
+            return -1
+        }
+        var nlen = sstate.resolve_int_len_node(len_node)
+        if nlen <= 0 {
+            sm_err_line = s_lines[tid]
+            sm_err_col = s_cols[tid]
+            if s_tags[len_node] == S_N_VAR {
+                sm_err_msg = "数组长度引用的常量未定义或非正整数型常量（" + sstate.name_str(len_node) + "）"
+            } else {
+                sm_err_msg = "数组长度必须为正整数，实际是 " + to_string(nlen)
+            }
+            return -1
+        }
+        if nlen > 262144 {
+            sm_err_line = s_lines[tid]
+            sm_err_col = s_cols[tid]
+            sm_err_msg = "数组长度超上限（上限 2^18=262144，实际 " + to_string(nlen) + "），请改用容量档位族或降低粒度"
+            return -1
+        }
+        return types.array_of(elem, nlen)
+    }
     if tag == S_N_FN_TYPE {
         // S2.2 函数值类型 `fn(A,B)->R`（N_FN_TYPE 布局：children=[返回类型]+参数类型...）。
         // 返回类型 = child(0)，参数 = child(1..n-1)。查重/登记走
@@ -410,6 +445,13 @@ pub func types_compatible(a: i64, b: i64) -> bool {
     if ka == K_TABLE && kb == K_TABLE {
         return types_compatible(types.table_elem(a), types.table_elem(b))
     }
+    // L1 定长数组：同长度 + 元素类型兼容（值类型，结构兼容）
+    if ka == K_ARRAY && kb == K_ARRAY {
+        if types.array_len(a) != types.array_len(b) {
+            return false
+        }
+        return types_compatible(types.array_elem(a), types.array_elem(b))
+    }
     if ka == K_MAP && kb == K_MAP {
         return types_compatible(types.table_elem(a), types.table_elem(b))
     }
@@ -557,6 +599,51 @@ pub func types_match(want: i64, got: i64, init_node: i64) -> bool {
                 return true
             }
         }
+        // L1 定长数组字面量适配：`var b: array<f32, 3> = [1.0, 2.0, 3.0]`。
+        // 元素个数必须 == array_len(want)，且逐元素与元素类型匹配
+        //（子元素 node_types 已由 sinfer.infer_expr 填充——scheck 检查先于
+        // 本调用已对整棵树做类型推断）。
+        if types.kind(want) == K_ARRAY {
+            var want_len = types.array_len(want)
+            var want_elem = types.array_elem(want)
+            if tag == S_N_TABLE_LIT {
+                var nc_a = sstate.nchild(init_node)
+                if nc_a != want_len {
+                    return false
+                }
+                var je: i64 = 0
+                while je < nc_a {
+                    var cell = sstate.child(init_node, je)
+                    var vnode = sstate.child(cell, 1)
+                    var vty = node_types[vnode]
+                    if vty < 0 {
+                        return false
+                    }
+                    if !types_match(want_elem, vty, vnode) && !types_compatible(want_elem, vty) {
+                        return false
+                    }
+                    je = je + 1
+                }
+                return true
+            }
+            // `var z: array<f32, 64> = array_init(0.0)`：广播初始化，实参类型
+            // 与元素类型匹配即可（长度由数组类型决定，实参个数恒 1）。
+            if tag == S_N_CALL && sstate.name_str(init_node) == "array_init" {
+                var a0 = sstate.child(init_node, sstate.slot_off(init_node))
+                if a0 < 0 {
+                    return false
+                }
+                var a0t = node_types[a0]
+                if a0t < 0 {
+                    return false
+                }
+                if types_match(want_elem, a0t, a0) || types_compatible(want_elem, a0t) {
+                    return true
+                }
+                return false
+            }
+            return false
+        }
         // 元组字面量：逐字段适配
         if tag == S_N_TUPLE_LIT {
             var kw = types.kind(want)
@@ -666,6 +753,25 @@ pub func types_match(want: i64, got: i64, init_node: i64) -> bool {
         }
     }
     return false
+}
+
+// L1 定长数组：索引节点 → 编译期常量值（纯字面量：IntLit 或 Neg+IntLit）。
+// 返回 (c, v)：c=true 时 v = 常量值（可为负）；c=false 非编译期常量。
+// sinfer/irgen 共用（编译期越界检查 + 常量 GEP vs 动态 GEP 分派）。
+pub func arr_const_index(node: i64) -> (c: bool, v: i64) {
+    if node < 0 {
+        return (false, 0)
+    }
+    if s_tags[node] == S_N_INT_LIT {
+        return (true, s_vals[node])
+    }
+    if s_tags[node] == S_N_UNARY && s_vals[node] == 0 && sstate.nchild(node) >= 1 {
+        var inn = sstate.child(node, 0)
+        if s_tags[inn] == S_N_INT_LIT {
+            return (true, 0 - s_vals[inn])
+        }
+    }
+    return (false, 0)
 }
 
 // 常量值是否在类型范围内（C3 边界；与 sinfer.lit_in_range 同套逻辑，

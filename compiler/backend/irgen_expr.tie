@@ -510,7 +510,11 @@ func is_builtin_name(nm: string) -> bool {
         return true
     }
     if nm == "sqrt" || nm == "sin" || nm == "cos" || nm == "tan" ||
-        nm == "exp" || nm == "log" || nm == "floor" || nm == "ceil" || nm == "round" || nm == "pow" {
+        nm == "exp" || nm == "log" || nm == "floor" || nm == "ceil" || nm == "round" || nm == "pow" ||
+        nm == "tanh" || nm == "sinh" || nm == "cosh" || nm == "asin" || nm == "acos" ||
+        nm == "atan" || nm == "log2" || nm == "log10" || nm == "expm1" || nm == "log1p" ||
+        nm == "cbrt" || nm == "exp2" || nm == "trunc" ||
+        nm == "atan2" || nm == "copysign" || nm == "fmod" || nm == "remainder" || nm == "hypot" {
         return true
     }
     if nm == "read_line" || nm == "cwd" || nm == "list_dir" || nm == "walk_dir" ||
@@ -1932,8 +1936,13 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         // S2.1：len(表) → tie_table_len；len(字符串) → 读 {ptr,len} 长度头（O(1)，
         // 不再 strlen 扫描——字符串值统一带头部（字面量 .rodata 头 / str_cat 头 /
         // 桥返回自动补头 / StringBuilder build 头）。行为与旧 strlen 一致（字节数）。
+        // L1：len(定长数组) → 编译期常量 N。
         var a = call_arg(id, 0)
         var at = node_types[a]
+        if at >= 0 && types.is_array(at) {
+            g_builtin_res = tig_int_lit_ty(types.array_len(at), types.named(TK_I64))
+            return 0
+        }
         if at == types.named(TK_STR) {
             // 字符串：读 ptr-8 的 i64 长度头（S2.1）
             var v = tig_expr(a)
@@ -2270,7 +2279,10 @@ func builtin_expr(nm: string, id: i64) -> i64 {
     // 数学库（libm，llvmgen 无条件 declare；f64 → f64）。
     // 整数实参（sqrt(4)）→ sitofp 提升为 f64（LLVM 类型必须匹配）
     if nm == "sqrt" || nm == "sin" || nm == "cos" || nm == "tan" ||
-        nm == "exp" || nm == "log" || nm == "floor" || nm == "ceil" || nm == "round" {
+        nm == "exp" || nm == "log" || nm == "floor" || nm == "ceil" || nm == "round" ||
+        nm == "tanh" || nm == "sinh" || nm == "cosh" || nm == "asin" || nm == "acos" ||
+        nm == "atan" || nm == "log2" || nm == "log10" || nm == "expm1" || nm == "log1p" ||
+        nm == "cbrt" || nm == "exp2" || nm == "trunc" {
         var mv = tig_expr(call_arg(id, 0))
         if mv < 0 {
             return -1
@@ -2319,6 +2331,25 @@ func builtin_expr(nm: string, id: i64) -> i64 {
             return -1
         }
         g_builtin_res = tig_ext_call2("pow", pf1, types.named(TK_F64), pf2, types.named(TK_F64), types.named(TK_F64))
+        return 0
+    }
+    if nm == "atan2" || nm == "copysign" || nm == "fmod" || nm == "remainder" || nm == "hypot" {
+        var dv1 = tig_expr(call_arg(id, 0))
+        if dv1 < 0 {
+            return -1
+        }
+        var dv2 = tig_expr(call_arg(id, 1))
+        if dv2 < 0 {
+            return -1
+        }
+        var d1t = node_types[call_arg(id, 0)]
+        var d2t = node_types[call_arg(id, 1)]
+        var df1 = tig_to_f64(dv1, d1t)
+        var df2 = tig_to_f64(dv2, d2t)
+        if df1 < 0 || df2 < 0 {
+            return -1
+        }
+        g_builtin_res = tig_ext_call2(nm, df1, types.named(TK_F64), df2, types.named(TK_F64), types.named(TK_F64))
         return 0
     }
     // read_line：零参数 → string（p.6.4.10 内联 GetStdHandle(STD_INPUT_HANDLE) +

@@ -93,6 +93,8 @@ var g_rng_reg_done: i64 = 0;
 // 置位后 irgen 登记导出面（ir.func_exported）供 llvmgen 输出 dllexport，
 // 并对导出函数做边界检查（表/struct 不跨动态库边界）。
 var g_dynlib: bool = false;
+// S1.4 --check-bounds：数组越界检查（默认关；driver 经 set_check_bounds 注入）。
+var g_check_bounds: bool = false;
 // 当前编译目标三元组（driver 在 tig_ast 前经 set_target 注入；空 = 未设置）。
 // 任务17 asm! 平台条件编译：target("arch") 按此目标匹配。
 var g_asm_target: string = "";
@@ -682,6 +684,15 @@ func is_libc_sym(sym: string) -> bool {
         sym == "round" || sym == "pow" {
         return true
     }
+    // L1 1.2 新增数学内建：双曲/反三角/超越/舍入符号——未登记会误判为
+    // tie-interp 桥 → 假阳性 need_interp → 找不到 tie_interp.lib 链接失败。
+    if sym == "tanh" || sym == "sinh" || sym == "cosh" ||
+        sym == "asin" || sym == "acos" || sym == "atan" || sym == "atan2" ||
+        sym == "log2" || sym == "log10" || sym == "expm1" || sym == "log1p" ||
+        sym == "cbrt" || sym == "exp2" || sym == "trunc" ||
+        sym == "copysign" || sym == "fmod" || sym == "remainder" || sym == "hypot" {
+        return true
+    }
     // p.6.4.4：libc _gcvt（to_string(f64)：非变参 CRT，写 %g 格式数字到缓冲。Windows
     // clang 手写 IR 的 FP 变参（snprintf）会错位，故用非变参 _gcvt）
     if sym == "_gcvt" {
@@ -928,6 +939,11 @@ pub func set_target(t: string) {
 // 置位后本模块对每个函数登记导出面（ir.func_export_set）+ 导出边界检查。
 pub func set_dynlib(v: bool) {
     g_dynlib = v
+}
+
+// 注入数组越界检查（driver 在 --check-bounds 时调用；默认关）。
+pub func set_check_bounds(v: bool) {
+    g_check_bounds = v
 }
 
 // 动态库边界类型检查（任务 36 + S10 扩展）：标量 + string + slice<T> + repr(C) pod

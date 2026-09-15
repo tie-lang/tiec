@@ -231,11 +231,13 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
             sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的 ref 参数不能有默认值（必须在调用点传实参）"
             return -1
         }
-        // ref 形参仅支持表参数（对齐 Rust：标量/字符串/struct 形参引用无实义）
-        if is_ref == 1 && !types.is_table(pt) {
+        // ref 形参仅支持表/定长数组参数（对齐 Rust：标量/字符串/struct 形参引用无实义）
+        // L1：array<T, N> 值类型按引用传参（指针），避免聚合值拷贝——扩散热点
+        // matmul/conv 的行列数组全走 ref，零拷贝。
+        if is_ref == 1 && !types.is_table(pt) && !types.is_array(pt) {
             sm_err_line = s_lines[p]
             sm_err_col = s_cols[p]
-            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的 ref 修饰仅支持表参数（table/table<T>），实际是 " + types.type_name(pt)
+            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的 ref 修饰仅支持表参数（table/table<T>）或定长数组（array<T, N>），实际是 " + types.type_name(pt)
             return -1
         }
         // 可选参数（带默认值）必须连续排在必选参数之后

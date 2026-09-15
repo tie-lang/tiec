@@ -59,6 +59,7 @@ const K_FN: i64 = 10;        // fn 函数值类型（S2.2，闭包/函数指针�
 const K_PORT: i64 = 11;      // port 对象类型（S2.4：接口对象，LLVM 表示 = ptr 指向堆打包 {data,vtable}）
 const K_ACTOR: i64 = 12;     // actor 句柄类型（一期并发：运行期一张 actor 表管所有权，LLVM 表示 = i64 句柄槽）
 const K_GUARD: i64 = 13;     // guard<cap> 凭据类型（三期 A 组：跨 actor 共享内存逃生口凭据，LLVM 表示 = i64 占位）
+const K_ARRAY: i64 = 14;     // array<T, N> 稠密定长数组（L1 定长数组：值类型，LLVM 布局 [N x T]）
 const K_SHIFT: i64 = 40;           // 高位分离位移量（负载 < 2^40）
 
 // ---------- TyKw 索引常量（0..22，对齐 Rust TyKw 变体顺序）----------
@@ -122,6 +123,10 @@ const BASE_ACTOR: i64 = 13194139533312;
 //（0=share 1=mem 2=ext；guard<share> 即 13<<40+0）。LLVM 表示 = i64 占位
 //（凭据值本身运行期无操作，门禁在编译期语义层强制）。
 const BASE_GUARD: i64 = 14293651161088;
+// L1 定长数组段：id = 14<<40 | NEST_SLOT_OFF + 序号（元素 + 长度经序号表登记，
+// 低负载恒 ≥ NEST_SLOT_OFF——长度是独立整数参数，无法内联进含嵌套聚合的元素编码）。
+// 14<<40 = 15393162788864，i64 有符号下远小于 2^63 无溢出。
+const BASE_ARRAY: i64 = 15393162788864;
 
 // ---------- 全局状态（懒构建）----------
 var tykw_names: table<string>;   // TyKw 索引 -> 类型名（错误消息用）
@@ -138,6 +143,10 @@ var nest_map_vals: table<i64>;   // 嵌套 map 值段（序号 → 值类型 id�
 var nest_ptr_elems: table<i64>;    // 嵌套 ptr 元素段
 var nest_slice_elems: table<i64>;  // 嵌套 slice 元素段
 var nest_atomic_elems: table<i64>; // 嵌套 atomic 元素段
+// L1 定长数组登记段（序号 → 元素类型 id / 元素个数 N）：
+// array<f32, 64> → 登记 (f32, 64)，低负载 = NEST_SLOT_OFF + 序号
+var nest_arr_elems: table<i64>;   // 嵌套定长数组元素段（序号 → 元素类型 id）
+var nest_arr_lens: table<i64>;    // 嵌套定长数组长度段（序号 → 元素个数 N）
 // S2.2 fn 函数值类型签名表（段式，索引即 fn 类型低负载）：
 // fn_ret    签名索引 -> 返回类型 id
 // fn_nparams 签名索引 -> 参数个数
@@ -275,6 +284,58 @@ pub func atomic_of(elem: i64) -> i64 {
     }
     table_push(nest_atomic_elems, elem)
     return BASE_ATOMIC + NEST_SLOT_OFF + n
+}
+
+// ---------- L1 定长数组类型构造 ----------
+// array<T, N>：id = 14<<40 | NEST_SLOT_OFF + 序号。元素 + 长度经 nest_arr_elems /
+// nest_arr_lens 平行登记（低负载 = 序号；恒 ≥ NEST_SLOT_OFF 防与 named 段碰撞）。
+// 查重：元素类型 id + 长度双匹配返回既有序号（相同数组类型同 id，O(1) 比较）。
+pub func array_of(elem: i64, len: i64) -> i64 {
+    var n = len(nest_arr_elems)
+    var i: i64 = 0
+    while i < n {
+        if nest_arr_elems[i] == elem && nest_arr_lens[i] == len {
+            return BASE_ARRAY + NEST_SLOT_OFF + i
+        }
+        i = i + 1
+    }
+    table_push(nest_arr_elems, elem)
+    table_push(nest_arr_lens, len)
+    return BASE_ARRAY + NEST_SLOT_OFF + n
+}
+
+// 定长数组判据：kind == K_ARRAY（14<<40 段）。
+pub func is_array(t: i64) -> bool {
+    if kind(t) == K_ARRAY {
+        return true
+    }
+    return false
+}
+
+// 定长数组元素类型：K_ARRAY → 元素类型 id；非数组返回 -1。
+pub func array_elem(t: i64) -> i64 {
+    var k = kind(t)
+    if k == K_ARRAY {
+        var la = low(t) - NEST_SLOT_OFF
+        if la >= 0 && la < len(nest_arr_elems) {
+            return nest_arr_elems[la]
+        }
+        return -1
+    }
+    return -1
+}
+
+// 定长数组长度：K_ARRAY → 元素个数 N（编译期常量）；非数组返回 -1。
+pub func array_len(t: i64) -> i64 {
+    var k = kind(t)
+    if k == K_ARRAY {
+        var lb = low(t) - NEST_SLOT_OFF
+        if lb >= 0 && lb < len(nest_arr_lens) {
+            return nest_arr_lens[lb]
+        }
+        return -1
+    }
+    return -1
 }
 
 // ---------- S2.2 fn 函数值类型构造 ----------
@@ -485,14 +546,19 @@ pub func guard_cap_name(t: i64) -> string {
 // ---------- 类型 id 解码 ----------
 
 // 类型类别：0=Named 1=Table 2=Map 3=Struct 4=Tuple 5=TypeVar 6=Enum
-// 7=Ptr 8=Slice 9=Atomic 10=Fn 11=Port 12=Actor 13=Guard。
+// 7=Ptr 8=Slice 9=Atomic 10=Fn 11=Port 12=Actor 13=Guard 14=Array。
 // Named 判定用 id < 100（TyKw 索引 0..20，留余量）；
-// 其余按高位阈值顺序判别（Guard 段 13<<40 最高必须最先判；之后 Actor
-// 12<<40、Port 11<<40、Fn 10<<40、Atomic 9<<40、Slice 8<<40、Ptr 7<<40、
-// Enum 6<<40、TypeVar、Tuple、Struct、Map，其余为 Table——与 semantic ty_kind 一致）。
+// 其余按高位阈值顺序判别（Array 段 14<<40 最高必须最先判；之后 Guard
+// 13<<40、Actor 12<<40、Port 11<<40、Fn 10<<40、Atomic 9<<40、Slice 8<<40、
+// Ptr 7<<40、Enum 6<<40、TypeVar、Tuple、Struct、Map，其余为 Table
+// ——与 semantic ty_kind 一致）。
 pub func kind(id: i64) -> i64 {
     if id < 100 {
         return K_NAMED
+    }
+    // L1：BASE_ARRAY（14<<40）高于 guard 段，必须最先判（下一档 13<<40）
+    if id >= BASE_ARRAY {
+        return K_ARRAY
     }
     if id >= BASE_GUARD {
         return K_GUARD
@@ -536,6 +602,9 @@ pub func kind(id: i64) -> i64 {
 // 类型负载：Table/Map/Ptr/Slice/Atomic 的元素类型 id、Struct/Tuple/Enum/Port 的
 // 索引、TypeVar 的 intern 池 id；Named 类型无意义（调用方先判 kind）。
 pub func low(id: i64) -> i64 {
+    if id >= BASE_ARRAY {
+        return id - BASE_ARRAY
+    }
     if id >= BASE_GUARD {
         return id - BASE_GUARD
     }
@@ -831,6 +900,10 @@ pub func type_name(t: i64) -> string {
             return tykw_names[t]
         }
         return "?"
+    }
+    if k == K_ARRAY {
+        // L1 定长数组：array<elem, N>（错误消息/类型名还原用）
+        return "array<" + type_name(array_elem(t)) + ", " + to_string(array_len(t)) + ">"
     }
     if k == K_TABLE {
         return "table<" + type_name(table_elem(t)) + ">"
