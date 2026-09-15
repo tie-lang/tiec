@@ -426,6 +426,19 @@ pub func infer_call(id: i64) -> i64 {
             g_typed = g_typed + 1
             return node_types[id]
         }
+        // L1 定长数组：array_init(v) 广播初始化。目标数组类型由上下文
+        //（var 标注/形参/返回）决定——此处只推断实参并登记占位类型（misc），
+        // 实参与元素类型的匹配由调用点（scheck var-decl / stype.types_match）
+        // 校验，irgen 调用点按其目标数组类型生成 [N x T] 全等值填充。
+        if fnm == "array_init" {
+            var a0 = infer_expr(args[0])
+            if a0 < 0 {
+                return -1
+            }
+            node_types[id] = types.named(TK_MISC)
+            g_typed = g_typed + 1
+            return node_types[id]
+        }
         if fnm == "deref" || fnm == "ptr_add" {
             var p0 = infer_expr(args[0])
             if p0 < 0 {
@@ -848,12 +861,12 @@ pub func infer_call(id: i64) -> i64 {
                 if at < 0 {
                     return -1
                 }
-                // p.6.2.4 ref 参数实参校验：必须是可寻址的表变量，且类型匹配
+                // p.6.2.4 ref 参数实参校验：必须是可寻址的表/定长数组变量，且类型匹配
                 if kf < fn_np && types.fn_param_ref(fv_ty, kf) == 1 {
                     if s_tags[args[kf]] != 6 {
                         sm_err_line = s_lines[id]
                         sm_err_col = s_cols[id]
-                        sm_err_msg = "函数值调用 '" + fnm + "' 的 ref 参数需要可寻址的表变量实参（字面量/下标/调用结果不可取地址）"
+                        sm_err_msg = "函数值调用 '" + fnm + "' 的 ref 参数需要可寻址的表/定长数组变量实参（字面量/下标/调用结果不可取地址）"
                         return -1
                     }
                     var rf_nid = intern.intern(sstate.name_str(args[kf]))
@@ -861,10 +874,10 @@ pub func infer_call(id: i64) -> i64 {
                     if rf_ty < 0 {
                         rf_ty = gb_find(rf_nid)
                     }
-                    if rf_ty < 0 || !types.is_table(rf_ty) {
+                    if rf_ty < 0 || (!types.is_table(rf_ty) && !types.is_array(rf_ty)) {
                         sm_err_line = s_lines[id]
                         sm_err_col = s_cols[id]
-                        sm_err_msg = "函数值调用 '" + fnm + "' 的 ref 参数需要表变量实参（实际 " + (rf_ty >= 0 ? types.type_name(rf_ty) : "未声明") + "）"
+                        sm_err_msg = "函数值调用 '" + fnm + "' 的 ref 参数需要表/定长数组变量实参（实际 " + (rf_ty >= 0 ? types.type_name(rf_ty) : "未声明") + "）"
                         return -1
                     }
                 }
@@ -1039,7 +1052,8 @@ pub func infer_call(id: i64) -> i64 {
             }
         }
         // ref 参数实参校验（对齐 Rust T0.3 by_ref）：实参必须是可寻址变量（变量/字段链），
-        // 且必须是动态表（table_new_* 创建）——IR 需取地址写回
+        // 且必须是动态表（table_new_* 创建）——IR 需取地址写回。L1：**定长数组**
+        // ref 实参不作动表要求（数组变量槽地址天然可写回，零拷贝传参）。
         if want_fixed && sp_refs[off + j2] == 1 {
             if !sstate.is_addressable(args[j2]) {
                 sm_err_line = s_lines[id]
@@ -1047,7 +1061,7 @@ pub func infer_call(id: i64) -> i64 {
                 sm_err_msg = "调用 '" + fnm + "' 的 ref 参数需要可寻址的变量实参（不能是字面量/下标/调用结果等不可取地址）"
                 return -1
             }
-            if s_tags[args[j2]] == S_N_VAR {
+            if s_tags[args[j2]] == S_N_VAR && !types.is_array(want) {
                 var vname = sstate.name_str(args[j2])
                 var vnid = intern.intern(vname)
                 if var_dyn(vnid) != 1 {

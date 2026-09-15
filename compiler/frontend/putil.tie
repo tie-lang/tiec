@@ -563,6 +563,11 @@ func scan_type_arg_list() -> bool {
 // 接受的形态一致（探测结果与正式解析保证等价）。
 func scan_one_type_arg() -> bool {
     var tag = peek_tag()
+    if tag == lex_int {
+        // v2 值参数实参：整型字面量（如 `conv<1280>`）——泛型调用探测放行
+        advance()
+        return true
+    }
     if tag == lex_typekw {
         var lex = peek_lexeme()
         advance()
@@ -577,7 +582,36 @@ func scan_one_type_arg() -> bool {
         return true
     }
     if tag == lex_ident {
+        var lex = peek_lexeme()
         advance()
+        // L1 定长数组类型实参：`array<T, N>`——第二实参是**整数字面量**非类型，
+        // 单独扫描（类型实参列表的普通类型扫描处理不了整数）。
+        if lex == "array" && peek_tag() == lex_lt {
+            advance()   // '<'
+            if !scan_one_type_arg() {
+                return false
+            }
+            if peek_tag() == lex_comma {
+                advance()
+                if peek_tag() == lex_int {
+                    advance()
+                } else {
+                    return false
+                }
+            }
+            if peek_tag() == lex_gt {
+                advance()
+            } else if peek_tag() == lex_shr {
+                split_current_gt(lex_gt)
+            } else if peek_tag() == lex_ge {
+                split_current_gt(lex_eq)
+            } else if peek_tag() == lex_shreq {
+                split_current_gt(lex_ge)
+            } else {
+                return false
+            }
+            return true
+        }
         if peek_tag() == lex_lt {
             advance()   // '<'
             if !scan_type_arg_list() {

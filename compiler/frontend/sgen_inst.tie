@@ -21,8 +21,14 @@ namespace sgen {
 pub func check_generic_constraints(gti: i64, args: table<i64>, line: i64, col: i64) -> i64 {
     var n = gtyp_nparams[gti]
     var off = gtyp_conoff[gti]
+    var koff = gtyp_kindoff[gti]
     var k: i64 = 0
     while k < n {
+        // v2 值参数槽（kind==1）无 port 约束（整型容量参数），跳过
+        if gtyp_kinds[koff + k] == 1 {
+            k = k + 1
+            continue
+        }
         var cons = gtyp_cons[off + k]
         if cons >= 0 {
             var pname = intern.lookup(cons)
@@ -137,12 +143,12 @@ pub func instantiate_fn(gti: i64, args: table<i64>, line: i64, col: i64) -> i64 
         if is_var == 1 {
             pt = types.table_of(pt)
         }
-        // ref 形参仅支持表（对齐 collect_fn 校验；p.9.11.11 immut 存 bit1，掩码 & 1）
-        if (s_vals[p] & 1) == 1 && !types.is_table(pt) {
+        // ref 形参仅支持表/定长数组（对齐 collect_fn 校验；p.9.11.11 immut 存 bit1，掩码 & 1）
+        if (s_vals[p] & 1) == 1 && !types.is_table(pt) && !types.is_array(pt) {
             g_inst_depth = g_inst_depth - 1
             sm_err_line = line
             sm_err_col = col
-            sm_err_msg = "实例化 '" + mangled + "' 参数 '" + sstate.name_str(p) + "' 的 ref 修饰仅支持表参数，实际是 " + types.type_name(pt)
+            sm_err_msg = "实例化 '" + mangled + "' 参数 '" + sstate.name_str(p) + "' 的 ref 修饰仅支持表/定长数组参数，实际是 " + types.type_name(pt)
             return -1
         }
         table_push(p_tys, pt)

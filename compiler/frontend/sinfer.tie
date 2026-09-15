@@ -1134,6 +1134,35 @@ pub func infer_expr(id: i64) -> i64 {
         if idx < 0 {
             return -1
         }
+        if types.is_array(base) {
+            // L1 定长数组 a[i]：元素类型 = array_elem(base)；索引必须是整数。
+            // 编译期常量越界（负/超长）直接拒绝；动态索引 v1 默认零检查
+            //（--check-bounds 调试开关见 1.4，暂未接线）。
+            if !types.is_int(idx) {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "数组下标必须是整数，实际是 " + types.type_name(idx)
+                return -1
+            }
+            var (ci, cv) = stype.arr_const_index(sstate.child(id, 1))
+            if ci {
+                if cv < 0 {
+                    sm_err_line = s_lines[id]
+                    sm_err_col = s_cols[id]
+                    sm_err_msg = "数组下标越界：索引为负数"
+                    return -1
+                }
+                if cv >= types.array_len(base) {
+                    sm_err_line = s_lines[id]
+                    sm_err_col = s_cols[id]
+                    sm_err_msg = "数组下标越界：索引 " + to_string(cv) + " ≥ 长度 " + to_string(types.array_len(base))
+                    return -1
+                }
+            }
+            node_types[id] = types.array_elem(base)
+            g_typed = g_typed + 1
+            return types.array_elem(base)
+        }
         if types.is_table(base) {
             var elem = types.table_elem(base)
             if elem < 0 {

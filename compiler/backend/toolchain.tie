@@ -31,8 +31,25 @@ type tie<class>
 // 最近一次工具调用的错误消息（stderr 文本；成功时空串）
 var tc_err_msg: string = "";
 
+// S1.4 --ffast-math：编译产物启用 fast-math（训练/性能优先；默认关）。
+// driver 经 tc.set_fast_math(...) 置位，clang 链接/编译目标文件命令追加 -ffast-math
+//（opt 不接受该旗标，故仅在 clang 阶段应用）。
+var tc_fast_math: bool = false;
+// fast-math 命令行片段（空 = 未启用）
+func tc_fm_flag() -> string {
+    if tc_fast_math {
+        return " -ffast-math"
+    }
+    return ""
+}
+
 namespace tc {
 // ---------- 工具发现 ----------
+
+// S1.4：注入 --ffast-math 开关（driver 调用；置位后 opt/clang 追加 -ffast-math）。
+pub func set_fast_math(v: bool) {
+    tc_fast_math = v
+}
 
 // 工具发现顺序：TIE_LLVM_HOME\bin → PATH 拆分目录 → 固定目录
 // （D:\LLVM\bin → C:\Program Files\LLVM\bin → C:\LLVM\bin）。找不到返回空串。
@@ -201,7 +218,7 @@ pub func link_exe(input_opt: string, output_exe: string, target: string, need_in
             lld_flag = " -fuse-ld=link"
         }
     }
-    var cmd = tool + lld_flag + " " + input_opt + " -o " + output_exe
+    var cmd = tool + lld_flag + tc_fm_flag() + " " + input_opt + " -o " + output_exe
     if is_linux {
         cmd = cmd + " -Wl,--build-id=none"
         // r.1.6.6：Linux 目标 LLVM libcall（floor/pow/sqrt 等浮点运算下降为
@@ -299,7 +316,7 @@ pub func link_shared(input_opt: string, output_so: string, target: string, need_
     if is_linux {
         shared_flag = "-shared -fPIC"
     }
-    var cmd = tool + lld_flag + " " + shared_flag + " " + input_opt + " -o " + output_so
+    var cmd = tool + lld_flag + " " + shared_flag + tc_fm_flag() + " " + input_opt + " -o " + output_so
     if str_len(target) > 0 {
         cmd = cmd + " --target=" + target
     }
@@ -388,7 +405,7 @@ pub func compile_object(input_opt: string, output_obj: string, target: string) -
     if str_len(target) > 0 {
         cmd = cmd + " --target=" + target
     }
-    return run(cmd)
+    return run(cmd + tc_fm_flag())
 }
 
 // 打包静态库：llvm-ar rcs lib.a obj.o（库编译第二步）。返回退出码。

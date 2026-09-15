@@ -300,6 +300,7 @@ const N_FN_TYPE: i64 = 205;      // 函数值类型（S2.2）：FnType[children=
                                  //   `fn(A, B) -> R` 类型节点，children[0]=返回类型，
                                  //   children[1..]=参数类型。与 N_FN_DEF 的返回类型+
                                  //   参数布局呼应，语义解析按 children 顺序读取。
+const N_ARRAY_TYPE: i64 = 206;   // L1 定长数组类型：ArrayType[children=[元素类型, N_INT_LIT]]
 
 // ---------- 二元/一元 op 码（对齐 Rust BinaryOp/UnaryOp 顺序，T2.5 补）----------
 // 二元：0=Add 1=Sub 2=Mul 3=Div 4=Mod 5=Eq 6=NotEq 7=Lt 8=Gt 9=Le 10=Ge

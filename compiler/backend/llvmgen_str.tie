@@ -69,6 +69,11 @@ func llvm_ty(t: i64) -> string {
     //   struct → 命名结构体 %struct.<名字>（emit_agg_types 输出 type 定义）。
     // 对齐 Rust llvm_ty 的 Tuple/Struct 映射（元组内联、类命名）。
     var agg_k = types.kind(t)
+    if agg_k == K_ARRAY {
+        // L1 定长数组：LLVM 原生数组 [N x T]（连续内存，自动对齐；循环
+        // 经 LLVM auto-vectorizer 直接产出 SIMD——扩散训练热点的性能来源）。
+        return "[" + to_string(types.array_len(t)) + " x " + llvm_ty(types.array_elem(t)) + "]"
+    }
     if agg_k == K_FN {
         // S2.2 fn 函数值类型：命名结构体 %fn.<签名索引> = { ptr, ptr }
         //（字段 0 = 环境指针，字段 1 = 入口函数指针；emit_agg_types 输出定义）。
@@ -584,7 +589,11 @@ func user_extern_decl(sym: string) -> string {
     }
     if sym == "sqrt" || sym == "sin" || sym == "cos" || sym == "tan" ||
         sym == "exp" || sym == "log" || sym == "pow" ||
-        sym == "floor" || sym == "ceil" || sym == "round" {
+        sym == "floor" || sym == "ceil" || sym == "round" ||
+        sym == "tanh" || sym == "sinh" || sym == "cosh" || sym == "asin" || sym == "acos" ||
+        sym == "atan" || sym == "log2" || sym == "log10" || sym == "expm1" || sym == "log1p" ||
+        sym == "cbrt" || sym == "exp2" || sym == "trunc" ||
+        sym == "atan2" || sym == "copysign" || sym == "fmod" || sym == "remainder" || sym == "hypot" {
         return ""
     }
     // p.6.4.4：libc _gcvt（to_string(f64)；非变参 CRT，声明由调用签名自动推导）
