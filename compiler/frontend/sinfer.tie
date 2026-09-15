@@ -1800,6 +1800,17 @@ pub func infer_expr(id: i64) -> i64 {
     }
     // Call
     if tag == S_N_CALL {
+        // W00014：实参为 bool 字面量（foo(true) 无法表达参数语义）。
+        // children[0] = 被调名，children[1..] = 实参。
+        var nc_bc = sstate.nchild(id)
+        var k_bc: i64 = 1
+        while k_bc < nc_bc {
+            var an_bc = sstate.child(id, k_bc)
+            if s_tags[an_bc] == S_N_BOOL_LIT {
+                sm_warn_add(s_lines[an_bc], s_cols[an_bc], "布尔参数调用（实参为 bool 字面量，语义不明）")
+            }
+            k_bc = k_bc + 1
+        }
         return infer_call(id)
     }
     // P2a 调用表达式 `t[0](5)`：被调者为 fn 值表达式
