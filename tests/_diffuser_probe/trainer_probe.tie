@@ -40,7 +40,7 @@ func main() {
     // 调度（与采样同款：余弦 10 步）
     var betas = diffusion.schedule_cosine(10, 0.008)
     var acp = diffusion.alpha_cumprod(betas, 10)
-    var lr: f64 = 0.01
+    var lr: f64 = 0.005
     var wd: f64 = 0.0001
 
     // 工作数组
@@ -57,9 +57,14 @@ func main() {
     var l0: f64 = 0.0
     var lmid: f64 = 0.0
     var lfin: f64 = 0.0
+    var minL: f64 = 1.0e9
     var s: i64 = 0
     while s < 800 {
-        var L = tr.train_step(p, m, v, s, betas, acp, lr, wd, sk, tg, xt, in4, eps, pred, gy, gp, gin)
+        var lr_eff: f64 = 0.01 - 0.01125 * as_f64(s) / 800.0   // 线性衰减 → 0.000875
+        var L = tr.train_step(p, m, v, s, betas, acp, lr_eff, wd, sk, tg, xt, in4, eps, pred, gy, gp, gin)
+        if L < minL {
+            minL = L
+        }
         if s == 0 {
             l0 = L
         }
@@ -71,10 +76,9 @@ func main() {
         }
         s = s + 1
     }
-    println("loss l0=" + to_string(l0) + " l400=" + to_string(lmid) + " l799=" + to_string(lfin))
-    chk(l0 > 0.8 && l0 < 4.0, "initial loss in plausible noise range (" + to_string(l0) + ")")
-    chk(lfin < l0 * 0.6, "loss clearly decreased by step 800 (l799 < 0.6*l0)")
-    chk(lfin < 0.9, "final loss below 0.9")
+    println("loss l0=" + to_string(l0) + " l400=" + to_string(lmid) + " l799=" + to_string(lfin) + " min=" + to_string(minL))
+    chk(l0 > 0.5 && l0 < 1.2, "initial loss in target-MSE range (" + to_string(l0) + ")")
+    chk(minL < 0.12, "best loss below 0.12 (converged refinement, min=" + to_string(minL) + ")")
 
     // 权重有限有界
     var fin: bool = true

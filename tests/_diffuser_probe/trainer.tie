@@ -43,6 +43,8 @@ pub func build_input(sk: ref array<f32, 1024>, xt: ref array<f32, 1024>, in4: re
 
 // 单步训练：返回该步 loss。p/m/v 为 adamw 状态；betas/acp 预计算；
 // 生成 (x,z,seed) 由 step 确定（确定性语料轨迹）。
+// 目标形式：**predict-x0**（模型直接预测干净目标场；反演无 1/√ᾱ 放大，稳定+跟踪）。
+// EN: predict-x0 objective (stable refinement; no 1/sqrt(alpha-bar) amplification).
 pub func train_step(p: ref array<f32, 1024>, m: ref array<f32, 1024>, v: ref array<f32, 1024>,
                     step: i64, betas: ref array<f64, 1024>, acp: ref array<f64, 1024>,
                     lr: f64, wd: f64, sk: ref array<f32, 1024>, tg: ref array<f32, 1024>,
@@ -74,11 +76,11 @@ pub func train_step(p: ref array<f32, 1024>, m: ref array<f32, 1024>, v: ref arr
     rr = diffusion.add_noise(tg, NCH, t, eps, acp, xt, rr)
     // 模型输入
     build_input(sk, xt, in4)
-    // 前向 + 损失
+    // 前向 + 损失（predict-x0：对干净目标求 MSE）
     du.forward(in4, p, t, pred)
-    var L = loss.mse(pred, NCH, eps, NCH)
+    var L = loss.mse(pred, NCH, tg, NCH)
     // 反向 + 更新
-    loss.mse_grad(gy, pred, eps, NCH)
+    loss.mse_grad(gy, pred, tg, NCH)
     var z: i64 = 0
     while z < du.npar() {
         gp[z] = 0.0
