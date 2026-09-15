@@ -5,7 +5,10 @@ type tie<class>
 //   - 错误标号：消息归一化折叠（ASCII 运行 → '%'）后查生成目录
 //     （diagcode_cat.gen.tie，scripts/gen-diagcodes.ps1 生成），exact 优先、
 //     前缀规则兜底（插值消息动态尾不参与精确匹配）；
-//   - 警告标号：核心消息（编译器发射点逐字一致）精确查表；
+//   - 警告标号：核心消息（编译器发射点逐字一致）查表，与错误侧同为两级
+//     （逐字精确 → 归一化），未命中 W00000 并登记「未登记警告」供审计；
+//     目录用 warn_reg(核心消息, 标号, 短名, 建议) 单行注册，顺序无关
+//     （构建期自动按核心消息字节升序排序），加一条警告 = 加一行；
 //   - 输出格式（用户定稿）：error[E#####] @行:列: 消息名；期望 x；实际 y；提示。
 //     warning[W#####] @行:列: 消息名；潜在影响与处理建议。
 //
@@ -23,6 +26,8 @@ var diag_w_keys: table<string>;   // 核心消息（发射点逐字一致，升�
 var diag_w_codes: table<string>;
 var diag_w_names: table<string>;
 var diag_w_tips: table<string>;
+var diag_w_norms: table<string>;  // 核心消息归一化键（与 keys 平行，二级匹配用）
+var diag_w_unreg: table<string>;  // 未登记警告（发射了但目录里没有，审计用）
 
 namespace diagcode {
 
@@ -315,54 +320,102 @@ pub func render_err_proto(proto: string) -> string {
 
 // ---------- 警告目录（核心消息 → 码/名/建议；核心按字节升序） ----------
 
+// 注册一条警告。**加一条警告只需加一行 warn_reg**：
+//   warn_reg(核心消息, 标号, 短名, 建议)
+//   - 核心消息：发射点 sm_warn_add 的第三个参数，逐字一致；
+//   - 标号：五位纯序号（规划见 tdiag/docs/warnings.md）；
+//   - 短名：渲染在 warning[W#####] @行:列: 之后；
+//   - 建议：潜在影响与处理方向（渲染在「；」之后）。
+// 顺序无关——注册结束由 warn_sort() 统一按核心消息字节升序排序（二分查找前提）。
+pub func warn_reg(core: string, wcode: string, wnm: string, tip: string) {
+    table_push(diag_w_keys, core)
+    table_push(diag_w_codes, wcode)
+    table_push(diag_w_names, wnm)
+    table_push(diag_w_tips, tip)
+    table_push(diag_w_norms, normalize(core))
+}
+
+// 构建期排序：核心消息按字节升序（插入排序；五张平行表同步交换）。
+func warn_sort() {
+    var n: i64 = len(diag_w_keys)
+    var i: i64 = 1
+    while i < n {
+        var j: i64 = i
+        var go: bool = true
+        while j > 0 && go {
+            if diag_w_keys[j - 1] > diag_w_keys[j] {
+                var tk = diag_w_keys[j - 1]
+                diag_w_keys[j - 1] = diag_w_keys[j]
+                diag_w_keys[j] = tk
+                var tc = diag_w_codes[j - 1]
+                diag_w_codes[j - 1] = diag_w_codes[j]
+                diag_w_codes[j] = tc
+                var tn = diag_w_names[j - 1]
+                diag_w_names[j - 1] = diag_w_names[j]
+                diag_w_names[j] = tn
+                var tt = diag_w_tips[j - 1]
+                diag_w_tips[j - 1] = diag_w_tips[j]
+                diag_w_tips[j] = tt
+                var tm = diag_w_norms[j - 1]
+                diag_w_norms[j - 1] = diag_w_norms[j]
+                diag_w_norms[j] = tm
+                j = j - 1
+            } else {
+                go = false
+            }
+        }
+        i = i + 1
+    }
+}
+
 func ensure_warns() {
     if len(diag_w_keys) > 0 {
         return
     }
-    // 升序（字节序）：ASCII "roles..." 在前，中文按码点递增
-    var k: table<string> = [
-        "roles.data.tie 解析失败，使用内置默认角色",
-        "依赖包角色定义解析失败，使用内置默认角色",
-        "循环内字符串拼接累积（x = x + y 逐次整体复制，O(n²)）",
-        "整数除法结果截断（如 7/2 == 3）",
-        "浮点相等比较（==/!= 对 f64/f32 结果不可靠）",
-        "表变量拷贝共享底层数组（var b = a 后 b 的修改会反映到 a）",
-        "角色 output 非法值，回退 lib",
-        "角色重复注册，忽略后注册者"
-    ]
-    var c: table<string> = ["W00020", "W00021", "W00003", "W00002", "W00001", "W00004", "W00023", "W00022"]
-    var nm: table<string> = [
-        "角色配置解析失败",
-        "角色定义解析失败",
-        "字符串拼接累积",
-        "整数除法截断",
-        "浮点相等比较",
-        "表变量拷贝共享",
-        "角色 output 非法",
-        "角色重复注册"
-    ]
-    var tp: table<string> = [
-        "自定义角色配置语法错误，本次按内置默认角色编译；请检查 roles 段格式",
-        "依赖包角色定义解析失败，已忽略；请检查包内 roles.data.tie 格式",
-        "tie 字符串不可变，每次拼接生成新串并复制全部旧内容，循环 N 次总成本 O(N²)，长文本可致内存/时间爆炸；用 string_builder + sb_append + sb_build",
-        "整数除法结果向下取整会丢小数；需保留精度请把操作数转为 f64",
-        "浮点二进制表示有误差，== 几乎总是不成立；改用 |a-b| <= eps 的误差范围比较",
-        "表赋值是引用共享而非深拷贝；需要独立副本请用 clone",
-        "角色输出类型仅支持 lib/check/exe；非法值按 lib 处理，请检查 roles 段 output 字段",
-        "同名角色先注册者生效，后注册者被忽略；请保持角色名全局唯一"
-    ]
     diag_w_keys = table_new_string()
     diag_w_codes = table_new_string()
     diag_w_names = table_new_string()
     diag_w_tips = table_new_string()
-    var i: i64 = 0
-    while i < len(k) {
-        table_push(diag_w_keys, k[i])
-        table_push(diag_w_codes, c[i])
-        table_push(diag_w_names, nm[i])
-        table_push(diag_w_tips, tp[i])
-        i = i + 1
-    }
+    diag_w_norms = table_new_string()
+    diag_w_unreg = table_new_string()
+
+    // —— 核心警告（W00001..）——
+    warn_reg("浮点相等比较（==/!= 对 f64/f32 结果不可靠）", "W00001", "浮点相等比较",
+        "浮点二进制表示有误差，== 几乎总是不成立；改用 |a-b| <= eps 的误差范围比较")
+    warn_reg("整数除法结果截断（如 7/2 == 3）", "W00002", "整数除法截断",
+        "整数除法结果向下取整会丢小数；需保留精度请把操作数转为 f64")
+    warn_reg("循环内字符串拼接累积（x = x + y 逐次整体复制，O(n²)）", "W00003", "字符串拼接累积",
+        "tie 字符串不可变，每次拼接生成新串并复制全部旧内容，循环 N 次总成本 O(N²)，长文本可致内存/时间爆炸；用 string_builder + sb_append + sb_build")
+    warn_reg("表变量拷贝共享底层数组（var b = a 后 b 的修改会反映到 a）", "W00004", "表变量拷贝共享",
+        "表赋值是引用共享而非深拷贝；需要独立副本请用 clone")
+
+    // —— 语义/逻辑警告（W00005..）——
+    warn_reg("变量重复声明（同名变量再次声明，后者覆盖前者）", "W00005", "变量重复声明",
+        "tie 局部变量作用域为覆盖语义（scope.insert），同名再次声明后前者在后续代码中不可再访问；请确认是否为遮蔽本意，否则改用新名")
+    warn_reg("条件恒假（if/while 条件为常量 0/false）", "W00006", "条件恒假",
+        "条件恒为假，if 分支 / while 循环体永远不会执行，可能是逻辑错误或遗留代码")
+    warn_reg("条件恒真（if/while 条件为常量 true/非零值）", "W00007", "条件恒真",
+        "条件恒为真，if 分支恒执行 / while 循环恒不退出（死循环）；检查是否为常量误用")
+    warn_reg("整数除零（字面量 0 作除数，运行期崩溃）", "W00008", "整数除零",
+        "整数除以字面量 0 会在运行期触发崩溃（除零）；请检查除数来源并加非零判断")
+    warn_reg("switch 缺少 default（未匹配值时静默无操作）", "W00009", "switch 缺少 default",
+        "未匹配的值会静默跳过；若其余值确实无需处理，建议补 default 分支明确意图，避免新增值后静默漏处理")
+    warn_reg("未使用变量（声明后从未被读取）", "W00010", "未使用变量",
+        "该变量声明后从未被读取；删除声明或确认是否漏用")
+    warn_reg("内存上限限制下优化档 O3 受限，已自动降为 O2", "W00011", "优化档自动降级",
+        "内存上限配置下优化档 O3 需要更大内存，已自动降为 O2；如需 O3 请调大 tiec.mem_limit")
+
+    // —— 角色类（W00020..）——
+    warn_reg("roles.data.tie 解析失败，使用内置默认角色", "W00020", "角色配置解析失败",
+        "自定义角色配置语法错误，本次按内置默认角色编译；请检查 roles 段格式")
+    warn_reg("依赖包角色定义解析失败，使用内置默认角色", "W00021", "角色定义解析失败",
+        "依赖包角色定义解析失败，已忽略；请检查包内 roles.data.tie 格式")
+    warn_reg("角色重复注册，忽略后注册者", "W00022", "角色重复注册",
+        "同名角色先注册者生效，后注册者被忽略；请保持角色名全局唯一")
+    warn_reg("角色 output 非法值，回退 lib", "W00023", "角色 output 非法",
+        "角色输出类型仅支持 lib/check/exe；非法值按 lib 处理，请检查 roles 段 output 字段")
+
+    warn_sort()
 }
 
 // 按核心消息查（原始字节二分；表升序）；未命中 ""。
@@ -384,9 +437,88 @@ func warn_at(core: string) -> i64 {
     return -1
 }
 
-// 警告标号：未命中 W00000。
-pub func warn_code_of(core: string) -> string {
+// 归一化键查（二级匹配）：与错误侧 code_of 的 exact→prefix 两级对齐，
+// 发射点消息与目录消息仅在 ASCII 段有出入（空格、插值）时仍可命中。
+func warn_at_norm(norm: string) -> i64 {
+    ensure_warns()
+    var lo: i64 = 0
+    var hi: i64 = len(diag_w_norms) - 1
+    while lo <= hi {
+        var mid = (lo + hi) / 2
+        if diag_w_norms[mid] == norm {
+            return mid
+        }
+        if diag_w_norms[mid] < norm {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    return -1
+}
+
+// 统一查找：逐字精确 → 归一化 → 未命中（顺带登记为「未登记警告」）。
+func warn_idx(core: string) -> i64 {
     var idx = warn_at(core)
+    if idx >= 0 {
+        return idx
+    }
+    idx = warn_at_norm(normalize(core))
+    if idx >= 0 {
+        return idx
+    }
+    warn_note_unreg(core)
+    return -1
+}
+
+// 登记一条「未登记警告」：发射点有、目录里没有（加新警告忘了 warn_reg 时触发）。
+pub func warn_note_unreg(core: string) {
+    ensure_warns()
+    var i: i64 = 0
+    while i < len(diag_w_unreg) {
+        if diag_w_unreg[i] == core {
+            return
+        }
+        i = i + 1
+    }
+    table_push(diag_w_unreg, core)
+}
+
+// 未登记警告条数（0 = 目录与发射点一致）。
+pub func warn_unreg_count() -> i64 {
+    ensure_warns()
+    return len(diag_w_unreg)
+}
+
+// 未登记警告清单（'|' 分隔；供 TIEC_WARN_AUDIT 与测试断言）。
+pub func warn_unreg_list() -> string {
+    var out = ""
+    var i: i64 = 0
+    while i < len(diag_w_unreg) {
+        if i > 0 {
+            out = out + "|"
+        }
+        out = out + diag_w_unreg[i]
+        i = i + 1
+    }
+    return out
+}
+
+// 清空未登记清单（每次编译入口调用，避免跨文件累积）。
+pub func warn_unreg_reset() {
+    ensure_warns()
+    diag_w_unreg = table_new_string()
+}
+
+// 目录中已注册的警告条数。
+pub func warn_count() -> i64 {
+    ensure_warns()
+    return len(diag_w_keys)
+}
+
+// 警告标号：未命中 W00000（并登记未登记，供审计）。
+pub func warn_code_of(core: string) -> string {
+    var idx = warn_idx(core)
     if idx < 0 {
         return "W00000"
     }
@@ -395,7 +527,7 @@ pub func warn_code_of(core: string) -> string {
 
 // 警告消息名。
 pub func warn_name_of(core: string) -> string {
-    var idx = warn_at(core)
+    var idx = warn_idx(core)
     if idx < 0 {
         return core
     }
@@ -404,7 +536,7 @@ pub func warn_name_of(core: string) -> string {
 
 // 警告建议（潜在影响 / 处理方向）。
 pub func warn_tip_of(core: string) -> string {
-    var idx = warn_at(core)
+    var idx = warn_idx(core)
     if idx < 0 {
         return ""
     }

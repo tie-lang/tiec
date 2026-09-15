@@ -69,6 +69,52 @@ func main() {
     var ru = diagcode.render_warning(3, 1, "未知警告消息")
     check(str.contains(ru, "W00000"), "render_warning 未知兜底")
 
+    // --- 警告目录：单行注册（warn_reg）+ 构建期自动排序 ---
+    check(diagcode.warn_count() == 15, "warn_count 目录条数")
+
+    // 全量核对：排序或平行表任一处错位，查到的码就会错
+    var wc: table<string> = [
+        "浮点相等比较（==/!= 对 f64/f32 结果不可靠）",
+        "整数除法结果截断（如 7/2 == 3）",
+        "循环内字符串拼接累积（x = x + y 逐次整体复制，O(n²)）",
+        "表变量拷贝共享底层数组（var b = a 后 b 的修改会反映到 a）",
+        "变量重复声明（同名变量再次声明，后者覆盖前者）",
+        "条件恒假（if/while 条件为常量 0/false）",
+        "条件恒真（if/while 条件为常量 true/非零值）",
+        "整数除零（字面量 0 作除数，运行期崩溃）",
+        "switch 缺少 default（未匹配值时静默无操作）",
+        "未使用变量（声明后从未被读取）",
+        "内存上限限制下优化档 O3 受限，已自动降为 O2",
+        "roles.data.tie 解析失败，使用内置默认角色",
+        "依赖包角色定义解析失败，使用内置默认角色",
+        "角色重复注册，忽略后注册者",
+        "角色 output 非法值，回退 lib"
+    ]
+    var wx: table<string> = ["W00001", "W00002", "W00003", "W00004", "W00005", "W00006",
+        "W00007", "W00008", "W00009", "W00010", "W00011", "W00020", "W00021", "W00022", "W00023"]
+    var wi: i64 = 0
+    while wi < len(wc) {
+        check(diagcode.warn_code_of(wc[wi]) == wx[wi], "warn_code_of 全量 " + wx[wi])
+        wi = wi + 1
+    }
+    // 短名/建议随码走（平行表同步的另一重校验）
+    check(diagcode.warn_name_of("整数除法结果截断（如 7/2 == 3）") == "整数除法截断", "warn_name_of 短名")
+    check(str.contains(diagcode.warn_tip_of("整数除法结果截断（如 7/2 == 3）"), "f64"), "warn_tip_of 建议")
+
+    // --- 二级匹配（对齐错误侧 exact→prefix）：ASCII 段有出入仍命中 ---
+    check(diagcode.warn_code_of("整数除法结果截断（如 5/2 == 2）") == "W00002", "warn 归一化二级匹配")
+
+    // --- 未登记审计（加发射点忘了 warn_reg 时不再静默）---
+    diagcode.warn_unreg_reset()
+    check(diagcode.warn_unreg_count() == 0, "warn_unreg 初始为空")
+    check(diagcode.warn_code_of("这是一条尚未登记的警告 xyz") == "W00000", "warn 未登记兜底 W00000")
+    check(diagcode.warn_unreg_count() == 1, "warn_unreg 记录未登记")
+    check(str.contains(diagcode.warn_unreg_list(), "尚未登记"), "warn_unreg_list 含未登记项")
+    check(diagcode.warn_code_of("这是一条尚未登记的警告 xyz") == "W00000", "warn 未登记仍兜底")
+    check(diagcode.warn_unreg_count() == 1, "warn_unreg 去重")
+    diagcode.warn_unreg_reset()
+    check(diagcode.warn_unreg_count() == 0, "warn_unreg_reset 清空")
+
     if g_fails == 0 {
         println("ALL PASS")
     } else {
