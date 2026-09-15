@@ -4,8 +4,8 @@ type tie<logic>
 //   逐参数一致（跨各层权重/偏置/GNγβ/t-线性）；NPAR 布局自洽（OFF_GBB+8==NPAR）。
 // 编译运行（tiec 根目录）：
 //   compiler\tiec.exe --no-cache tests\_diffuser_probe\diffunet_probe.tie
-import "/std/trng.tie";
-import "/std/loss.tie";
+import "/ext/trng.tie";
+import "/ext/loss.tie";
 import "./diffunet.tie";
 
 var fails: i64 = 0

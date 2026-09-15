@@ -19,7 +19,7 @@ type tie<class>
 // 时间条件：t → 4 维 sin/cos 嵌入 → 4×4 线性 → 每通道常数偏置加在 e1 输入；
 // bottle 用 tv[ch%4] 广播（零参数）。backward 重算前向激活（显存换简洁，模型极小）。
 // EN: tiny conditioned diffusion UNet (eps-prediction); single flat weight buffer.
-import "/std/nn.tie";
+import "/ext/nn.tie";
 
 namespace du {
 

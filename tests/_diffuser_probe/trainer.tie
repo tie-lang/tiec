@@ -10,11 +10,11 @@ type tie<class>
 // 逐位一致。权重最终经 serde.save_weights 单数组导出（供采样器/DLL 字面量生成）。
 // EN: conditioned DDPM trainer (eps-prediction) over macrogen pairs; per-step
 // Rng derived from step index for bit-exact reproducibility.
-import "/std/trng.tie";
-import "/std/loss.tie";
-import "/std/optim.tie";
-import "/std/diffusion.tie";
-import "/std/serde.tie";
+import "/ext/trng.tie";
+import "/ext/loss.tie";
+import "/ext/optim.tie";
+import "/ext/diffusion.tie";
+import "/ext/serde.tie";
 import "./macrogen.tie";
 import "./diffunet.tie";
 

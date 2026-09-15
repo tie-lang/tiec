@@ -3,9 +3,9 @@ type tie<logic>
 // 供采样探针与 DLL 权重生成使用（p.9.14.4/5）。确定性：同参重跑逐位一致。
 // 编译运行（tiec 根目录）：
 //   compiler\tiec.exe --no-cache tests\_diffuser_probe\train_full.tie
-import "/std/trng.tie";
-import "/std/diffusion.tie";
-import "/std/serde.tie";
+import "/ext/trng.tie";
+import "/ext/diffusion.tie";
+import "/ext/serde.tie";
 import "./macrogen.tie";
 import "./diffunet.tie";
 import "./trainer.tie";

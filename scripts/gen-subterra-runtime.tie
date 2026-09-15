@@ -1,0 +1,125 @@
+type tie<logic>
+// scripts/gen-subterra-runtime.tie —— p.9.14.5 代码生成器（tie 语言）
+// 用途：由「已训权重 bin + 余弦调度 + runtime_forward.tie 源 + 运行时段模板」组装
+//   自包含 DLL 运行时段 subterra_diffuse_runtime.gen.tie（注入权重/调度字面量）。
+// 编译运行（tiec 根目录）：
+//   compiler\tiec.exe --no-cache scripts\gen-subterra-runtime.tie
+// 输出：_tmp/subterra-tie-core/subterra_diffuse_runtime.gen.tie（供 subterra_density.tie import）
+import "/ext/diffusion.tie";
+import "/ext/serde.tie";
+
+func main() {
+    var wpath = "tests/_diffuser_probe/_du_weights_full.bin"
+    var w: array<f32, 1024> = array_init(0.0)
+    var n = serde.load_weights(w, 1010, wpath)
+    if n != 1010 {
+        println("WEIGHTS LOAD FAIL: " + to_string(n))
+        exit(1)
+    }
+    var betas = diffusion.schedule_cosine(10, 0.008)
+    var acp = diffusion.alpha_cumprod(betas, 10)
+
+    var src = fs.read_lines("tests/_diffuser_probe/runtime_forward.tie")
+    var tmpl = fs.read_lines("scripts/subterra_diffuse_runtime.tmpl.tie")
+
+    var out: table<string> = table_new_string()
+    table_push(out, "type tie<class>")
+    table_push(out, "// =====================================================================")
+    table_push(out, "// subterra_diffuse_runtime.gen.tie —— 由 scripts/gen-subterra-runtime.tie 生成，勿手改")
+    table_push(out, "// 内容：rfwd 自包含运行时（逐位一致校验过）+ stdens 缓存/采样/导出/融合查询")
+    table_push(out, "// 生成时间标记：weights=" + wpath + " steps=10 cosine s=0.008")
+    table_push(out, "// =====================================================================")
+    // 1) 复制 runtime_forward.tie（跳过 type tie<class> 行）
+    var i: i64 = 0
+    while i < len(src) {
+        if i > 0 {
+            table_push(out, src[i])
+        }
+        i = i + 1
+    }
+    // 2) 复制模板（注入权重/调度字面量）
+    i = 0
+    while i < len(tmpl) {
+        var line = tmpl[i]
+        if line == "//@@WEIGHTS@@" {
+            var k: i64 = 0
+            while k < 1010 {
+                var v: f64 = as_f64(w[k])
+                // 保证 f32 十进制回写（与 DLL 内 as_f32 精度一致）
+                table_push(out, "    w[" + to_string(k) + "] = " + fmt32(v))
+                k = k + 1
+            }
+        } else if line == "//@@ACP@@" {
+            var t: i64 = 0
+            while t < 10 {
+                table_push(out, "    a[" + to_string(t) + "] = " + fmt32(acp[t]))
+                t = t + 1
+            }
+        } else {
+            table_push(out, line)
+        }
+        i = i + 1
+    }
+    var outpath = "f:/Projects/_tmp/subterra-tie-core/subterra_diffuse_runtime.gen.tie"
+    fs.remove(outpath)
+    if !write_all(out, outpath) {
+        println("WRITE FAIL")
+        exit(1)
+    }
+    println("generated " + outpath + " lines=" + to_string(len(out)))
+}
+
+// 拼接输出行
+func write_all(lines: ref table<string>, path: string) -> bool {
+    var acc: string = ""
+    var i: i64 = 0
+    while i < len(lines) {
+        acc = acc + lines[i] + "\n"
+        i = i + 1
+    }
+    return fs.write_text(path, acc)
+}
+
+// f32 十进制格式化（7 位小数，四舍五入，无科学计数；负零归一）
+func fmt32(v: f64) -> string {
+    var neg: bool = false
+    if v < 0.0 {
+        neg = true
+    }
+    var a: f64 = v
+    if a < 0.0 {
+        a = 0.0 - a
+    }
+    if a >= 10000000.0 {
+        a = 9999999.0
+    }
+    var iv: i64 = as_i64(a * 10000000.0 + 0.5)
+    var whole = iv / 10000000
+    var frac = iv % 10000000
+    var s: string = to_string(whole) + "." + pad7(frac)
+    // 去尾零（保留至少一位小数位）
+    while str_len(s) > 2 {
+        var last = str_char(s, str_len(s) - 1)
+        if last == "0" {
+            s = str_sub_bytes(s, 0, str_len(s) - 1)
+        } else {
+            break
+        }
+    }
+    if str_char(s, str_len(s) - 1) == "." {
+        s = str_sub_bytes(s, 0, str_len(s) - 1)
+    }
+    if neg && s != "0" {
+        s = "-" + s
+    }
+    return s
+}
+
+// 7 位小数补零
+func pad7(f: i64) -> string {
+    var s: string = to_string(f)
+    while str_len(s) < 7 {
+        s = "0" + s
+    }
+    return s
+}
