@@ -5,6 +5,183 @@ type tie<class>
 // 不含顶层全局 var。依赖经主文件 import 链内联可达，不重复 import。
 namespace irgen {
 
+// ==================== L1 定长数组（value 类型，LLVM [N x T]）====================
+// 数组元素地址：GEP 到 [N x T] 元素。常量下标（编译期可求）→ 双下标
+// agg_gep（i32 0, i32 const，LLVM 常量折叠）；动态下标 → op 23 元素步长
+// GEP（getelementptr elem, ptr, i64 idx——基址 + idx*sizeof(elem)，地址
+// 与双下标 GEP 逐字节一致）。
+func tig_array_elem_addr(addr: i64, aty: i64, idx_node: i64, iv: i64) -> i64 {
+    var elem = types.array_elem(aty)
+    var (ci, cv) = stype.arr_const_index(idx_node)
+    if ci && cv >= 0 {
+        var gp = ir.new_inst(g_cur_block, 27, aty)  // agg_gep
+        ir.add_operand(gp, addr, 0)
+        ir.add_operand(gp, cv, 2)
+        return ir.get_value(gp)
+    }
+    var gp2 = ir.new_inst(g_cur_block, 23, elem)  // gep 元素步长（动态下标）
+    ir.add_operand(gp2, addr, 0)
+    ir.add_operand(gp2, iv, 0)
+    return ir.get_value(gp2)
+}
+
+// 数组字面量按目标数组类型构造：`var b: array<f32, 3> = [1.0, 2.0, 3.0]`
+// → alloca [N x T] + 逐元素 GEP + store（IntLit/FloatLit 按元素类型生成
+// 常量；普通表达式求值后按元素类型 tig_coerce）→ load 聚合值。
+// 元素个数由语义层（scheck/irgen 调用点）与 array_len(aty) 校验一致。
+func tig_array_lit_typed(id: i64, aty: i64) -> i64 {
+    var elem = types.array_elem(aty)
+    var alloca = ir.new_inst(g_cur_block, 20, aty)  // alloca [N x T]
+    ir.add_operand(alloca, aty, 2)
+    var ap = ir.get_value(alloca)
+    var nc = sstate.nchild(id)
+    var i: i64 = 0
+    while i < nc {
+        var cell = sstate.child(id, i)
+        var vnode = sstate.child(cell, 1)
+        var v: i64 = -1
+        if s_tags[vnode] == 0 {
+            // IntLit：按元素类型生成常量（f32/f64 槽转浮点文本）
+            if elem == types.named(TK_F32) {
+                v = tig_float_lit_ty(interner.intern(to_string(s_vals[vnode]) + ".0"), types.named(TK_F32))
+            } else if elem == types.named(TK_F64) {
+                v = tig_float_lit(interner.intern(to_string(s_vals[vnode]) + ".0"))
+            } else {
+                v = tig_int_lit_ty(s_vals[vnode], elem)
+            }
+        } else if s_tags[vnode] == 1 && elem == types.named(TK_F32) {
+            // FloatLit 适配 f32 元素
+            v = tig_float_lit_ty(s_names[vnode], types.named(TK_F32))
+        } else if types.is_array(elem) && s_tags[vnode] == 12 {
+            // 嵌套数组字面量元素：以 elem（数组类型）递归构造
+            v = tig_array_lit_typed(vnode, elem)
+        } else if types.is_array(elem) && s_tags[vnode] == 7 && sstate.name_str(vnode) == "array_init" {
+            // 嵌套 array_init 元素
+            v = tig_array_init_typed(vnode, elem)
+        } else {
+            v = tig_expr(vnode)
+            if v >= 0 {
+                var vt = node_types[vnode]
+                if vt >= 0 && vt != elem && (types.is_int(vt) || types.is_float(vt)) &&
+                    (types.is_int(elem) || types.is_float(elem)) {
+                    var cvv = tig_coerce(v, vt, elem)
+                    if cvv < 0 {
+                        return -1
+                    }
+                    v = cvv
+                }
+            }
+        }
+        if v < 0 {
+            return -1
+        }
+        var gp = ir.new_inst(g_cur_block, 27, aty)  // agg_gep（常量下标 i）
+        ir.add_operand(gp, ap, 0)
+        ir.add_operand(gp, i, 2)
+        var gpp = ir.get_value(gp)
+        var st = ir.new_inst(g_cur_block, 22, -1)  // store
+        ir.add_operand(st, elem, 2)
+        ir.add_operand(st, v, 0)
+        ir.add_operand(st, gpp, 0)
+        i = i + 1
+    }
+    var ld = ir.new_inst(g_cur_block, 21, aty)  // load 聚合值
+    ir.add_operand(ld, ap, 0)
+    return ir.get_value(ld)
+}
+
+// array_init(v) 广播填充：`var z: array<f32, 64> = array_init(0.0)`
+// → alloca [N x T] + N 次 GEP + store 同值（编译期展开，LLVM -O 折叠）→ load。
+func tig_array_init_typed(id: i64, aty: i64) -> i64 {
+    var n = types.array_len(aty)
+    var elem = types.array_elem(aty)
+    var arg0 = sstate.child(id, sstate.slot_off(id))
+    var v: i64 = -1
+    if types.is_array(elem) && s_tags[arg0] == 7 && sstate.name_str(arg0) == "array_init" {
+        // 嵌套广播：array<array<f32,4>,4> = array_init(array_init(0.0))——
+        // 内层 array_init 以 elem（数组类型）为目标递归构建
+        v = tig_array_init_typed(arg0, elem)
+    } else if types.is_array(elem) && s_tags[arg0] == 12 {
+        // 嵌套字面量：array<array<f32,4>,4> = [[..],[..],...]
+        v = tig_array_lit_typed(arg0, elem)
+    } else {
+        v = tig_expr(arg0)
+    }
+    if v < 0 {
+        return -1
+    }
+    var vt = node_types[arg0]
+    if vt >= 0 && vt != elem && (types.is_int(vt) || types.is_float(vt)) &&
+        (types.is_int(elem) || types.is_float(elem)) {
+        var cvv = tig_coerce(v, vt, elem)
+        if cvv < 0 {
+            return -1
+        }
+        v = cvv
+    }
+    var alloca = ir.new_inst(g_cur_block, 20, aty)  // alloca [N x T]
+    ir.add_operand(alloca, aty, 2)
+    var ap = ir.get_value(alloca)
+    var i: i64 = 0
+    while i < n {
+        var gp = ir.new_inst(g_cur_block, 27, aty)  // agg_gep（常量下标 i）
+        ir.add_operand(gp, ap, 0)
+        ir.add_operand(gp, i, 2)
+        var gpp = ir.get_value(gp)
+        var st = ir.new_inst(g_cur_block, 22, -1)  // store
+        ir.add_operand(st, elem, 2)
+        ir.add_operand(st, v, 0)
+        ir.add_operand(st, gpp, 0)
+        i = i + 1
+    }
+    var ld = ir.new_inst(g_cur_block, 21, aty)  // load 聚合值
+    ir.add_operand(ld, ap, 0)
+    return ir.get_value(ld)
+}
+
+// 求 base 的数组根类型与地址（读/写共用，递归降 Index 链）：
+//   var 数组 → 作用域槽地址；Index 链 g[i][j] → 逐层 GEP（写必须走真地址，
+//   拷贝语义会写进临时副本丢失）；其他表达式 → node_types + agg_addr。
+// 返回 (元素地址, 数组类型)：地址指向 base 表示的数组（内层），由调用方
+// 再按 own index GEP；不命中返回 (-1, -1)。
+func tig_array_root(base: i64) -> (addr: i64, aty: i64) {
+    if s_tags[base] == 6 {
+        var bn = interner.intern(sstate.name_str(base))
+        if scope_get_global(bn) >= 0 && types.is_array(g_lookup_ty) {
+            return (g_lookup_alloca, g_lookup_ty)
+        }
+        if scope_get(bn) >= 0 && types.is_array(g_lookup_ty) {
+            return (g_lookup_alloca, g_lookup_ty)
+        }
+    }
+    if s_tags[base] == S_N_INDEX {
+        var ib = sstate.child(base, 0)
+        var ix = sstate.child(base, 1)
+        var (ra, raty) = tig_array_root(ib)
+        if raty >= 0 {
+            var iv = tig_expr(ix)
+            if iv < 0 {
+                return (-1, -1)
+            }
+            var ea = tig_array_elem_addr(ra, raty, ix, iv)
+            if ea < 0 {
+                return (-1, -1)
+            }
+            return (ea, types.array_elem(raty))
+        }
+        return (-1, -1)
+    }
+    var bty = node_types[base]
+    if types.is_array(bty) {
+        var addr2 = tig_agg_addr(base, bty)
+        if addr2 < 0 {
+            return (-1, -1)
+        }
+        return (addr2, bty)
+    }
+    return (-1, -1)
+}
+
 // 取聚合 base 的地址（alloca 指针）：Var → 作用域槽地址；表达式 → 求聚合值
 // 后 alloca + store（寄存器聚合值落内存，供 GEP 寻址）。
 func tig_agg_addr(base: i64, agg: i64) -> i64 {
@@ -1137,11 +1314,19 @@ func tig_struct_construct(id: i64, nm: string) -> i64 {
         var v: i64 = -1
         var vt: i64 = -1  // v 的来源类型：窄整数字段按 fty 收窄的依据
         if i < nc {
-            v = tig_expr(sstate.child(id, soff + i))
+            var an = sstate.child(id, soff + i)
+            if types.is_array(fty) && s_tags[an] == 12 {
+                // L1 定长数组字段：按字段类型构造字面量
+                v = tig_array_lit_typed(an, fty)
+            } else if types.is_array(fty) && s_tags[an] == 7 && sstate.name_str(an) == "array_init" {
+                // L1 定长数组字段：array_init 广播填充
+                v = tig_array_init_typed(an, fty)
+            } else {
+                v = tig_expr(an)
+            }
             if v < 0 {
                 return -1
             }
-            var an = sstate.child(id, soff + i)
             vt = node_types[an]
         } else if off + i < len(fld_defs) && fld_defs[off + i] >= 0 {
             // 字段默认值（`var y: i64 = 10` → Point(5) 缺省 y 用 10）

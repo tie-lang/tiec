@@ -190,6 +190,19 @@ pub func builtin_call(fn_name: string, args: table<i64>, call_node: i64) -> i64 
         }
         return types.named(TK_I64)
     }
+    // ---------- L1 定长数组：广播初始化 array_init(v) ----------
+    // 返回类型是**占位**（misc）：目标数组类型由上下文（var 标注/形参/返回）
+    // 决定，调用点（scheck/stype.types_match + irgen var-decl）据此校验实参并
+    // 生成 [N x T] 全等值填充。
+    if fn_name == "array_init" {
+        if nargs != 1 {
+            sm_err_line = s_lines[call_node]
+            sm_err_col = s_cols[call_node]
+            sm_err_msg = "array_init() 期望 1 个参数（广播值），实际 " + to_string(nargs) + " 个"
+            return -2
+        }
+        return types.named(TK_MISC)
+    }
     // P2b：any 拆箱转换（as_*：1 参 any → 具体类型；实参类型由调用点检查）
     // P2d：as_table_* 拆箱为元素化表（返回 table_of(元素)，tag = 精确表类型 id）
     if fn_name == "as_i64" || fn_name == "as_f64" || fn_name == "as_bool" ||
@@ -680,11 +693,23 @@ pub func builtin_call(fn_name: string, args: table<i64>, call_node: i64) -> i64 
         return types.named(TK_I64)
     }
     if fn_name == "sqrt" || fn_name == "sin" || fn_name == "cos" || fn_name == "tan" ||
-        fn_name == "exp" || fn_name == "log" || fn_name == "floor" || fn_name == "ceil" || fn_name == "round" {
+        fn_name == "exp" || fn_name == "log" || fn_name == "floor" || fn_name == "ceil" || fn_name == "round" ||
+        fn_name == "tanh" || fn_name == "sinh" || fn_name == "cosh" || fn_name == "asin" || fn_name == "acos" ||
+        fn_name == "atan" || fn_name == "log2" || fn_name == "log10" || fn_name == "expm1" || fn_name == "log1p" ||
+        fn_name == "cbrt" || fn_name == "exp2" || fn_name == "trunc" {
         if nargs != 1 {
             sm_err_line = s_lines[call_node]
             sm_err_col = s_cols[call_node]
             sm_err_msg = fn_name + "() 期望 1 个参数，实际 " + to_string(nargs) + " 个"
+            return -2
+        }
+        return types.named(TK_F64)
+    }
+    if fn_name == "atan2" || fn_name == "copysign" || fn_name == "fmod" || fn_name == "remainder" || fn_name == "hypot" {
+        if nargs != 2 {
+            sm_err_line = s_lines[call_node]
+            sm_err_col = s_cols[call_node]
+            sm_err_msg = fn_name + "() 期望 2 个参数，实际 " + to_string(nargs) + " 个"
             return -2
         }
         return types.named(TK_F64)

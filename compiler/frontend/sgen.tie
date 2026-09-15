@@ -53,7 +53,13 @@ func mangle_suffix(args: table<i64>) -> string {
     var out: string = ""
     var k: i64 = 0
     while k < len(args) {
-        out = out + "$" + type_seg(args[k])
+        if args[k] < 0 {
+            // v2 值参数编码：-1 - 值 → 实例化符号标记 $n<val>（与类型实参
+            // 符号空间分离，避免负类型 id 越界查表；同档位同符号幂等去重）
+            out = out + "$n" + to_string(-1 - args[k])
+        } else {
+            out = out + "$" + type_seg(args[k])
+        }
         k = k + 1
     }
     return out
@@ -198,16 +204,20 @@ func find_tp(tp_names: table<i64>, nm: string) -> i64 {
 
 pub func clone_subst(node: i64, gti: i64, args: table<i64>) -> i64 {
     var tp_names = sstate.gt_param_names(gti)
-    return clone_inner(node, tp_names, args)
+    var kinds = sstate.gt_param_kinds(gti)
+    return clone_inner(node, tp_names, kinds, args)
 }
 
-func clone_inner(node: i64, tp_names: table<i64>, args: table<i64>) -> i64 {
+// 克隆并替换（内部递归）。v2：kinds 并行表标记每槽类型/值参数；N_VAR 引用
+// 值参数名（容量参数，如 `array<f32, CAP>` 的长度）时整体替换为 N_INT_LIT
+// 具体值（-1-编码还原）——实例化后类型检查不再需要值环境。
+func clone_inner(node: i64, tp_names: table<i64>, kinds: table<i64>, args: table<i64>) -> i64 {
     var tag = s_tags[node]
     // N_CASE_BIND（case 解构绑定，p.8.1.2 泛型函数）：children[1] 是**变量名池 id**
     //（非 AST 节点——parser 直接把 intern id 塞进 children），不能递归克隆（会把
     // 池 id 当节点 id 越界读 s_tags）；children[0] 变体引用照常递归。
     if tag == N_CASE_BIND {
-        var c0 = clone_inner(sstate.child(node, 0), tp_names, args)
+        var c0 = clone_inner(sstate.child(node, 0), tp_names, kinds, args)
         if c0 < 0 {
             return -1
         }
@@ -217,6 +227,37 @@ func clone_inner(node: i64, tp_names: table<i64>, args: table<i64>) -> i64 {
         var nb = push_node(tag, s_names[node], s_vals[node], s_aux[node], s_lines[node], s_cols[node])
         set_children_ast(nb, kids)
         return nb
+    }
+    // v2 值参数引用：N_VAR 命中模板值参数名（容量参数，如 `array<f32, CAP>`
+    // 的长度位置）→ 整体替换为 N_INT_LIT 具体值（编码 -1-v 还原）。值参数
+    // 无类型实参语义，此处不产类型节点。
+    if tag == N_VAR {
+        var nmv = sstate.name_str(node)
+        var tpi = find_tp(tp_names, nmv)
+        if tpi >= 0 && tpi < len(kinds) && kinds[tpi] == 1 {
+            if tpi >= len(args) {
+                sm_err_line = s_lines[node]
+                sm_err_col = s_cols[node]
+                sm_err_msg = "泛型模板值参数 '" + nmv + "' 缺少实参"
+                return -1
+            }
+            var enc = args[tpi]
+            if enc >= 0 {
+                sm_err_line = s_lines[node]
+                sm_err_col = s_cols[node]
+                sm_err_msg = "泛型值参数槽需要整型常量实参（如 conv<1280>）"
+                return -1
+            }
+            var val = -1 - enc
+            if val <= 0 {
+                sm_err_line = s_lines[node]
+                sm_err_col = s_cols[node]
+                sm_err_msg = "值参数必须为正整数，实际是 " + to_string(val)
+                return -1
+            }
+            return push_node(N_INT_LIT, -1, val, -1, s_lines[node], s_cols[node])
+        }
+        // 非模板参数 N_VAR：保持原样复制（可能是全局 const 名，待类型解析求值）
     }
     // 类型参数引用 → 实参类型节点
     if tag == S_N_STRUCT_TYPE {
@@ -239,7 +280,7 @@ func clone_inner(node: i64, tp_names: table<i64>, args: table<i64>) -> i64 {
             // -1 哨兵子节点（如 N_TYPE_ARGS 槽空）保持 -1，不递归
             var cid = sstate.child(node, k)
             if cid >= 0 {
-                var c = clone_inner(cid, tp_names, args)
+                var c = clone_inner(cid, tp_names, kinds, args)
                 if c < 0 {
                     return -1
                 }
@@ -291,7 +332,7 @@ func clone_inner(node: i64, tp_names: table<i64>, args: table<i64>) -> i64 {
         var nc = sstate.nchild(node)
         var k: i64 = 1
         while k < nc {
-            var c = clone_inner(sstate.child(node, k), tp_names, args)
+            var c = clone_inner(sstate.child(node, k), tp_names, kinds, args)
             if c < 0 {
                 return -1
             }
@@ -309,7 +350,7 @@ func clone_inner(node: i64, tp_names: table<i64>, args: table<i64>) -> i64 {
     while k < nc {
         var cid = sstate.child(node, k)
         if cid >= 0 {
-            var c = clone_inner(cid, tp_names, args)
+            var c = clone_inner(cid, tp_names, kinds, args)
             if c < 0 {
                 return -1
             }
@@ -340,15 +381,36 @@ pub func parse_type_args_ast(targs_node: i64) -> table<i64> {
     var n = sstate.nchild(targs_node)
     var k: i64 = 0
     while k < n {
-        var ty = parse_generic_type_node(sstate.child(targs_node, k))
-        if ty < 0 {
-            out = table_new_i64()
-            return out
+        var slot_id = sstate.child(targs_node, k)
+        if s_tags[slot_id] == S_N_INT_LIT {
+            // v2 值实参：整型字面量 → 值编码 -1-值（与类型实参 id 空间分离；
+            // 值 > 0，编码 ≤ -2，-1 留给"未指定"哨兵无歧义）
+            var v = s_vals[slot_id]
+            if v <= 0 {
+                sm_err_line = s_lines[targs_node]
+                sm_err_col = s_cols[targs_node]
+                sm_err_msg = "值实参必须为正整数，实际是 " + to_string(v)
+                out = table_new_i64()
+                return out
+            }
+            table_push(out, -1 - v)
+        } else {
+            var ty = parse_generic_type_node(slot_id)
+            if ty < 0 {
+                out = table_new_i64()
+                return out
+            }
+            table_push(out, ty)
         }
-        table_push(out, ty)
         k = k + 1
     }
     return out
+}
+
+// v2：整型常量节点 → 编译期整值（委托 sstate.resolve_int_len_node；N_VAR 查
+// 整型常量表 gval，const 名在数组长度/值参数默认值处引用时登记与查询）。
+pub func resolve_int_len_node(id: i64) -> i64 {
+    return sstate.resolve_int_len_node(id)
 }
 
 // 类型节点 → 类型 id（泛型感知版）：N_STRUCT_TYPE 带 N_TYPE_ARGS 且名字是
@@ -359,6 +421,41 @@ pub func parse_generic_type_node(tid: i64) -> i64 {
     var tag = s_tags[tid]
     if tag == S_N_NAMED_TYPE {
         return types.named(s_vals[tid])
+    }
+    if tag == S_N_ARRAY_TYPE {
+        // L1 定长数组：array<elem, N>（children = [元素类型, N_INT_LIT | N_VAR]）。
+        // N_VAR = const 名（v2，查整型常量表）或值参数（实例化后已被 clone 替换
+        // 为 N_INT_LIT；残留 N_VAR 且查表失败即报错，防跨档错配）。
+        // 内存安全：长度受 MAX_ARRAY_LEN 上限约束（护栏，防后端爆炸）。
+        var elem = parse_generic_type_node(sstate.child(tid, 0))
+        if elem < 0 {
+            return -1
+        }
+        var len_node = sstate.child(tid, 1)
+        if len_node < 0 || (s_tags[len_node] != S_N_INT_LIT && s_tags[len_node] != S_N_VAR) {
+            sm_err_line = s_lines[tid]
+            sm_err_col = s_cols[tid]
+            sm_err_msg = "数组长度必须是编译期整数字面量或常量名（array<T, N>）"
+            return -1
+        }
+        var nlen = sstate.resolve_int_len_node(len_node)
+        if nlen <= 0 {
+            sm_err_line = s_lines[tid]
+            sm_err_col = s_cols[tid]
+            if s_tags[len_node] == S_N_VAR {
+                sm_err_msg = "数组长度引用的常量未定义或非正整数型常量（" + sstate.name_str(len_node) + "）"
+            } else {
+                sm_err_msg = "数组长度必须为正整数，实际是 " + to_string(nlen)
+            }
+            return -1
+        }
+        if nlen > 262144 {
+            sm_err_line = s_lines[tid]
+            sm_err_col = s_cols[tid]
+            sm_err_msg = "数组长度超上限（上限 2^18=262144，实际 " + to_string(nlen) + "），请改用容量档位族或降低粒度"
+            return -1
+        }
+        return types.array_of(elem, nlen)
     }
     if tag == S_N_TABLE_TYPE {
         var e = parse_generic_type_node(sstate.child(tid, 0))
@@ -602,7 +699,7 @@ pub func infer_type_args_variants(tmpl_node: i64, gti: i64, variant_name: string
     var bv: table<i64> = table_new_i64()
     var e: i64 = 0
     while e < len(explicit) {
-        if explicit[e] >= 0 {
+        if explicit[e] != -1 {
             table_push(bk, tp_names[e])
             table_push(bv, explicit[e])
         }
@@ -1012,18 +1109,47 @@ pub func match_type_node(tnode: i64, arg_ty: i64, tp_names: table<i64>, bk: ref 
 // 按模板参数顺序收尾 args。未绑定参数：p.8.2.6 若有默认类型参数则自动代入
 // 默认，否则报"无法推断"。优先级：显式实参 > 推断绑定 > 默认类型参数。
 func finish_args(gti: i64, tp_names: table<i64>, bk: table<i64>, bv: table<i64>, call_id: i64) -> table<i64> {
+    var kinds = sstate.gt_param_kinds(gti)
     var defaults = sstate.gt_defaults(gti)
     var args: table<i64> = table_new_i64()
     var k: i64 = 0
     while k < len(tp_names) {
+        // v2 值参数：显式实参（bk/bv 中该名，编码 <0）或默认整值；无 port 约束
+        if kinds[k] == 1 {
+            var enc: i64 = -1
+            var b: i64 = 0
+            while b < len(bk) {
+                if bk[b] == tp_names[k] {
+                    enc = bv[b]
+                    break
+                }
+                b = b + 1
+            }
+            if enc == -1 {
+                var dn = -1
+                if k < len(defaults) && defaults[k] >= 0 {
+                    dn = resolve_int_len_node(defaults[k])
+                }
+                if dn <= 0 {
+                    sm_err_line = s_lines[call_id]
+                    sm_err_col = s_cols[call_id]
+                    sm_err_msg = "值参数 " + intern.lookup(tp_names[k]) + " 未提供且无有效默认值（请显式指定，如 f<1280>(...)）"
+                    return table_new_i64()
+                }
+                enc = -1 - dn
+            }
+            table_push(args, enc)
+            k = k + 1
+            continue
+        }
         var found: i64 = -1
-        var b: i64 = 0
-        while b < len(bk) {
-            if bk[b] == tp_names[k] {
-                found = bv[b]
+        var b2: i64 = 0
+        while b2 < len(bk) {
+            if bk[b2] == tp_names[k] {
+                found = bv[b2]
                 break
             }
-            b = b + 1
+            b2 = b2 + 1
         }
         if found < 0 {
             // p.8.2.6 默认类型参数：未推断且带默认 → 自动代入默认（解析为类型 id）。
@@ -1059,10 +1185,10 @@ pub func infer_type_args(tmpl_node: i64, gti: i64, explicit: table<i64>, param_s
     var n_tp = len(tp_names)
     var bk: table<i64> = table_new_i64()
     var bv: table<i64> = table_new_i64()
-    // 显式实参填充（按模板参数序）
+    // 显式实参填充（按模板参数序；-1 = 未指定；v2 值编码 <0 同样入绑定表）
     var e: i64 = 0
     while e < len(explicit) {
-        if explicit[e] >= 0 {
+        if explicit[e] != -1 {
             table_push(bk, tp_names[e])
             table_push(bv, explicit[e])
         }
@@ -1120,7 +1246,7 @@ pub func infer_type_args_fields(tmpl_node: i64, gti: i64, explicit: table<i64>, 
     var bv: table<i64> = table_new_i64()
     var e: i64 = 0
     while e < len(explicit) {
-        if explicit[e] >= 0 {
+        if explicit[e] != -1 {
             table_push(bk, tp_names[e])
             table_push(bv, explicit[e])
         }
