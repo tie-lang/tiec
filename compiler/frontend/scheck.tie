@@ -107,15 +107,18 @@ func mod_walk(node: i64, nm: string) -> i64 {
     return 0
 }
 
-// W00011 / W00015 子树遍历：收集可变 var 声明节点、被赋值目标名、被读取名。
+// W00005 / W00011 / W00015 子树遍历：收集全部局部声明节点（decls）、可变 var
+// 声明节点（mvars）、被赋值目标名、被读取名。
 // 递归覆盖闭包体（FN_LIT 子树），故闭包内对外层变量的读取/修改均计入，
 // 避免对捕获变量误报「未使用 / 未修改」。
-func diag_walk(node: i64, mvars: table<i64>, assigned: table<i64>, reads: table<i64>) {
+func diag_walk(node: i64, mvars: table<i64>, assigned: table<i64>, reads: table<i64>, decls: table<i64>) {
     if node < 0 {
         return
     }
     var t = s_tags[node]
     if t == S_N_VAR_DECL {
+        // 全部局部声明（var 与 const）登记，供 W00005「未使用变量」判定
+        table_push(decls, node)
         if s_vals[node] == 0 {
             table_push(mvars, node)
         }
@@ -146,7 +149,7 @@ func diag_walk(node: i64, mvars: table<i64>, assigned: table<i64>, reads: table<
     var nc = sstate.nchild(node)
     var k: i64 = 0
     while k < nc {
-        diag_walk(sstate.child(node, k), mvars, assigned, reads)
+        diag_walk(sstate.child(node, k), mvars, assigned, reads, decls)
         k = k + 1
     }
 }
@@ -2209,7 +2212,8 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     var dw_mvars: table<i64> = table_new_i64()
     var dw_assigned: table<i64> = table_new_i64()
     var dw_reads: table<i64> = table_new_i64()
-    diag_walk(body, dw_mvars, dw_assigned, dw_reads)
+    var dw_decls: table<i64> = table_new_i64()
+    diag_walk(body, dw_mvars, dw_assigned, dw_reads, dw_decls)
     // W00011：函数参数从未被读取（或写入）
     var pi2: i64 = 0
     while pi2 < nparams {
@@ -2236,6 +2240,24 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
             sm_warn_add(s_lines[dv], s_cols[dv], "可变绑定未修改（var 声明后从未赋值）")
         }
         mi = mi + 1
+    }
+    // W00005：局部变量（const / var）声明后从未被读取。
+    //  - 以 `_` 开头的名字不报（约定为有意不使用，含解构脱糖产生的 _tmpN/_cN）。
+    //  - 只扫函数体子树（body）：形参在 fn_node 子节点里，天然不在 body 内，
+    //    交给 W00011，不重复报。
+    //  - 与 W00015 分工：W00005 = 从未被读；W00015 = var 从未被写。两者可能同时命中
+    //    同一变量（声明后既不读也不写），此重叠可接受。
+    var w5i: i64 = 0
+    while w5i < len(dw_decls) {
+        var dv5 = dw_decls[w5i]
+        var dnm5 = sstate.name_str(dv5)
+        if len(dnm5) > 0 && !str.starts_with(dnm5, "_") {
+            var dnid5 = intern.intern(dnm5)
+            if sstate.seg_has(dw_reads, 0, len(dw_reads), dnid5) == 0 {
+                sm_warn_add(s_lines[dv5], s_cols[dv5], "未使用变量（声明后从未被读取）")
+            }
+        }
+        w5i = w5i + 1
     }
     // 三期 goto（§7.1.5）：函数体检查完后统一校验 goto（标签表已收集全——
     // goto 可前向/后向任意位置，须全表收集后判定 R1/R2/R3）
