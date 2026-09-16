@@ -1602,6 +1602,10 @@ pub func check_stmt(s: i64) -> i64 {
             if r < 0 {
                 return -1
             }
+        } else {
+            // W00028：switch 无 default 且非 enum（enum 已有穷尽检查兜底，不重复报）。
+            // 未匹配任何 case 时静默无操作，通常是漏写 default。
+            sm_warn_add(s_lines[s], s_cols[s], "switch 缺少 default（未匹配值时静默无操作）")
         }
         return 0
     }
