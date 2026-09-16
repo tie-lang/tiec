@@ -127,6 +127,15 @@ func diag_walk(node: i64, mvars: table<i64>, assigned: table<i64>, reads: table<
         if nid >= 0 {
             table_push(reads, nid)
         }
+    } else if t == S_N_CALL {
+        // N_CALL 的**被调名存于节点自身的 name**（pexpr：new_node(N_CALL, 被调名, …)；
+        // children[0] 是泛型槽、其余是实参）。fn 值变量以 `fv(args)` 被调用时，被调名
+        // 不会作为 S_N_VAR 子节点出现，故显式把被调名登记为「读取」，避免对「仅被调用
+        // 读取」的 fn 值变量误报未使用。名字为全局函数名时不会命中任何局部声明，无副作用。
+        var cnm = sstate.name_str(node)
+        if len(cnm) > 0 {
+            table_push(reads, intern.intern(cnm))
+        }
     } else if t == S_N_ASSIGN {
         var nid = s_names[node]
         if nid >= 0 {
