@@ -8,7 +8,7 @@ type tie<logic>
 // driver-lite/_driver_test 使用）。
 //
 // 用法：tiec <input.tie> [-o <out>] [-O0|-O1|-O2|-O3] [--target <三元组>]
-//                    [--emit-ir] [--keep-ir] [--prep-only] [--config <f>] [--help]
+//                    [--emit-ir] [--keep-ir] [--no-warn] [--prep-only] [--config <f>] [--help]
 // 退出码：0 成功 / 1 编译失败 / 2 参数错误。
 //
 // 角色识别：**头部扫描**（`type tie` / `type tie<X>` 声明），不依赖
@@ -60,6 +60,7 @@ var g_mem_limit: i64 = 0;         // --mem-limit <MB>：内存上限（0 = 不�
 var g_jobs: i64 = 0;              // --jobs <N>：编译并发度（0 = 默认；预留配置 advanced.threads，并行在 p.9.1.3 增量/缓存一并落地）
 // p.9.1.3 编译缓存：
 var g_no_cache: bool = false;     // --no-cache：关闭编译缓存（产物缓存到缓存目录，命中直接复制）
+var g_no_warn: bool = false;      // --no-warn：跳过警告检查（不发射/不打印任何 warning[W#####]；错误不受影响）
 var g_cache_salt: string = "tiec-cache-v1";  // 缓存键盐：编译器输出形态变更（如 optimizer 改动）时递增，强制旧缓存失效
 var g_emit_ir: bool = false;
 var g_keep_ir: bool = false;
@@ -105,6 +106,7 @@ func usage() -> i64 {
     println("  --mem-limit <MB>  内存上限（0 = 不限；>0 时优化档 O3 受限自动降为 O2，利好老电脑）")
     println("  --jobs <N>       编译并发度（0 = 默认；预留配置 advanced.threads，并行随 p.9.1.3 增量/缓存落地）")
     println("  --no-cache       关闭编译缓存（默认开启：产物缓存到 ~/.tiec-cache 或 cache.dir，命中直接复制跳过编译）")
+    println("  --no-warn        跳过警告检查（不发射/不打印任何 warning[W#####]；错误 error[E#####] 不受影响）")
     println("  --target <三元组>  交叉编译目标（如 x86_64-pc-windows-msvc）")
     println("  --emit-ir        只生成 LLVM IR（.ll），不继续编译")
     println("  --keep-ir        保留中间 IR 文件（.ll / .opt.ll）")
@@ -184,6 +186,11 @@ func parse_args() -> i64 {
             i = i + 1
         } else if a == "--no-cache" {
             g_no_cache = true
+        } else if a == "--no-warn" {
+            // --no-warn：前端警告段（print_warns）与 driver 侧角色/优化档等
+            // 打印点全部静默；错误 error[E#####] 不受影响。降级行为
+            // （角色 output 回退 lib、O3→O2）照常执行，只抑制打印。
+            g_no_warn = true
         } else if a == "--target" {
             if i + 1 >= n {
                 return -1
@@ -426,7 +433,9 @@ func register_role_map(roles: i64) {
         var def = config.map_val(roles, r)
         if config.type_of(def) == 6 {
             if role_registered(str.clone(nm)) {
-                println(diagcode.render_warning(-1, -1, "角色重复注册，忽略后注册者") + "（角色 '" + nm + "'）")
+                if !g_no_warn {
+                    println(diagcode.render_warning(-1, -1, "角色重复注册，忽略后注册者") + "（角色 '" + nm + "'）")
+                }
             } else {
                 // 加载器安全模块：角色定义仅接受 kind/params/output 三个字段，
                 // 其余任何字段（hook/exec/script 等）一律拦截并不生效——包可
@@ -453,7 +462,10 @@ func register_role_map(roles: i64) {
                         out = "lib"
                     }
                     if out != "lib" && out != "check" && out != "exe" && out != "pass" {
-                        println(diagcode.render_warning(-1, -1, "角色 output 非法值，回退 lib") + "（角色 '" + nm + "'，值 '" + out + "'）")
+                        // 回退 lib 的行为不受 --no-warn 影响，只抑制打印
+                        if !g_no_warn {
+                            println(diagcode.render_warning(-1, -1, "角色 output 非法值，回退 lib") + "（角色 '" + nm + "'，值 '" + out + "'）")
+                        }
                         out = "lib"
                     }
                     table_push(t_cr_out, out)
@@ -596,7 +608,9 @@ func role_registry_scan_project(src_dir: string) {
         if r1 >= 0 {
             register_role_map(r1)
         } else {
-            println(diagcode.render_warning(-1, -1, "roles.data.tie 解析失败，使用内置默认角色") + "（" + config.err_msg() + "）")
+            if !g_no_warn {
+                println(diagcode.render_warning(-1, -1, "roles.data.tie 解析失败，使用内置默认角色") + "（" + config.err_msg() + "）")
+            }
         }
     }
     // 包级角色（插件化入口）：由 tie.pkg 依赖清单驱动（不列目录——
@@ -629,7 +643,9 @@ func role_registry_scan_project(src_dir: string) {
                         if r2 >= 0 {
                             register_role_map(r2)
                         } else {
-                            println(diagcode.render_warning(-1, -1, "依赖包角色定义解析失败，使用内置默认角色") + "（" + config.err_msg() + "）")
+                            if !g_no_warn {
+                                println(diagcode.render_warning(-1, -1, "依赖包角色定义解析失败，使用内置默认角色") + "（" + config.err_msg() + "）")
+                            }
                         }
                     }
                 }
@@ -911,6 +927,10 @@ func frontend(src: string, base_dir: string) -> i64 {
 
 // 解析语义 OK 协议中的警告段并打印（warning[W#####] @l:c: 名字；建议。）。
 func print_warns(sem: string) -> string {
+    // --no-warn：整个前端警告段不打印（协议里可能仍带 ;W: 段，直接跳过解析）
+    if g_no_warn {
+        return ""
+    }
     var rest = sem
     var p = find_str_in(rest, ";W:")
     while p >= 0 {
@@ -1560,7 +1580,10 @@ func effective_opt_level() -> i64 {
         limit = config.get_int(g_cfg_root, "tiec.mem_limit")
     }
     if limit > 0 && level >= 3 {
-        println(diagcode.render_warning(-1, -1, "内存上限 " + to_string(limit) + "MB 下优化档 O3 受限，已自动降为 O2"))
+        // 降级行为不受 --no-warn 影响，只抑制打印
+        if !g_no_warn {
+            println(diagcode.render_warning(-1, -1, "内存上限 " + to_string(limit) + "MB 下优化档 O3 受限，已自动降为 O2"))
+        }
         level = 2
     }
     return level
