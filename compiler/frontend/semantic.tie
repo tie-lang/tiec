@@ -64,6 +64,8 @@ pub func sm_warn_reset() {
     sm_warn_lines = table_new_i64()
     sm_warn_cols = table_new_i64()
     sm_warn_msgs = table_new_string()
+    // W00016：全局可变表写点累积每编译重置（scheck 侧状态）
+    scheck.w16_reset()
 }
 
 // 登记一条警告（line/col + 核心消息；核心消息由 diagcode 目录精确匹配）。
