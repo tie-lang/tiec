@@ -154,7 +154,122 @@ func diag_walk(node: i64, mvars: table<i64>, assigned: table<i64>, reads: table<
     }
 }
 
+// ==================== W00019 全局状态与辅助 ====================
+
+// W00019：静态长度可确定的表变量（`var t = [字面量...]`）长度表（名池 id → 长度）。
+var w19_len_keys: table<i64> = []
+var w19_len_vals: table<i64> = []
+// 名池 id → 出现次数（S_N_VAR 读节点数）
+var w19_occ_keys: table<i64> = []
+var w19_occ_vals: table<i64> = []
+// 名池 id → 作为下标赋值目标的次数（S_N_INDEX_ASSIGN 的根变量）
+var w19_idx_keys: table<i64> = []
+var w19_idx_vals: table<i64> = []
+
 namespace scheck {
+
+// 名 → 计数递增（线性查找，表很小）
+func wbump(keys: table<i64>, vals: table<i64>, nid: i64) {
+    var i: i64 = 0
+    while i < len(keys) {
+        if keys[i] == nid {
+            vals[i] = vals[i] + 1
+            return
+        }
+        i = i + 1
+    }
+    table_push(keys, nid)
+    table_push(vals, 1)
+}
+
+// 名 → 计数读取（0 = 无记录；W00019 仅登记正长度，故 0 安全表示「未记录」）
+func wget(keys: table<i64>, vals: table<i64>, nid: i64) -> i64 {
+    var i: i64 = 0
+    while i < len(keys) {
+        if keys[i] == nid {
+            return vals[i]
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+// W00019 每函数重置（在 check_fn 入口调用）。
+func w19_reset() {
+    w19_len_keys = table_new_i64()
+    w19_len_vals = table_new_i64()
+    w19_occ_keys = table_new_i64()
+    w19_occ_vals = table_new_i64()
+    w19_idx_keys = table_new_i64()
+    w19_idx_vals = table_new_i64()
+}
+
+// W00019 单遍遍历：登记「表字面量声明」的静态长度 + 名字出现次数 + 下标赋值目标次数。
+func w19_collect(node: i64) {
+    if node < 0 {
+        return
+    }
+    var t = s_tags[node]
+    if t == S_N_VAR_DECL {
+        var init = sstate.child(node, 1)
+        if init >= 0 && s_tags[init] == S_N_TABLE_LIT && sstate.nchild(init) > 0 {
+            var nid = s_names[node]
+            if nid >= 0 && wget(w19_len_keys, w19_len_vals, nid) == 0 {
+                table_push(w19_len_keys, nid)
+                table_push(w19_len_vals, sstate.nchild(init))
+            }
+        }
+    } else if t == S_N_VAR {
+        var nid = s_names[node]
+        if nid >= 0 {
+            wbump(w19_occ_keys, w19_occ_vals, nid)
+        }
+    } else if t == S_N_INDEX_ASSIGN {
+        var root = sstate.im_root(sstate.child(node, 0))
+        if root >= 0 {
+            wbump(w19_idx_keys, w19_idx_vals, root)
+        }
+    }
+    var nc = sstate.nchild(node)
+    var k: i64 = 0
+    while k < nc {
+        w19_collect(sstate.child(node, k))
+        k = k + 1
+    }
+}
+
+// W00019 单遍遍历：对「仅被下标赋值使用」的表字面量变量，检查常量下标是否越界。
+func w19_check(node: i64) {
+    if node < 0 {
+        return
+    }
+    if s_tags[node] == S_N_INDEX_ASSIGN {
+        var target = sstate.child(node, 0)
+        if s_tags[target] == S_N_INDEX {
+            var base_node = sstate.child(target, 0)
+            if s_tags[base_node] == S_N_VAR {
+                var nid = s_names[base_node]
+                if nid >= 0 {
+                    var ln = wget(w19_len_keys, w19_len_vals, nid)
+                    // 安全条件：该变量的全部出现都是下标赋值目标（无读取/传参/重赋值），
+                    // 故声明时的字面量长度在整段函数体内恒定不变。
+                    if ln > 0 && wget(w19_occ_keys, w19_occ_vals, nid) == wget(w19_idx_keys, w19_idx_vals, nid) {
+                        var (ic, iv) = stype.arr_const_index(sstate.child(target, 1))
+                        if ic && iv >= ln {
+                            sm_warn_add(s_lines[node], s_cols[node], "表元素越界写静默失败（t[i] = v 且 i >= len 时丢弃）")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    var nc = sstate.nchild(node)
+    var k: i64 = 0
+    while k < nc {
+        w19_check(sstate.child(node, k))
+        k = k + 1
+    }
+}
 
 // 判定 for 迭代对象是否为字符串码点迭代器调用 `s.chars()`（dev33 批次4）。
 // 结构：MethodCall，方法名 == "chars"，接收者（child[slot_off]）类型为 string
@@ -2259,6 +2374,12 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
         }
         w5i = w5i + 1
     }
+    // W00019：表元素越界写（t[i] = v 且 i 为常量 >= 静态长度）。静态长度仅在
+    // 「var t = [字面量...] 且 t 在函数体内只被下标赋值使用」时可安全确定；长度
+    // 可能被 push/pop/传参/重赋值改变的场景一律不报（窄化，宁缺勿滥）。
+    w19_reset()
+    w19_collect(body)
+    w19_check(body)
     // 三期 goto（§7.1.5）：函数体检查完后统一校验 goto（标签表已收集全——
     // goto 可前向/后向任意位置，须全表收集后判定 R1/R2/R3）
     var gr = check_goto_refs()
