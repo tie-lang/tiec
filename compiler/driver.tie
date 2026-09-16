@@ -106,7 +106,7 @@ func usage() -> i64 {
     println("  --mem-limit <MB>  内存上限（0 = 不限；>0 时优化档 O3 受限自动降为 O2，利好老电脑）")
     println("  --jobs <N>       编译并发度（0 = 默认；预留配置 advanced.threads，并行随 p.9.1.3 增量/缓存落地）")
     println("  --no-cache       关闭编译缓存（默认开启：产物缓存到 ~/.tiec-cache 或 cache.dir，命中直接复制跳过编译）")
-    println("  --no-warn        跳过警告检查（不发射/不打印任何 warning[W#####]；错误 error[E#####] 不受影响）")
+    println("  --no-warn        跳过警告检查（tiec 警告与 LLVM 工具链警告一并静默；错误 error[E#####] 不受影响）")
     println("  --target <三元组>  交叉编译目标（如 x86_64-pc-windows-msvc）")
     println("  --emit-ir        只生成 LLVM IR（.ll），不继续编译")
     println("  --keep-ir        保留中间 IR 文件（.ll / .opt.ll）")
@@ -1186,6 +1186,7 @@ func main() -> i64 {
     // S1.4：两个可选开关接线——--check-bounds → irgen（越界检查），--ffast-math → 后端工具链。
     irgen.set_check_bounds(g_cli_check_bounds)
     tc.set_fast_math(g_cli_fast_math)
+    tc.set_no_warn(g_no_warn)
     // p.9.13.7-B：CLI 显式库根（--lib-root）注入前端 import 解析。
     if str_len(g_lib_root_cli) > 0 {
         semantic.set_lib_root(g_lib_root_cli)
