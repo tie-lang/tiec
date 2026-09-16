@@ -154,7 +154,7 @@ func diag_walk(node: i64, mvars: table<i64>, assigned: table<i64>, reads: table<
     }
 }
 
-// ==================== W00019 全局状态与辅助 ====================
+// ==================== W00019 / W00016 全局状态与辅助 ====================
 
 // W00019：静态长度可确定的表变量（`var t = [字面量...]`）长度表（名池 id → 长度）。
 var w19_len_keys: table<i64> = []
@@ -165,6 +165,12 @@ var w19_occ_vals: table<i64> = []
 // 名池 id → 作为下标赋值目标的次数（S_N_INDEX_ASSIGN 的根变量）
 var w19_idx_keys: table<i64> = []
 var w19_idx_vals: table<i64> = []
+
+// W00016：全局可变表写点累积（名池 id → 写点计数 / 首个写点位置）。
+var w16_keys: table<i64> = []
+var w16_cnt: table<i64> = []
+var w16_ln: table<i64> = []
+var w16_cl: table<i64> = []
 
 namespace scheck {
 
@@ -268,6 +274,51 @@ func w19_check(node: i64) {
     while k < nc {
         w19_check(sstate.child(node, k))
         k = k + 1
+    }
+}
+
+// W00016：登记一个全局可变表的写点（nid = 已解析的全局键，见调用点）。
+func w16_record(nid: i64, ln: i64, cl: i64) {
+    if nid < 0 {
+        return
+    }
+    var ty = sinfer.gb_find(nid)
+    if ty < 0 || !types.is_table(ty) {
+        return
+    }
+    if sinfer.gb_const_of(nid) == 1 {
+        return
+    }
+    var i: i64 = 0
+    while i < len(w16_keys) {
+        if w16_keys[i] == nid {
+            w16_cnt[i] = w16_cnt[i] + 1
+            return
+        }
+        i = i + 1
+    }
+    table_push(w16_keys, nid)
+    table_push(w16_cnt, 1)
+    table_push(w16_ln, ln)
+    table_push(w16_cl, cl)
+}
+
+// W00016：每编译重置累积（由 semantic.sm_warn_reset 调用）。
+pub func w16_reset() {
+    w16_keys = table_new_i64()
+    w16_cnt = table_new_i64()
+    w16_ln = table_new_i64()
+    w16_cl = table_new_i64()
+}
+
+// W00016：全部函数检查完后发射（写点 >= 2 的全局可变表）。
+pub func w16_emit() {
+    var i: i64 = 0
+    while i < len(w16_keys) {
+        if w16_cnt[i] >= 2 {
+            sm_warn_add(w16_ln[i], w16_cl[i], "可变全局表共享状态（被多处修改）")
+        }
+        i = i + 1
     }
 }
 
@@ -1159,6 +1210,8 @@ pub func check_stmt(s: i64) -> i64 {
                 sm_err_msg = "不能给 const 变量 '" + nm + "' 赋值"
                 return -1
             }
+            // W00016：全局可变表的（整体）重赋值写点
+            w16_record(gkey, s_lines[s], s_cols[s])
         } else {
             if sinfer.lv_const_of(nid) == 1 {
                 sm_err_line = s_lines[s]
@@ -1835,6 +1888,13 @@ pub func check_stmt(s: i64) -> i64 {
             sm_err_col = s_cols[s]
             sm_err_msg = "不能修改 immut 形参 '" + sstate.im_name(iroot) + "' 的下标元素；immut 形参只读"
             return -1
+        }
+        // W00016：全局可变表的下标写点（根变量非局部 → 按全局键解析后登记）
+        if iroot >= 0 && sinfer.lv_find(iroot) < 0 {
+            var gk16 = sinfer.gb_find_ns_key(iroot)
+            if gk16 >= 0 {
+                w16_record(gk16, s_lines[s], s_cols[s])
+            }
         }
         var base = sinfer.infer_expr(base_node)
         if base < 0 {
@@ -2592,6 +2652,8 @@ pub func check_pending_closures() -> i64 {
     if propagate_captures() < 0 {
         return -1
     }
+    // W00016：全部函数检查完后发射「全局可变表被多处修改」警告
+    w16_emit()
     return 0
 }
 
