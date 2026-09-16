@@ -907,6 +907,17 @@ pub func infer_expr(id: i64) -> i64 {
                 sm_warn_add(s_lines[id], s_cols[id], "整数除法结果截断（如 7/2 == 3）")
             }
         }
+        // W00027：整数除法 / 取模的除数为「字面量 0」→ 运行期崩溃
+        //（LLVM sdiv/srem 除数为 0 未定义行为）。仅整数运算（op 3=除法，4=取模；
+        // 浮点除 0 得 inf，不崩，故不报）；除数是字面量才可静态判定，非字面量不报。
+        if op == 3 || op == 4 {
+            if types.is_int(lhs) && types.is_int(rhs) {
+                var w27r = sstate.child(id, 1)
+                if s_tags[w27r] == S_N_INT_LIT && s_vals[w27r] == 0 {
+                    sm_warn_add(s_lines[id], s_cols[id], "整数除零（字面量 0 作除数，运行期崩溃）")
+                }
+            }
+        }
         var rt = lhs
         if types.is_int(lhs) && types.is_float(rhs) {
             rt = rhs
