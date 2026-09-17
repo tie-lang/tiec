@@ -1332,6 +1332,17 @@ pub func collect_top() -> i64 {
             sstate.sorted_insert(ext_keys, ext_keys, intern.intern(full), 0)
         } else if tag == S_N_IMPORT {
             // import 展开在 semantic 主入口处理（读文件 + 递归）
+        } else if tag == S_N_TYPE_ALIAS {
+            // p.9.11.32 类型别名登记：名 → S_N_TYPE_ALIAS 节点（展开在
+            // sgen.parse_generic_type_node 命中别名时做）
+            var anm = s_names[s]
+            if sstate.bs_find(alias_keys, anm) >= 0 {
+                sm_err_line = s_lines[s]
+                sm_err_col = s_cols[s]
+                sm_err_msg = "类型别名 '" + sstate.name_str(s) + "' 重复定义"
+                return -1
+            }
+            sstate.sorted_insert(alias_keys, alias_vals, anm, s)
         } else if tag == S_N_MACRO_DEF {
             // S3.3：跨文件宏未支持——主文件宏定义已在 mexpand 展开 pass 中
             // 收集并从顶层移除；此处残留说明宏定义来自被导入文件。
