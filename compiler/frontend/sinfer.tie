@@ -1286,6 +1286,23 @@ pub func infer_expr(id: i64) -> i64 {
         if wbase < 0 {
             return -1
         }
+        // p.9.11.33：struct 基 → 结构体不可变更新（值语义复制 + 指定字段覆盖；
+        // 字段名/类型校验在 irgen tig_with_struct 以诊断落位）
+        if types.kind(wbase) == K_STRUCT {
+            var wupd2 = infer_expr(sstate.child(id, 1))
+            if wupd2 < 0 {
+                return -1
+            }
+            if !types.is_map(wupd2) {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "'with' 右侧必须是记录/映射字面量 {k: v}，实际是 " + types.type_name(wupd2)
+                return -1
+            }
+            node_types[id] = wbase
+            g_typed = g_typed + 1
+            return wbase
+        }
         if !types.is_table(wbase) && !types.is_map(wbase) {
             sm_err_line = s_lines[id]
             sm_err_col = s_cols[id]
