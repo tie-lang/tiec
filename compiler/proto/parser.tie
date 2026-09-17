@@ -887,10 +887,10 @@ func parse_import() -> i64 {
         set_err(peek_line(), peek_col(), "import 后必须是字符串路径，实际是 " + describe(peek_tag()))
         return -1
     }
-    var alias = -1
+    var alias_id = -1
     if eat(T_AS) {
         if peek_tag() == T_IDENT {
-            alias = intern.intern(peek_lexeme())
+            alias_id = intern.intern(peek_lexeme())
             advance()
         } else {
             set_err(peek_line(), peek_col(), "as 后必须是别名标识符，实际是 " + describe(peek_tag()))
@@ -900,7 +900,7 @@ func parse_import() -> i64 {
     if !expect(T_SEMI, "import 语句结束的分号") {
         return -1
     }
-    return new_node(N_IMPORT, path, -1, alias, line, col)
+    return new_node(N_IMPORT, path, -1, alias_id, line, col)
 }
 
 // using 引入语句：`using fmt2;` / `using fmt.error;`（仅顶层）
