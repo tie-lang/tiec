@@ -319,6 +319,41 @@ func strip_type_decl(src: string) -> string {
 
 // 递归展开单个 import 节点：读文件 → parse → append_ast 合并，
 // 其顶层语句（非 import）进 g_extra_tops，其 import 递归展开。
+// ---------- p.9.11.31 选择性导入：依赖闭包 ----------
+// 引用收集标签：N_VAR(6) 变量/裸调用名、N_CALL(7) 调用名、N_METHOD_CALL(18)、
+// N_STRUCT_TYPE(202) 类型引用（用户类型名标注）。过收集无害（多保留）。
+
+// 名字命中 → 标记保留位
+func sel_mark_name(nm: i64, names: table<i64>, flags: table<i64>) {
+    var i: i64 = 0
+    while i < len(names) {
+        if names[i] == nm {
+            flags[i] = 1
+            return
+        }
+        i = i + 1
+    }
+}
+
+// 递归收集 node 子树内对同文件顶层名的引用并标记
+func sel_collect_refs(node: i64, names: table<i64>, flags: table<i64>) {
+    if node < 0 {
+        return
+    }
+    var t = s_tags[node]
+    if t == 6 || t == 7 || t == 18 || t == 202 {
+        var nm = s_names[node]
+        if nm >= 0 {
+            sel_mark_name(nm, names, flags)
+        }
+    }
+    var i: i64 = 0
+    while i < sstate.nchild(node) {
+        sel_collect_refs(sstate.child(node, i), names, flags)
+        i = i + 1
+    }
+}
+
 func expand_one_import(imp_node: i64) -> i64 {
     var p = sstate.name_str(imp_node)
     var full = resolve_import_path(p)
@@ -419,6 +454,114 @@ func expand_one_import(imp_node: i64) -> i64 {
     // 递归：新文件顶层中的 import 立即展开；其余进 g_extra_tops
     var saved_dir = g_cur_dir
     g_cur_dir = path_dir(full)
+    // p.9.11.31 选择性导入：N_IMPORT 子节点非空 = `import "path".{a, b}`。
+    // 过滤策略（内联模型）：保留集 = 选中名 + 其依赖闭包（保留符号体里引用
+    // 的同文件顶层名，不动点收敛）——被选符号的内部依赖自动跟随保留；
+    // 未列入且不在闭包内的顶层声明不进 g_extra_tops（不登记不发射），
+    // 主文件引用它们 → 既有「未定义」诊断。
+    var nsel = sstate.nchild(imp_node)
+    if nsel > 0 {
+        var sel_names: table<i64> = table_new_i64()
+        var k2: i64 = 0
+        while k2 < nsel {
+            var sn = sstate.child(imp_node, k2)
+            table_push(sel_names, s_names[sn])
+            k2 = k2 + 1
+        }
+        // 顶层名表（非 import 顶层；平行 flags）
+        var tops: table<i64> = table_new_i64()
+        var tnames: table<i64> = table_new_i64()
+        var flags: table<i64> = table_new_i64()
+        var k: i64 = 0
+        while k < sstate.nchild(new_root) {
+            var s = sstate.child(new_root, k)
+            if s_tags[s] != S_N_IMPORT {
+                table_push(tops, s)
+                table_push(tnames, s_names[s])
+                table_push(flags, 0)
+            }
+            k = k + 1
+        }
+        // 种子标记（选中名必须命中本文件顶层声明，否则诊断）
+        var i2: i64 = 0
+        while i2 < len(sel_names) {
+            var found = false
+            var j: i64 = 0
+            while j < len(tnames) {
+                if tnames[j] == sel_names[i2] {
+                    flags[j] = 1
+                    found = true
+                    j = len(tnames)
+                }
+                j = j + 1
+            }
+            if !found {
+                g_cur_dir = saved_dir
+                sm_err_line = s_lines[imp_node]
+                sm_err_col = s_cols[imp_node]
+                sm_err_msg = "选择性导入：'" + intern.lookup(sel_names[i2]) + "' 不是 '" + full + "' 的顶层声明"
+                return -1
+            }
+            i2 = i2 + 1
+        }
+        // 依赖闭包（不动点）
+        var changed = true
+        while changed {
+            changed = false
+            var i3: i64 = 0
+            while i3 < len(tops) {
+                if flags[i3] == 1 {
+                    var before: i64 = 0
+                    var i4: i64 = 0
+                    while i4 < len(flags) {
+                        before = before + flags[i4]
+                        i4 = i4 + 1
+                    }
+                    sel_collect_refs(tops[i3], tnames, flags)
+                    var after: i64 = 0
+                    i4 = 0
+                    while i4 < len(flags) {
+                        after = after + flags[i4]
+                        i4 = i4 + 1
+                    }
+                    if after > before {
+                        changed = true
+                    }
+                }
+                i3 = i3 + 1
+            }
+        }
+        // 只 push 保留节点；import 照常递归展开
+        var k3: i64 = 0
+        while k3 < sstate.nchild(new_root) {
+            var s2 = sstate.child(new_root, k3)
+            if s_tags[s2] == S_N_IMPORT {
+                var r = expand_one_import(s2)
+                if r < 0 {
+                    g_cur_dir = saved_dir
+                    return -1
+                }
+            } else {
+                var keep = false
+                var j2: i64 = 0
+                while j2 < len(tops) {
+                    if tops[j2] == s2 {
+                        if flags[j2] == 1 {
+                            keep = true
+                        }
+                        j2 = len(tops)
+                    }
+                    j2 = j2 + 1
+                }
+                if keep {
+                    table_push(g_extra_tops, s2)
+                }
+            }
+            k3 = k3 + 1
+        }
+        g_cur_dir = saved_dir
+        return 0
+    }
     var nc = sstate.nchild(new_root)
     var k: i64 = 0
     while k < nc {
@@ -540,6 +683,9 @@ pub func check_impl(ast_text: string, base_dir: string) -> string {
     en_vfldoff = table_new_i64()
     en_vnfld = table_new_i64()
     en_ftys = table_new_i64()
+    // p.9.11.32 类型别名注册表重置
+    alias_keys = table_new_i64()
+    alias_vals = table_new_i64()
     gb_keys = table_new_i64()
     gb_vals = table_new_i64()
     gb_const = table_new_i64()
@@ -794,6 +940,9 @@ pub func check_ast(base_dir: string) -> string {
     en_vfldoff = table_new_i64()
     en_vnfld = table_new_i64()
     en_ftys = table_new_i64()
+    // p.9.11.32 类型别名注册表重置
+    alias_keys = table_new_i64()
+    alias_vals = table_new_i64()
     gb_keys = table_new_i64()
     gb_vals = table_new_i64()
     gb_const = table_new_i64()

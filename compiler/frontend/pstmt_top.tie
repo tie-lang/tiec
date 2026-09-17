@@ -168,6 +168,14 @@ pub func parse_program() -> i64 {
                 return -1
             }
             ast.collect_stmt(stmts, s)
+        } else if tag == lex_ident && putil.peek_lexeme() == "alias" {
+            // p.9.11.32：类型别名声明（上下文关键字——顶层 `alias Name = ...`；
+            // alias 不进保留字表，既有代码中作为标识符合法）
+            var s = parse_alias()
+            if s < 0 {
+                return -1
+            }
+            ast.collect_stmt(stmts, s)
         } else if tag == lex_interface {
             // p.9.11.21：interface 结构性接口声明
             var s = parse_interface()
@@ -954,10 +962,45 @@ func parse_import() -> i64 {
             return -1
         }
     }
-    if !putil.expect(lex_semi, "import 语句结束的分号") {
-        return -1
+    // p.9.11.31 选择性导入：`import "path".{a, b}`——路径后可跟 `.{` 逗号分隔
+    // 标识符列表。选中名作为 N_IMPORT 的子节点（N_VAR，name = 名字池 id）随
+    // AST 进 sstate，semantic.expand_one_import 按此过滤登记（子节点为空 =
+    // 普通 import 全量可见）。
+    var sel: table<i64> = table_new_i64()
+    if putil.eat(lex_dot) {
+        if !putil.expect(lex_lbrace, "'{'") {
+            return -1
+        }
+        var dsel = false
+        while !dsel {
+            var snm = putil.expect_ident()
+            if snm < 0 {
+                return -1
+            }
+            table_push(sel, ast.new_node(N_VAR, snm, -1, -1, putil.peek_line(), putil.peek_col()))
+            if putil.eat(lex_comma) {
+                // 继续
+            } else {
+                if !putil.expect(lex_rbrace, "'}'") {
+                    return -1
+                }
+                dsel = true
+            }
+        }
     }
-    return ast.new_node(N_IMPORT, path, is_pub, alias, line, col)
+    if len(sel) > 0 {
+        // 选择列表以 `}` 结尾——ASI 在 `}` 行尾不补分号（与 `>` 同类），可选消费
+        putil.eat(lex_semi)
+    } else {
+        if !putil.expect(lex_semi, "import 语句结束的分号") {
+            return -1
+        }
+    }
+    var nimp = ast.new_node(N_IMPORT, path, is_pub, alias, line, col)
+    if len(sel) > 0 {
+        ast.set_children(nimp, sel)
+    }
+    return nimp
 }
 
 // using 引入语句：`using fmt2;` / `using fmt.error;`（仅顶层）
@@ -1382,6 +1425,43 @@ func parse_extern() -> i64 {
 // N_STRUCT_TYPE（语义层校验必须是已登记的 port）。
 // 前提：当前 peek 为 '<'（函数名/struct 名后）。函数/struct 名后的 '<'
 // 一定是类型参数列表（非泛型场景不存在），解析失败直接报错，不做 try 回退。
+// p.9.11.32 类型别名：`alias Name = TypeNode;` / `alias Pair<T, U> = (T, U);`
+// 纯透明别名：无新类型、无标称区分，语义层（sgen.parse_generic_type_node）
+// 命中别名注册表时展开替换为目标类型（泛型别名做形参代换）。
+// 产出 N_TYPE_ALIAS[name=别名, children=[类型参数(-1 或 N_TYPE_PARAMS), 目标类型节点]]。
+func parse_alias() -> i64 {
+    var line = putil.peek_line()
+    var col = putil.peek_col()
+    putil.advance()   // alias
+    var name = putil.expect_ident()
+    if name < 0 {
+        return -1
+    }
+    var tparams = -1
+    if putil.peek_tag() == lex_lt {
+        tparams = parse_type_params()
+        if tparams < 0 {
+            return -1
+        }
+    }
+    if !putil.expect(lex_eq, "'='") {
+        return -1
+    }
+    var target = pexpr_type.parse_type()
+    if target < 0 {
+        return -1
+    }
+    if !putil.expect_stmt_end() {
+        return -1
+    }
+    var n = ast.new_node(N_TYPE_ALIAS, name, -1, -1, line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, tparams)
+    table_push(kids, target)
+    ast.set_children(n, kids)
+    return n
+}
+
 func parse_type_params() -> i64 {
     var line = putil.peek_line()
     var col = putil.peek_col()
