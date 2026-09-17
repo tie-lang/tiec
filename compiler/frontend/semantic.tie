@@ -407,14 +407,14 @@ func expand_one_import(imp_node: i64) -> i64 {
     }
     // import as 别名（M2.1.7）：alias = imp_node.aux（字符串池 id，-1 = 无别名）。
     // 有别名时，把被导入文件顶层 namespace 的段名替换为别名（f2 作为唯一入口）。
-    var alias = s_aux[imp_node]
+    var alias_id = s_aux[imp_node]
     var new_root = len(s_tags) - 1
-    if alias >= 0 {
+    if alias_id >= 0 {
         // p.9.11.14：别名登记 + 重复诊断（编译单元内 import 别名必须唯一；
         // 别名映射 → g_imp_alias_names/paths 平行表，供后续工具/诊断显示）。
         // 语义等价：别名 = 被导入文件顶层 namespace 的命名记录（内联模型下
         // 别名经改名生效，非纯解析糖——M2.1.7 既有行为）。
-        var anm = intern.lookup(alias)
+        var anm = intern.lookup(alias_id)
         var ak2: i64 = 0
         var adup: bool = false
         while ak2 < len(g_imp_alias_names) {
@@ -442,7 +442,7 @@ func expand_one_import(imp_node: i64) -> i64 {
                 if nsegs > 0 {
                     // 只改第一段（namespace fmt → namespace f2）
                     var first_seg = sstate.child(as_, 0)
-                    s_names[first_seg] = alias
+                    s_names[first_seg] = alias_id
                 }
             }
             ak = ak + 1

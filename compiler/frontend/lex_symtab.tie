@@ -33,7 +33,7 @@ namespace lexsym {
 //   interface（i n t）在 inline（i n l）后——第三字节 't'(116)>'l'(108)；
 //   interface 在 macro（m）前——'i'<'m'。结构性接口（鸭子多态静态检查）。
 func build_kw() {
-    var k: table<string> = ["actor", "any", "as", "asm", "async", "bool", "break",
+    var k: table<string> = ["actor", "alias", "any", "as", "asm", "async", "bool", "break",
         "case", "char", "code", "const", "continue", "default", "else", "enum",
         "extends", "extern", "f32", "f64", "false", "for", "func", "goto", "i128", "i16",
         "i32", "i64", "i8", "if", "immut", "impl", "import", "in", "inline", "interface", "macro", "map", "misc",
@@ -41,7 +41,7 @@ func build_kw() {
         "string", "struct", "switch", "table", "text", "trit", "true", "u128",
         "u16", "u32", "u64", "u8", "unsafe", "using", "var", "void", "when",
         "while", "with", "yield", "zero"]
-    var v: table<i64> = [92, 32, 21, 84, 93, 32, 14, 17, 32, 32, 7, 15, 18, 9, 81,
+    var v: table<i64> = [92, 107, 32, 21, 84, 93, 32, 14, 17, 32, 32, 7, 15, 18, 9, 81,
         23, 27, 32, 32, 29, 11, 5, 94, 32, 32, 32, 32, 32, 8, 103, 87, 20, 12, 102, 106, 88, 32,
         32, 24, 32, 85, 86, 25, 31, 83, 13, 32, 22, 16, 32, 32, 32, 28, 32,
         32, 32, 32, 32, 82, 26, 6, 32, 19, 10, 98, 105, 30]
