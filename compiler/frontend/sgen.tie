@@ -25,6 +25,10 @@ type tie<class>
 import "./stype.tie"
 import "./sgen_inst.tie"
 
+// p.9.11.32 别名展开深度护栏（防循环别名；文件顶层变量——命名空间体内
+// 不允许 var 声明）
+var alias_depth: i64 = 0
+
 namespace sgen {
 
 // ==================== 符号 mangling（§generics.md 符号 mangling）====================
@@ -523,6 +527,12 @@ pub func parse_generic_type_node(tid: i64) -> i64 {
             return types.atomic_of(elem)
         }
         var nid = intern.intern(nm)
+        // p.9.11.32 类型别名展开：命中别名注册表 → 目标类型（泛型别名做形参代换）。
+        // 挂在 struct/enum/port 查找之前——别名注册表与类型注册表互斥（重复即报错）。
+        var alidx = sstate.bs_find(alias_keys, nid)
+        if alidx >= 0 {
+            return alias_expand(alidx, tid)
+        }
         var sidx = sstate.bs_find(st_keys, nid)
         var eidx = sstate.bs_find(en_keys, nid)
         var gidx = sstate.gt_find(nm)
@@ -1273,6 +1283,63 @@ pub func infer_type_args_fields(tmpl_node: i64, gti: i64, explicit: table<i64>, 
         j = j + 1
     }
     return finish_args(gti, tp_names, bk, bv, call_id)
+}
+
+// ---------- p.9.11.32 类型别名展开 ----------
+// 展开深度护栏 alias_depth 在文件顶层（命名空间体内不允许 var）
+
+func alias_expand(alidx: i64, tid: i64) -> i64 {
+    if alias_depth > 32 {
+        sm_err_line = s_lines[tid]
+        sm_err_col = s_cols[tid]
+        sm_err_msg = "类型别名 '" + sstate.name_str(tid) + "' 展开超限（疑似循环别名）"
+        return -1
+    }
+    var anode = alias_vals[alidx]      // S_N_TYPE_ALIAS 节点
+    var tps = sstate.child(anode, 0)   // -1 或 N_TYPE_PARAMS
+    var tgt = sstate.child(anode, 1)   // 目标类型节点
+    if tps < 0 {
+        // 非泛型别名：直接展开目标类型节点
+        alias_depth = alias_depth + 1
+        var r = parse_generic_type_node(tgt)
+        alias_depth = alias_depth - 1
+        return r
+    }
+    // 泛型别名：形参名表 + 类型实参 → clone_inner 代换 → 递归展开
+    var ntp = sstate.nchild(tps)
+    var tp_names: table<i64> = table_new_i64()
+    var kinds: table<i64> = table_new_i64()
+    var i: i64 = 0
+    while i < ntp {
+        table_push(tp_names, s_names[sstate.child(tps, i)])
+        table_push(kinds, 0)
+        i = i + 1
+    }
+    var slot = sstate.child(tid, 0)
+    if slot < 0 || s_tags[slot] != S_N_TYPE_ARGS {
+        sm_err_line = s_lines[tid]
+        sm_err_col = s_cols[tid]
+        sm_err_msg = "别名 '" + sstate.name_str(tid) + "' 是泛型别名，需要类型实参（如 " + sstate.name_str(tid) + "<i64>）"
+        return -1
+    }
+    var args = parse_type_args_ast(slot)
+    if len(args) == 0 {
+        return -1
+    }
+    if len(args) != ntp {
+        sm_err_line = s_lines[tid]
+        sm_err_col = s_cols[tid]
+        sm_err_msg = "别名 '" + sstate.name_str(tid) + "' 类型实参数不匹配（需 " + to_string(ntp) + " 个，实给 " + to_string(len(args)) + " 个）"
+        return -1
+    }
+    alias_depth = alias_depth + 1
+    var sub = clone_inner(tgt, tp_names, kinds, args)
+    var r2: i64 = -1
+    if sub >= 0 {
+        r2 = parse_generic_type_node(sub)
+    }
+    alias_depth = alias_depth - 1
+    return r2
 }
 
 }
