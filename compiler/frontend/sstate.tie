@@ -51,6 +51,9 @@ var g_im_vals: table<i64>;
 
 var st_keys: table<i64>;      // struct 名 id（升序）
 var st_vals: table<i64>;      // struct 索引
+// p.9.11.32 类型别名注册表（名 id 升序；val = S_N_TYPE_ALIAS 节点 id）
+var alias_keys: table<i64>;
+var alias_vals: table<i64>;
 var cls_parent: table<i64>;   // struct 父名 id（-1=无）
 var cls_fldoff: table<i64>;   // 字段段偏移（fld_names/fld_tys）
 var cls_nfld: table<i64>;     // 字段数（含继承拍平）
@@ -425,6 +428,7 @@ const S_N_GUARD_STMT: i64 = 153;    // p.8.2.11 guard else 早退（与 ast.tie 
 const S_N_SWITCH_EXPR: i64 = 156;   // p.9.10.1 match/switch 表达式（与 ast.tie 同号）
 const S_N_TRY_BLOCK: i64 = 157;     // p.9.11.3 try 错误聚合块（与 ast.tie N_TRY_BLOCK 同号）
 const S_N_DEFER: i64 = 158;         // p.9.11.4 defer 资源释放（与 ast.tie N_DEFER 同号）
+const S_N_TYPE_ALIAS: i64 = 160;    // p.9.11.32 类型别名（与 ast.tie N_TYPE_ALIAS 同号）
 const S_N_YIELD: i64 = 161;         // p.9.11.15 yield 产出语句（与 ast.tie N_YIELD 同号）
 // 三期 A 组 guard<cap> 凭据（与 ast.tie N_GUARD_GET/N_GUARD_USE/N_GUARD_WITH 同号）
 const S_N_GUARD_GET: i64 = 145;     // `unsafe.get(share)` 取得凭据（表达式）
