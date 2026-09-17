@@ -168,9 +168,9 @@ pub func parse_program() -> i64 {
                 return -1
             }
             ast.collect_stmt(stmts, s)
-        } else if tag == lex_ident && putil.peek_lexeme() == "alias" {
-            // p.9.11.32：类型别名声明（上下文关键字——顶层 `alias Name = ...`；
-            // alias 不进保留字表，既有代码中作为标识符合法）
+        } else if tag == lex_alias {
+            // p.9.11.32：类型别名声明（真保留字；既有 alias 标识符已由
+            // prep/alias_kw_clean.tie 一键改名为 alias_id）
             var s = parse_alias()
             if s < 0 {
                 return -1
@@ -952,10 +952,10 @@ func parse_import() -> i64 {
         putil.set_err(putil.peek_line(), putil.peek_col(), "import 后必须是字符串路径，实际是 " + putil.describe(putil.peek_tag()))
         return -1
     }
-    var alias = -1
+    var alias_id = -1
     if putil.eat(lex_as) {
         if putil.peek_tag() == lex_ident {
-            alias = interner.intern(putil.peek_lexeme())
+            alias_id = interner.intern(putil.peek_lexeme())
             putil.advance()
         } else {
             putil.set_err(putil.peek_line(), putil.peek_col(), "as 后必须是别名标识符，实际是 " + putil.describe(putil.peek_tag()))
@@ -996,7 +996,7 @@ func parse_import() -> i64 {
             return -1
         }
     }
-    var nimp = ast.new_node(N_IMPORT, path, is_pub, alias, line, col)
+    var nimp = ast.new_node(N_IMPORT, path, is_pub, alias_id, line, col)
     if len(sel) > 0 {
         ast.set_children(nimp, sel)
     }

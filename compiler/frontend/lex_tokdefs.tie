@@ -106,10 +106,9 @@ const lex_yield: i64 = 105;   // yield 关键字（生成器产出语句）
 // 区别 = 实现关系判定：有签名兼容方法即实现，无需显式 impl 块）。映射值
 // 登记于 lex_symtab.build_kw（"interface" 在 "inline" 与 "macro" 之间，严格升序）。
 const lex_interface: i64 = 106; // interface 关键字（结构性接口声明）
-// p.9.11.32：alias 取**上下文关键字**路线（顶层 `alias Name = ...` 按标识符
-// 词法识别 + 分派处词形判定；不进 build_kw 保留字表——`alias` 在既有代码中
-// 作为普通标识符合法使用，保留字化会全局破坏）。lex_alias 常量留作文档锚点。
-const lex_alias: i64 = 107;   // alias（上下文关键字，非保留字）
+// p.9.11.32：alias 为真保留字（build_kw 登记；既有代码中以 alias 作标识符的
+// 10 处已由 prep/alias_kw_clean.tie 一键改名为 alias_id）
+const lex_alias: i64 = 107;   // alias 关键字（p.9.11.32 类型别名）
 
 namespace lextok {
 
