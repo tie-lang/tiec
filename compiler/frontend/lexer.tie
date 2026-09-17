@@ -99,9 +99,14 @@ pub func run_lex(src: string) -> bool {
     var pos: i64 = 0
     while pos < g_n {
         // p.8.2.3 插值 `}` 后：续扫字符串段（无开引号，scan_string 内部按
-        // g_str_interp==2 处理）
+        // g_str_interp==2 处理）；p.9.11.30 三引号插值续段走 scan_triple_string
         if g_str_interp == 2 {
-            var r2 = lexscan.scan_string(pos)
+            var r2: i64 = 0
+            if g_str_triple == 1 {
+                r2 = lexscan.scan_triple_string(pos)
+            } else {
+                r2 = lexscan.scan_string(pos)
+            }
             if r2 < 0 {
                 return false
             }
@@ -137,8 +142,12 @@ pub func run_lex(src: string) -> bool {
                 continue
             }
             r = lexscan.scan_symbol(pos)   // '\' 后非换行 → 无法识别的字符
-        } else if c == 34 {                // '"' 字符串
-            r = lexscan.scan_string(pos)
+        } else if c == 34 {                // '"' 字符串（p.9.11.30：`"""` 三引号多行）
+            if pos + 2 < g_n && g_codes[pos + 1] == 34 && g_codes[pos + 2] == 34 {
+                r = lexscan.scan_triple_string(pos)
+            } else {
+                r = lexscan.scan_string(pos)
+            }
         } else if c == 39 {                // '\'' 字符字面量
             r = lexscan.scan_char(pos)
         } else if lextok.is_digit(c) {     // 数字
