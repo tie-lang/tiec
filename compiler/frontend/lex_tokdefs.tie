@@ -224,13 +224,15 @@ pub func reset_tokens() {
     tok_lexemes = table_new_i64()
     doc_keys = table_new_i64()
     doc_vals = table_new_i64()
+    doc_decl_lines = table_new_i64()
     g_doc_pending = ""
+    g_str_triple = 0
 }
 
 // 在位置 pos 写入 token 四列并更新 ASI；声明起始 token 且有 pending doc 先 flush
 pub func push_token_at(tag: i64, pos: i64, lid: i64) {
     if is_decl_start(tag) {
-        flush_doc()
+        flush_doc(line_of(pos))
     }
     var l = line_of(pos)
     table_push(tok_tags, tag)
@@ -290,15 +292,34 @@ pub func collect_doc(txt: string) {
     }
 }
 
-// 把 pending doc 附着到当前声明（ordinal = len(doc_keys)，push 即排序对）
-func flush_doc() {
+// 把 pending doc 附着到当前声明（ordinal = len(doc_keys)，push 即排序对）。
+// p.9.11.29：同时记录声明起始 token 所在行（decl_line），parser 侧按
+// doc_decl_lines[k] == ast.line(声明节点) 匹配归属。
+func flush_doc(decl_line: i64) {
     if str_len(g_doc_pending) == 0 {
         return
     }
     var ord = len(doc_keys)
     table_push(doc_keys, ord)
     table_push(doc_vals, interner.intern(g_doc_pending))
+    table_push(doc_decl_lines, decl_line)
     g_doc_pending = ""
+}
+
+// ---------- p.9.11.29 doc 注册表跨命名空间读取（parser/工具链消费）----------
+// doc 条数。
+pub func doc_entry_count() -> i64 {
+    return len(doc_keys)
+}
+
+// 第 i 条 doc 的声明起始行（1 起）。
+pub func doc_entry_line(i: i64) -> i64 {
+    return doc_decl_lines[i]
+}
+
+// 第 i 条 doc 的文本池 id（interner.name_str 还原串）。
+pub func doc_entry_text_id(i: i64) -> i64 {
+    return doc_vals[i]
 }
 
 // doc 清单输出：共 N 条 + 逐条 doc[ordinal] = 文本（--dump-docs 调试标志）

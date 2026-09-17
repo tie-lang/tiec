@@ -30,6 +30,17 @@ var g_ann_arg_ids: table<i64>;
 var g_ann_lines: table<i64>;
 var g_ann_cols: table<i64>;
 
+// p.9.11.29 doc 注释 `///`：声明前连续 ///（或 /** */）行经词法 collect_doc/
+// flush_doc 落表后，此处按「doc 声明起始行 == ast.line(声明节点)」完成归属
+// 登记（@注解同路：解析期注册表，零运行时；tsp/工具链消费经 pdoc_* 接口，
+// Keel/tdiag 落盘在组件层做）。每份文件 parse_program 独立重置（同 pann）。
+// 附着面：函数/import/using/namespace/struct/enum/extern/宏/port/interface/
+// actor/字段与全局变量（N_VAR）；walk 不进函数/宏体——体内局部 var 不附着。
+var g_doc_nodes: table<i64>;     // 声明节点 id
+var g_doc_texts: table<i64>;    // 文本池 id（与 lextok.doc_entry_text_id 同源）
+var g_doc_dlines: table<i64>;   // 声明起始行（1 起，报告用）
+var doc_claimed: table<i64>;    // doc 已消费标记（0/1，一条 doc 至多附着一个声明）
+
 namespace pstmt_top {
 
 pub func parse_program() -> i64 {
@@ -43,6 +54,11 @@ pub func parse_program() -> i64 {
     g_ann_arg_ids = table_new_i64()
     g_ann_lines = table_new_i64()
     g_ann_cols = table_new_i64()
+    // p.9.11.29：doc 注册表重置（同 pann——每份文件解析独立）
+    g_doc_nodes = table_new_i64()
+    g_doc_texts = table_new_i64()
+    g_doc_dlines = table_new_i64()
+    doc_claimed = table_new_i64()
     var stmts: table<i64> = table_new_i64()
     var done = false
     while !done {
@@ -254,6 +270,8 @@ pub func parse_program() -> i64 {
     if parse_deferred_all() < 0 {
         return -1
     }
+    // p.9.11.29：doc 注释归属回填（声明起始行匹配，详见 doc_attach_all）
+    doc_attach_all(stmts)
     var root = ast.new_node(N_STMTLIST, -1, -1, -1, line, col)
     ast.set_children(root, stmts)
     return root
@@ -738,6 +756,159 @@ pub func pann_col(decl: i64, i: i64) -> i64 {
         return -1
     }
     return g_ann_cols[idx]
+}
+
+// ---------- p.9.11.29 doc 注释注册表（解析收尾回填，查询接口） ----------
+// 归属回填：整份文件解析完后对顶层声明做一次 walk，凡声明节点起始行与某条
+// doc 的声明起始行相等且双方均未被消费即登记（容器声明递归进成员：struct
+// 字段/方法、actor 字段/方法、port/interface 方法、impl 方法、namespace 内
+// 声明、enum 变体层不再下钻——变体无可附着的声明起始 token）。
+
+// 声明节点 tag 判别（可附着 doc 的声明）。
+func doc_is_decl_tag(t: i64) -> bool {
+    if t == N_FN_DEF || t == N_IMPORT || t == N_NAMESPACE || t == N_USING {
+        return true
+    }
+    if t == N_STRUCT || t == N_ENUM || t == N_EXTERN || t == N_VAR {
+        return true
+    }
+    if t == N_CLASS_FIELD || t == N_MACRO_DEF || t == N_PORT ||
+        t == N_IMPL || t == N_ACTOR {
+        return true
+    }
+    return false
+}
+
+// 容器声明 tag 判别（children 里可能有带 doc 的成员声明；walk 只进容器，
+// 不进函数/宏体——体内局部 var 不附着 doc）。
+func doc_is_container_tag(t: i64) -> bool {
+    return t == N_NAMESPACE || t == N_STRUCT || t == N_ENUM ||
+        t == N_PORT || t == N_IMPL || t == N_ACTOR
+}
+
+// 按行号匹配：第 k 条 doc 登记到节点 node（doc 与节点双向至多一次；
+// 同行多声明先到先得）。
+func doc_match_attach(k: i64, node: i64) {
+    if doc_claimed[k] == 1 {
+        return
+    }
+    var dl = lextok.doc_entry_line(k)
+    if dl != ast.line(node) {
+        return
+    }
+    var i: i64 = 0
+    while i < len(g_doc_nodes) {
+        if g_doc_nodes[i] == node {
+            return
+        }
+        i = i + 1
+    }
+    doc_claimed[k] = 1
+    table_push(g_doc_nodes, node)
+    table_push(g_doc_texts, lextok.doc_entry_text_id(k))
+    table_push(g_doc_dlines, dl)
+}
+
+// 递归 walk：StmtList 展开；声明节点尝试匹配，容器声明递归成员。
+func doc_walk(node: i64) {
+    if node < 0 {
+        return
+    }
+    if ast.is_stmt_list(node) {
+        var i: i64 = 0
+        while i < ast.child_count(node) {
+            doc_walk(ast.child_at(node, i))
+            i = i + 1
+        }
+        return
+    }
+    var t = ast.tag(node)
+    if !doc_is_decl_tag(t) {
+        return
+    }
+    var k: i64 = 0
+    while k < lextok.doc_entry_count() {
+        doc_match_attach(k, node)
+        k = k + 1
+    }
+    if doc_is_container_tag(t) {
+        var i2: i64 = 0
+        while i2 < ast.child_count(node) {
+            doc_walk(ast.child_at(node, i2))
+            i2 = i2 + 1
+        }
+    }
+}
+
+// 解析收尾：doc 归属回填入口（parse_program 在 parse_deferred_all 后调用）。
+func doc_attach_all(stmts: table<i64>) {
+    // 已消费标记重建（长度 = 本文件 doc 条数）
+    doc_claimed = table_new_i64()
+    var k: i64 = 0
+    while k < lextok.doc_entry_count() {
+        table_push(doc_claimed, 0)
+        k = k + 1
+    }
+    var i: i64 = 0
+    while i < len(stmts) {
+        doc_walk(stmts[i])
+        i = i + 1
+    }
+}
+
+// 已登记 doc 条数。
+pub func pdoc_count() -> i64 {
+    return len(g_doc_nodes)
+}
+
+// 第 i 条 doc 的声明节点 id。
+pub func pdoc_node(i: i64) -> i64 {
+    return g_doc_nodes[i]
+}
+
+// 第 i 条 doc 的文本池 id。
+pub func pdoc_text_id(i: i64) -> i64 {
+    return g_doc_texts[i]
+}
+
+// 第 i 条 doc 文本（声明起始行前连续 /// 内容，\n 拼接）。
+pub func pdoc_text(i: i64) -> string {
+    return interner.name_str(g_doc_texts[i])
+}
+
+// 第 i 条 doc 的声明起始行（1 起）。
+pub func pdoc_line(i: i64) -> i64 {
+    return g_doc_dlines[i]
+}
+
+// 声明节点 doc 文本（未登记返回空串）。
+pub func pdoc_of(decl: i64) -> string {
+    var i: i64 = 0
+    while i < len(g_doc_nodes) {
+        if g_doc_nodes[i] == decl {
+            return interner.name_str(g_doc_texts[i])
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+// 注册表可读摘要（--dump-docs 调试输出；tsp hover/补全经 pdoc_* 消费）。
+pub func pdoc_dump() -> string {
+    var out: string = "共 " + to_string(len(g_doc_nodes)) + " 条声明 doc:\n"
+    var i: i64 = 0
+    while i < len(g_doc_nodes) {
+        var node = g_doc_nodes[i]
+        var nm: string = "<匿名>"
+        var nid = ast.name(node)
+        if nid >= 0 {
+            nm = interner.name_str(nid)
+        }
+        out = out + "  [" + to_string(g_doc_dlines[i]) + "] " + nm + ": " +
+            interner.name_str(g_doc_texts[i]) + "\n"
+        i = i + 1
+    }
+    return out
 }
 
 // ---------- 语句分派 ----------
@@ -1394,6 +1565,32 @@ func parse_type_param_one(p: i64, line: i64, col: i64) -> i64 {
 // 一期并发：val bit2 = is_async（`pub async func` = actor 异步投递方法；仅 actor
 // 体内语义合法，解析层统一接受、语义层拦截非 actor 用法）。
 // S2.4：port 方法签名（无体）由 parse_port_method 单独解析（见下）。
+// ---------- p.9.11.28 return 可省：判定辅助 ----------
+
+// 返回类型节点是否 void（显式 `-> void` 或缺省；缺省时同样是 void 语义）
+func fn_ret_is_void(ret_ty: i64) -> bool {
+    if ast.tag(ret_ty) == N_NAMED_TYPE {
+        if interner.lookup(ast.name(ret_ty)) == "void" {
+            return true
+        }
+    }
+    return false
+}
+
+// 单表达式体省略判定：语句类 tag 排除（声明/赋值/控制流/异常/defer/unsafe/asm
+// 等一律不触发省略）。漏排的语句 tag（如宏语句）会在语义层报返回类型不匹配
+// ——编译期可见，无静默误编译面。
+func fn_eligible_expr_stmt(t: i64) -> bool {
+    if t == N_VAR_DECL || t == N_ASSIGN || t == N_RETURN || t == N_IF ||
+        t == N_WHILE || t == N_FOR || t == N_BREAK || t == N_CONTINUE ||
+        t == N_SWITCH || t == N_FIELD_ASSIGN || t == N_INDEX_ASSIGN ||
+        t == N_UNSAFE_BLOCK || t == N_ASM || t == N_PANIC ||
+        t == N_GUARD_STMT || t == N_DEFER {
+        return false
+    }
+    return true
+}
+
 func parse_fn_def() -> i64 {
     var line = putil.peek_line()
     var col = putil.peek_col()
@@ -1542,7 +1739,10 @@ func parse_fn_def() -> i64 {
         }
     }
     var ret_ty = -1
+    // p.9.11.28：返回类型是否显式标注（省略体强制显式 -> R 的依据）
+    var has_ret_ann = false
     if putil.eat(lex_arrow) {
+        has_ret_ann = true
         ret_ty = pexpr_type.parse_type()
         if ret_ty < 0 {
             return -1
@@ -1550,9 +1750,63 @@ func parse_fn_def() -> i64 {
     } else {
         ret_ty = ast.new_node(N_NAMED_TYPE, interner.intern("void"), 14, -1, line, col)
     }
-    var body = pstmt_flow.parse_block()
-    if body < 0 {
-        return -1
+    // ---------- p.9.11.28 return 可省：等号体 + 单表达式体 ----------
+    // 等号体：`func f(...) -> R = expr`（无块体）——desugar 为显式 N_RETURN(expr)
+    // 单语句体；省略形式（等号体）强制显式标注返回类型。混用等号体+块体报
+    // 「形式二选一」。单表达式体：块体恰 1 条表达式语句且返回类型显式标注为
+    // 非 void → 隐式 return（void 体维持原样——「-> void 配非 void 表达式报
+    // 不匹配」的既有语义不受影响，普通语句体零变化）。
+    var body = -1
+    if putil.peek_tag() == lex_eq {
+        if !has_ret_ann {
+            putil.set_err(putil.peek_line(), putil.peek_col(), "省略体（= 表达式）必须显式标注返回类型 '-> R'")
+            return -1
+        }
+        putil.advance()   // '='
+        var ev = pexpr.parse_expr()
+        if ev < 0 {
+            return -1
+        }
+        if putil.peek_tag() == lex_lbrace {
+            putil.set_err(putil.peek_line(), putil.peek_col(), "函数体形式二选一：等号体（= 表达式）与块体不能混用")
+            return -1
+        }
+        // 消费语句结束符（ASI 补的分号/换行断句；对齐 parse_return）
+        if !putil.expect_stmt_end() {
+            return -1
+        }
+        var ret_n = ast.new_node(N_RETURN, -1, -1, -1, ast.line(ev), ast.col(ev))
+        var rk: table<i64> = table_new_i64()
+        table_push(rk, ev)
+        ast.set_children(ret_n, rk)
+        var sl = ast.new_node(N_STMTLIST, -1, -1, -1, line, col)
+        var sk: table<i64> = table_new_i64()
+        table_push(sk, ret_n)
+        ast.set_children(sl, sk)
+        body = sl
+    } else {
+        body = pstmt_flow.parse_block()
+        if body < 0 {
+            return -1
+        }
+        if has_ret_ann && ast.is_stmt_list(body) && ast.child_count(body) == 1 {
+            var only = ast.child_at(body, 0)
+            // 表达式语句被 N_EXPR_STMT 包装——省略时解包出表达式
+            if ast.tag(only) == N_EXPR_STMT {
+                only = ast.child_at(only, 0)
+            }
+            if !fn_ret_is_void(ret_ty) && fn_eligible_expr_stmt(ast.tag(only)) {
+                var ret_n2 = ast.new_node(N_RETURN, -1, -1, -1, ast.line(only), ast.col(only))
+                var rk2: table<i64> = table_new_i64()
+                table_push(rk2, only)
+                ast.set_children(ret_n2, rk2)
+                var sl2 = ast.new_node(N_STMTLIST, -1, -1, -1, line, col)
+                var sk2: table<i64> = table_new_i64()
+                table_push(sk2, ret_n2)
+                ast.set_children(sl2, sk2)
+                body = sl2
+            }
+        }
     }
     var f = ast.new_node(N_FN_DEF, name, is_pub + is_unsafe * 2 + is_async * 4 + is_const * 16 + is_inline * 32, len(params), line, col)
     var kids: table<i64> = table_new_i64()

@@ -18,6 +18,9 @@ var tok_lexemes: table<i64>;
 // ---------- doc 注释表（ordinal 单调递增，push 即排序对）----------
 var doc_keys: table<i64>;
 var doc_vals: table<i64>;
+// p.9.11.29：每条 doc 附着的声明起始 token 所在行（与 doc_keys 平行，push 同序）；
+// parser 侧以此行号与 ast.line(声明节点) 匹配完成归属。
+var doc_decl_lines: table<i64>;
 
 // ---------- 扫描器共享状态（一次 run_lex 的生命周期）----------
 var g_codes: table<i64>;        // 源码码点表
@@ -36,6 +39,9 @@ var g_paren_depth: i64 = 0;     // 括号深度（只统计 ( 与 [）
 // p.8.2.3 字符串插值模式：0=正常；1=插值表达式 lex 中（`}` 后需续扫字符串段）；
 // 2=插值结束标记已扫，下一 token 续扫字符串段（无开引号）
 var g_str_interp: i64 = 0;
+// p.9.11.30 三引号多行字符串模式（与 g_str_interp==2 组合：插值表达式结束后续扫
+// 三引号内容段而非单行字符串）
+var g_str_triple: i64 = 0;
 
 // ---------- doc pending（空串 = 无；全局 -1 初始化被语义层拦截，实测 2026-08-11
 // 改用空串哨兵——collect_doc 保证永不写入空串，两哨兵语义等价）----------
