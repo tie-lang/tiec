@@ -1189,6 +1189,13 @@ pub func check_ast(base_dir: string) -> string {
     return sm_ok_protocol()
 }
 
+// p.9.15.1 依赖感知缓存：转调 sstate.imported_paths（driver 无法直接访问
+// sstate 命名空间，经 semantic 透出；sstate 函数跨命名空间调用已由本文件
+// 既有 sstate.xxx 用法证实可行）。
+pub func imported_paths() -> table<string> {
+    return sstate.imported_paths()
+}
+
 // ==================== 内存版 AST 表复制（T5.3 消除协议往返）====================
 // 把 parser.parse_ast 留在内存的 ast 节点池（ast 命名空间 9 列全局表）复制到
 // sstate 的 s_* 9 列表。语义与 sstate.load_ast(协议文本) 完全等价——协议文本

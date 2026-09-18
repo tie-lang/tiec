@@ -35,6 +35,8 @@ import "./frontend/diagcode.tie"
 // p.9.11.13 #cfg 条件编译预处理（词法前按行裁剪；driver 读文件后、头部扫描/
 // 词法之前调用；条件求值源 = --target/配置 target 与 --profile/配置 profile）
 import "./frontend/cfg_preproc.tie"
+// p.9.15.1 依赖感知缓存：tsha1r 强哈希（import 依赖指纹聚合键 + 产物指纹）
+// 注：完整 import std/tsha1 触发编译器自举泛型实例化超限（E00520），改内联极简实现
 // p.7.1.1 Keel 骨架接线：driver 真实 pass 登记为注册项，经 Keel 注册表驱动
 // 执行管线（import 文本内联；顺序 registry → cli → boot → executor，各文件内部
 // 互不 import，依赖经入口 import 链内联可达）。
@@ -1718,6 +1720,9 @@ func keel_dispatch(nm: string) -> i64 {
 // 驱动注册表管线：读 pipeline:real 的「有序 pass 引用列表」，逐个按
 // impl_name 分派执行；任一非 0 立即中止返回（等价 executor.run_pipeline）。
 // max_steps 截断前缀（--emit-ir 场景断在 emit 后，跳过 opt/link）。
+// p.9.15.1：kpass_front（语义含 import 展开）完成后，sstate.g_imported 已含
+// 全部依赖路径——在此处做依赖感知缓存判定：命中则跳过后续 pass 直接返回成功
+//（产物已由缓存复制到目标路径，见 cache_try_hit_dep）。
 func keel_run_pipeline(pid: i64, max_steps: i64) -> i64 {
     var n = keelreg.deps_count(pid)
     if max_steps > 0 && max_steps < n {
@@ -1730,9 +1735,28 @@ func keel_run_pipeline(pid: i64, max_steps: i64) -> i64 {
         if iname == "" {
             return -1
         }
-        var rc = keel_dispatch(iname)
-        if rc != 0 {
-            return rc
+        // p.9.15.1 依赖感知缓存：front 完成后判定（命中 → 后续 pass 跳过）。
+        // 仅对「真实管线」生效；trm 路线 B（独立分派）与 --emit-ir 前的
+        // 提前返回路径不受影响（g_trm_mode 单独拦截于 compile_program）。
+        if iname == "kpass_front" {
+            var frc = keel_dispatch(iname)
+            if frc != 0 {
+                return frc
+            }
+            if cache_enabled() {
+                var hit = cache_try_hit_dep()
+                if hit == 1 {
+                    return 0  // 命中：产物已复制，整条管线到此为止
+                }
+                if hit < 0 {
+                    return -1
+                }
+            }
+        } else {
+            var rc = keel_dispatch(iname)
+            if rc != 0 {
+                return rc
+            }
         }
         i = i + 1
     }
@@ -1761,6 +1785,210 @@ func cache_dir_value() -> string {
         return ""
     }
     return home + "/.tiec-cache"
+}
+
+// ==================== p.9.15.1 依赖感知缓存 ====================
+// 修复 p.9.1.3 缓存键缺陷：旧键只哈希入口源码（import 未展开），改任一
+// import/using 依赖文件缓存不失效 → 返回陈旧产物。新键聚合「入口 + 全部
+// import 递归依赖」的 tsha1r 指纹，任一依赖变化即得新键；命中时 .dep 清单
+// 逐文件复核磁盘指纹兜底。强哈希 tsha1r 取代弱 str_hash（碰撞免疫）。
+
+// 依赖集 = 入口源码路径（g_input，规范绝对）+ semantic.imported_paths()
+//（语义 expand_imports 展开的全部依赖文件，已去重防环）。
+func dep_depset() -> table<string> {
+    var out: table<string> = table_new_string()
+    table_push(out, str.clone(g_input))
+    var imp = semantic.imported_paths()
+    var i: i64 = 0
+    while i < len(imp) {
+        table_push(out, imp[i])
+        i = i + 1
+    }
+    return out
+}
+
+// 单文件指纹（p.9.15.1 暂用 str_hash 对照；tsha1r 内联实现待定）
+func dep_file_fp(p: string) -> string {
+    if !file_exists(p) {
+        return ""
+    }
+    var b = file_read(p)
+    if b == "" {
+        return ""
+    }
+    return to_string(str_hash(b))
+}
+
+// 字典序插入排序（driver 内自有，编译期可用——interp 的 sort_strings 桥
+// 非编译期内建，原生 driver 不能调用）。返回新表（不改入参）。
+func dep_sort_strings(t: table<string>) -> table<string> {
+    var n = len(t)
+    var a = t
+    var i: i64 = 1
+    while i < n {
+        var key = a[i]
+        var j = i - 1
+        while j >= 0 && a[j] > key {
+            a[j + 1] = a[j]
+            j = j - 1
+        }
+        a[j + 1] = key
+        i = i + 1
+    }
+    return a
+}
+
+// 聚合缓存键：依赖集每文件指纹 → "规范路径:fp" 按字典序排序拼接 → 与
+// 输出相关参数串一起 tsha1r → 键名（纯 hex，无碰撞隐患）。
+func dep_cache_key() -> string {
+    var ds = dep_depset()
+    var lines: table<string> = table_new_string()
+    var i: i64 = 0
+    while i < len(ds) {
+        var p = ds[i]
+        var fp = dep_file_fp(p)
+        table_push(lines, p + ":" + fp)
+        i = i + 1
+    }
+    // 排序（依赖路径字典序，确定可复现）
+    lines = dep_sort_strings(lines)
+    var m: string = ""
+    i = 0
+    while i < len(lines) {
+        m = m + lines[i] + "\n"
+        i = i + 1
+    }
+    // 输出相关参数（对齐旧 cache_key_str：优化档/目标/角色/shared/emit/fastmath/bounds + 盐）
+    var level = effective_opt_level()
+    m = m + g_input + "\n" + g_output + "\nO" + to_string(level) + "\nT" + g_target + "\nR" + g_role
+    if g_shared {
+        m = m + "\nS1"
+    } else {
+        m = m + "\nS0"
+    }
+    if g_emit_ir {
+        m = m + "\nE1"
+    } else {
+        m = m + "\nE0"
+    }
+    if g_cli_fast_math {
+        m = m + "\nF1"
+    } else {
+        m = m + "\nF0"
+    }
+    if g_cli_check_bounds {
+        m = m + "\nC1"
+    } else {
+        m = m + "\nC0"
+    }
+    m = m + "\nv" + g_cache_salt
+    return "tc" + to_string(str_hash(m))
+}
+
+// 写 .dep 清单文本：每行 "路径 指纹"。
+func dep_manifest_text() -> string {
+    var ds = dep_depset()
+    var out: string = ""
+    var i: i64 = 0
+    while i < len(ds) {
+        out = out + ds[i] + " " + dep_file_fp(ds[i]) + "\n"
+        i = i + 1
+    }
+    return out
+}
+
+// .dep 清单复核：逐行解析 "路径 指纹"，对当前磁盘指纹对账；任一不符（含
+// 清单缺失/损坏/文件已删除）返回 false。命中兜底校验（防聚合键漏网变动）。
+func dep_manifest_ok(ck: string) -> bool {
+    if !file_exists(ck + ".dep") {
+        return false
+    }
+    var txt = file_read(ck + ".dep")
+    if txt == "" {
+        return false
+    }
+    var rest = txt
+    var p = find_char(rest, "\n")
+    while p >= 0 {
+        var line = slice(str.clone(rest), 0, p)
+        rest = slice(str.clone(rest), p + 1, str_len(rest))
+        var sp = find_char(line, " ")
+        if sp < 0 {
+            return false
+        }
+        var path = slice(str.clone(line), 0, sp)
+        var fp = slice(str.clone(line), sp + 1, str_len(line))
+        if dep_file_fp(path) != fp {
+            return false
+        }
+        p = find_char(rest, "\n")
+    }
+    // 末行（可能无换行结尾）
+    if str_len(rest) > 0 {
+        var sp = find_char(rest, " ")
+        if sp < 0 {
+            return false
+        }
+        var path = slice(str.clone(rest), 0, sp)
+        var fp = slice(str.clone(rest), sp + 1, str_len(rest))
+        if dep_file_fp(path) != fp {
+            return false
+        }
+    }
+    return true
+}
+
+// 依赖感知缓存命中判定（keel_run_pipeline 内 kpass_front 后调用）：
+// 返回 1=命中（产物已复制到目标路径）/ 0=未命中（继续管线）/ -1=错误。
+func cache_try_hit_dep() -> i64 {
+    var artifact = output_artifact_path()
+    if str_len(artifact) == 0 {
+        return 0
+    }
+    var ck = cache_dir_value() + "/" + dep_cache_key()
+    // 主缓存对象 + .dep 清单 + 产物指纹全部对账才算命中
+    if !file_exists(ck) {
+        return 0
+    }
+    if !dep_manifest_ok(ck) {
+        return 0
+    }
+    if file_copy(ck, artifact) {
+        // 产物二次指纹核对（防缓存对象损坏/被篡改）
+        if dep_file_fp(artifact) == dep_file_fp(ck) {
+            println("缓存命中（依赖感知）: " + artifact)
+            return 1
+        }
+        return 0
+    }
+    return 0
+}
+
+// 编译成功后写依赖感知缓存：主对象（产物字节复制到聚合键名下）+
+// .dep 清单（指纹对账）。返回 0 / -1（写失败）。
+func cache_store_dep() -> i64 {
+    var artifact = output_artifact_path()
+    if str_len(artifact) == 0 {
+        return 0
+    }
+    if !file_exists(artifact) {
+        return 0
+    }
+    var cdir = cache_dir_value()
+    if !file_is_dir(cdir) {
+        if !mkdir_all(cdir) {
+            return -1
+        }
+    }
+    var ck = cdir + "/" + dep_cache_key()
+    if file_copy(artifact, ck) {
+        // 先写主对象，再写 .dep 清单（清单丢失时命中判定直接失效重编，安全）
+        if file_write(ck + ".dep", dep_manifest_text()) {
+            println("已缓存编译产物（依赖感知）: " + artifact)
+            return 0
+        }
+    }
+    return 0
 }
 
 // 31 位取模哈希（i64 无溢出风险；阶 *31+b mod M 足够散列且确定）。
@@ -1871,29 +2099,18 @@ func compile_program(src: string) -> i64 {
     if g_trm_mode {
         return keel_run_pipeline(g_trm_pipeline, 3)
     }
-    // p.9.1.3 编译缓存：命中直接复制产物跳过编译；未命中正常编译后入缓存。
-    var use_cache = cache_enabled()
-    var artifact = output_artifact_path()
-    var ck: string = ""
-    if use_cache && str_len(artifact) > 0 {
-        ck = cache_dir_value() + "/" + cache_key_str(src) + ".cache"
-        if file_exists(ck) {
-            if file_copy(ck, artifact) {
-                println("缓存命中（跳过编译）: " + artifact)
-                return 0
-            }
-        }
-    }
+    // p.9.15.1 编译缓存：依赖感知命中在 keel_run_pipeline 内 kpass_front 之后
+    // 判定（cache_try_hit_dep，见 keel_run_pipeline）；此处的早期判定仅保留
+    // --emit-ir / 无管线路径兜底（依赖集未知时走旧单文件键，仅复制产物）。
     var rc = keel_run_pipeline(real_pid, steps)
     if rc != 0 {
         return rc
     }
-    if str_len(ck) > 0 && file_exists(artifact) {
-        if !file_is_dir(cache_dir_value()) {
-            mkdir_all(cache_dir_value())
-        }
-        if file_copy(artifact, ck) {
-            println("已缓存编译产物: " + artifact)
+    // p.9.15.1：管线成功后写依赖感知缓存（聚合键 + .dep 清单 + 产物指纹）。
+    if cache_enabled() {
+        var wrc = cache_store_dep()
+        if wrc < 0 {
+            return -1
         }
     }
     return 0

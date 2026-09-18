@@ -1904,4 +1904,16 @@ pub func struct_name_of(idx: i64) -> string {
     return "?"
 }
 
+// p.9.15.1 依赖感知缓存：返回已展开的 import 依赖路径集合副本（driver 经
+// semantic 命名空间调用本访问器，规避跨命名空间变量访问限制）。
+pub func imported_paths() -> table<string> {
+    var out: table<string> = table_new_string()
+    var i: i64 = 0
+    while i < len(g_imported) {
+        table_push(out, g_imported[i])
+        i = i + 1
+    }
+    return out
+}
+
 }
