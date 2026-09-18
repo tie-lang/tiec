@@ -1059,6 +1059,23 @@ pub func emit() -> string {
     // SSO 短串池全局段 + @tie_sso_alloc helper：**必须在函数遍历之后**输出——
     // op56（str_cat）在 gen_func 时才调 sso_enable()，提前输出会漏 helper。
     emit_sso_globals()
+    // --shared 缺陷修复：库无 main，全局表初始化经 tie$rt_init 模块构造器在
+    // DLL 加载时执行（DLL CRT 的 global_ctors 装载即运行）。仅当存在 tie$rt_init
+    //（即模块有表全局）时发射，纯标量库不发射、导出面逐字不变。**必须放在所有
+    // define 之后**（opt 要求全局声明在所有函数定义之后）。
+    if g_dynlib {
+        var has_rti: i64 = 0
+        var kk: i64 = 0
+        while kk < nf {
+            if intern.lookup(ir.func_name(kk)) == "tie$rt_init" {
+                has_rti = 1
+            }
+            kk = kk + 1
+        }
+        if has_rti == 1 {
+            line("@llvm.global_ctors = appending global [1 x { i32, ptr, ptr }] [{ i32 65535, ptr @tie$rt_init, ptr null }]")
+        }
+    }
     // r.1.4.4：未支持指令 = 硬错误——gen_inst 已登记 g_llvmgen_err，
     // 提前终止生成（返回错误文本，driver 侧 err_msg() 检测并 render_error）
     if str_len(g_llvmgen_err) > 0 {

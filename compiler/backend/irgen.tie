@@ -1081,6 +1081,12 @@ pub func tig_ast() -> i64 {
         }
         i = i + 1
     }
+    // --shared：全部函数生成后，若需全局表初始化则生成 tie$rt_init +
+    // 模块构造器（DLL 加载时建表全局；FFM 宿主也可显式调用）。
+    var rti = tig_shared_rt_init()
+    if rti < 0 {
+        return -1
+    }
     return 0
 }
 
@@ -1516,6 +1522,76 @@ func tig_ns(ns_node: i64, prefix: string) -> i64 {
     return 0
 }
 
+// ---------- 全局表初始化（--shared 缺陷修复）----------
+// 普通 exe 在 main 入口对所有模块表全局预建表句柄（@g = global ptr null → store
+// 新表句柄；缺此则 len(g) 对 null 崩溃 0xC0000005）。--shared 库无 main → 该初始化
+// 整块跳过 → 模块表全局保持 null → 惰性 ensure 首读 len(global) 在 [0+8] 崩溃。
+// 本函数把该初始化抽取为可复用发射器：exe 由 main 调用（行为不变）；共享模式经
+// tie$rt_init 模块构造器在 DLL 加载时执行（见 tig_shared_rt_init）。
+// 发射到当前 g_cur_block。返回 0 / -1（错误已置 sm_err_msg）。
+pub func gen_global_tbl_init() -> i64 {
+    var gi: i64 = 0
+    while gi < len(gb_keys) {
+        var gte = gb_telem[gi]
+        if gte >= 0 {
+            // p.9.12.6 边界：全局行池 table<R> v1 不支持（列式行池需每字段列 @g 全局）
+            if types.kind(gte) == K_STRUCT {
+                sm_err_msg = "行池 table<R> 全局变量 v1 暂不支持（p.9.12.6 边界；仅局部行池可用）"
+                return -1
+            }
+            var gv: i64 = -1
+            var ginit_node = g_ginit_node_of(gb_keys[gi])
+            if ginit_node >= 0 {
+                gv = tig_table_lit(ginit_node)
+                if gv < 0 {
+                    return -1
+                }
+            } else {
+                var gsz = elem_size(gte)
+                var gsz_v = tig_int_lit_ty(gsz, types.named(TK_I64))
+                gv = s21_table_new_ty(gte, gsz_v)  // r.1.1.4：元素为表 → 深表
+                if gv < 0 {
+                    return -1
+                }
+            }
+            var gst = ir.new_inst(g_cur_block, 22, -1)  // store
+            ir.add_operand(gst, types.named(TK_STR), 2)
+            ir.add_operand(gst, gv, 0)
+            ir.add_operand(gst, interner.intern("@" + intern.lookup(gb_keys[gi])), 3)  // 全局槽
+        }
+        gi = gi + 1
+    }
+    return 0
+}
+
+// --shared 模块构造器初始化（a+b 双轨）：
+// 共享库无 main → 生成 dllexport 的 tie$rt_init（内含全局表初始化），并注册为模块
+// 构造器（llvmgen 据此输出 @llvm.global_ctors），DLL 加载时自动执行（a）；宿主也可
+// 用 FFM 显式调用 tie$rt_init（b，符号缺失时向后兼容跳过）。仅当存在表全局时生成
+// （纯标量库无表全局 → 不生成，导出面与既有 m5 行为逐字不变）。返回 0 / -1。
+pub func tig_shared_rt_init() -> i64 {
+    if !g_dynlib {
+        return 0
+    }
+    if len(gb_keys) == 0 {
+        return 0
+    }
+    var params: table<i64> = table_new_i64()
+    var fid = ir.new_func(interner.intern("tie$rt_init"), types.named(TK_VOID), params)
+    ir.func_export_set(fid, 1)  // dllexport → FFM 宿主可显式调用（b 轨）
+    ir.func_inline_set(fid, 0)
+    g_cur_func = fid
+    var entry = ir.new_block(fid, interner.intern("entry"))
+    g_entry_block = entry
+    g_cur_block = entry
+    var r = gen_global_tbl_init()
+    if r < 0 {
+        return -1
+    }
+    var retv = ir.new_inst(g_cur_block, 32, -1)  // ret void
+    return 0
+}
+
 // 函数定义 → tie-IR 函数。prefix 为命名空间前缀（顶层函数传 ""）。
 // 函数全名 = prefix::name（命名空间函数）；LLVM 符号由 llvmgen 转 $。
 func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
@@ -1744,37 +1820,12 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     // （阶段 A 表全局，Rust 版同路径；缺此则 len(g) 对 null 崩溃 0xC0000005）。
     // r.1.1.3：非空表字面量初值 → tig_table_lit 整体构造（含逐元素 push）；
     // 无初值/空表 → 运行时建空表（既有路径，元素宽由标注决定）。
+    // 注：--shared 库无 main，此初始化改经 tie$rt_init 模块构造器执行
+    //（见 tig_shared_rt_init）。
     if full_name == "main" {
-        var gi: i64 = 0
-        while gi < len(gb_keys) {
-            var gte = gb_telem[gi]
-            if gte >= 0 {
-                // p.9.12.6 边界：全局行池 table<R> v1 不支持（列式行池需每字段列 @g 全局）
-                if types.kind(gte) == K_STRUCT {
-                    sm_err_msg = "行池 table<R> 全局变量 v1 暂不支持（p.9.12.6 边界；仅局部行池可用）"
-                    return -1
-                }
-                var gv: i64 = -1
-                var ginit_node = g_ginit_node_of(gb_keys[gi])
-                if ginit_node >= 0 {
-                    gv = tig_table_lit(ginit_node)
-                    if gv < 0 {
-                        return -1
-                    }
-                } else {
-                    var gsz = elem_size(gte)
-                    var gsz_v = tig_int_lit_ty(gsz, types.named(TK_I64))
-                    gv = s21_table_new_ty(gte, gsz_v)  // r.1.1.4：元素为表 → 深表
-                    if gv < 0 {
-                        return -1
-                    }
-                }
-                var gst = ir.new_inst(g_cur_block, 22, -1)  // store
-                ir.add_operand(gst, types.named(TK_STR), 2)
-                ir.add_operand(gst, gv, 0)
-                ir.add_operand(gst, interner.intern("@" + intern.lookup(gb_keys[gi])), 3)  // 全局槽
-            }
-            gi = gi + 1
+        var eer = gen_global_tbl_init()
+        if eer < 0 {
+            return -1
         }
     }
     // 函数体：children[slot_off + 1 + nparams]
