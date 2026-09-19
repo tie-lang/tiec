@@ -75,16 +75,10 @@ pub func sm_warn_add(line: i64, col: i64, msg: string) {
     table_push(sm_warn_msgs, msg)
 }
 
-// OK 协议组装："OK:<typed>" + （有警告时）";W:<l> <c> <msg>|W:<l> <c> <msg>"。
+// OK 协议组装："OK:<typed>"（p.9.14.1：警告改结构化事件直发，不再拼 ;W: 文本段；
+// driver 经 warn_count/warn_line_at/warn_col_at/warn_msg_at 读取渲染，输出端一次归一化）。
 pub func sm_ok_protocol() -> string {
-    var out = "OK:" + to_string(g_typed)
-    var i: i64 = 0
-    while i < len(sm_warn_msgs) {
-        out = out + ";W:" + to_string(sm_warn_lines[i]) + " " +
-            to_string(sm_warn_cols[i]) + " " + sm_warn_msgs[i]
-        i = i + 1
-    }
-    return out
+    return "OK:" + to_string(g_typed)
 }
 
 namespace semantic {
@@ -1194,6 +1188,31 @@ pub func check_ast(base_dir: string) -> string {
 // 既有 sstate.xxx 用法证实可行）。
 pub func imported_paths() -> table<string> {
     return sstate.imported_paths()
+}
+
+// ---------- p.9.14.1 结构化警告事件访问器 ----------
+// 语义侧收集表保持（sm_warn_add 收集端不变）；以下 pub 访问器供 driver 直读
+// （跨命名空间经 semantic.xxx 转调），替代旧的 ";W:l c msg" 文本协议往返。
+// 渲染仅发生在输出端一次（diagcode.render_warning）。
+
+// 已收集警告条数。
+pub func warn_count() -> i64 {
+    return len(sm_warn_msgs)
+}
+
+// 第 i 条警告行号。
+pub func warn_line_at(i: i64) -> i64 {
+    return sm_warn_lines[i]
+}
+
+// 第 i 条警告列号。
+pub func warn_col_at(i: i64) -> i64 {
+    return sm_warn_cols[i]
+}
+
+// 第 i 条警告核心消息（与 diagcode 警告目录逐字一致）。
+pub func warn_msg_at(i: i64) -> string {
+    return sm_warn_msgs[i]
 }
 
 // ==================== 内存版 AST 表复制（T5.3 消除协议往返）====================
