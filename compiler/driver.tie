@@ -927,48 +927,25 @@ func frontend(src: string, base_dir: string) -> i64 {
         println(diagcode.render_err_proto(sem))
         return -1
     }
-    // p.6.9.15：OK 结果中附带语义警告（;W:l c core|...）→ 逐条打印 warning[W#####]
-    print_warns(sem)
+    // p.9.14.1：语义警告改结构化事件直发（driver 从 semantic.warn_* 直读渲染，
+    // 不再解析 OK 协议中的 ;W: 文本段）
+    print_warns()
     return 0
 }
 
-// 解析语义 OK 协议中的警告段并打印（warning[W#####] @l:c: 名字；建议。）。
-func print_warns(sem: string) -> string {
-    // --no-warn：整个前端警告段不打印（协议里可能仍带 ;W: 段，直接跳过解析）
+// p.9.14.1：从 semantic 结构化警告事件直读渲染（warning[W#####] @l:c: 名字；建议。）。
+// 替代旧的 ";W:l c msg" 文本协议解析（序列化→再解析→二次归一化）。渲染仅一次
+// （diagcode.render_warning 输出端归一化），渲染结果与旧路径逐字节等价。
+func print_warns() -> string {
+    // --no-warn：整个前端警告段不打印
     if g_no_warn {
         return ""
     }
-    var rest = sem
-    var p = find_str_in(rest, ";W:")
-    while p >= 0 {
-        var head = slice(str.clone(rest), p + 3, str_len(rest))
-        var sp1 = find_char(head, " ")
-        var sp2: i64 = -1
-        var i: i64 = 0
-        if sp1 >= 0 {
-            i = sp1 + 1
-            var hn: i64 = str_len(head)
-            while i < hn {
-                if str_char(head, i) == " " {
-                    sp2 = i
-                    break
-                }
-                i = i + 1
-            }
-        }
-        if sp1 >= 0 && sp2 >= 0 {
-            var line = parse_int_str(slice(str.clone(head), 0, sp1))
-            var col = parse_int_str(slice(str.clone(head), sp1 + 1, sp2))
-            var core = slice(str.clone(head), sp2 + 1, str_len(head))
-            // 消息到下一个 ";W:" 前截断
-            var nx = find_str_in(core, ";W:")
-            if nx >= 0 {
-                core = slice(str.clone(core), 0, nx)
-            }
-            println(diagcode.render_warning(line, col, core))
-        }
-        rest = head
-        p = find_str_in(rest, ";W:")
+    var n = semantic.warn_count()
+    var i: i64 = 0
+    while i < n {
+        println(diagcode.render_warning(semantic.warn_line_at(i), semantic.warn_col_at(i), semantic.warn_msg_at(i)))
+        i = i + 1
     }
     // 未登记警告审计（TIEC_WARN_AUDIT=1）：新增了警告发射点却忘了 warn_reg 时立刻暴露，
     // 而不是静默渲染成 W00000。与错误侧 E00000 兜底的可观测性对齐。
@@ -979,48 +956,6 @@ func print_warns(sem: string) -> string {
         }
     }
     return ""
-}
-
-// 找字符串中 sub 首次出现位置（字符级）；未找到 -1。
-func find_str_in(s: string, sub: string) -> i64 {
-    var n: i64 = str_len(s)
-    var m: i64 = str_len(sub)
-    if m == 0 {
-        return 0
-    }
-    if m > n {
-        return -1
-    }
-    var i: i64 = 0
-    while i <= n - m {
-        var j: i64 = 0
-        var matched: bool = true
-        while j < m && matched {
-            if str_char(s, i + j) != str_char(sub, j) {
-                matched = false
-            }
-            j = j + 1
-        }
-        if matched {
-            return i
-        }
-        i = i + 1
-    }
-    return -1
-}
-
-// 字符串 → i64（警告行/列解析；失败返回 0）。
-func parse_int_str(s: string) -> i64 {
-    var v: i64 = 0
-    var i: i64 = 0
-    while i < str_len(s) {
-        var b = str_char(s, i)
-        if b >= "0" && b <= "9" {
-            v = v * 10 + (char_code(b) - 48)
-        }
-        i = i + 1
-    }
-    return v
 }
 
 // ERR 协议文本 → "行:列: 消息"（协议 ERR:<line> <col> <msg>）。
