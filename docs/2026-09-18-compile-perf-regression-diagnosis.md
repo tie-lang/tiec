@@ -2,7 +2,8 @@
 
 *EN: Compile-Performance Regression Diagnostic Archive — tiec self-hosting stuck at 13min+ (internal)*
 
-> **状态**：诊断中，根因收敛未定论（2026-09-18）。
+> **状态**：已解决（2026-09-20，见 §八）。诊断结论部分修正：单文件 prep O(n²) 属实，
+> 但 parse 与 emit 阶段仍存在平方级热点（均有实测数据）。
 > **目的**：内部诊断档案，记录本次编译性能倒退的排查过程、已确认事实、排除项与待办。
 > 该内容仅供内部使用，不进入对外发行/文档面。
 > **关联**：p.9.14 警告系统独立与性能优化（`tie-main/docs/designs/warning-system.md`）、
@@ -72,7 +73,63 @@
 
 ---
 
-*EN: This is an internal diagnostic archive. Status: diagnosis in progress, root cause not
-finalized (2026-09-18). Slowdown is in the import-closure full semantic/type-inference +
-warning-check hot path (pointer to the p.9.14 warning chain). Recommended next: land warning
-chain speedup first as a prerequisite to the p.9.15 cache redesign bootstrap.*
+## 八、解决（2026-09-20）
+
+*EN: Resolution (2026-09-20)*
+
+### 8.1 自举断档已破（配方可复现，全程前台约 3 分钟）
+
+自举死循环的破点：**不需要旧编译器直接编完整 driver**。用临时瘦入口
+`compiler/_slim.tie`（只接 front → irgen → emit → opt → link 最小管线，
+省去 interp/repl/trm/keel 的 import 树）：
+
+1. `compiler\_slim.exe driver.tie -o <out>.exe`（约 112s）——产出含 09-17+
+   前端与本次全部修复的完整 IR（`<out>.ll` / `<out>.opt.ll`）。**链接失败是预期的**：
+   `_slim.tie` 把 `tc.link_exe` 的 `need_trmlite` 硬编码为 false，缺 `tl_tbl$*` 7 个符号，
+   属入口脚本缺陷而非源码缺陷。
+2. 手工补链接（等价 toolchain.link_exe 的本机命令行）：
+   `clang -fuse-ld=link <out>.opt.ll -o <out>.exe -Wl,/Brepro -Wl,/STACK:134217728 -luser32 -lgdi32 -lshell32 <repo>\trm-lite\trm_lite.a -rtlib=compiler-rt`
+3. `<out>.exe driver.tie -o tiec_new.exe --no-cache`——完整 driver 管线（链接参数正确）。
+
+**不动点达成**：步骤 2/3 产物 SHA256 逐字节一致（`a63d5d27…`），且用该产物再次
+自举仍得同一 SHA——确定性自举闭环恢复。
+
+### 8.2 新增修复（随本次提交）
+
+* **CRLF 回归修复**（55d002b 引入）：`scan_header` 改 in-place 扫描后不剥行尾 `\r`，
+  CRLF 源文件（driver.tie、irgen_expr.tie 等当前全部源文件均为 CRLF）被误判
+  「非法声明 `type tie<class>\r`」——新编译器无法以 CRLF 文件为主输入的硬阻塞。
+* `strip_type_header` 由逐行 `out = out + ln` 拼接（O(n²)）改为单 StringBuilder 累积
+  （O(n)，语义逐字节等价）。
+
+### 8.3 实测数据（TIEC_TIME=1，driver 全闭包 ~2.5MB）
+
+| 项 | 旧 tiec.exe（09-15） | 新 tiec（09-20） |
+|---|---|---|
+| prep-only（backend/irgen_expr.tie，523KB） | 13.43s | **0.86s（15.7×）** |
+| 前端+IR 全程（--emit-ir） | 13min+ 未完成 | **53.9s** |
+| 完整自举 | 10h 未完成 | **约 95s（成功）** |
+
+新编译器阶段拆解：parse=445ms / sem=25.8s（其中 **imports=24.8s**）/
+irgen=2.1s / emit=23.8s（funcs=21.6s + ren=15.8s）/ write=76ms。
+
+### 8.4 回归验证
+
+* test-diagcodes 71 条 golden：旧基线失败 1（err_049，既有问题）；
+  新编译器失败 5 = 该 1 条 + 4 条 W00001..4 缺失——p.9.14.2 默认关警告的预期差异，
+  `-w` 开启后警告恢复命中（实测：默认 0 条 / `-w` 1 条）。
+* 新编译器编译 + 运行探针程序、自举不动点均通过。
+
+### 8.5 部署与遗留
+
+* `compiler/tiec.exe` 已更新为新编译器（`a63d5d27…`）；旧 09-15 种子保留于
+  `compiler/tiec_seed_0915.exe`（`27982cea…`，与 `tiec_backup_probe.exe` 同源）。
+* 剩余热点（实测，下一步优先级）：
+  1. **sem imports 24.8s**——parse 疑似仍 O(n²)：8.7KB→6ms、96KB→445ms（指数 ~1.9），
+     闭包内最大单文件 irgen_expr.tie（523KB）估 ~13s，占 imports 大头；
+  2. **emit 23.8s**（funcs=21.6s / ren=15.8s，~53 万行重编号）——已多轮优化，
+     进一步需剖析单行重建路径。
+
+---
+
+*EN: This is an internal diagnostic archive. Status: RESOLVED (2026-09-20, §8).*
