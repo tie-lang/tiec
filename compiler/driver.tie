@@ -348,6 +348,11 @@ func scan_header(src: string) -> i64 {
             ln_e = ln_e + 1
         }
         var ln = str.slice(src, pos, ln_e)
+        // CRLF 兼容：旧实现走 split_lines（逐字节跳过 13），in-place 扫描须显式
+        // 剥离行尾 \r，否则 `type tie<X>\r` 被判为非法声明（CRLF 源回归）。
+        if ln_e > pos && str_char(src, ln_e - 1) == "\r" {
+            ln = str.slice(src, pos, ln_e - 1)
+        }
         var ln2 = trim(ln)
         if str_len(ln2) == 0 {
             pos = ln_e + 1
@@ -883,10 +888,14 @@ func split_char(s: string, sep: string) -> table<string> {
 // 新声明是真语法行，必须从正文中移除（旧 `// tie:` 是注释由 lexer 跳过，无需剥离）。
 // 头部区 = 文件最前连续行（允许空行），遇第一个非空非声明行即停止；
 // 声明行之外的行（含空行/注释/缩进）原样保留，\n 重连。
+// 性能重写（O(n)）：旧实现 out = out + ln 逐行拼接，每行复制全串 → O(n²)
+// （10k+ 行大文件显著）。改为单 StringBuilder 累积，语义逐字节等价：
+// 仅当此前已输出过非空行时才补 "\n"（等价于旧判据 str_len(out) > 0）。
 func strip_type_header(src: string) -> string {
     var lines = split_lines(src)
     var n: i64 = len(lines)
-    var out: string = ""
+    var sb = string_builder()
+    var emitted = false
     var in_header = true
     var i: i64 = 0
     while i < n {
@@ -903,13 +912,16 @@ func strip_type_header(src: string) -> string {
                 in_header = false
             }
         }
-        if str_len(out) > 0 {
-            out = out + "\n"
+        if emitted {
+            sb_append(sb, "\n")
         }
-        out = out + ln
+        sb_append(sb, ln)
+        if str_len(ln) > 0 {
+            emitted = true
+        }
         i = i + 1
     }
-    return out
+    return sb_build(sb)
 }
 
 // ==================== 前端 ====================
