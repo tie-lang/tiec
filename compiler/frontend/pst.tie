@@ -15,6 +15,18 @@ var g_pending_idx: i64 = 0;   // 指向 g_pending 中下一个待消费位置
 var g_pending_lines: table<i64>;  // 虚拟 token 的旁路行号
 var g_pending_cols: table<i64>;   // 虚拟 token 的旁路列号
 var g_pending_lexemes: table<i64>; // 虚拟 token 的旁路 lexeme 池 id（split 分裂用）
+// p.9.14.3 性能：pending 逻辑长度水位线。表无截断原语，探测回退无法物理缩短
+// 队列——所有消费路径读 g_pend_n 而非 len(g_pending)，回退 = 水位线赋值 O(1)。
+var g_pend_n: i64 = 0;
+// p.9.14.3：split_current_gt 原位覆盖日志（探测回退撤销用）。旧 save_pos 每次
+// 复制剩余整个 token 流（4 表 × O(文件)）× 每次 '<' 歧义探测 = parse build 平方
+// 主源；改为记日志 + 逆序回放，save/restore 均 O(1)。
+var g_j_idx: table<i64>;          // 被覆盖槽位绝对下标
+var g_j_tag: table<i64>;          // 旧 tag
+var g_j_line: table<i64>;         // 旧行号
+var g_j_col: table<i64>;          // 旧列号
+var g_j_lex: table<i64>;          // 旧 lexeme 池 id
+var g_j_n: i64 = 0;               // 日志逻辑长度水位线（回退 = 赋值截断）
 var g_last_tag: i64 = -1;      // 最近一次已消费 token 的 tag（expect_stmt_end 用）
 var g_last_line: i64 = -1;     // 最近一次已消费 token 的行号（'}' 后换行判定）
 
@@ -26,6 +38,8 @@ var g_ctl_cond: i64 = 0;       // p.8.2.9 控制流条件上下文守卫计数�
 // 注意：save/restore 成对使用且不嵌套（泛型调用探测是同步的）。
 var g_save_pos: i64 = 0;          // 真实 token 流游标快照
 var g_save_idx: i64 = 0;          // pending 队列游标快照
+var g_save_pend_n: i64 = 0;       // pending 逻辑长度水位线快照（p.9.14.3）
+var g_save_j: i64 = 0;            // 覆盖日志水位线快照（p.9.14.3）
 var g_save_pending: table<i64>;   // pending 队列 tag 快照
 var g_save_pending_lines: table<i64>;  // pending 队列行号快照
 var g_save_pending_cols: table<i64>;   // pending 队列列号快照

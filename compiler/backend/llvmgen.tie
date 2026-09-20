@@ -114,7 +114,15 @@ var g_fn_inst_hi: table<i64>;
 var g_hoisted_allocas: table<i64>;
 var g_hoisted_cnt: i64 = 0;
 // 重编号映射表（直索引）：旧值 id → 新值 id（-1 = 未设；旧值 id 稠密小整数）
-var g_ren_map: table<i64>;
+// 性能重写（p.9.14.3，O(n) 化）：值 id 全编译单调递增（ir_val_cnt 仅整次编译
+// 复位），旧方案每函数 g_ren_map = table_new 后 ren_def 首触即把表增长到该
+// 函数的全局基址（Σ base_k = O(总指令²/函数数)）——driver 闭包实测 emit
+// ren 15.8s 主体。改为「印章表」：g_ren_stamp/g_ren_val 跨函数持久、仅随
+// 全局最大 id 一次性增长；g_ren_fn 每函数 +1，stamp[old] == g_ren_fn 判定
+// 本函数内是否已映射——每函数成本降为 O(自身 id 数)，全局一次 O(总指令)。
+var g_ren_stamp: table<i64>;
+var g_ren_val: table<i64>;
+var g_ren_fn: i64 = 0;
 var g_ren_next: i64 = 1;
 // r.1.6.3：每函数重编号的形参占位基数（renumber_lines 的 g_ren_next 初值）。
 // 普通函数 = g_pcnt；Linux main（带 i32 %0, ptr %1 附加形参）由 gen_func 置 2，
@@ -721,11 +729,12 @@ func str_prefix(s: string, pre: string) -> bool {
 // 的 %extN 为独立命名空间（非纯数字），不受影响。
 func renumber_lines() {
     var out = table_new_string()
-    // 每函数独立重编号：映射表清空，新编号从形参占位基数 g_ren_base 起
+    // 每函数独立重编号：印章序号 +1（映射表跨函数持久，见 g_ren_stamp 注释），
+    // 新编号从形参占位基数 g_ren_base 起
     //（普通函数 = g_pcnt：形参值 id 占 0..N-1，定义行保留原样 %0..%N-1，
     // 指令新编号从 %N 起避免撞号；r.1.6.3 Linux main 带 i32 %0, ptr %1 两个
     // 附加形参，g_ren_base 由 gen_func 置 2，防止指令重编号为 %0 撞形参）。
-    g_ren_map = table_new_i64()
+    g_ren_fn = g_ren_fn + 1
     g_ren_next = g_ren_base
     var n = len(g_fn_lines)
     var i: i64 = 0
@@ -896,17 +905,20 @@ func renumber_line(ln: string, t: string) -> string {
 }
 
 // 指令定义重映射：总是分配新号（查表复用）。
-// 性能重写：old 是值 id（稠密小整数）→ 直索引表（g_ren_map[old] = new，
-// -1 = 未设）；旧线性查表每函数 O(n²)（每行多个 %N 引用都全扫映射表）。
+// 性能重写（p.9.14.3）：印章表方案（见 g_ren_stamp 注释）——旧值 id 全编译
+// 单调递增，旧方案每函数把映射表增长到全局基址（Σ base_k = 平方）；
+// 现跨函数持久 + 每函数印章比对，增长全程仅 O(总指令)。
 func ren_def(old: i64) -> i64 {
-    while len(g_ren_map) <= old {
-        table_push(g_ren_map, -1)
+    while len(g_ren_stamp) <= old {
+        table_push(g_ren_stamp, -1)
+        table_push(g_ren_val, -1)
     }
-    if g_ren_map[old] >= 0 {
-        return g_ren_map[old]
+    if g_ren_stamp[old] == g_ren_fn {
+        return g_ren_val[old]
     }
     var v = g_ren_next
-    g_ren_map[old] = v
+    g_ren_stamp[old] = g_ren_fn
+    g_ren_val[old] = v
     g_ren_next = g_ren_next + 1
     return v
 }
