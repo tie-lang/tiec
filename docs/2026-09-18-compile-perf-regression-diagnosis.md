@@ -146,4 +146,42 @@ irgen=2.1s / emit=23.8s（funcs=21.6s + ren=15.8s）/ write=76ms。
 
 ---
 
-*EN: This is an internal diagnostic archive. Status: RESOLVED (2026-09-20, §8).*
+## 九、剩余热点修复（2026-09-21 凌晨，p.9.14.3）
+
+*EN: Remaining hotspots fixed (2026-09-21)*
+
+### 9.1 parse build 平方根因：save_pos 整流复制
+
+`putil.save_pos`（泛型调用 `<` 歧义 / 三目 `?` 探测回退）每次把**剩余整个 token 流**
+（4 张表 × O(文件)）完整复制、restore 再复制回来，而 pending 队列本质是词法流的
+全量拷贝、探测点随每个 `<`/`?` 触发 → O(文件 × 探测次数)。
+采样定位链：build 相位头号热点 RVA 0x25270 = `putil.peek_tag`，其调用方
+0x26f70 = 游标快照（每次 table_new ×4）——语义与 save_pos 逐行对应。
+
+**修复**：水位线（`g_pend_n`，表无截断原语故以逻辑长度回退）+ 原位覆盖日志
+（`g_j_*` 五表，split_current_gt 覆盖前记旧值）——save/restore 均 O(1)，
+split 追加写逻辑位并补齐旧实现缺失的 lexemes 列。语义逐点等价
+（pending 基内容 ≡ 词法流，覆盖槽位可精确回放）。
+
+### 9.2 emit ren 平方根因：ren_def 增长到全局基址
+
+值 id 全编译单调递增（`ir_val_cnt` 仅整次编译复位），旧 `ren_def` 每函数把
+映射表增长到该函数的全局基址 → Σ base_k = 平方。**修复**：印章表
+（`g_ren_stamp`/`g_ren_val` 跨函数持久 + `g_ren_fn` 每函数 +1 比对），
+增长全程 O(总指令)。
+
+### 9.3 修复后实测（TIEC_TIME=1，driver 全闭包 ~2.5MB）
+
+| 阶段 | 修复前 | 修复后 |
+|---|---|---|
+| parse | 452ms | **45ms** |
+| sem（imports=lex+build+append） | 26.4s（build 23.9s） | **3.1s（build 577ms）** |
+| emit（funcs 含 ren） | 23.8s（ren 15.8s） | **8.8s（ren 770ms）** |
+| 前端+IR 全程 | 53.9s | **14.9s** |
+| **完整自举** | **~95s** | **27.8s** |
+
+* 验证：不动点 SHA 逐字节一致（`4a8fbb76…`，重编 + 自举 + 再自举三轮全等）；
+  74 条 golden 语料新旧编译器输出（stdout+stderr+退出码，剔除警告行、绕过缓存）
+  **逐字节全等（diff=0）**——此前 test-diagcodes 出现的 3 条 NO-CODE 波动为
+  编译缓存状态污染（缓存键未含编译器版本），非编译器回归（缓存键改进列为后续项）。
+* `compiler/tiec.exe` 已更新为含本轮修复的版本（`4a8fbb76…`）。*EN: This is an internal diagnostic archive. Status: RESOLVED (2026-09-21, S8-S9).*

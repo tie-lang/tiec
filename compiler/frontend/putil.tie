@@ -91,18 +91,20 @@ pub func fill_pending() {
         table_push(g_pending_lexemes, lexer.token_lexeme_id(i))
         i = i + 1
     }
+    g_pend_n = n
+    g_j_n = 0
 }
 
 // ---------- 词法游标（含 >> 分裂 pending 队列）----------
 
 // 待消费虚拟 token 个数
 pub func pending_n() -> i64 {
-    return len(g_pending) - g_pending_idx
+    return g_pend_n - g_pending_idx
 }
 
 // 当前有效 token tag（先消费 pending 队列，再消费真实 token 流）
 pub func peek_tag() -> i64 {
-    if g_pending_idx < len(g_pending) {
+    if g_pending_idx < g_pend_n {
         return g_pending[g_pending_idx]
     }
     return lexer.token_tag(g_pos)
@@ -110,7 +112,7 @@ pub func peek_tag() -> i64 {
 
 // 当前有效 token 行号
 pub func peek_line() -> i64 {
-    if g_pending_idx < len(g_pending) {
+    if g_pending_idx < g_pend_n {
         return g_pending_lines[g_pending_idx]
     }
     return lexer.token_line(g_pos)
@@ -118,7 +120,7 @@ pub func peek_line() -> i64 {
 
 // 当前有效 token 列号
 pub func peek_col() -> i64 {
-    if g_pending_idx < len(g_pending) {
+    if g_pending_idx < g_pend_n {
         return g_pending_cols[g_pending_idx]
     }
     return lexer.token_col(g_pos)
@@ -126,7 +128,7 @@ pub func peek_col() -> i64 {
 
 // 当前有效 token 的 lexeme 文本（虚拟 token 无 lexeme 返回空串）
 pub func peek_lexeme() -> string {
-    if g_pending_idx < len(g_pending) {
+    if g_pending_idx < g_pend_n {
         return interner.lookup(g_pending_lexemes[g_pending_idx])
     }
     return lexer.token_lexeme(g_pos)
@@ -137,7 +139,7 @@ pub func advance() {
     // 记录最近已消费 token 的 tag/行（expect_stmt_end 用：'}' 后换行补结束）
     g_last_tag = peek_tag()
     g_last_line = peek_line()
-    if g_pending_idx < len(g_pending) {
+    if g_pending_idx < g_pend_n {
         g_pending_idx = g_pending_idx + 1
     } else {
         g_pos = g_pos + 1
@@ -245,18 +247,37 @@ pub func expect_ident() -> i64 {
 // 语义约定：调用方（expect_type_gt）对分裂类 token 返回 true = 已消费第 1 个
 // 字符（'>'），分裂出的 remainder（第 2 个字符）顶替当前位置供下一次消费。
 func split_current_gt(remainder: i64) {
-    if g_pending_idx < len(g_pending) {
+    if g_pending_idx < g_pend_n {
         // 当前在 pending 队列中：原位覆盖为 remainder（第 2 个字符），
         // **不推进游标**——第 1 个 '>' 已由 expect_type_gt 的 return true 隐含
         // 消费，下一次 peek 读到 remainder。
         // 曾误推进 g_pending_idx：`table<table<i64>>` 的 >> 分裂后第 2 个 '>'
         // 被跳过直接读到 RParen（语法错误 @9:34 期望 '>' 实得 RParen）。
+        // p.9.14.3：覆盖前记日志（旧值 4 列），restore_pos 逆序回放撤销——
+        // 免去 save_pos 整队列复制。
+        table_push(g_j_idx, g_pending_idx)
+        table_push(g_j_tag, g_pending[g_pending_idx])
+        table_push(g_j_line, g_pending_lines[g_pending_idx])
+        table_push(g_j_col, g_pending_cols[g_pending_idx])
+        table_push(g_j_lex, g_pending_lexemes[g_pending_idx])
+        g_j_n = g_j_n + 1
         g_pending[g_pending_idx] = remainder
     } else {
         // 当前在真实 token 流：记录 span，push remainder 到队尾，消费原位
-        table_push(g_pending, remainder)
-        table_push(g_pending_lines, lexer.token_line(g_pos))
-        table_push(g_pending_cols, lexer.token_col(g_pos))
+        // p.9.14.3：写逻辑水位线位置（物理表可能留有上次探测回退的垃圾尾部），
+        // 四表同步（旧实现漏 lexemes 列，补齐），并推进 g_pend_n。
+        if g_pend_n < len(g_pending) {
+            g_pending[g_pend_n] = remainder
+            g_pending_lines[g_pend_n] = lexer.token_line(g_pos)
+            g_pending_cols[g_pend_n] = lexer.token_col(g_pos)
+            g_pending_lexemes[g_pend_n] = lexer.token_lexeme_id(g_pos)
+        } else {
+            table_push(g_pending, remainder)
+            table_push(g_pending_lines, lexer.token_line(g_pos))
+            table_push(g_pending_cols, lexer.token_col(g_pos))
+            table_push(g_pending_lexemes, lexer.token_lexeme_id(g_pos))
+        }
+        g_pend_n = g_pend_n + 1
         g_pos = g_pos + 1
     }
 }
@@ -288,44 +309,37 @@ pub func expect_type_gt(what: string) -> bool {
 // save_pos 快照真实游标 g_pos + pending 队列完整内容 + 语法错误槽；
 // restore_pos 恢复到保存时刻。泛型调用点 `<` 歧义处理（`a < b` vs `max<i64>(...)`）
 // 用「尝试解析 + 失败回退」：探测期间 split_current_gt 可能原位覆盖 pending 元素
-// 或往队尾 push 虚拟 token，restore 必须整体还原——故 save 采用完整快照复制
-// （表无 pop/截断原语，重建整表是唯一可靠回退方式）。
+// 或往队尾 push 虚拟 token，restore 必须整体还原。
+// p.9.14.3 性能重写（O(1)）：旧实现每次复制剩余整个 token 流（4 表 × O(文件)），
+// 而探测点 = 每个 '<' / '?' / 泛型调用——O(文件×探测次数) 即 parse build 的平方
+// 主源。现改为「水位线 + 覆盖日志」：save 记 4 个标量 O(1)；restore 逆序回放
+// 本探测的原位覆盖日志 + 水位线截断（表无截断原语，逻辑长度即水位线）。
 pub func save_pos() {
     g_save_pos = g_pos
     g_save_idx = g_pending_idx
-    g_save_pending = table_new_i64()
-    g_save_pending_lines = table_new_i64()
-    g_save_pending_cols = table_new_i64()
-    g_save_pending_lexemes = table_new_i64()
-    var i: i64 = 0
-    while i < len(g_pending) {
-        table_push(g_save_pending, g_pending[i])
-        table_push(g_save_pending_lines, g_pending_lines[i])
-        table_push(g_save_pending_cols, g_pending_cols[i])
-        table_push(g_save_pending_lexemes, g_pending_lexemes[i])
-        i = i + 1
-    }
+    g_save_pend_n = g_pend_n
+    g_save_j = g_j_n
     g_save_err_line = p_err_line
     g_save_err_col = p_err_col
     g_save_err_msg = p_err_msg
 }
 
-// 恢复 token 流与错误槽到最近一次 save_pos 时刻（重建 pending 快照）。
+// 恢复 token 流与错误槽到最近一次 save_pos 时刻（日志回放 + 水位线截断）。
 pub func restore_pos() {
+    // 逆序回放本次探测期间的原位覆盖（日志中 >= g_save_j 的条目）
+    var j = g_j_n
+    while j > g_save_j {
+        j = j - 1
+        var a = g_j_idx[j]
+        g_pending[a] = g_j_tag[j]
+        g_pending_lines[a] = g_j_line[j]
+        g_pending_cols[a] = g_j_col[j]
+        g_pending_lexemes[a] = g_j_lex[j]
+    }
+    g_j_n = g_save_j
+    g_pend_n = g_save_pend_n
     g_pos = g_save_pos
     g_pending_idx = g_save_idx
-    g_pending = table_new_i64()
-    g_pending_lines = table_new_i64()
-    g_pending_cols = table_new_i64()
-    g_pending_lexemes = table_new_i64()
-    var i: i64 = 0
-    while i < len(g_save_pending) {
-        table_push(g_pending, g_save_pending[i])
-        table_push(g_pending_lines, g_save_pending_lines[i])
-        table_push(g_pending_cols, g_save_pending_cols[i])
-        table_push(g_pending_lexemes, g_save_pending_lexemes[i])
-        i = i + 1
-    }
     p_err_line = g_save_err_line
     p_err_col = g_save_err_col
     p_err_msg = g_save_err_msg
@@ -350,7 +364,7 @@ pub func defer_closure_push(node: i64) {
     var snap_cols: table<i64> = table_new_i64()
     var snap_lexemes: table<i64> = table_new_i64()
     var i: i64 = 0
-    while i < len(g_pending) {
+    while i < g_pend_n {
         table_push(snap, g_pending[i])
         table_push(snap_lines, g_pending_lines[i])
         table_push(snap_cols, g_pending_cols[i])
@@ -392,6 +406,8 @@ pub func defer_closure_restore(i: i64) {
         table_push(g_pending_lexemes, g_defer_pending_lexemes[i][k])
         k = k + 1
     }
+    g_pend_n = len(g_defer_pending[i])
+    g_j_n = 0
     p_err_line = g_defer_err_line[i]
     p_err_col = g_defer_err_col[i]
     p_err_msg = g_defer_err_msg[i]
@@ -413,7 +429,7 @@ pub func defer_code_push(node: i64) {
     var snap_cols: table<i64> = table_new_i64()
     var snap_lexemes: table<i64> = table_new_i64()
     var i: i64 = 0
-    while i < len(g_pending) {
+    while i < g_pend_n {
         table_push(snap, g_pending[i])
         table_push(snap_lines, g_pending_lines[i])
         table_push(snap_cols, g_pending_cols[i])
@@ -455,6 +471,8 @@ pub func defer_code_restore(i: i64) {
         table_push(g_pending_lexemes, g_defer_code_pending_lexemes[i][k])
         k = k + 1
     }
+    g_pend_n = len(g_defer_code_pending[i])
+    g_j_n = 0
     p_err_line = g_defer_code_err_line[i]
     p_err_col = g_defer_code_err_col[i]
     p_err_msg = g_defer_code_err_msg[i]
