@@ -74,6 +74,24 @@ pub func parse_ast(src: string) -> i64 {
         // 词法失败时 token 表不可靠，不进入语法分析）
         return -1
     }
+    return parse_ast_lexed()
+}
+
+// 内存版第二段：词法已完成（run_lex 成功），继续 fill_pending + parse_program。
+// 与 parse_ast 后半段完全一致（ast.reset + 游标重置 + fill_pending +
+// parse_program），供 semantic 的 import 展开细分计时（lex 与语法构建分开
+// 计量）复用；错误槽位语义与 parse_ast 相同（语法错误读 putil 槽）。
+pub func parse_ast_lexed() -> i64 {
+    var f = parse_ast_lexed_stage1()
+    if f < 0 {
+        return -1
+    }
+    return parse_ast_lexed_stage2()
+}
+
+// 内存版第 1 段：reset + fill_pending（token 列式表 → pending 队列）。
+// 供 semantic 细分计时（lex / fill / program 三段）。
+pub func parse_ast_lexed_stage1() -> i64 {
     // —— 以下与 parse("") 的主体完全一致（parse 对 "" 的 "ERR:" 前缀检查
     //   恒不命中，故省略该检查直接展开其内部逻辑）——
     ast.reset()
@@ -82,6 +100,12 @@ pub func parse_ast(src: string) -> i64 {
     g_tmp = 0
     p_err_msg = ""
     putil.fill_pending()
+    return 0
+}
+
+// 内存版第 2 段：parse_program（语法构建，AST 留在节点池）。
+// 错误槽位语义与 parse_ast 相同（语法错误读 putil 槽）。
+pub func parse_ast_lexed_stage2() -> i64 {
     var root = pstmt_top.parse_program()
     if root < 0 {
         // 语法错误：putil 错误槽已置

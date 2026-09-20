@@ -49,6 +49,14 @@ var sm_t_impl: i64 = 0
 var sm_t_gen: i64 = 0
 var sm_t_flds: i64 = 0
 var sm_t_fns: i64 = 0
+// import 展开三级细分计时（TIEC_TIME=1）：strip=头部剥离 / lex=run_lex /
+// build=fill_pending+parse_program / append=append_ast_mem——imports 总量
+// 24.8s（driver 闭包）病源定位用。
+var sm_t_imp_strip: i64 = 0
+var sm_t_imp_lex: i64 = 0
+var sm_t_imp_build: i64 = 0
+var sm_t_imp_append: i64 = 0
+var sm_t_imp_fill: i64 = 0
 // p.9.14.2 性能优化：import 去重索引（intern id，有序二分）——imported_has 原为
 // 对 g_imported(table<string>) 的线性查找，driver 数百文件时 O(n²) 累积成 import
 // 展开病态；改用 intern.intern(id) + sstate.bs_find 二分，import 展开近线性。
@@ -390,13 +398,36 @@ func expand_one_import(imp_node: i64) -> i64 {
         sm_err_msg = "无法读取导入文件 '" + full + "'"
         return -1
     }
-    // 剥离文件类型声明行（新体系：被导入文件头部带 `type tie<X>` 声明，
-    // 须先清理再解析——与 Rust 链清理脚本 prep/clean.tie 同规则）
+    // 细分计时（TIEC_TIME=1）：strip / lex / fill / build / append 五段。
+    // 计时变量显式声明在函数级（unsafe 块内声明的变量不外泄到嵌套块外）。
+    var tt0: i64 = 0
+    var tt1: i64 = 0
+    var tt2: i64 = 0
+    var tt3: i64 = 0
+    var tt4: i64 = 0
+    var tt5: i64 = 0
+    unsafe { tt0 = GetTickCount() }
     var src2 = strip_type_decl(src)
-    // T5.3 内存版：parse_ast 直接把库文件 AST 留在内存（不产协议文本），
-    // append_ast_mem 再从 ast 表直拷到 sstate——与原「parse_src → 文本 →
-    // append_ast」语义等价但省去协议往返的字符串开销
-    var prc = parser.parse_ast(src2)
+    unsafe { tt1 = GetTickCount() }
+    sm_t_imp_strip = sm_t_imp_strip + (tt1 - tt0)
+    // T5.3 内存版 + 细分计时：lex 与语法构建分开计量（run_lex → stage1 →
+    // stage2 与 parse_ast 内部逐行等价）
+    var lok = lexer.run_lex(src2)
+    unsafe { tt2 = GetTickCount() }
+    sm_t_imp_lex = sm_t_imp_lex + (tt2 - tt1)
+    var prc: i64 = 0
+    if !lok {
+        prc = -1
+        tt3 = tt2
+        tt4 = tt2
+    } else {
+        var f = parser.parse_ast_lexed_stage1()
+        unsafe { tt3 = GetTickCount() }
+        sm_t_imp_fill = sm_t_imp_fill + (tt3 - tt2)
+        prc = parser.parse_ast_lexed_stage2()
+        unsafe { tt4 = GetTickCount() }
+        sm_t_imp_build = sm_t_imp_build + (tt4 - tt3)
+    }
     if prc < 0 {
         sm_err_line = s_lines[imp_node]
         sm_err_col = s_cols[imp_node]
@@ -406,6 +437,8 @@ func expand_one_import(imp_node: i64) -> i64 {
         return -1
     }
     var base = append_ast_mem()
+    unsafe { tt5 = GetTickCount() }
+    sm_t_imp_append = sm_t_imp_append + (tt5 - tt4)
     if base < 0 {
         return -1
     }
@@ -1192,6 +1225,10 @@ pub func check_ast(base_dir: string) -> string {
             "ms imports=" + to_string(sm_t_imp) + "ms collect=" + to_string(sm_t_coll) +
             "ms impl=" + to_string(sm_t_impl) + "ms generics=" + to_string(sm_t_gen) +
             "ms fields=" + to_string(sm_t_flds) + "ms fns=" + to_string(sm_t_fns) + "ms")
+        println("[sem.imp] strip=" + to_string(sm_t_imp_strip) + "ms lex=" +
+            to_string(sm_t_imp_lex) + "ms build=" + to_string(sm_t_imp_build) +
+            "ms append=" + to_string(sm_t_imp_append) + "ms fill=" +
+            to_string(sm_t_imp_fill) + "ms")
     }
     return sm_ok_protocol()
 }
