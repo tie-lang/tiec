@@ -1657,10 +1657,14 @@ pub func check_stmt(s: i64) -> i64 {
         var fbody = sstate.child(s, 1)
         // W00013：for 遍历表时修改表（循环体内对该表追加/删除元素，
         // 使遍历结果不可预期）。迭代对象名为空（如范围 0..10）则跳过。
-        var w13_nm = sstate.name_str(sstate.child(s, 0))
-        if len(w13_nm) > 0 {
-            if mod_walk(fbody, w13_nm) == 1 {
-                sm_warn_add(s_lines[s], s_cols[s], "for 遍历表时修改表（循环体内追加/删除元素）")
+        // p.9.14.2：mod_walk 是每个 for 的一次全子树递归（嵌套 for 下退化），
+        // 仅当警告 pass 启用才执行。
+        if semantic.sm_warn_enabled() {
+            var w13_nm = sstate.name_str(sstate.child(s, 0))
+            if len(w13_nm) > 0 {
+                if mod_walk(fbody, w13_nm) == 1 {
+                    sm_warn_add(s_lines[s], s_cols[s], "for 遍历表时修改表（循环体内追加/删除元素）")
+                }
             }
         }
         warn_empty_block(fbody, s)
@@ -2373,82 +2377,90 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     }
     // W00012（收窄版）：同一函数内同一整数字面量出现 >= 3 次才报——单次或两次
     // 出现属正常写法，只有反复出现的无名常量才对应「局部修改易遗漏」。
-    var w12_vals: table<i64> = table_new_i64()
-    var w12_cnts: table<i64> = table_new_i64()
-    var w12_lns: table<i64> = table_new_i64()
-    var w12_cls: table<i64> = table_new_i64()
-    lit_scan(body, w12_vals, w12_cnts, w12_lns, w12_cls)
-    var w12_i: i64 = 0
-    while w12_i < len(w12_vals) {
-        if w12_cnts[w12_i] >= 3 {
-            sm_warn_add(w12_lns[w12_i], w12_cls[w12_i], "魔法数字（非 0/1 的字面量直接参与运算）")
+    // p.9.14.2：lit_scan 是全函数子树遍历，仅当警告 pass 启用才执行。
+    if semantic.sm_warn_enabled() {
+        var w12_vals: table<i64> = table_new_i64()
+        var w12_cnts: table<i64> = table_new_i64()
+        var w12_lns: table<i64> = table_new_i64()
+        var w12_cls: table<i64> = table_new_i64()
+        lit_scan(body, w12_vals, w12_cnts, w12_lns, w12_cls)
+        var w12_i: i64 = 0
+        while w12_i < len(w12_vals) {
+            if w12_cnts[w12_i] >= 3 {
+                sm_warn_add(w12_lns[w12_i], w12_cls[w12_i], "魔法数字（非 0/1 的字面量直接参与运算）")
+            }
+            w12_i = w12_i + 1
         }
-        w12_i = w12_i + 1
     }
     var r = check_block(body)
     g_unsafe_depth = saved_depth
     if r < 0 {
         return -1
     }
-    // W00011 / W00015：遍历函数体子树收集「参数读取 / 可变绑定重赋值 /
-    // 可变声明」信息。闭包体作为函数体子树的一部分一并遍历，故闭包内读取 /
-    // 修改外层变量也会计入，避免对捕获变量误报「未使用 / 未修改」。
-    var dw_mvars: table<i64> = table_new_i64()
-    var dw_assigned: table<i64> = table_new_i64()
-    var dw_reads: table<i64> = table_new_i64()
-    var dw_decls: table<i64> = table_new_i64()
-    diag_walk(body, dw_mvars, dw_assigned, dw_reads, dw_decls)
-    // W00011：函数参数从未被读取（或写入）
-    var pi2: i64 = 0
-    while pi2 < nparams {
-        var pnode = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + pi2)
-        var pnid = intern.intern(sstate.name_str(pnode))
-        var used: bool = false
-        if sstate.seg_has(dw_reads, 0, len(dw_reads), pnid) == 1 {
-            used = true
-        }
-        if sstate.seg_has(dw_assigned, 0, len(dw_assigned), pnid) == 1 {
-            used = true
-        }
-        if !used {
-            sm_warn_add(s_lines[pnode], s_cols[pnode], "函数参数未使用（参数从未被读取）")
-        }
-        pi2 = pi2 + 1
-    }
-    // W00015：可变绑定（var）声明后从未被重赋值
-    var mi: i64 = 0
-    while mi < len(dw_mvars) {
-        var dv = dw_mvars[mi]
-        var dnid = intern.intern(sstate.name_str(dv))
-        if sstate.seg_has(dw_assigned, 0, len(dw_assigned), dnid) == 0 {
-            sm_warn_add(s_lines[dv], s_cols[dv], "可变绑定未修改（var 声明后从未赋值）")
-        }
-        mi = mi + 1
-    }
-    // W00005：局部变量（const / var）声明后从未被读取。
-    //  - 以 `_` 开头的名字不报（约定为有意不使用，含解构脱糖产生的 _tmpN/_cN）。
-    //  - 只扫函数体子树（body）：形参在 fn_node 子节点里，天然不在 body 内，
-    //    交给 W00011，不重复报。
-    //  - 与 W00015 分工：W00005 = 从未被读；W00015 = var 从未被写。两者可能同时命中
-    //    同一变量（声明后既不读也不写），此重叠可接受。
-    var w5i: i64 = 0
-    while w5i < len(dw_decls) {
-        var dv5 = dw_decls[w5i]
-        var dnm5 = sstate.name_str(dv5)
-        if len(dnm5) > 0 && !str.starts_with(dnm5, "_") {
-            var dnid5 = intern.intern(dnm5)
-            if sstate.seg_has(dw_reads, 0, len(dw_reads), dnid5) == 0 {
-                sm_warn_add(s_lines[dv5], s_cols[dv5], "未使用变量（声明后从未被读取）")
+    // p.9.14.2 独立警告 pass：W00011/15/5/19 四趟全函数子树遍历是自举性能病态
+    // 主因（每函数 3-4 趟 O(subtree) 递归；mod_walk 在嵌套 for 还会退化）。仅当
+    // 警告 pass 启用（-w）才执行；默认只报错时整段短路，零额外成本。
+    if semantic.sm_warn_enabled() {
+        // W00011 / W00015：遍历函数体子树收集「参数读取 / 可变绑定重赋值 /
+        // 可变声明」信息。闭包体作为函数体子树的一部分一并遍历，故闭包内读取 /
+        // 修改外层变量也会计入，避免对捕获变量误报「未使用 / 未修改」。
+        var dw_mvars: table<i64> = table_new_i64()
+        var dw_assigned: table<i64> = table_new_i64()
+        var dw_reads: table<i64> = table_new_i64()
+        var dw_decls: table<i64> = table_new_i64()
+        diag_walk(body, dw_mvars, dw_assigned, dw_reads, dw_decls)
+        // W00011：函数参数从未被读取（或写入）
+        var pi2: i64 = 0
+        while pi2 < nparams {
+            var pnode = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + pi2)
+            var pnid = intern.intern(sstate.name_str(pnode))
+            var used: bool = false
+            if sstate.seg_has(dw_reads, 0, len(dw_reads), pnid) == 1 {
+                used = true
             }
+            if sstate.seg_has(dw_assigned, 0, len(dw_assigned), pnid) == 1 {
+                used = true
+            }
+            if !used {
+                sm_warn_add(s_lines[pnode], s_cols[pnode], "函数参数未使用（参数从未被读取）")
+            }
+            pi2 = pi2 + 1
         }
-        w5i = w5i + 1
+        // W00015：可变绑定（var）声明后从未被重赋值
+        var mi: i64 = 0
+        while mi < len(dw_mvars) {
+            var dv = dw_mvars[mi]
+            var dnid = intern.intern(sstate.name_str(dv))
+            if sstate.seg_has(dw_assigned, 0, len(dw_assigned), dnid) == 0 {
+                sm_warn_add(s_lines[dv], s_cols[dv], "可变绑定未修改（var 声明后从未赋值）")
+            }
+            mi = mi + 1
+        }
+        // W00005：局部变量（const / var）声明后从未被读取。
+        //  - 以 `_` 开头的名字不报（约定为有意不使用，含解构脱糖产生的 _tmpN/_cN）。
+        //  - 只扫函数体子树（body）：形参在 fn_node 子节点里，天然不在 body 内，
+        //    交给 W00011，不重复报。
+        //  - 与 W00015 分工：W00005 = 从未被读；W00015 = var 从未被写。两者可能同时命中
+        //    同一变量（声明后既不读也不写），此重叠可接受。
+        var w5i: i64 = 0
+        while w5i < len(dw_decls) {
+            var dv5 = dw_decls[w5i]
+            var dnm5 = sstate.name_str(dv5)
+            if len(dnm5) > 0 && !str.starts_with(dnm5, "_") {
+                var dnid5 = intern.intern(dnm5)
+                if sstate.seg_has(dw_reads, 0, len(dw_reads), dnid5) == 0 {
+                    sm_warn_add(s_lines[dv5], s_cols[dv5], "未使用变量（声明后从未被读取）")
+                }
+            }
+            w5i = w5i + 1
+        }
+        // W00019：表元素越界写（t[i] = v 且 i 为常量 >= 静态长度）。静态长度仅在
+        // 「var t = [字面量...] 且 t 在函数体内只被下标赋值使用」时可安全确定；长度
+        // 可能被 push/pop/传参/重赋值改变的场景一律不报（窄化，宁缺勿滥）。
+        w19_reset()
+        w19_collect(body)
+        w19_check(body)
     }
-    // W00019：表元素越界写（t[i] = v 且 i 为常量 >= 静态长度）。静态长度仅在
-    // 「var t = [字面量...] 且 t 在函数体内只被下标赋值使用」时可安全确定；长度
-    // 可能被 push/pop/传参/重赋值改变的场景一律不报（窄化，宁缺勿滥）。
-    w19_reset()
-    w19_collect(body)
-    w19_check(body)
     // 三期 goto（§7.1.5）：函数体检查完后统一校验 goto（标签表已收集全——
     // goto 可前向/后向任意位置，须全表收集后判定 R1/R2/R3）
     var gr = check_goto_refs()
