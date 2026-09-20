@@ -49,6 +49,11 @@ var sm_t_impl: i64 = 0
 var sm_t_gen: i64 = 0
 var sm_t_flds: i64 = 0
 var sm_t_fns: i64 = 0
+// p.9.14.2 性能优化：import 去重索引（intern id，有序二分）——imported_has 原为
+// 对 g_imported(table<string>) 的线性查找，driver 数百文件时 O(n²) 累积成 import
+// 展开病态；改用 intern.intern(id) + sstate.bs_find 二分，import 展开近线性。
+var g_imp_idkeys: table<i64> = []
+var g_imp_idvals: table<i64> = []
 
 // ---------- 警告通道（p.6.9.15 诊断标号体系） ----------
 // 语义检查期间的警告平行收集（错误仍走 sm_err_* 单条；警告可多条）：
@@ -58,6 +63,9 @@ var sm_t_fns: i64 = 0
 var sm_warn_lines: table<i64>;   // 警告行（平行表）
 var sm_warn_cols: table<i64>;
 var sm_warn_msgs: table<string>; // 警告核心消息（与 diagcode 警告目录逐字一致）
+// p.9.14.2 独立警告 pass：总开关（默认 false = 只报错，警告检查不付任何成本）。
+// driver 用 -w 开启、--no-warn 保持关闭；仅 true 时语义侧警告收集/渲染进行。
+var sm_warn_active: bool = false;
 
 // 清空警告通道（每次语义检查入口调用）。
 pub func sm_warn_reset() {
@@ -69,7 +77,11 @@ pub func sm_warn_reset() {
 }
 
 // 登记一条警告（line/col + 核心消息；核心消息由 diagcode 目录精确匹配）。
+// p.9.14.2：总开关关闭时不登记（独立 pass 未启用，零收集成本）。
 pub func sm_warn_add(line: i64, col: i64, msg: string) {
+    if !sm_warn_active {
+        return
+    }
     table_push(sm_warn_lines, line)
     table_push(sm_warn_cols, col)
     table_push(sm_warn_msgs, msg)
@@ -244,14 +256,10 @@ pub func resolve_import_path(path: string) -> string {
 
 // 已导入集合线性查找（文件少，线性足够）
 func imported_has(p: string) -> bool {
-    var i: i64 = 0
-    while i < len(g_imported) {
-        if g_imported[i] == p {
-            return true
-        }
-        i = i + 1
-    }
-    return false
+    // p.9.14.2：用 intern id 有序二分替代对 g_imported 的线性查找（import 病态
+    // 主因，driver 数百文件 O(n²)）。intern.intern 对同字符串返回同 id（intern
+    // 池去重），二分查 g_imp_idkeys 即等价于"已导入含 p"判断。
+    return sstate.bs_find(g_imp_idkeys, intern.intern(p)) >= 0
 }
 
 // 剥离文件类型声明行（`type tie` / `type tie<X>`）：头部区 = 最前连续行
@@ -358,10 +366,12 @@ func expand_one_import(imp_node: i64) -> i64 {
         sm_err_msg = "内置库根缺失: '" + lib_root() + "'（运行 scripts/fetch-lib.ps1 或设置 TIE_LIB_ROOT / --lib-root）"
         return -1
     }
-    if imported_has(str.clone(full)) {
+    if imported_has(full) {
         return 0
     }
     table_push(g_imported, full)
+    // p.9.14.2：同步维护 intern id 有序索引（imported_has 二分免去线性扫描）。
+    sstate.sorted_insert(g_imp_idkeys, g_imp_idvals, intern.intern(full), 0)
     // 批次1-任务1（import 段错误修复）：file_read 原语对不存在的文件会触发
     // 运行时段错误（0xC0000005——运行时 tie_file_read 对缺失文件返回无效指针，
     // 运行时在独立仓库 tiec_rust，主仓库 0-Rust 铁律无法修改）。故必须在调用
@@ -578,6 +588,9 @@ func expand_one_import(imp_node: i64) -> i64 {
 // import 展开总入口：主文件顶层进 g_extra_tops，import 递归展开
 func expand_imports() -> i64 {
     g_imported = table_new_string()
+    // p.9.14.2：intern id 去重索引随每次编译清零（防跨编译累积污染）。
+    g_imp_idkeys = table_new_i64()
+    g_imp_idvals = table_new_i64()
     g_extra_tops = table_new_i64()
     // p.9.11.14：import 别名登记表重置（编译单元一次）
     g_imp_alias_names = table_new_string()
@@ -1188,6 +1201,19 @@ pub func check_ast(base_dir: string) -> string {
 // 既有 sstate.xxx 用法证实可行）。
 pub func imported_paths() -> table<string> {
     return sstate.imported_paths()
+}
+
+// p.9.14.2 独立警告 pass：总开关访问器（driver 经 semantic. 转调；必须在
+// namespace 内定义才能被 driver 用 semantic.set_warn_enabled/semantic.sm_warn_enabled
+// 访问——顶层 pub 函数不挂 semantic 命名空间，此前报「未定义」即由此起）。
+// 是否启用警告检查。
+pub func sm_warn_enabled() -> bool {
+    return sm_warn_active
+}
+
+// 开关设置（driver -w 开启、--no-warn 关闭；默认 false = 只报错）。
+pub func set_warn_enabled(on: bool) {
+    sm_warn_active = on
 }
 
 // ---------- p.9.14.1 结构化警告事件访问器 ----------

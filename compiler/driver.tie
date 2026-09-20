@@ -63,6 +63,10 @@ var g_jobs: i64 = 0;              // --jobs <N>：编译并发度（0 = 默认�
 // p.9.1.3 编译缓存：
 var g_no_cache: bool = false;     // --no-cache：关闭编译缓存（产物缓存到缓存目录，命中直接复制）
 var g_no_warn: bool = false;      // --no-warn：跳过警告检查（不发射/不打印任何 warning[W#####]；错误不受影响）
+// p.9.14.2 独立警告 pass：前端警告总开关（默认 false = 默认只报错，警告检查零成本；
+// -w 开启、--no-warn 关闭）。驱动 semantic.set_warn_enabled；与 g_no_warn（LLVM 工具链
+// 静默 + 角色/优化档降级行为）语义分离——默认只报错只关前端警告检查，不干扰降级逻辑。
+var g_front_warn: bool = false;
 var g_cache_salt: string = "tiec-cache-v1";  // 缓存键盐：编译器输出形态变更（如 optimizer 改动）时递增，强制旧缓存失效
 var g_emit_ir: bool = false;
 var g_keep_ir: bool = false;
@@ -111,6 +115,7 @@ func usage() -> i64 {
     println("  --jobs <N>       编译并发度（0 = 默认；预留配置 advanced.threads，并行随 p.9.1.3 增量/缓存落地）")
     println("  --no-cache       关闭编译缓存（默认开启：产物缓存到 ~/.tiec-cache 或 cache.dir，命中直接复制跳过编译）")
     println("  --no-warn        跳过警告检查（tiec 警告与 LLVM 工具链警告一并静默；错误 error[E#####] 不受影响）")
+    println("  -w, --warn       显式开启前端警告检查（默认只报错，警告 pass 不运行）")
     println("  --target <三元组>  交叉编译目标（如 x86_64-pc-windows-msvc）")
     println("  --emit-ir        只生成 LLVM IR（.ll），不继续编译")
     println("  --keep-ir        保留中间 IR 文件（.ll / .opt.ll）")
@@ -196,6 +201,11 @@ func parse_args() -> i64 {
             // 打印点全部静默；错误 error[E#####] 不受影响。降级行为
             // （角色 output 回退 lib、O3→O2）照常执行，只抑制打印。
             g_no_warn = true
+            g_front_warn = false
+        } else if a == "-w" || a == "--warn" {
+            // p.9.14.2 独立警告 pass：-w / --warn 显式开启前端警告检查
+            // （默认只报错）。与 --no-warn 相反；两者后出现者生效。
+            g_front_warn = true
         } else if a == "--target" {
             if i + 1 >= n {
                 return -1
@@ -322,20 +332,30 @@ func normalize_target(t: string) -> string {
 // 角色与 opt/target 选项（opt 仅 CLI 默认 O2；target 仅 CLI）。
 // 返回 0 成功；声明语法非法返回 -1（由 main 报错退出）。
 func scan_header(src: string) -> i64 {
-    var lines = split_lines(src)
-    var n: i64 = len(lines)
-    var i: i64 = 0
+    // 性能修复：不再对全文件 split_lines（大文件如 irgen_expr 10k+ 行时，
+    // split 全文件→逐行建 builder 是 O(n²) 字符处理病源）。改为 in-place 扫描
+    // 前 max_head 行（最多取 20 行含空行；正常头部 1-3 行即达，常提前 return）。
     g_role = "logic"
     g_role_param = ""
     g_role_mods = table_new_string()
-    while i < n && i < 20 {
-        var ln = trim(lines[i])
-        if str_len(ln) == 0 {
-            i = i + 1
+    var n: i64 = str_len(src)
+    var pos: i64 = 0
+    var line_no: i64 = 1
+    var max_head: i64 = 20
+    while pos < n && line_no <= max_head {
+        var ln_e = pos
+        while ln_e < n && str_char(src, ln_e) != "\n" {
+            ln_e = ln_e + 1
+        }
+        var ln = str.slice(src, pos, ln_e)
+        var ln2 = trim(ln)
+        if str_len(ln2) == 0 {
+            pos = ln_e + 1
+            line_no = line_no + 1
             continue
         }
-        if has_prefix(str.clone(ln), "type tie") {
-            var rest = trim(str.slice(ln, 8, str_len(ln)))
+        if has_prefix(str.clone(ln2), "type tie") {
+            var rest = trim(str.slice(ln2, 8, str_len(ln2)))
             if str_len(rest) == 0 {
                 g_role = "type"
                 return 0
@@ -348,10 +368,10 @@ func scan_header(src: string) -> i64 {
                     g_role = g_role_base
                     return 0
                 }
-                println(diagcode.render_error(-1, -1, "文件类型声明错误: " + g_role_err + "（第 " + to_string(i + 1) + " 行）"))
+                println(diagcode.render_error(-1, -1, "文件类型声明错误: " + g_role_err + "（第 " + to_string(line_no) + " 行）"))
                 return -1
             }
-            println(diagcode.render_error(-1, -1, "文件类型声明错误: 非法声明 '" + ln + "'（第 " + to_string(i + 1) + " 行），应为 `type tie` 或 `type tie<类型>`"))
+            println(diagcode.render_error(-1, -1, "文件类型声明错误: 非法声明 '" + ln2 + "'（第 " + to_string(line_no) + " 行），应为 `type tie` 或 `type tie<类型>`"))
             return -1
         }
         // 第一个非空非声明行：头部区结束
@@ -918,6 +938,9 @@ func frontend(src: string, base_dir: string) -> i64 {
         var t1 = clock()
     }
     diagcode.warn_unreg_reset()
+    // p.9.14.2 独立警告 pass：把前端警告开关传给 semantic（-w 开启、默认只报错）。
+    // 必须在 check_ast 之前设置——语义侧警告收集/遍历全程由该开关门控。
+    semantic.set_warn_enabled(g_front_warn)
     var sem = semantic.check_ast(base_dir)
     unsafe {
         var t1e = clock()
@@ -2136,6 +2159,10 @@ func cleanup(ir_path: string, opt_path: string) {
 // 从头扫（O(i)）三重平方。新实现字节级扫描（\n/\r 为 ASCII 单字节）+
 // StringBuilder 累积，语义不变（连续 \n 产空行；尾部无 \n 的末行保留）。
 func split_lines(s: string) -> table<string> {
+    // 性能修复：用单个 sb + sb_reset 复用，替代每行新建 string_builder——
+    // 大文件（irgen_expr 10k+ 行）下每行新建 builder 的构造/释放累积成
+    // O(n²) 字符处理病源（自举 prep 卡 11s+ 的主因）。sb_reset 已由编译器
+    // 认识（irgen_str s21_sb_reset），旧编译器可无障碍编译。
     var rows = table_new_string()
     var n: i64 = len(s)
     var i: i64 = 0
@@ -2143,10 +2170,9 @@ func split_lines(s: string) -> table<string> {
     while i < n {
         var b = str_byte(s, i)
         if b == 10 {
-            // \n：行结束（每行新建 sb——自举兼容旧原语集；sb_reset 复用留待
-            // 编译器自身认识该原语后启用）
+            // \n：行结束（sb_reset 复用缓冲，消除每行新建）
             table_push(rows, sb_build(sb))
-            sb = string_builder()
+            sb_reset(sb)
         } else if b != 13 {
             // 非 \r：追加字节（二进制安全）
             sb_append_byte(sb, b)
