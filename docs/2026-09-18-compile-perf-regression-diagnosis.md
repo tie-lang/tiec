@@ -125,10 +125,24 @@ irgen=2.1s / emit=23.8s（funcs=21.6s + ren=15.8s）/ write=76ms。
 * `compiler/tiec.exe` 已更新为新编译器（`a63d5d27…`）；旧 09-15 种子保留于
   `compiler/tiec_seed_0915.exe`（`27982cea…`，与 `tiec_backup_probe.exe` 同源）。
 * 剩余热点（实测，下一步优先级）：
-  1. **sem imports 24.8s**——parse 疑似仍 O(n²)：8.7KB→6ms、96KB→445ms（指数 ~1.9），
-     闭包内最大单文件 irgen_expr.tie（523KB）估 ~13s，占 imports 大头；
-  2. **emit 23.8s**（funcs=21.6s / ren=15.8s，~53 万行重编号）——已多轮优化，
-     进一步需剖析单行重建路径。
+  1. **sem imports 24.8s**——细分（2026-09-20 深夜复测）：strip=0ms / **lex=1.3s /
+     fill=31ms / build=23.9s / append=0.2s**——平方级在 `parse_program` 语法构建本体，
+     词法与 token 队列均为线性。相位隔离采样（启动后 5–22s 窗口）显示热叶集中于
+     _b6.exe 内 RVA 0x25270（132B，首要点）、0x26f70..0x27528、0x271a80..0x27471c
+     三簇，叶级均为 memcpy/串拷贝——即解析器某处存在按 O(文件) 的重复拷贝。
+     原 `str.slice` 平方已修（cp_slice 走 g_byte_starts 字节快切）。
+  2. **emit 23.8s**（funcs=21.6s + ren=15.8s）——采样确证热点为 ren_def 型
+     「全局映射表按索引补 -1 增长」（_b6.exe RVA 0x281d20，语义与
+     `llvmgen.tie ren_def` 逐行对应）+ `renumber_line` 逐行重建（RVA 0x281010）。
+     53 万行 × 每行 1-2 次 O(函数内指令数) 的映射表探测是 ren 主要成本。
+* 微基准结论（`_bench_prim.tie` / `_bench_tbl.tie`，可直接重跑）：
+  `str_len` 与 `str_char` 是 **O(n) 码点扫描**（4MB 串 1000 次各 15.4s/15.0s，
+  4KB 串仅 14ms）——任何对大源串按码点循环的原语调用都是平方源；
+  `str_byte`/`table_push`/表索引/表传参（句柄语义，ref 标记仅是显式化）均 O(1)。
+* 采样工具链（可复用）：`_ghidra_out/sample_prof3.py`（x64 CONTEXT 规范结构版，
+  Rip 偏移 0xF8；注意 CONTEXT 调试寄存器是 6 个不是 8 个；支持延时参数做相位
+  隔离 + ReadProcessMemory 扫栈定位调用方）。函数边界用 .pdata 解析
+  （2232 函数），反编译走 `analyzeHeadless ... b6 -process _b6.exe -postScript hot_decomp*.py`。
 
 ---
 
