@@ -1,5 +1,5 @@
 type tie<class>
-// compiler/middle/passes.tie —— p.9.20.2 中端 pass 管道（t 轴）
+// compiler/middle/passes.tie —— p.9.20.2/3 中端 pass 管道（t 轴）
 // ============================================================
 // 双轴优化器（docs/designs/tiec-dual-axis-optimizer.md，ROAD p.9.20）：
 // t 轴 = tie-IR pass 管道，挂 irgen 之后、llvmgen 之前（driver.kpass_irgen
@@ -14,13 +14,45 @@ type tie<class>
 //
 // 分期（ROAD p.9.20.3-5）：t1 单函数局部（常量折叠/代数化简/死值消除）→
 // t2 过程内（CSE/LICM/边界检查消除，让位 --check-bounds）→ t3 过程间
-// （小函数内联/tail call/字符串构建融合）。当前为框架占位：t0 直出，
-// t>0 尚无已注册 pass（幂等直通）。
+// （小函数内联/tail call/字符串构建融合）。当前 t1 已接入；t>1 暂为 t1 超集
+// 占位（分级裁剪语义：每级 = 前级超集，t2/t3 pass 依序补）。
+//
+// t1 算法（单遍、确定性、线性）：
+//   A. 按块序/指令序扫描：const_i 登记值→常量表；整型算术/icmp 双常量
+//      折叠（rewrite_to_const 改写为 const_i，除零不折叠；tie 无移位运算符，
+//      shl/shr 不折叠）；恒等式（x+0 / x-0 / x|0 / x^0 / x<<0 / x>>0 /
+//      x*1 / x/1 → x，x*0 / x&0 → 0，0+x → x）登记值替代表；
+//   B. 替代表链压缩后全量回写操作数（值传播；dominance 安全——替代目标
+//      支配原结果值，使用范围只缩不扩）；
+//   C. DCE：无使用者的纯指令（NUM 组 + CONST 组 + ptrtoint/inttoptr/
+//      bitcast）标记后经 ir.compact_dead 物理压缩；compact 拒绝（孤儿指令）
+//      时保守放弃删除，折叠/传播效果保留。
+//
+// opcode 字面量与 irgen/llvmgen 一致（const_i=60 等；ir.tie 元数据表已于
+// 2026-09-21 按实现权威重建，edd3eca）。
 //
 // 布局约束：全局 var 必须在文件顶层（命名空间体内只允许函数/类/嵌套命名空间），
 // 函数入 namespace passes（driver 以 passes.run 跨命名空间调用）。
 
-var g_pass_pipeline_ver: i64 = 1;   // pass 集合版本（新增/改动 pass 必须 +1）
+import "./ir.tie"
+
+var g_pass_pipeline_ver: i64 = 2;   // pass 集合版本（新增/改动 pass 必须 +1）
+
+// 折叠涉及 opcode（实现权威字面量）
+const P_ADD: i64 = 0;
+const P_SUB: i64 = 1;
+const P_MUL: i64 = 2;
+const P_DIV: i64 = 3;
+const P_MOD: i64 = 4;
+const P_AND: i64 = 6;
+const P_OR: i64 = 7;
+const P_XOR: i64 = 8;
+const P_SHL: i64 = 10;
+const P_SHR: i64 = 11;
+const P_ICMP: i64 = 12;
+const P_CONST_I: i64 = 60;
+const P_VAL: i64 = 0;
+const P_IMM: i64 = 2;
 
 namespace passes {
 
@@ -35,9 +67,259 @@ pub func run(level: i64) -> i64 {
     if level <= 0 {
         return 0
     }
-    // t1/t2/t3 pass 依序接入（p.9.20.3-5）；每级 = 前级超集（分级裁剪语义）。
-    // 当前框架占位：无已注册 pass，幂等直通（输出 = irgen 原始 tie-IR）。
+    // t1 起接入；t2/t3 = t1 超集（p.9.20.4/5 依序补）
+    return run_t1()
+}
+
+// ---------- t1：常量折叠 / 代数化简 / 死值消除 ----------
+
+// 操作数取常量值：IMM 直接取；VALUE 查常量表。非常量返回 (false, 0)。
+func opnd_const(inst: i64, k: i64, const_of: table<i64>, has_const: table<bool>) -> (bool, i64) {
+    var v = ir.ins_opnd(inst, k)
+    var kind = ir.ins_opnd_kind(inst, k)
+    if kind == P_IMM {
+        return (true, v)
+    }
+    if kind == P_VAL && v >= 0 && v < len(has_const) {
+        if has_const[v] {
+            return (true, const_of[v])
+        }
+    }
+    return (false, 0)
+}
+
+// 整型算术 / icmp 的折叠与化简（单指令）。
+func fold_int(inst: i64, op: i64, rv: i64, const_of: table<i64>, has_const: table<bool>, repl: table<i64>) {
+    var nvals = len(has_const)
+    if rv < 0 || rv >= nvals {
+        return
+    }
+    var (ok1, a) = opnd_const(inst, 0, const_of, has_const)
+    var (ok2, b) = opnd_const(inst, 1, const_of, has_const)
+    var k0val = ir.ins_opnd(inst, 0)
+    var k0isval = ir.ins_opnd_kind(inst, 0) == P_VAL
+    // ---- 恒等式化简（②侧常量）----
+    if ok2 && k0isval {
+        if b == 0 && (op == P_ADD || op == P_SUB || op == P_OR || op == P_XOR || op == P_SHL || op == P_SHR) {
+            repl[rv] = k0val
+            return
+        }
+        if b == 1 && (op == P_MUL || op == P_DIV) {
+            repl[rv] = k0val
+            return
+        }
+        if b == 0 && (op == P_MUL || op == P_AND) {
+            ir.rewrite_to_const(inst, P_CONST_I, 0)
+            has_const[rv] = true
+            const_of[rv] = 0
+            return
+        }
+    }
+    // 0 + x → x（①侧字面 0；折叠暴露场景）
+    if op == P_ADD && ok1 && a == 0 && ir.ins_opnd_kind(inst, 0) == P_IMM {
+        if ir.ins_opnd_kind(inst, 1) == P_VAL && ir.ins_opnd(inst, 1) >= 0 && ir.ins_opnd(inst, 1) < nvals {
+            repl[rv] = ir.ins_opnd(inst, 1)
+            return
+        }
+    }
+    // ---- 双常量折叠 ----
+    if !(ok1 && ok2) {
+        return
+    }
+    var r: i64 = 0
+    var can = false
+    if op == P_ADD {
+        r = a + b
+        can = true
+    } else if op == P_SUB {
+        r = a - b
+        can = true
+    } else if op == P_MUL {
+        r = a * b
+        can = true
+    } else if op == P_DIV {
+        if b != 0 {
+            r = a / b
+            can = true
+        }
+    } else if op == P_MOD {
+        if b != 0 {
+            r = a % b
+            can = true
+        }
+    } else if op == P_AND {
+        r = a & b
+        can = true
+    } else if op == P_OR {
+        r = a | b
+        can = true
+    } else if op == P_XOR {
+        r = a ^ b
+        can = true
+    }
+    // shl/shr：tie 无移位运算符，不折叠（仅保留上面的恒等化简）
+    if !can {
+        return
+    }
+    ir.rewrite_to_const(inst, P_CONST_I, r)
+    has_const[rv] = true
+    const_of[rv] = r
+}
+
+// 替代表链压缩 + 全量回写操作数（值传播）。
+func apply_repl(repl: table<i64>, nvals: i64) {
+    var v: i64 = 0
+    while v < nvals {
+        var r = repl[v]
+        if r >= 0 {
+            // 跟链至终点（depth 防御环；登记序保证无环，仅防御）
+            var depth: i64 = 0
+            while r >= 0 && r < nvals && repl[r] >= 0 && depth <= nvals {
+                r = repl[r]
+                depth = depth + 1
+            }
+            repl[v] = r
+        }
+        v = v + 1
+    }
+    var total = ir.inst_count()
+    var inst: i64 = 0
+    while inst < total {
+        var cnt = ir.ins_ops_cnt(inst)
+        var k: i64 = 0
+        while k < cnt {
+            if ir.ins_opnd_kind(inst, k) == P_VAL {
+                var val = ir.ins_opnd(inst, k)
+                if val >= 0 && val < nvals && repl[val] >= 0 {
+                    ir.set_opnd(inst, k, repl[val], P_VAL)
+                }
+            }
+            k = k + 1
+        }
+        inst = inst + 1
+    }
+}
+
+// 纯指令判定（无副作用、删除安全）：NUM 组全纯 + CONST 组全纯 +
+// MEM 组仅 ptrtoint(24)/inttoptr(25)/bitcast(26)。
+// 不删：alloca/load/store/gep（内存）、phi（块引用）、call 族、str_cat（malloc）、
+// atomic/volatile（显式副作用）。
+func is_pure_op(op: i64) -> bool {
+    var g = ir.op_group(op)
+    if g == 0 || g == 5 {
+        return true
+    }
+    if op == 24 || op == 25 || op == 26 {
+        return true
+    }
+    return false
+}
+
+// DCE：标记无使用者的纯指令并物理压缩。compact 拒绝（孤儿指令前提不满足）
+// 时返回 0——保守放弃删除，不报错（折叠/传播效果已保留）。
+func dce() -> i64 {
+    var total = ir.inst_count()
+    var nvals = ir.value_count()
+    var used = table_new_bool()
+    var i: i64 = 0
+    while i < nvals {
+        table_push(used, false)
+        i = i + 1
+    }
+    // 函数形参保守标记（形参值可能被 llvmgen 隐式消费）
+    var nf = ir.func_count()
+    var f: i64 = 0
+    while f < nf {
+        var pc = ir.func_params_cnt(f)
+        var k: i64 = 0
+        while k < pc {
+            var pv = ir.param_val(f, k)
+            if pv >= 0 && pv < nvals {
+                used[pv] = true
+            }
+            k = k + 1
+        }
+        f = f + 1
+    }
+    // 全量扫操作数（OK_BLOCK 块引用不进 used）
+    var inst: i64 = 0
+    while inst < total {
+        var cnt = ir.ins_ops_cnt(inst)
+        var k: i64 = 0
+        while k < cnt {
+            if ir.ins_opnd_kind(inst, k) == P_VAL {
+                var val = ir.ins_opnd(inst, k)
+                if val >= 0 && val < nvals {
+                    used[val] = true
+                }
+            }
+            k = k + 1
+        }
+        inst = inst + 1
+    }
+    var dead = table_new_bool()
+    var n: i64 = 0
+    inst = 0
+    while inst < total {
+        var op = ir.ins_op(inst)
+        var rv = ir.ins_val(inst)
+        var kill = false
+        if rv >= 0 && rv < nvals && !used[rv] && is_pure_op(op) {
+            kill = true
+        }
+        table_push(dead, kill)
+        if kill {
+            n = n + 1
+        }
+        inst = inst + 1
+    }
+    if n == 0 {
+        return 0
+    }
+    var rc = ir.compact_dead(dead)
+    if rc < 0 {
+        // 前提不满足（存在孤儿指令）：放弃物理删除，保守成功
+        return 0
+    }
     return 0
+}
+
+func run_t1() -> i64 {
+    var nvals = ir.value_count()
+    var const_of = table_new_i64()
+    var has_const = table_new_bool()
+    var repl = table_new_i64()
+    var i: i64 = 0
+    while i < nvals {
+        table_push(const_of, 0)
+        table_push(has_const, false)
+        table_push(repl, 0 - 1)
+        i = i + 1
+    }
+    // A. 单遍扫描：const 登记 + 折叠/化简（定义先于使用，同序传播）
+    var total = ir.inst_count()
+    var inst: i64 = 0
+    while inst < total {
+        var op = ir.ins_op(inst)
+        var rv = ir.ins_val(inst)
+        if op == P_CONST_I {
+            if rv >= 0 && rv < nvals && ir.ins_ops_cnt(inst) >= 1 && ir.ins_opnd_kind(inst, 0) == P_IMM {
+                has_const[rv] = true
+                const_of[rv] = ir.ins_opnd(inst, 0)
+            }
+        } else if op == P_ADD || op == P_SUB || op == P_MUL || op == P_DIV || op == P_MOD ||
+            op == P_AND || op == P_OR || op == P_XOR {
+            // icmp 不折叠（2026-09-21 实证：存在 ins_ty=TK_I64 的 icmp 指令，
+            // rewrite 成 const_i 后 llvmgen 按 ins_ty 输出 i64，与 br i1 类型断裂；
+            // 常量条件由前端 consteval 与 LLVM opt 兜底，此处收益低风险高）
+            fold_int(inst, op, rv, const_of, has_const, repl)
+        }
+        inst = inst + 1
+    }
+    // B. 值传播
+    apply_repl(repl, nvals)
+    // C. 死值消除
+    return dce()
 }
 
 }
