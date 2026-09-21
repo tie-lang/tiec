@@ -78,6 +78,11 @@ var meta_pkg_name: i64 = 0;        // 包名（池 id；0 = 未设置）
 var meta_pkg_version: i64 = 0;     // 包版本（池 id，如 "0.1.0"）
 var meta_ir_version: i64 = 0;      // IR 格式版本号（.tieir 头校验用）
 var meta_compiler_version: i64 = 0;// 编译器版本（池 id）
+// p.9.20 双轴优化：单元头携带中端轴档位——t 级别决定 tie-IR 是否经 pass
+// 改写，pass 管道版本决定 pass 集合/顺序；两者共同构成 .tieir 的可复现性
+// 契约（同 (源码, l, t, pass 版本) → 逐字节恒等）。
+var meta_tie_opt: i64 = 0;        // 生效 tiec 中端轴档 t（0-3）
+var meta_pass_ver: i64 = 0;       // 中端 pass 管道版本（passes.pipeline_ver）
 // 依赖图（columnar 排序对：包名池 id -> 版本池 id）
 var dep_keys: table<i64>;         // 依赖包名（升序）
 var dep_vals: table<i64>;         // 依赖版本
@@ -109,6 +114,8 @@ pub func reset_meta() {
     meta_pkg_version = 0
     meta_ir_version = 0
     meta_compiler_version = 0
+    meta_tie_opt = 0
+    meta_pass_ver = 0
 }
 
 // ---------- inst_span 表（错误定位）----------
@@ -346,6 +353,25 @@ pub func set_compiler_version(ver_id: i64) {
 
 pub func get_compiler_version() -> i64 {
     return meta_compiler_version
+}
+
+// 设置生效 tiec 中端轴档 t（p.9.20；0 = 零 pass）。写入 .tieir 单元头，
+// 使分发单元的优化档可自证（反序列化侧可校验复现条件）。
+pub func set_tie_opt(v: i64) {
+    meta_tie_opt = v
+}
+
+pub func get_tie_opt() -> i64 {
+    return meta_tie_opt
+}
+
+// 设置中端 pass 管道版本（passes.pipeline_ver；新增/改动 pass 必须 +1）。
+pub func set_pass_ver(v: i64) {
+    meta_pass_ver = v
+}
+
+pub func get_pass_ver() -> i64 {
+    return meta_pass_ver
 }
 
 // ---------- 依赖图（包名 -> 版本，升序 + 二分）----------
