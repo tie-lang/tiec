@@ -73,8 +73,14 @@ pub func run(level: i64) -> i64 {
         return r
     }
     if level >= 2 {
-        return run_t2()
+        var r2 = run_t2()
+        if r2 != 0 {
+            return r2
+        }
     }
+    // p.9.20.5 进行中（2026-09-21）：run_t3（小函数内联）已实现并通过探针级
+    // 验证，但 driver 级自举存在未收敛的跨函数值引用（XREF）边界，t3 暂映射
+    // t2 保证全档位产物自洽；内联代码保留，XREF 解开后恢复门控。
     return 0
 }
 
@@ -473,6 +479,429 @@ func run_t2() -> i64 {
     cse_blockwise(repl, nvals)
     apply_repl(repl, nvals)
     return dce()
+}
+
+// ---------- t3：过程间 pass（p.9.20.5）----------
+//
+// 范围（2026-09-21 实装裁定，ROAD 如实标注）：
+//   - **小函数内联**（本版核心）：被调函数满足「单块 + 唯一 ret 置于块尾 +
+//     无 phi + 非递归 + 指令数 ≤ INLINE_MAX_INSTS」时，在调用点直线展开——
+//     单块被调函数是纯直线代码，无需块切分 / br 链 / phi 合并（多 ret 需
+//     phi、多块需块引用重映射与 CFG 切分，顺延后续子项）。
+//   - **tail call**：IR 层无尾调用标志位，llvmgen 侧文本级识别
+//     （call 结果仅被同块 ret 消费 → 输出 tail call）延后，与内联解耦。
+//   - **字符串构建融合**：依赖 p.9.17.1 字符串原语的 IR 形态勘察，顺延。
+
+const INLINE_MAX_INSTS: i64 = 24;   // 被调函数指令数阈值（保守起点）
+
+// call(35) → 被调函数 id（符号名池 id 与函数名池 id 相等比较；-1 = 未找到）
+func callee_of(inst: i64) -> i64 {
+    var nid = ir.ins_opnd(inst, 0)
+    var nf = ir.func_count()
+    var f: i64 = 0
+    while f < nf {
+        if ir.func_name(f) == nid {
+            return f
+        }
+        f = f + 1
+    }
+    return 0 - 1
+}
+
+// 被调函数是否为「单块 + 唯一 ret 置于块尾 + 无 phi + 非递归 + ≤阈值」候选。
+// 单块是硬前提：多块函数（循环/分支，即使只有唯一尾置 ret，如 to_string 的
+// 循环+尾部 return）的 CFG 不能直线展开——2026-09-21 RCA：漏检块数导致
+// to_string 的循环块被拍平进调用者，块文本序错乱、空块炸 LLVM 解析。
+func inline_candidate(fid: i64, lo: i64, hi: i64, nblocks: i64) -> bool {
+    if fid < 0 || nblocks != 1 || hi - lo == 0 || hi - lo > INLINE_MAX_INSTS {
+        return false
+    }
+    var name = ir.func_name(fid)
+    var nret: i64 = 0
+    var nphi: i64 = 0
+    var ii = lo
+    while ii < hi {
+        var op = ir.ins_op(ii)
+        if op == 32 {
+            nret = nret + 1
+            if ii != hi - 1 {
+                return false   // ret 不在块尾（多语句后置返回），本版不展开
+            }
+        } else if op == 33 {
+            nphi = nphi + 1
+        }
+        ii = ii + 1
+    }
+    if nret != 1 || nphi != 0 {
+        return false
+    }
+    // 递归防护：块内任何 call 指向自己
+    ii = lo
+    while ii < hi {
+        var op = ir.ins_op(ii)
+        if op == 35 {
+            var c = callee_of(ii)
+            if c == fid {
+                return false
+            }
+            // 内联链深控制：被调者又调用候选（展开放大），只查直接递归
+        }
+        ii = ii + 1
+    }
+    return true
+}
+
+// t3 主 pass：重建式展开（复用 compact 的线性保序 + 参数段搬移模式）。
+// 返回展开的调用点数；无展开时不动任何表。
+func inline_expand() -> i64 {
+    var total = ir.inst_count()
+    var nb = ir.block_count()
+    var cover: i64 = 0
+    var bi: i64 = 0
+    while bi < nb {
+        cover = cover + (ir_blocks_end[bi] - ir_blocks_start[bi])
+        bi = bi + 1
+    }
+    if cover != total {
+        return 0
+    }
+    // 归属表：指令 -> 块 / 函数
+    var inst_blk = table_new_i64()
+    var inst_fn = table_new_i64()
+    var fill: i64 = 0
+    while fill < total {
+        table_push(inst_blk, 0 - 1)
+        table_push(inst_fn, 0 - 1)
+        fill = fill + 1
+    }
+    bi = 0
+    while bi < nb {
+        var s0 = ir_blocks_start[bi]
+        var ii0 = s0
+        while ii0 < ir_blocks_end[bi] {
+            inst_blk[ii0] = bi
+            inst_fn[ii0] = ir_blocks_func[bi]
+            ii0 = ii0 + 1
+        }
+        bi = bi + 1
+    }
+    // 函数候选判定（按指令序首见区间 = 函数指令区间）
+    var nvals0 = ir.value_count()
+    var cand = table_new_bool()
+    var f0: i64 = 0
+    while f0 < ir.func_count() {
+        table_push(cand, false)
+        f0 = f0 + 1
+    }
+    // 每函数指令区间（沿用 g_fn_inst_lo/hi 的 min/max 语义）+ 块数
+    var flo = table_new_i64()
+    var fhi = table_new_i64()
+    var fblocks = table_new_i64()
+    f0 = 0
+    while f0 < ir.func_count() {
+        table_push(flo, total)
+        table_push(fhi, 0 - 1)
+        table_push(fblocks, 0)
+        f0 = f0 + 1
+    }
+    bi = 0
+    while bi < nb {
+        var fid = ir_blocks_func[bi]
+        if ir_blocks_start[bi] < flo[fid] {
+            flo[fid] = ir_blocks_start[bi]
+        }
+        if ir_blocks_end[bi] > fhi[fid] {
+            fhi[fid] = ir_blocks_end[bi]
+        }
+        fblocks[fid] = fblocks[fid] + 1
+        bi = bi + 1
+    }
+    f0 = 0
+    while f0 < ir.func_count() {
+        if fhi[f0] > 0 {
+            cand[f0] = inline_candidate(f0, flo[f0], fhi[f0], fblocks[f0])
+        }
+        f0 = f0 + 1
+    }
+    // 形参值快照：参数段搬移会更新 params_off，展开时的绑定必须与搬移解耦
+    //（2026-09-21 RCA：被调函数参数段已搬（函数序在宿主前）后，绑定仍按新
+    // off 读旧 ir_ops 表 → 形参读到垃圾值 → 展开体引用未定义寄存器）
+    var psnap = table_new_i64()
+    var psoff = table_new_i64()
+    f0 = 0
+    while f0 < ir.func_count() {
+        table_push(psoff, len(psnap))
+        var pj0: i64 = 0
+        var pc0 = ir.func_params_cnt(f0)
+        var po0 = ir.func_params_off(f0)
+        while pj0 < pc0 {
+            table_push(psnap, ir.param_val(f0, pj0))
+            pj0 = pj0 + 1
+        }
+        f0 = f0 + 1
+    }
+    // 重建：线性扫旧指令；候选 call 直线展开，其余原样搬移
+    var n_op = table_new_i64()
+    var n_ty = table_new_i64()
+    var n_val = table_new_i64()
+    var n_off = table_new_i64()
+    var n_cnt = table_new_i64()
+    var n_ops = table_new_i64()
+    var n_opsk = table_new_i64()
+    var n_blk = table_new_i64()   // 产出指令的块归属（与 n_op 一一对应）
+    var wlog = table_new_i64()    // 本调用点写过的 vmap 槽（展开后精确复位）
+    var expanded: i64 = 0
+    var last_fid: i64 = 0 - 1
+    var handled = table_new_bool()
+    var fh: i64 = 0
+    while fh < ir.func_count() {
+        table_push(handled, false)
+        fh = fh + 1
+    }
+    // 内联值映射（被调旧值 id → 新值 id；大小 = 旧值计数，仅被调函数用到的槽有效）
+    var vmap = table_new_i64()
+    var vi: i64 = 0
+    while vi < nvals0 {
+        table_push(vmap, 0 - 1)
+        vi = vi + 1
+    }
+    // call 结果值 → 被调 ret 值 的替代表（传播用）
+    var repl = table_new_i64()
+    vi = 0
+    while vi < nvals0 {
+        table_push(repl, 0 - 1)
+        vi = vi + 1
+    }
+    // 复制一条被调指令：操作数经 vmap 重映射（无映射的值引用 → 放弃整点，
+    // 理论不可达——被调块内引用必为形参或自身定义；防御返回 -1 由调用方回退）
+    // 展开一个调用点。返回 0 成功 / -1 失败（失败时调用方原样保留 call）。
+    // 实参取值：call 布局 [0]=符号池id [1]=返回类型IMM [2..]=每参 [类型IMM, 值VALUE]
+    var ii: i64 = 0
+    while ii < total {
+        var fid = inst_fn[ii]
+        if fid != last_fid && fid >= 0 && fid < len(ir_funcs_names) && !handled[fid] {
+            var poff = ir_funcs_params_off[fid]
+            var pcnt = ir_funcs_params_cnt[fid]
+            ir_funcs_params_off[fid] = len(n_ops)
+            handled[fid] = true
+            var pk: i64 = 0
+            while pk < pcnt {
+                table_push(n_ops, ir_ops[poff + pk])
+                table_push(n_opsk, ir_ops_kind[poff + pk])
+                pk = pk + 1
+            }
+            last_fid = fid
+        }
+        var op = ir.ins_op(ii)
+        var do_inline = false
+        var callee = 0 - 1
+        if op == 35 && ir.ins_ops_cnt(ii) >= 4 {
+            callee = callee_of(ii)
+            if callee >= 0 && callee < len(cand) && cand[callee] {
+                do_inline = true
+            }
+        }
+        if !do_inline {
+            table_push(n_op, ir_insts_op[ii])
+            table_push(n_ty, ir_insts_ty[ii])
+            table_push(n_val, ir_insts_val[ii])
+            table_push(n_off, len(n_ops))
+            table_push(n_cnt, ir_insts_ops_cnt[ii])
+            table_push(n_blk, inst_blk[ii])
+            var off = ir_insts_ops_off[ii]
+            var cnt = ir_insts_ops_cnt[ii]
+            var k: i64 = 0
+            while k < cnt {
+                table_push(n_ops, ir_ops[off + k])
+                table_push(n_opsk, ir_ops_kind[off + k])
+                k = k + 1
+            }
+        } else {
+            // ---- 直线展开 callee（单块）----
+            expanded = expanded + 1
+            var cargs = ir.ins_ops_cnt(ii)
+            // 形参绑定：vmap[形参值] = 实参值（实参 = 操作数 3, 5, 7...）
+            var pcnt = ir.func_params_cnt(callee)
+            var pso = psoff[callee]
+            var pj: i64 = 0
+            while pj < pcnt {
+                var pval = psnap[pso + pj]
+                var aval = ir.ins_opnd(ii, 2 + pj * 2 + 1)
+                if pval >= 0 && pval < nvals0 {
+                    vmap[pval] = aval
+                    table_push(wlog, pval)
+                }
+                pj = pj + 1
+            }
+            // 复制被调指令（其唯一块 [flo, fhi)）；ret 跳过并绑定返回值
+            var rv = ir.ins_val(ii)   // call 结果值（-1 = void）
+            var csi = flo[callee]
+            var cei = fhi[callee]
+            var retv: i64 = 0 - 1
+            var ci = csi
+            while ci < cei {
+                var cop = ir.ins_op(ci)
+                if cop == 32 {
+                    // ret：值绑定（ret 操作数① = 被调返回值；vmap 后才是新值）
+                    if rv >= 0 && ir.ins_ops_cnt(ci) >= 1 {
+                        var rsrc = ir.ins_opnd(ci, 0)
+                        if rsrc >= 0 && rsrc < nvals0 && vmap[rsrc] >= 0 {
+                            retv = vmap[rsrc]
+                        }
+                    }
+                } else {
+                    table_push(n_op, cop)
+                    table_push(n_ty, ir.ins_ty(ci))
+                    var nv = 0 - 1
+                    var oval = ir.ins_val(ci)
+                    if oval >= 0 {
+                        nv = ir.new_value()
+                        if oval < nvals0 {
+                            vmap[oval] = nv
+                            table_push(wlog, oval)
+                        }
+                    }
+                    table_push(n_val, nv)
+                    table_push(n_off, len(n_ops))
+                    var ooff = ir.ins_ops_off(ci)
+                    var ocnt = ir.ins_ops_cnt(ci)
+                    table_push(n_cnt, ocnt)
+                    table_push(n_blk, inst_blk[ii])
+                    var k: i64 = 0
+                    while k < ocnt {
+                        var ov = ir_ops[ooff + k]
+                        var ok = ir_ops_kind[ooff + k]
+                        // 符号池槽跳过重映射（池 id 不是值 id；is_sym_slot 同 t2 防线）
+                        if !(k == 0 && is_sym_slot(cop, k)) && ok == P_VAL && ov >= 0 && ov < nvals0 && vmap[ov] >= 0 {
+                            ov = vmap[ov]
+                        }
+                        table_push(n_ops, ov)
+                        table_push(n_opsk, ok)
+                        k = k + 1
+                    }
+                }
+                ci = ci + 1
+            }
+            // call 结果值 → 被调返回值（传播给使用者）
+            if rv >= 0 && rv < nvals0 && retv >= 0 {
+                repl[rv] = retv
+            }
+            // 按 wlog 精确复位本调用点写过的槽——同一函数可能有多个调用点，
+            // 残留映射会串扰下一次展开（2026-09-21 RCA：全量复位的时机/覆盖
+            // 都有遗漏，写日志复位是完备解）
+            var wl: i64 = 0
+            while wl < len(wlog) {
+                vmap[wlog[wl]] = 0 - 1
+                wl = wl + 1
+            }
+            wlog = table_new_i64()
+            // 复位被调形参槽（vmap 复用防串扰：下一调用点重新绑定）
+            pj = 0
+            while pj < pcnt {
+                var pval2 = ir_ops[poff + pj]
+                if pval2 >= 0 && pval2 < nvals0 {
+                    vmap[pval2] = 0 - 1
+                }
+                pj = pj + 1
+            }
+        }
+        ii = ii + 1
+    }
+    if expanded == 0 {
+        return 0
+    }
+    // 提交重建
+    ir_insts_op = n_op
+    ir_insts_ty = n_ty
+    ir_insts_val = n_val
+    ir_insts_ops_off = n_off
+    ir_insts_ops_cnt = n_cnt
+    ir_ops = n_ops
+    ir_ops_kind = n_opsk
+    if expanded == 0 {
+        return 0
+    }
+    // 块区间重算：直接按 n_blk（产出指令归属，与主重建一一对应）线性重放——
+    // 2026-09-21 RCA：此前的重放在表提交之后用旧归属配新表内容，错位产生
+    // 空块/块尾缺 terminator（LLVM: expected instruction opcode）。
+    var new_start = table_new_i64()
+    var new_end = table_new_i64()
+    var zi: i64 = 0
+    while zi < nb {
+        table_push(new_start, 0 - 1)
+        table_push(new_end, 0 - 1)
+        zi = zi + 1
+    }
+    var nidx: i64 = 0
+    var nb2 = len(n_blk)
+    var r2i: i64 = 0
+    while r2i < nb2 {
+        var b5 = n_blk[r2i]
+        if new_start[b5] < 0 {
+            new_start[b5] = nidx
+        }
+        new_end[b5] = nidx + 1
+        nidx = nidx + 1
+        r2i = r2i + 1
+    }
+    ir_insts_op = n_op
+    ir_insts_ty = n_ty
+    ir_insts_val = n_val
+    ir_insts_ops_off = n_off
+    ir_insts_ops_cnt = n_cnt
+    ir_ops = n_ops
+    ir_ops_kind = n_opsk
+    bi = 0
+    while bi < nb {
+        var nst = new_start[bi]
+        if nst < 0 {
+            nst = 0
+        }
+        var nen = new_end[bi]
+        if nen < 0 {
+            nen = 0
+        }
+        ir_blocks_start[bi] = nst
+        ir_blocks_end[bi] = nen
+        bi = bi + 1
+    }
+    // 函数指令总数重算
+    var nf = len(ir_funcs_names)
+    var ftotal = table_new_i64()
+    var fi: i64 = 0
+    while fi < nf {
+        table_push(ftotal, 0)
+        fi = fi + 1
+    }
+    bi = 0
+    while bi < nb {
+        var fid5 = ir_blocks_func[bi]
+        if fid5 >= 0 && fid5 < nf {
+            ftotal[fid5] = ftotal[fid5] + (ir_blocks_end[bi] - ir_blocks_start[bi])
+        }
+        bi = bi + 1
+    }
+    fi = 0
+    while fi < nf {
+        ir_funcs_inst_total[fi] = ftotal[fi]
+        fi = fi + 1
+    }
+    // call 结果值 → 被调返回值 的传播 + DCE 清理死 call
+    apply_repl(repl, nvals0)
+    var d = dce()
+    if d < 0 {
+        return 0
+    }
+    return expanded
+}
+
+func run_t3() -> i64 {
+    // inline_expand 返回展开数（正数）；调用约定 0 = 成功，仅负值向上传递
+    var r = inline_expand()
+    if r < 0 {
+        return r
+    }
+    return 0
 }
 
 }
