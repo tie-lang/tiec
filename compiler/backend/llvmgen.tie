@@ -54,6 +54,13 @@ var g_inst_blk_ready: i64 = 0;
 var str_pool: table<i64>;   // 字符串池 id（登记序）
 var str_idx: table<i64>;    // 对应 @.str.N
 var str_count: i64 = 0;
+// p.9.14.4 性能（O(n) 化）：字符串池查询辅助表。旧 str_slot / str_len_of_slot
+// 每次线性扫 str_pool/str_idx（driver 闭包 ~10 万条诊断串 → 每处引用 O(S)，
+// emit funcs 5.9s 主源）。stamp/slot 表按 name_id 直查（跨编译只增，随
+// collect_strings 复位）；slot_len 按 slot 直索引（登记时算一次 byte_len）。
+var g_ss_stamp: table<i64>;   // name_id → slot（-1 = 未登记）
+var g_ss_slotv: table<i64>;   // name_id → slot（与 stamp 平行）
+var g_slot_len: table<i64>;   // slot → 字面量字节长（@.str.N 的 N）
 // printf i32 实参 sext 的新寄存器计数（LLVM 不支持内联 sext 表达式实参，
 // 每处 i32 实参生成一个独立 %ext<N> 寄存器）
 var g_sext_cnt: i64 = 0;
