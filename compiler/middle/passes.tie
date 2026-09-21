@@ -1,0 +1,43 @@
+type tie<class>
+// compiler/middle/passes.tie —— p.9.20.2 中端 pass 管道（t 轴）
+// ============================================================
+// 双轴优化器（docs/designs/tiec-dual-axis-optimizer.md，ROAD p.9.20）：
+// t 轴 = tie-IR pass 管道，挂 irgen 之后、llvmgen 之前（driver.kpass_irgen
+// 成功后调用 passes.run(level)）。与后端无关——trm/WASM 无 LLVM 优化器，
+// 本管道是其未来唯一优化层。
+//
+// 确定性硬门禁（design §6）：
+//   - pass 集合与顺序**版本化固定**：新增/改动 pass 必须 +1 g_pass_pipeline_ver，
+//     并同步缓存键（driver cache_key_str 的 M 段）与 tieir 单元头；
+//   - 同 (源码, l, t, target) → 输出逐字节恒等；
+//   - pass 禁止时间/地址/随机依赖；纯 tie，禁 Rust。
+//
+// 分期（ROAD p.9.20.3-5）：t1 单函数局部（常量折叠/代数化简/死值消除）→
+// t2 过程内（CSE/LICM/边界检查消除，让位 --check-bounds）→ t3 过程间
+// （小函数内联/tail call/字符串构建融合）。当前为框架占位：t0 直出，
+// t>0 尚无已注册 pass（幂等直通）。
+//
+// 布局约束：全局 var 必须在文件顶层（命名空间体内只允许函数/类/嵌套命名空间），
+// 函数入 namespace passes（driver 以 passes.run 跨命名空间调用）。
+
+var g_pass_pipeline_ver: i64 = 1;   // pass 集合版本（新增/改动 pass 必须 +1）
+
+namespace passes {
+
+// pass 管道版本（缓存键 / tieir 单元头 / 诊断显示用）。
+pub func pipeline_ver() -> i64 {
+    return g_pass_pipeline_ver
+}
+
+// 运行 t 轴 pass 管道：level = 生效 tiec 优化档（0-3）。返回 0 = 成功，负 = 失败。
+// t0：零 pass，直出（自举不动点不变）。
+pub func run(level: i64) -> i64 {
+    if level <= 0 {
+        return 0
+    }
+    // t1/t2/t3 pass 依序接入（p.9.20.3-5）；每级 = 前级超集（分级裁剪语义）。
+    // 当前框架占位：无已注册 pass，幂等直通（输出 = irgen 原始 tie-IR）。
+    return 0
+}
+
+}
