@@ -7,7 +7,8 @@ type tie<class>
 // 文件格式（tie:data 表字面量）：
 //   [
 //       "target": "win-x64",
-//       "opt": 2,
+//       "llvm_opt": 2,
+//       "tiec_opt": 0,
 //       "debug": true,
 //       "profile": "dev",
 //       "tiec": [
@@ -1297,10 +1298,15 @@ func build_defaults() -> i64 {
     c_ivals[dev_dbg] = 1
     table_push(dev_keys, "debug")
     table_push(dev_vals, dev_dbg)
-    var dev_opt = new_node(2)
-    c_ivals[dev_opt] = 0
-    table_push(dev_keys, "opt")
-    table_push(dev_vals, dev_opt)
+    // p.9.20 双轴：llvm_opt（LLVM/clang 轴）+ tiec_opt（tiec 中端轴）
+    var dev_llvm = new_node(2)
+    c_ivals[dev_llvm] = 0
+    table_push(dev_keys, "llvm_opt")
+    table_push(dev_vals, dev_llvm)
+    var dev_tie = new_node(2)
+    c_ivals[dev_tie] = 0
+    table_push(dev_keys, "tiec_opt")
+    table_push(dev_vals, dev_tie)
     table_push(dev_keys, "tiec")
     table_push(dev_vals, dev_tiec)
     var dev = new_node(6)
@@ -1320,10 +1326,14 @@ func build_defaults() -> i64 {
     c_ivals[rel_dbg] = 0
     table_push(rel_keys, "debug")
     table_push(rel_vals, rel_dbg)
-    var rel_opt = new_node(2)
-    c_ivals[rel_opt] = 2
-    table_push(rel_keys, "opt")
-    table_push(rel_vals, rel_opt)
+    var rel_llvm = new_node(2)
+    c_ivals[rel_llvm] = 2
+    table_push(rel_keys, "llvm_opt")
+    table_push(rel_vals, rel_llvm)
+    var rel_tie = new_node(2)
+    c_ivals[rel_tie] = 0
+    table_push(rel_keys, "tiec_opt")
+    table_push(rel_vals, rel_tie)
     table_push(rel_keys, "tiec")
     table_push(rel_vals, rel_tiec)
     var rel = new_node(6)
@@ -1342,11 +1352,16 @@ func build_defaults() -> i64 {
     // D1 target：空 = 本机
     table_push(root_keys, "target")
     table_push(root_vals, new_str_node(""))
-    // D3 opt：默认 2（与 CLI 默认一致）；debug：默认 false
+    // D3 双轴优化档（p.9.20）：llvm_opt 默认 2（与 CLI 默认一致）、tiec_opt 默认
+    // 0（零 pass，自举不动点不变）；debug：默认 false
     var opt_n = new_node(2)
     c_ivals[opt_n] = 2
-    table_push(root_keys, "opt")
+    table_push(root_keys, "llvm_opt")
     table_push(root_vals, opt_n)
+    var tie_n = new_node(2)
+    c_ivals[tie_n] = 0
+    table_push(root_keys, "tiec_opt")
+    table_push(root_vals, tie_n)
     var dbg_n = new_node(1)
     c_ivals[dbg_n] = 0
     table_push(root_keys, "debug")
@@ -1437,6 +1452,12 @@ pub func load_merge(project_path: string, cli_profile: string) -> i64 {
                 return -1
             }
         }
+    }
+    // p.9.20 双轴优化：顶层 `opt` 键已移除（拆 llvm_opt / tiec_opt），
+    // 出现即报错提示新键（破坏性变更无兼容期，避免静默沿用旧值）。
+    if map_get(root, "opt") >= 0 {
+        c_err_msg = "config 顶层 `opt` 键已移除（p.9.20 双轴优化）：改用 llvm_opt（LLVM/clang 轴 0-3）与 tiec_opt（tiec 中端轴 0-3）"
+        return -1
     }
     return root
 }

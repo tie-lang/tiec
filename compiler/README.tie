@@ -92,12 +92,13 @@ type tie<class>
 // ============================================================
 // 4. CLI 用法
 // ============================================================
-// 用法：tiec <input.tie> [-o <out>] [-O0|-O1|-O2|-O3] [--target <三元组>]
+// 用法：tiec <input.tie> [-o <out>] [-l<0-3> -t<0-3>] [--target <三元组>]（p.9.20 双轴优化）
 //                    [--emit-ir] [--keep-ir] [--prep-only] [--config <f>] [--help]
 // 退出码：0 成功 / 1 编译失败 / 2 参数错误。
 //
 //   -o <file>        输出路径（logic 默认：输入同名 .exe；library 默认：.a）
-//   -O0|-O1|-O2|-O3  优化级别（默认 -O2），映射到 opt -O{N}
+//   -l<0-3>          LLVM/clang 轴（默认 2），映射到 opt -O{N}
+//   -t<0-3>          tiec 中端轴（默认 0 = 零 pass；p.9.20）
 //   --target <三元组>  交叉编译目标（如 x86_64-pc-windows-msvc；平台别名自动归一化：
 //                    win-x64/win-x86/win-arm64/linux-x64/linux-arm64/macos-x64/
 //                    macos-arm64，未知名称原样透传）
