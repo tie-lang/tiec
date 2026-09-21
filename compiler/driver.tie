@@ -29,6 +29,8 @@ import "./config.tie"
 // S3.2：tieir 序列化（--tieir-out 输出分发单元 / --dump-irt 读回 dump）
 import "./middle/tieir_ser.tie"
 import "./middle/passes.tie"
+// p.9.20：单元头写入 t 档 / pass 管道版本（ir_meta 侧表）
+import "./middle/ir_meta.tie"
 // td→zd 压缩数据子命令（--compress-data）：表字面量 → DFS 平铺 → zd record
 import "./tdzd.tie"
 // p.6.9.15 诊断标号：error[E#####]/warning[W#####] 渲染（driver 打印入口）
@@ -1531,6 +1533,9 @@ func kpass_irgen() -> i64 {
 // 段 3 中端旁路：--tieir-out 序列化（无 g_tieir_out 直接返回 0 通过）。
 func kpass_tieir() -> i64 {
     if str_len(g_tieir_out) > 0 {
+        // p.9.20 §6.3：tieir 单元头携带 t 档与 pass 管道版本（可复现性自证）
+        ir_meta.set_tie_opt(effective_tie_opt())
+        ir_meta.set_pass_ver(passes.pipeline_ver())
         if !tieir.write(g_tieir_out) {
             println("tieir 序列化失败: " + tieir.err_msg())
             return 1
@@ -1551,6 +1556,9 @@ func kpass_trmemit() -> i64 {
     if str_len(out) == 0 {
         out = replace_ext(g_input, "tieir")
     }
+    // p.9.20 §6.3：trm 分发单元同样携带 t 档 / pass 管道版本
+    ir_meta.set_tie_opt(effective_tie_opt())
+    ir_meta.set_pass_ver(passes.pipeline_ver())
     if !tieir.write(out) {
         println(diagcode.render_error(-1, -1, "trm 目标后端失败: " + tieir.err_msg()))
         return 1

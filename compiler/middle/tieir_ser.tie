@@ -54,7 +54,9 @@ const TIEIR_MAGIC1: i64 = 73;    // 'I'
 const TIEIR_MAGIC2: i64 = 69;    // 'E'
 const TIEIR_MAGIC3: i64 = 73;    // 'I'
 const TIEIR_MAGIC4: i64 = 82;    // 'R'
-const TIEIR_VERSION: i64 = 1;    // 格式版本（V3 迁移转换器触发条件）
+// 格式版本（V3 迁移转换器触发条件）。v2（p.9.20）：模块头新增 t 轴档位与
+// pass 管道版本两个 i64——旧版读新版会错位，故 bump 并由版本校验拦截。
+const TIEIR_VERSION: i64 = 2;
 const SEC_HEAD: i64 = 2;         // 段号：模块头
 const SEC_STRPOOL: i64 = 3;      // 段号：字符串池
 const SEC_SYMTAB: i64 = 4;       // 段号：符号表
@@ -249,6 +251,9 @@ pub func serialize() -> table<i64> {
     wr_str(tieir_out, pool_str(ir_meta.get_pkg_version()))
     wr_i64(tieir_out, ir_meta.get_ir_version())
     wr_str(tieir_out, pool_str(ir_meta.get_compiler_version()))
+    // p.9.20：t 轴档位 + pass 管道版本（单元头可自证复现条件；格式版本 2 起）
+    wr_i64(tieir_out, ir_meta.get_tie_opt())
+    wr_i64(tieir_out, ir_meta.get_pass_ver())
     wr_i64(tieir_out, ir_meta.dep_count())
     var di: i64 = 0
     while di < ir_meta.dep_count() {
@@ -417,6 +422,9 @@ pub func deserialize(t: table<i64>) -> i64 {
     var pkg_ver = rd_str(t)
     var ir_ver = rd_i64(t)
     var comp_ver = rd_str(t)
+    // p.9.20：t 轴档位 + pass 管道版本（格式版本 2 起存在）
+    var tie_opt = rd_i64(t)
+    var pass_ver = rd_i64(t)
     var dep_n = rd_i64(t)
     if tieir_err != "" || !in_sec() {
         return -1
@@ -429,6 +437,8 @@ pub func deserialize(t: table<i64>) -> i64 {
     ir_meta.set_pkg_version(str_pool(pkg_ver))
     ir_meta.set_ir_version(ir_ver)
     ir_meta.set_compiler_version(str_pool(comp_ver))
+    ir_meta.set_tie_opt(tie_opt)
+    ir_meta.set_pass_ver(pass_ver)
     var dk: i64 = 0
     while dk < dep_n {
         var dn = rd_str(t)
@@ -710,6 +720,8 @@ pub func dump_text() -> string {
     s = s + " 版本=" + pool_str(ir_meta.get_pkg_version())
     s = s + " IR版本=" + to_string(ir_meta.get_ir_version())
     s = s + " 编译器=" + pool_str(ir_meta.get_compiler_version())
+    s = s + " t档=" + to_string(ir_meta.get_tie_opt())
+    s = s + " pass版本=" + to_string(ir_meta.get_pass_ver())
     s = s + " 依赖=" + to_string(ir_meta.dep_count())
     s = s + " | IR 规模: 函数=" + to_string(ir.func_count())
     s = s + " 块=" + to_string(ir.block_count())
