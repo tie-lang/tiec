@@ -22,7 +22,12 @@ type tie<class>
 //   块；call 族：① 被调方 + 实参值；常量指令：立即数即常量值
 //   （const_str 为字符串池 id）。
 //
-// # opcode 数据表（data 风格，权威 53 条，T2.8 消费说明见 op_desc）
+// # opcode 数据表（data 风格，权威 55 条，T2.8 消费说明见 op_desc）
+//   p.9.20.3 前置修复（2026-09-21）：旧表与实现漂移（ks71/ns70/gs73 长度不齐，
+//   且 14 个幽灵 code 实现中不存在）。现按实现权威重建——code/名字以
+//   irgen 产出（irgen_lit 等 new_inst 字面量）与 llvmgen 消费（llvmgen_inst
+//   的 op == N 分派）双向交叉一致为准；neg(5)/not(9) 由 sub 0,x 与 xor 实现，
+//   无独立 opcode。改 opcode 编号必须同步本表。
 //   数值 0-18 / 内存 20-26 / 控制流 30-36 / 调用 40-45 / 表字符串
 //   （op_find，不 import columnar——ir_meta 已 import，重复包含冲突）。
 //
@@ -84,91 +89,55 @@ var op_groups: table<i64>;             // opcode 表：组号（OP_GRP_*）
 var op_descs: table<string>;           // opcode 表：T2.8 消费说明
 
 namespace ir {
-// ---------- opcode 数据表（懒构建，权威 53 条）----------
+// ---------- opcode 数据表（懒构建，权威 55 条）----------
 
 func ensure_opcodes() {
     if len(op_keys) > 0 {
         return
     }
-    var ks: table<i64> = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-        15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
-        36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 50, 51, 52, 53, 54, 55, 56, 57, 58, 60,
-        61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73]
-    var ns: table<string> = ["add", "sub", "mul", "div", "mod", "neg",
-        "and", "or", "xor", "not", "shl", "shr", "icmp", "fadd", "fsub",
-        "fmul", "fdiv", "fmod", "fcmp", "sext", "zext", "alloca", "load", "store", "gep",
-        "ptrtoint", "inttoptr", "bitcast", "agg_gep", "sitofp", "br", "cond_br", "ret", "switch",
-        "unreachable", "phi", "select", "trunc", "fptosi", "fpext", "call", "call_vararg",
-        "extern_call", "printf", "println", "print", "udiv", "urem",
-        "table_push", "table_at", "table_set", "table_len",
-        "table_elem_ptr", "str_cat", "str_len", "table_copy", "const_i",
-        "const_f", "const_str", "const_null", "const_global", "inline_asm",
-        "atomic_load", "atomic_store", "atomicrmw", "cmpxchg", "call_indirect",
-        "volatile_load", "volatile_store", "dyn_call"]
-var gs: table<i64> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 3, 3, 3, 3, 3,
-        3, 3, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 1, 1, 1, 1, 3, 1, 1, 3]
-    var ds: table<string> = ["整数加，生成 add i64（ty 选宽度）",
-        "整数减，生成 sub i64", "整数乘，生成 mul i64",
-        "整数除，生成 sdiv i64", "整数模，生成 srem i64",
-        "取负，生成 sub i64 0, 操作数①", "位与/逻辑与（i64/i1，生成 and）",
-        "位或/逻辑或（i64/i1，生成 or）", "位异或，生成 xor i64",
-        "按位非，生成 xor -1（i1 用 xor true）", "左移，生成 shl i64",
-        "算术右移，生成 ashr i64（tie 有符号）",
-        "整数比较，生成 icmp cc（cc=操作数③立即数）",
-        "浮点加，生成 fadd double", "浮点减，生成 fsub double",
-        "浮点乘，生成 fmul double", "浮点除，生成 fdiv double",
-        "浮点模，生成 frem double", "浮点比较，生成 fcmp cc",
-        "符号扩展，生成 sext 源→目标（trit/窄整数提升，源=操作数① IMM）",
-        "无符号扩展，生成 zext 源→目标（无符号窄整数提升，源=操作数① IMM）",
-        "栈分配，生成 alloca Ty（入口块提升，F1 方案）",
-        "读内存，生成 load Ty, ptr 操作数①",
-        "写内存，生成 store Ty, ptr（无结果，ty=-1）",
-        "元素指针，生成 getelementptr Ty, ptr, i64 下标",
-        "指针转整数，生成 ptrtoint i64",
-        "整数转指针，生成 inttoptr ptr",
-        "位重解释，生成 bitcast Ty to Ty2",
-        "聚合元素指针，生成 getelementptr Ty, ptr, i32 0, i32 下标（元组/struct 字段）",
-        "整数转浮点，生成 sitofp 源→目标（数学函数整数实参提升，源=操作数① IMM）",
-        "无条件跳，生成 br label 操作数①（块）",
-        "条件跳，生成 br i1 条件, label then, label else（①②③）",
-        "返回，生成 ret Ty / ret void（无操作数）",
-        "跳转表，生成 switch i64, label dflt（case 成对=立即数+块）",
-        "不可达，生成 unreachable",
-        "汇合，生成 phi Ty [值, 块]（预留，T2.3 后启用）",
-        "三目，生成 select i1, Ty, Ty",
-        "整数截断，生成 trunc 源→目标（缩窄，源=操作数① IMM）",
-        "浮点转整数，生成 fptosi 源→目标（向零截断，源=操作数① IMM）",
-        "浮点扩展/截断，生成 fpext/fptrunc 源→目标（按目标宽度选，源=操作数① IMM）",
-        "普通调用，生成 call Ty @f（结果=值 id）",
-        "变参调用（printf 族），生成 call i32 (ptr, ...)，编号占 2 槽",
-        "外部符号调用，生成 call Ty @ext（extern 已声明）",
-        "printf 归约（gen_printf 同款）",
-        "打印并换行，printf + 换行格式",
-        "打印不换行，printf 原样输出（附 fflush）",
-        "无符号除，生成 udiv（checked_* 无符号反算检测）",
-        "无符号模，生成 urem（批次 2：i128/u128 十进制打印取余）",
-        "建表，生成 call ptr @tie_table_new(elem_size)（操作数①=元素大小）",
-        "表追加，生成 call void @tie_table_push(ptr, val)",
-        "表取元素，gep+load（越界走运行时错误）",
-        "表写元素，gep+store", "表长，load len 字段",
-        "表元素指针，gep 取地址（by_ref/by_ptr 传参路径）",
-        "字符串拼接，memcpy 内联（ir.rs 同款）",
-        "字符串长，生成 call @strlen",
-        "表实参展开拷贝，建新表+逐元素拷贝（A6 路径）",
-        "整数常量，内联常量操作数（无独立值编号）",
-        "浮点常量，全局常量或内联",
-        "字符串常量，生成字符串全局常量 + 地址值",
-        "空指针，生成 null", "全局符号地址，生成 @g（变量/函数名）",
-        "内联汇编，生成 call ... asm（模板=操作数①池 id，后续=方向IMM+值）",
-        "原子读，生成 load atomic（地址=操作数①，order=操作数② IMM）",
-        "原子写，生成 store atomic（地址=①，值=②，order=③ IMM）",
-        "读改写，生成 atomicrmw（地址=①，值=②，op=③ IMM，order=④ IMM）",
-        "比较交换，生成 cmpxchg（地址=①，期望=②，新值=③，succ=④，fail=⑤ IMM）",
-        "间接调用，生成 call Ty %entry(ptr env, args...)（S2.2 函数值调用）",
-        "volatile 读，生成 load volatile（MMIO/硬件寄存器：禁止优化删除/合并）",
-        "volatile 写，生成 store volatile（MMIO/硬件寄存器：禁止优化重排/合并）",
-        "动态 C 调用，生成 call %entry(args...)，按 retmode 截断 i32→zext i64 或直返 i64（p.6.6.20 std/sqlite）"]
+    var ks: table<i64> = [
+        0, 1, 2, 3, 4, 6, 7, 8, 10, 11, 12, 13, 14, 15,
+        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+        30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 41, 46, 47, 51,
+        56, 60, 62, 63, 65, 66, 67, 68, 69, 70, 71, 72, 73
+    ]
+    var ns: table<string> = [
+        "add", "sub", "mul", "div", "mod", "and", "or", "xor", "shl",
+        "shr", "icmp", "fadd", "fsub", "fmul", "fdiv", "fmod", "fcmp", "sext",
+        "alloca", "load", "store", "gep", "ptrtoint", "inttoptr", "bitcast", "agg_gep", "sitofp",
+        "zext", "br", "cond_br", "ret", "phi", "select", "call", "extern_call", "trunc",
+        "fptosi", "fpext", "call_vararg", "udiv", "urem", "const_f", "str_cat", "const_i", "const_str",
+        "const_global", "inline_asm", "atomic_load", "atomic_store", "atomicrmw", "cmpxchg", "call_indirect", "volatile_load", "volatile_store",
+        "dyn_call"
+    ]
+    var gs: table<i64> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 2, 2, 2, 2,
+        2, 3, 3, 0, 0, 0, 3, 0, 0, 5, 4, 5, 5, 5, 3, 1,
+        1, 1, 1, 3, 1, 1, 3
+    ]
+    var ds: table<string> = [
+        "整数加，生成 add i64（ty 选宽度）", "整数减，生成 sub i64", "整数乘，生成 mul i64",
+        "整数除，生成 sdiv i64", "整数模，生成 srem i64", "位与/逻辑与（i64/i1，生成 and）",
+        "位或/逻辑或（i64/i1，生成 or）", "位异或，生成 xor i64", "左移，生成 shl i64",
+        "右移：有符号 ashr / 无符号 lshr（按类型）", "整数比较，生成 icmp cc（cc=操作数③立即数）", "浮点加，生成 fadd double",
+        "浮点减，生成 fsub double", "浮点乘，生成 fmul double", "浮点除，生成 fdiv double",
+        "浮点余，生成 frem double", "浮点比较，生成 fcmp cc（cc=操作数③立即数）", "符号扩展（trit/窄整数提升）",
+        "栈槽分配（已提升到 entry）", "内存读（操作数[0]=地址）", "内存写（操作数 [类型IMM, 值VALUE, 地址VALUE]）",
+        "元素指针步进（ptr_add/slice_of 元素步长）", "指针转整数", "整数转指针",
+        "位重解释（f64↔i64 同宽 64 位直读）", "聚合元素指针（元组/struct 字段）", "整数转浮点（数学函数整数实参提升）",
+        "无符号扩展（无符号窄整数提升）", "无条件跳转 label %block", "条件跳转（[cond VALUE, then BLOCK, else BLOCK]）",
+        "返回（无操作数 = ret void）", "φ 节点（[值1, 块1, 值2, 块2, ...]，值可为 IMM）", "三目选择（[cond VALUE, then VALUE, else VALUE]）",
+        "用户函数调用（[0]=符号池id, [1]=返回类型IMM, ...）", "外部函数调用（[0]=符号名池 id, [1]=返回类型IMM, ...）", "整数截断（缩窄，S1.3 窄整数）",
+        "浮点转整数（向零截断，S1.3 as_* 显式转换）", "浮点宽度转换（f32↔f64，S1.3）", "可变参调用（printf；[0]=格式串池 id）",
+        "无符号除（S1.3 checked_* 无符号反算检测用）", "无符号模（i128/u128 十进制打印取余）", "浮点常量（操作数=浮点文本池 id，llvmgen 规范化补小数点）",
+        "字符串拼接（操作数 [lhs, rhs] → malloc+memcpy）", "整型常量（操作数=立即数；结果宽度按 ins_ty）", "字符串常量（操作数=字符串池 id；结果为 i64 指针）",
+        "全局符号地址（函数/全局变量 → i64 指针整数）", "内联汇编（模板=操作数①池 id，后续=方向IMM+值）", "原子读（地址=①，order=② IMM）",
+        "原子写（地址=①，值=②，order=③ IMM）", "读改写（地址=①，值=②，op=③ IMM，order=④ IMM）", "比较交换（地址=①，期望=②，新值=③，succ=④，fail=⑤ IMM）",
+        "间接调用（entry 函数指针 VALUE + 实参，S2.2 函数值调用）", "volatile 读（MMIO/硬件寄存器：禁止优化删除/合并）", "volatile 写（MMIO/硬件寄存器：禁止优化重排/合并）",
+        "动态 C 调用（按 retmode 截断 i32→zext i64 或直返 i64）"
+    ]
+
     op_keys = table_new_i64()
     op_names = table_new_string()
     op_groups = table_new_i64()
