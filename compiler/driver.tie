@@ -7,7 +7,7 @@ type tie<logic>
 // tig_ast()（AST 已由 frontend 就绪，不再二次执行前端；tig_src 由
 // driver-lite/_driver_test 使用）。
 //
-// 用法：tiec <input.tie> [-o <out>] [-O0|-O1|-O2|-O3] [--target <三元组>]
+// 用法：tiec <input.tie> [-o <out>] [-l<0-3> -t<0-3>] [--target <三元组>]（p.9.20 双轴优化）
 //                    [--emit-ir] [--keep-ir] [--no-warn] [--prep-only] [--config <f>] [--help]
 // 退出码：0 成功 / 1 编译失败 / 2 参数错误。
 //
@@ -28,6 +28,7 @@ import "./backend/toolchain.tie"
 import "./config.tie"
 // S3.2：tieir 序列化（--tieir-out 输出分发单元 / --dump-irt 读回 dump）
 import "./middle/tieir_ser.tie"
+import "./middle/passes.tie"
 // td→zd 压缩数据子命令（--compress-data）：表字面量 → DFS 平铺 → zd record
 import "./tdzd.tie"
 // p.6.9.15 诊断标号：error[E#####]/warning[W#####] 渲染（driver 打印入口）
@@ -54,8 +55,10 @@ unsafe extern fn clock() -> i64;
 // ==================== 全局 ====================
 var g_input: string = "";
 var g_output: string = "";        // -o 指定（空 = 默认）
-var g_opt_level: i64 = 0;         // -O 显式（g_opt_set 为 true 时生效）
-var g_opt_set: bool = false;      // 是否显式指定 -O
+var g_llvm_opt: i64 = 2;          // -l LLVM/clang 轴（g_llvm_set 显式时生效；p.9.20 双轴）
+var g_llvm_set: bool = false;     // 是否显式指定 -l / --llvm-opt
+var g_tie_opt: i64 = 0;           // -t tiec 中端轴（0 = 零 pass；p.9.20）
+var g_tie_set: bool = false;      // 是否显式指定 -t / --tie-opt
 var g_target: string = "";        // --target（空 = 未指定）
 // p.9.1.2 编译资源可调（利好老电脑）：
 var g_mem_limit: i64 = 0;         // --mem-limit <MB>：内存上限（0 = 不限；>0 时 -O3 受限降为 O2）
@@ -109,9 +112,10 @@ func usage() -> i64 {
     println("tiec —— tie 自举编译器（tie 语言自写）")
     println("用法: tiec <input.tie> [选项]")
     println("  -o <file>        输出可执行文件（logic 默认输入同名 .exe；library 默认 .a）")
-    println("  -O0|-O1|-O2|-O3  优化级别（默认 -O2；-O 等价 -O2；优先级 CLI -O > 配置/profile > 默认）")
-    println("            注：头部旧 `// tie:opt=N` 指令已移除（legacy），opt 仅 CLI/config 控制")
-    println("  --mem-limit <MB>  内存上限（0 = 不限；>0 时优化档 O3 受限自动降为 O2，利好老电脑）")
+    println("  -l<0-3>          LLVM/clang 优化轴：opt 子进程 + clang 档（默认 2；--llvm-opt= 等价；优先级 CLI > 配置/profile > 默认）")
+    println("  -t<0-3>          tiec 中端优化轴：tie-IR pass 管道（默认 0 = 零 pass；--tie-opt= 等价；p.9.20）")
+    println("            注：头部旧 `// tie:opt=N` 指令已移除（legacy），优化仅 CLI/config 控制")
+    println("  --mem-limit <MB>  内存上限（0 = 不限；>0 时 LLVM 轴 l3 受限自动降为 l2，利好老电脑）")
     println("  --jobs <N>       编译并发度（0 = 默认；预留配置 advanced.threads，并行随 p.9.1.3 增量/缓存落地）")
     println("  --no-cache       关闭编译缓存（默认开启：产物缓存到 ~/.tiec-cache 或 cache.dir，命中直接复制跳过编译）")
     println("  --no-warn        跳过警告检查（tiec 警告与 LLVM 工具链警告一并静默；错误 error[E#####] 不受影响）")
@@ -132,6 +136,26 @@ func usage() -> i64 {
     println("  --dump-docs      解析输入源码后输出 doc 注释注册表摘要（p.9.11.29；不编译）")
     println("  --help           显示本帮助")
     return 0
+}
+
+// ==================== p.9.20 双轴优化档解析 ====================
+// 优化档值解析：严格单字符 '0'..'3'（负例返回 -1）。
+// 定义位置须早于 parse_args（tie 先定义后使用）。
+func parse_opt_level(s: string) -> i64 {
+    if str_len(s) != 1 {
+        return -1
+    }
+    var c = str_char(s, 0)
+    if c == "0" {
+        return 0
+    } else if c == "1" {
+        return 1
+    } else if c == "2" {
+        return 2
+    } else if c == "3" {
+        return 3
+    }
+    return -1
 }
 
 // 解析参数：返回 0 正常 / 2 请求帮助 / -1 参数错误。g_* 填充解析结果。
@@ -166,22 +190,44 @@ func parse_args() -> i64 {
             }
             g_output = arg_string(i + 1)
             i = i + 1
-        } else if a == "-O0" {
-            g_opt_level = 0
-            g_opt_set = true
-        } else if a == "-O1" {
-            g_opt_level = 1
-            g_opt_set = true
-        } else if a == "-O2" {
-            g_opt_level = 2
-            g_opt_set = true
-        } else if a == "-O3" {
-            g_opt_level = 3
-            g_opt_set = true
-        } else if a == "-O" {
-            // p.9.1.2：裸 -O 等价 -O2（release 默认）
-            g_opt_level = 2
-            g_opt_set = true
+        } else if str_len(a) >= 2 && str_char(a, 0) == "-" && (str_char(a, 1) == "l" || str_char(a, 1) == "t") {
+            // p.9.20 双轴：-l<0-3> LLVM/clang 轴 / -t<0-3> tiec 中端轴（粘连取值）。
+            // 负例（-l9 / -lx / 分离式 -l 2）统一落到下面的明确诊断，不退化成
+            // 通用「参数错误」（否则用户无法定位是优化档写错）。
+            var lv = parse_opt_level(str.slice(a, 2, str_len(a)))
+            if lv < 0 {
+                var hint = "无效优化档 '" + a + "'：应为 -l<0-3>（LLVM/clang 轴）或 -t<0-3>（tiec 中端轴），例 -l2 -t0"
+                if str_len(a) == 2 {
+                    hint = "优化档需粘连取值：-l<0-3>（LLVM/clang 轴）/ -t<0-3>（tiec 中端轴），例 -l2 -t0；不支持 '" + a + " <值>' 分离式"
+                }
+                println(diagcode.render_error(-1, -1, hint))
+                return -1
+            }
+            if str_char(a, 1) == "l" {
+                g_llvm_opt = lv
+                g_llvm_set = true
+            } else {
+                g_tie_opt = lv
+                g_tie_set = true
+            }
+        } else if has_prefix(a, "--llvm-opt=") {
+            g_llvm_opt = parse_opt_level(str.slice(a, 11, str_len(a)))
+            if g_llvm_opt < 0 {
+                println(diagcode.render_error(-1, -1, "无效 LLVM 优化档 '" + a + "'：应为 --llvm-opt=<0-3>"))
+                return -1
+            }
+            g_llvm_set = true
+        } else if has_prefix(a, "--tie-opt=") {
+            g_tie_opt = parse_opt_level(str.slice(a, 10, str_len(a)))
+            if g_tie_opt < 0 {
+                println(diagcode.render_error(-1, -1, "无效 tiec 优化档 '" + a + "'：应为 --tie-opt=<0-3>"))
+                return -1
+            }
+            g_tie_set = true
+        } else if str_len(a) >= 2 && str_char(a, 1) == "O" {
+            // p.9.20：-O* 硬移除（破坏性变更无兼容期），报错提示新用法
+            println(diagcode.render_error(-1, -1, "优化参数 -O* 已移除：拆分为 -l<L>（LLVM/clang 轴）与 -t<T>（tiec 中端轴），例：-l2 -t0；长参 --llvm-opt=<0-3> / --tie-opt=<0-3>"))
+            return -1
         } else if a == "--mem-limit" {
             if i + 1 >= n {
                 return -1
@@ -1383,11 +1429,15 @@ func main() -> i64 {
         }
     }
     // CLI 显式参数 → 覆盖合并结果（最高优先；CLI 是显式意图，不警告）
-    if g_opt_set {
-        g_cfg_root = config.apply_cli(g_cfg_root, "opt", to_string(g_opt_level))
+    // p.9.20 双轴：llvm_opt / tiec_opt 两键独立覆盖
+    if g_llvm_set {
+        g_cfg_root = config.apply_cli(g_cfg_root, "llvm_opt", to_string(g_llvm_opt))
+    }
+    if g_tie_set {
+        g_cfg_root = config.apply_cli(g_cfg_root, "tiec_opt", to_string(g_tie_opt))
     }
     // p.9.1.2：编译资源可调——内存上限 / 并发度写入配置（降档逻辑在
-    // effective_opt_level，见 kpass_link）。（mem_limit>0 才覆盖；0=不限跳过）
+    // effective_llvm_opt，见 kpass_link）。（mem_limit>0 才覆盖；0=不限跳过）
     if g_mem_limit != 0 {
         g_cfg_root = config.apply_cli(g_cfg_root, "tiec.mem_limit", to_string(g_mem_limit))
     }
@@ -1466,6 +1516,13 @@ func kpass_irgen() -> i64 {
             msg = "irgen 最小集之外的语句（尚未支持）"
         }
         println("IR 生成失败: " + msg)
+        return 1
+    }
+    // p.9.20.2 中端 pass 管道（t 轴）：irgen 之后、llvmgen 之前。
+    // 失败 = pass 内部错误（诊断由 pass 侧输出），终止编译。
+    var mrc = passes.run(effective_tie_opt())
+    if mrc != 0 {
+        println(diagcode.render_error(-1, -1, "中端 pass 失败（t" + to_string(effective_tie_opt()) + "）"))
         return 1
     }
     return 0
@@ -1547,16 +1604,16 @@ func kpass_emit() -> i64 {
     return 0
 }
 
-// ==================== p.9.1.2 优化档解析（含内存上限降档） ====================
-// 生效优化档优先级：CLI -O 显式 > config（含 profile 激活）> 默认 2。
-// 内存上限（--mem-limit / config tiec.mem_limit）>0 表示节省内存意图，
-// 此时 -O3 自动降为 -O2（打印诊断警告）。0 = 不限，行为不变。
-func effective_opt_level() -> i64 {
-    var level = g_opt_level
-    if !g_opt_set {
+// ==================== p.9.20 双轴优化档解析（含内存上限降档） ====================
+// 生效 LLVM/clang 轴优化档（l 轴）优先级：CLI -l/--llvm-opt 显式 > config
+// （含 profile 激活）> 默认 2。内存上限（--mem-limit / config tiec.mem_limit）
+// >0 表示节省内存意图，此时 l3 自动降为 l2（打印诊断警告）。0 = 不限，行为不变。
+func effective_llvm_opt() -> i64 {
+    var level = g_llvm_opt
+    if !g_llvm_set {
         level = 2
         if g_cfg_root >= 0 {
-            var cfg_opt = config.get_int(g_cfg_root, "opt")
+            var cfg_opt = config.get_int(g_cfg_root, "llvm_opt")
             if cfg_opt >= 1 && cfg_opt <= 3 {
                 level = cfg_opt
             }
@@ -1569,9 +1626,23 @@ func effective_opt_level() -> i64 {
     if limit > 0 && level >= 3 {
         // 降级行为不受 --no-warn 影响，只抑制打印
         if !g_no_warn {
-            println(diagcode.render_warning(-1, -1, "内存上限 " + to_string(limit) + "MB 下优化档 O3 受限，已自动降为 O2"))
+            println(diagcode.render_warning(-1, -1, "内存上限 " + to_string(limit) + "MB 下 LLVM 优化档 l3 受限，已自动降为 l2"))
         }
         level = 2
+    }
+    return level
+}
+
+// 生效 tiec 中端轴优化档（t 轴）优先级：CLI -t/--tie-opt 显式 > config
+// （含 profile 激活）> 默认 0（零 pass，自举不动点不变；p.9.20）。
+// t 轴不受 --mem-limit 影响（pass 管道非内存大头）。
+func effective_tie_opt() -> i64 {
+    var level = g_tie_opt
+    if !g_tie_set && g_cfg_root >= 0 {
+        var cfg_t = config.get_int(g_cfg_root, "tiec_opt")
+        if cfg_t >= 0 && cfg_t <= 3 {
+            level = cfg_t
+        }
     }
     return level
 }
@@ -1585,7 +1656,7 @@ func kpass_link() -> i64 {
     }
     var opt_path = replace_ext(str.clone(ir_path), "opt.ll")
     // S3.1 + p.9.1.2：opt 优先级 CLI -O > 配置（含 profile）> 默认 2；受内存上限降档
-    var level = effective_opt_level()
+    var level = effective_llvm_opt()
     var orc = tc.opt(ir_path, opt_path, level)
     if orc != 0 {
         println(diagcode.render_error(-1, -1, "中间优化失败: " + tc_err_msg))
@@ -1828,9 +1899,11 @@ func dep_cache_key() -> string {
         m = m + lines[i] + "\n"
         i = i + 1
     }
-    // 输出相关参数（对齐旧 cache_key_str：优化档/目标/角色/shared/emit/fastmath/bounds + 盐）
-    var level = effective_opt_level()
-    m = m + g_input + "\n" + g_output + "\nO" + to_string(level) + "\nT" + g_target + "\nR" + g_role
+    // 输出相关参数（对齐旧 cache_key_str：双轴优化档/目标/角色/shared/emit/fastmath/bounds + 盐）
+    // p.9.20：优化键拆 L（LLVM/clang 轴）+ M（tiec 中端轴）——键变化 = 缓存一次性全失效
+    var level = effective_llvm_opt()
+    var topt = effective_tie_opt()
+    m = m + g_input + "\n" + g_output + "\nL" + to_string(level) + "\nM" + to_string(topt) + "\nTG" + g_target + "\nR" + g_role
     if g_shared {
         m = m + "\nS1"
     } else {
@@ -1982,10 +2055,13 @@ func str_hash(s: string) -> i64 {
 }
 
 // 缓存键：把输入源码与全部输出相关参数织入哈希（改动任一即失效重编）。
+// p.9.20：优化键拆 L（LLVM/clang 轴）+ M（tiec 中端轴）+ TG（目标），须与
+// dep_cache_key 逐字段对齐——两处不同步会导致命中过期产物。
 func cache_key_str(src: string) -> string {
-    var level = effective_opt_level()
-    var m = src + "\n" + g_input + "\n" + g_output + "\nO" + to_string(level) +
-        "\nT" + g_target + "\nR" + g_role
+    var level = effective_llvm_opt()
+    var topt = effective_tie_opt()
+    var m = src + "\n" + g_input + "\n" + g_output + "\nL" + to_string(level) +
+        "\nM" + to_string(topt) + "\nTG" + g_target + "\nR" + g_role
     if g_shared {
         m = m + "\nS1"
     } else {

@@ -74,7 +74,9 @@ func check_eq_int(actual: i64, expected: i64, msg: string) {
 func test_parse_full() {
     var src = "[\n" +
         "    \"target\": \"win-x64\",\n" +
-        "    \"opt\": 2,\n" +
+        // p.9.20 双轴：顶层 `opt` 键已拆 llvm_opt（LLVM/clang 轴）+ tiec_opt（中端轴）
+        "    \"llvm_opt\": 2,\n" +
+        "    \"tiec_opt\": 0,\n" +
         "    \"debug\": true,\n" +
         "    \"profile\": \"dev\",\n" +
         "    \"tiec\": [\n" +
@@ -107,7 +109,9 @@ func test_parse_full() {
         return
     }
     check_eq_str(config.get_str(root, "target"), "win-x64", "target=win-x64")
-    check_eq_int(config.get_int(root, "opt"), 2, "opt=2")
+    // p.9.20：旧 `opt` 键拆分，两轴独立取值
+    check_eq_int(config.get_int(root, "llvm_opt"), 2, "llvm_opt=2")
+    check_eq_int(config.get_int(root, "tiec_opt"), 0, "tiec_opt=0")
     check(config.get_bool(root, "debug"), "debug=true")
     check_eq_str(config.get_str(root, "profile"), "dev", "profile=dev")
     check_eq_str(config.get_str(root, "tiec.backend"), "win32", "tiec.backend=win32")
@@ -154,9 +158,11 @@ func test_parse_error() {
 
 // 4) 合并：深合并 + 数组追加 + 标量覆盖 + 独有键
 func test_merge() {
-    var base = config.parse("[\"opt\": 2, \"debug\": false, \"tiec\": [\"backend\": \"win32\", \"features\": [\"async\"], \"link\": [\"user32\"]]]")
+    // 注：此处标量键用中性的 `rank`（非优化档）——p.9.20 起 `opt` 是顶层保留旧键，
+    // 在 load_merge 中会报错，故通用合并用例不复用该名。
+    var base = config.parse("[\"rank\": 2, \"debug\": false, \"tiec\": [\"backend\": \"win32\", \"features\": [\"async\"], \"link\": [\"user32\"]]]")
     // 第二次解析用 parse_append（不重置存储）——parse 会 reset_store 清空 base 节点
-    var layer = config.parse_append("[\"opt\": 0, \"tiec\": [\"backend\": \"wasm\", \"features\": [\"macro\"]]]")
+    var layer = config.parse_append("[\"rank\": 0, \"tiec\": [\"backend\": \"wasm\", \"features\": [\"macro\"]]]")
     check(base >= 0 && layer >= 0, "合并双方解析成功")
     if base < 0 || layer < 0 {
         return
@@ -166,7 +172,7 @@ func test_merge() {
     if merged < 0 {
         return
     }
-    check_eq_int(config.get_int(merged, "opt"), 0, "合并: 标量 layer 覆盖 (opt=0)")
+    check_eq_int(config.get_int(merged, "rank"), 0, "合并: 标量 layer 覆盖 (rank=0)")
     check(!config.get_bool(merged, "debug"), "合并: 独有键保留 (debug=false)")
     check_eq_str(config.get_str(merged, "tiec.backend"), "wasm", "合并: 嵌套标量覆盖 (tiec.backend=wasm)")
     check_eq_str(config.get_list(merged, "tiec.features"), "async,macro", "合并: 数组追加 (features=async,macro)")
@@ -197,7 +203,9 @@ func test_defaults_profile() {
     check_eq_str(config.get_str(root, "tiec.backend"), "win32", "默认 backend=win32")
     check_eq_str(config.get_str(root, "profile"), "dev", "默认 profile=dev")
     check(config.get_bool(root, "debug"), "dev profile: debug=true")
-    check_eq_int(config.get_int(root, "opt"), 0, "dev profile: opt=0")
+    // p.9.20：两轴独立默认值（dev = l0/t0）
+    check_eq_int(config.get_int(root, "llvm_opt"), 0, "dev profile: llvm_opt=0")
+    check_eq_int(config.get_int(root, "tiec_opt"), 0, "dev profile: tiec_opt=0")
     check(config.get_bool(root, "tiec.bounds_check"), "dev profile: bounds_check=true")
     // CLI --profile=release → debug=false, opt=2, bounds_check=false
     var rel = config.load_merge("", "release")
@@ -206,7 +214,9 @@ func test_defaults_profile() {
         return
     }
     check(!config.get_bool(rel, "debug"), "release profile: debug=false")
-    check_eq_int(config.get_int(rel, "opt"), 2, "release profile: opt=2")
+    // p.9.20：release = l2/t0
+    check_eq_int(config.get_int(rel, "llvm_opt"), 2, "release profile: llvm_opt=2")
+    check_eq_int(config.get_int(rel, "tiec_opt"), 0, "release profile: tiec_opt=0")
     check(!config.get_bool(rel, "tiec.bounds_check"), "release profile: bounds_check=false")
 }
 
@@ -219,10 +229,13 @@ func test_apply_cli() {
     }
     root = config.apply_cli(root, "target", "linux-arm64")
     root = config.apply_cli(root, "tiec.backend", "wasm")
-    root = config.apply_cli(root, "opt", "3")
+    // p.9.20：CLI 覆盖走双轴键
+    root = config.apply_cli(root, "llvm_opt", "3")
+    root = config.apply_cli(root, "tiec_opt", "2")
     check_eq_str(config.get_str(root, "target"), "linux-arm64", "CLI: target=linux-arm64")
     check_eq_str(config.get_str(root, "tiec.backend"), "wasm", "CLI: tiec.backend=wasm")
-    check_eq_int(config.get_int(root, "opt"), 3, "CLI: opt=3")
+    check_eq_int(config.get_int(root, "llvm_opt"), 3, "CLI: llvm_opt=3")
+    check_eq_int(config.get_int(root, "tiec_opt"), 2, "CLI: tiec_opt=2")
 }
 
 // 8) dump 摘要
