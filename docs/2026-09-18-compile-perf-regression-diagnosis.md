@@ -205,4 +205,9 @@ driver.tie 的完整 .ll 输出 SHA 逐字节一致（`2a9d5be6…`，25MB）；
 | 前端+IR | 53.9s | 14.9s | **11.6s** |
 | 完整自举 | ~95s | 27.8s | **24.0s** |
 
-* `compiler/tiec.exe` 已更新（`211b73e5…`）。*EN: This is an internal diagnostic archive. Status: RESOLVED (2026-09-21, S8-S9).*
+* `compiler/tiec.exe` 已更新（`211b73e5…`）。
+* **-O3 对照实验（2026-09-21）**：`-O3` 构建的 tiec 自举 25.3/24.4s vs `-O2` 的
+  24.0/24.5s——两轮统计平手，无收益（瓶颈在 opt/clang 子进程与内存受限的串表
+  操作，非编译器自身代码路径的指令级优化）；二进制 +92KB。**确定性结论**：
+  自举不动点与 IR 输出对宿主编译档位不变——O2/O3 构建的编译器，其 driver.ll
+  （`2a9d5be6…`）与自举产物（`211b73e5…`）均逐字节一致。维持默认 `-O2`。*EN: This is an internal diagnostic archive. Status: RESOLVED (2026-09-21, S8-S9).*
