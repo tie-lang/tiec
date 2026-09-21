@@ -184,4 +184,25 @@ split 追加写逻辑位并补齐旧实现缺失的 lexemes 列。语义逐点�
   74 条 golden 语料新旧编译器输出（stdout+stderr+退出码，剔除警告行、绕过缓存）
   **逐字节全等（diff=0）**——此前 test-diagcodes 出现的 3 条 NO-CODE 波动为
   编译缓存状态污染（缓存键未含编译器版本），非编译器回归（缓存键改进列为后续项）。
-* `compiler/tiec.exe` 已更新为含本轮修复的版本（`4a8fbb76…`）。*EN: This is an internal diagnostic archive. Status: RESOLVED (2026-09-21, S8-S9).*
+### 9.4 emit funcs 补充修复（同日）：str_pool 线性扫描
+
+相位隔离采样（emit 窗口）显示剩余热点为另一对线性查表：`str_slot(name_id)`
+（扫 str_pool 找池 id → @.str.N 序号）与 `str_len_of_slot(slot)`（扫 str_idx 找
+序号 → 字面量字节长）——每次 O(S)，S = 全部字符串字面量条数（driver ~10 万条
+诊断串），每处字符串引用触发 → O(S × 引用数)。**修复**：`g_ss_stamp`/`g_ss_slotv`
+印章表直查（随 collect_strings 复位）+ `g_slot_len` 登记时直索引（byte_len 只算一次）。
+
+实测：emit 8.3s → **5.5s**（funcs 6.2s → 3.9s，ren 533ms）；剩余为线性文本构建
+（25MB .ll），复采无支配性平方热点。**等价性验证升级**：新旧编译器对同一
+driver.tie 的完整 .ll 输出 SHA 逐字节一致（`2a9d5be6…`，25MB）；不动点
+`211b73e5…` 三轮全等；**完整自举 27.8s → 24.0s**。
+
+| 阶段 | 最初 | §9 修复后 | §9.4 修复后 |
+|---|---|---|---|
+| parse | 452ms | 45ms | 41ms |
+| sem | 26.4s | 3.1s | 4.0s |
+| emit | 23.8s | 8.8s | **5.5s** |
+| 前端+IR | 53.9s | 14.9s | **11.6s** |
+| 完整自举 | ~95s | 27.8s | **24.0s** |
+
+* `compiler/tiec.exe` 已更新（`211b73e5…`）。*EN: This is an internal diagnostic archive. Status: RESOLVED (2026-09-21, S8-S9).*
