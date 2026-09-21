@@ -192,13 +192,11 @@ func asm_tmpl_convert(t: string) -> string {
 }
 // S2.1：@.str.N 序号 → 该字符串常量字节长度（与 emit_strings 同款 utf.byte_len）。
 // 头部长度字段是 {ptr,len} 表示的编译期来源——字面量在 .rodata 带 8 字节 i64 头。
+// p.9.14.4：O(1) 直索引（str_slot 登记时算好 g_slot_len[slot]），替代线性扫
+// str_idx（每处字符串引用 O(S)，S = 全部字面量条数 → emit 平方源）。
 func str_len_of_slot(slot: i64) -> i64 {
-    var i: i64 = 0
-    while i < len(str_pool) {
-        if str_idx[i] == slot {
-            return utf.byte_len(intern.lookup(str_pool[i]))
-        }
-        i = i + 1
+    if slot >= 0 && slot < len(g_slot_len) {
+        return g_slot_len[slot]
     }
     return 0
 }
@@ -215,17 +213,22 @@ func str_data_ref(slot: i64) -> string {
 }
 
 // 查找/登记字符串池 id → @.str.N 序号
+// p.9.14.4：O(1) 印章表直查（g_ss_stamp/g_ss_slotv，-1 = 未登记），替代线性
+// 扫 str_pool（每条字符串指令 O(S)）。登记时同步算好 g_slot_len[slot]。
 func str_slot(name_id: i64) -> i64 {
-    var i: i64 = 0
-    while i < len(str_pool) {
-        if str_pool[i] == name_id {
-            return str_idx[i]
-        }
-        i = i + 1
+    while len(g_ss_stamp) <= name_id {
+        table_push(g_ss_stamp, -1)
+        table_push(g_ss_slotv, -1)
+    }
+    if g_ss_stamp[name_id] >= 0 {
+        return g_ss_slotv[name_id]
     }
     var n = str_count
     table_push(str_pool, name_id)
     table_push(str_idx, n)
+    g_ss_stamp[name_id] = n
+    g_ss_slotv[name_id] = n
+    table_push(g_slot_len, utf.byte_len(intern.lookup(name_id)))
     str_count = str_count + 1
     return n
 }
@@ -234,6 +237,9 @@ func str_slot(name_id: i64) -> i64 {
 func collect_strings() {
     str_pool = table_new_i64()
     str_idx = table_new_i64()
+    g_ss_stamp = table_new_i64()
+    g_ss_slotv = table_new_i64()
+    g_slot_len = table_new_i64()
     str_count = 0
     var ni = ir.inst_count()
     var i: i64 = 0
