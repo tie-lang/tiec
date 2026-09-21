@@ -458,4 +458,233 @@ pub func diag_off(inst_id: i64) -> i64 {
     return ir_insts_ops_off[inst_id]
 }
 
+// ---------- p.9.20.3 中端 pass 写 API ----------
+// 原则：最小写面。改写只允许两种形态——整指令改写为单 IMM 常量（const 折叠）、
+// 操作数原位替换（值传播）；物理删除走 compact_dead（块区间整体重建）。
+
+// 操作数原位替换（值传播/化简后回写）。k 越界静默忽略（防御）。
+pub func set_opnd(inst_id: i64, k: i64, operand: i64, kind: i64) {
+    if inst_id < 0 || inst_id >= len(ir_insts_op) {
+        return
+    }
+    var off = ir_insts_ops_off[inst_id]
+    if k < 0 || k >= ir_insts_ops_cnt[inst_id] {
+        return
+    }
+    ir_ops[off + k] = operand
+    ir_ops_kind[off + k] = kind
+}
+
+// 把指令整体改写为单 IMM 操作数形态（const 折叠：op 置为 const_i，结果
+// 类型/值 id 不变，使用者无需改写）。原操作数段首槽被覆盖、cnt 截为 1，
+// 尾部留空洞——compact_dead 重建操作数段时自然消除。
+pub func rewrite_to_const(inst_id: i64, opcode: i64, imm: i64) {
+    if inst_id < 0 || inst_id >= len(ir_insts_op) {
+        return
+    }
+    var off = ir_insts_ops_off[inst_id]
+    if ir_insts_ops_cnt[inst_id] < 1 {
+        return
+    }
+    ir_insts_op[inst_id] = opcode
+    ir_ops[off] = imm
+    ir_ops_kind[off] = 2   // OK_IMM
+    ir_insts_ops_cnt[inst_id] = 1
+}
+
+// DCE 物理压缩：移除 dead[inst_id]=true 的指令，重建指令表/操作数段/块区间/
+// 函数 inst_total。返回移除数；前提被破坏（指令不在任何块区间内，即存在孤儿
+// 指令）返回 -1 且不动任何表——调用方据此放弃 DCE（保守降级，绝不丢指令）。
+pub func compact_dead(dead: table<bool>) -> i64 {
+    var total = len(ir_insts_op)
+    // 前提校验：块区间必须无缝覆盖 [0, total)
+    var nb = len(ir_blocks_func)
+    var cover: i64 = 0
+    var bi: i64 = 0
+    while bi < nb {
+        cover = cover + (ir_blocks_end[bi] - ir_blocks_start[bi])
+        bi = bi + 1
+    }
+    if cover != total {
+        return 0 - 1
+    }
+    var n_op = table_new_i64()
+    var n_ty = table_new_i64()
+    var n_val = table_new_i64()
+    var n_off = table_new_i64()
+    var n_cnt = table_new_i64()
+    var n_ops = table_new_i64()
+    var n_opsk = table_new_i64()
+    var removed: i64 = 0
+    // 归属表：指令 -> 块 / 函数（块区间无缝覆盖，任意序填写均无冲突）
+    var inst_blk = table_new_i64()
+    var inst_fn = table_new_i64()
+    var fill: i64 = 0
+    while fill < total {
+        table_push(inst_blk, 0 - 1)
+        table_push(inst_fn, 0 - 1)
+        fill = fill + 1
+    }
+    bi = 0
+    while bi < nb {
+        var s0 = ir_blocks_start[bi]
+        var ii0 = s0
+        while ii0 < ir_blocks_end[bi] {
+            inst_blk[ii0] = bi
+            inst_fn[ii0] = ir_blocks_func[bi]
+            ii0 = ii0 + 1
+        }
+        bi = bi + 1
+    }
+    // 参数段与指令段在 ir_ops 内交错分布（irgen 逐函数：先 push 参数、再生成
+    // 该函数指令），params_off 指向 ir_ops 绝对下标——重建时必须按「函数参数段
+    // → 该函数指令段」的原相对顺序搬移，并同步重写 params_off（2026-09-21 RCA：
+    // 漏搬参数段导致 param_val 错位、llvmgen 输出未定义寄存器，t1 自举失败）。
+    // 压缩顺序：按**旧指令 id 线性保序**——llvmgen 按指令 id 序输出块标签与指令
+    //（块创建序≠指令落位序：空块先建、指令后落位会使块 id 序与指令序相反），
+    // 按块 id 序重排会颠倒块文本序、制造 use-before-def（2026-09-21 RCA ②）。
+    var last_fid: i64 = 0 - 1
+    var handled = table_new_bool()
+    var fh: i64 = 0
+    while fh < len(ir_funcs_names) {
+        table_push(handled, false)
+        fh = fh + 1
+    }
+    var ii: i64 = 0
+    while ii < total {
+        var fid = inst_fn[ii]
+        if fid != last_fid && fid >= 0 && fid < len(ir_funcs_names) && !handled[fid] {
+            // 进入新函数（按指令 id 序首见）：先搬它的参数段
+            var poff = ir_funcs_params_off[fid]
+            var pcnt = ir_funcs_params_cnt[fid]
+            ir_funcs_params_off[fid] = len(n_ops)
+            handled[fid] = true
+            var pk: i64 = 0
+            while pk < pcnt {
+                table_push(n_ops, ir_ops[poff + pk])
+                table_push(n_opsk, ir_ops_kind[poff + pk])
+                pk = pk + 1
+            }
+            last_fid = fid
+        }
+        if !dead[ii] {
+            table_push(n_op, ir_insts_op[ii])
+            table_push(n_ty, ir_insts_ty[ii])
+            table_push(n_val, ir_insts_val[ii])
+            table_push(n_off, len(n_ops))
+            table_push(n_cnt, ir_insts_ops_cnt[ii])
+            var off = ir_insts_ops_off[ii]
+            var cnt = ir_insts_ops_cnt[ii]
+            var k: i64 = 0
+            while k < cnt {
+                table_push(n_ops, ir_ops[off + k])
+                table_push(n_opsk, ir_ops_kind[off + k])
+                k = k + 1
+            }
+        } else {
+            removed = removed + 1
+        }
+        ii = ii + 1
+    }
+    // 防御：无指令的函数（func_entry=-1 等未在指令序中出现）参数段按旧 off
+    // 升序搬移（数量小，插入排序）
+    var pend_f = table_new_i64()
+    var fi2: i64 = 0
+    while fi2 < len(ir_funcs_names) {
+        if !handled[fi2] {
+            var pos = len(pend_f)
+            table_push(pend_f, fi2)
+            while pos > 0 && ir_funcs_params_off[pend_f[pos - 1]] > ir_funcs_params_off[fi2] {
+                pend_f[pos] = pend_f[pos - 1]
+                pos = pos - 1
+            }
+            pend_f[pos] = fi2
+        }
+        fi2 = fi2 + 1
+    }
+    var pi2: i64 = 0
+    while pi2 < len(pend_f) {
+        var fid3 = pend_f[pi2]
+        var poff3 = ir_funcs_params_off[fid3]
+        var pcnt3 = ir_funcs_params_cnt[fid3]
+        ir_funcs_params_off[fid3] = len(n_ops)
+        var pk3: i64 = 0
+        while pk3 < pcnt3 {
+            table_push(n_ops, ir_ops[poff3 + pk3])
+            table_push(n_opsk, ir_ops_kind[poff3 + pk3])
+            pk3 = pk3 + 1
+        }
+        pi2 = pi2 + 1
+    }
+    // 块的新边界：旧指令 id 线性保序后，各块剩余指令在新表仍连续；
+    // 首条存活指令新 id = start，末条 +1 = end。空块（指令全删）置 [s,s)。
+    var new_start = table_new_i64()
+    var new_end = table_new_i64()
+    var zi: i64 = 0
+    while zi < nb {
+        table_push(new_start, 0 - 1)
+        table_push(new_end, 0 - 1)
+        zi = zi + 1
+    }
+    var nidx: i64 = 0
+    ii = 0
+    while ii < total {
+        if !dead[ii] {
+            var b2 = inst_blk[ii]
+            if new_start[b2] < 0 {
+                new_start[b2] = nidx
+            }
+            new_end[b2] = nidx + 1
+            nidx = nidx + 1
+        }
+        ii = ii + 1
+    }
+    if removed == 0 {
+        return 0
+    }
+    ir_insts_op = n_op
+    ir_insts_ty = n_ty
+    ir_insts_val = n_val
+    ir_insts_ops_off = n_off
+    ir_insts_ops_cnt = n_cnt
+    ir_ops = n_ops
+    ir_ops_kind = n_opsk
+    bi = 0
+    while bi < nb {
+        var nst = new_start[bi]
+        if nst < 0 {
+            nst = 0
+        }
+        var nen = new_end[bi]
+        if nen < 0 {
+            nen = 0
+        }
+        ir_blocks_start[bi] = nst
+        ir_blocks_end[bi] = nen
+        bi = bi + 1
+    }
+    // 函数指令总数重算（按块归属累加）
+    var nf = len(ir_funcs_names)
+    var ftotal = table_new_i64()
+    var fi: i64 = 0
+    while fi < nf {
+        table_push(ftotal, 0)
+        fi = fi + 1
+    }
+    bi = 0
+    while bi < nb {
+        var fid4 = ir_blocks_func[bi]
+        if fid4 >= 0 && fid4 < nf {
+            ftotal[fid4] = ftotal[fid4] + (ir_blocks_end[bi] - ir_blocks_start[bi])
+        }
+        bi = bi + 1
+    }
+    fi = 0
+    while fi < nf {
+        ir_funcs_inst_total[fi] = ftotal[fi]
+        fi = fi + 1
+    }
+    return removed
+}
+
 }   // namespace ir
