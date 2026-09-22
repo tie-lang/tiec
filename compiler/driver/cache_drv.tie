@@ -1,0 +1,322 @@
+type tie<class>
+// compiler/driver/cache_drv.tie —— driver 依赖感知缓存子模块
+// ============================================================
+// 从 driver.tie 拆出（p.9.21 方法库化：driver 编排薄壳）。
+// 拆分范式：同编译单元跨文件（文本内联）——本文件只含函数与注释，
+// 顶层全局 var 与 import 树均留在 driver.tie 主文件，避免重复定义。
+// 风格 ns：函数在 `namespace driver` 内，一律 pub（driver 库 API 面）；
+// 主文件顶层 main() 以 driver.<名>() 调用。
+namespace driver {
+// 缓存目录：config cache.dir 非空用它；否则 ~/.tiec-cache（USERPROFILE 或 HOME）。
+// 取不到 home 返回 ""（视为关闭缓存）。
+pub func cache_dir_value() -> string {
+    if g_cfg_root >= 0 {
+        var d = config.get_str(g_cfg_root, "cache.dir")
+        if str_len(d) > 0 {
+            return d
+        }
+    }
+    var home = get_env("USERPROFILE")
+    if str_len(home) == 0 {
+        home = get_env("HOME")
+    }
+    if str_len(home) == 0 {
+        return ""
+    }
+    return home + "/.tiec-cache"
+}
+
+// 依赖集 = 入口源码路径（g_input，规范绝对）+ semantic.imported_paths()
+//（语义 expand_imports 展开的全部依赖文件，已去重防环）。
+pub func dep_depset() -> table<string> {
+    var out: table<string> = table_new_string()
+    table_push(out, str.clone(g_input))
+    var imp = semantic.imported_paths()
+    var i: i64 = 0
+    while i < len(imp) {
+        table_push(out, imp[i])
+        i = i + 1
+    }
+    return out
+}
+
+// 单文件指纹（p.9.15.1 暂用 str_hash 对照；tsha1r 内联实现待定）
+pub func dep_file_fp(p: string) -> string {
+    if !file_exists(p) {
+        return ""
+    }
+    var b = file_read(p)
+    if b == "" {
+        return ""
+    }
+    return to_string(str_hash(b))
+}
+
+// 字典序插入排序（driver 内自有，编译期可用——interp 的 sort_strings 桥
+// 非编译期内建，原生 driver 不能调用）。返回新表（不改入参）。
+pub func dep_sort_strings(t: table<string>) -> table<string> {
+    var n = len(t)
+    var a = t
+    var i: i64 = 1
+    while i < n {
+        var key = a[i]
+        var j = i - 1
+        while j >= 0 && a[j] > key {
+            a[j + 1] = a[j]
+            j = j - 1
+        }
+        a[j + 1] = key
+        i = i + 1
+    }
+    return a
+}
+
+// 聚合缓存键：依赖集每文件指纹 → "规范路径:fp" 按字典序排序拼接 → 与
+// 输出相关参数串一起 tsha1r → 键名（纯 hex，无碰撞隐患）。
+pub func dep_cache_key() -> string {
+    var ds = dep_depset()
+    var lines: table<string> = table_new_string()
+    var i: i64 = 0
+    while i < len(ds) {
+        var p = ds[i]
+        var fp = dep_file_fp(p)
+        table_push(lines, p + ":" + fp)
+        i = i + 1
+    }
+    // 排序（依赖路径字典序，确定可复现）
+    lines = dep_sort_strings(lines)
+    var m: string = ""
+    i = 0
+    while i < len(lines) {
+        m = m + lines[i] + "\n"
+        i = i + 1
+    }
+    // 输出相关参数（对齐旧 cache_key_str：双轴优化档/目标/角色/shared/emit/fastmath/bounds + 盐）
+    // p.9.20：优化键拆 L（LLVM/clang 轴）+ M（tiec 中端轴）——键变化 = 缓存一次性全失效
+    var level = effective_llvm_opt()
+    var topt = effective_tie_opt()
+    m = m + g_input + "\n" + g_output + "\nL" + to_string(level) + "\nM" + to_string(topt) + "\nTG" + g_target + "\nR" + g_role
+    if g_shared {
+        m = m + "\nS1"
+    } else {
+        m = m + "\nS0"
+    }
+    if g_emit_ir {
+        m = m + "\nE1"
+    } else {
+        m = m + "\nE0"
+    }
+    if g_cli_fast_math {
+        m = m + "\nF1"
+    } else {
+        m = m + "\nF0"
+    }
+    if g_cli_check_bounds {
+        m = m + "\nC1"
+    } else {
+        m = m + "\nC0"
+    }
+    m = m + "\nv" + g_cache_salt
+    return "tc" + to_string(str_hash(m))
+}
+
+// 写 .dep 清单文本：每行 "路径 指纹"。
+pub func dep_manifest_text() -> string {
+    var ds = dep_depset()
+    var out: string = ""
+    var i: i64 = 0
+    while i < len(ds) {
+        out = out + ds[i] + " " + dep_file_fp(ds[i]) + "\n"
+        i = i + 1
+    }
+    return out
+}
+
+// .dep 清单复核：逐行解析 "路径 指纹"，对当前磁盘指纹对账；任一不符（含
+// 清单缺失/损坏/文件已删除）返回 false。命中兜底校验（防聚合键漏网变动）。
+pub func dep_manifest_ok(ck: string) -> bool {
+    if !file_exists(ck + ".dep") {
+        return false
+    }
+    var txt = file_read(ck + ".dep")
+    if txt == "" {
+        return false
+    }
+    var rest = txt
+    var p = find_char(rest, "\n")
+    while p >= 0 {
+        var line = slice(str.clone(rest), 0, p)
+        rest = slice(str.clone(rest), p + 1, str_len(rest))
+        var sp = find_char(line, " ")
+        if sp < 0 {
+            return false
+        }
+        var path = slice(str.clone(line), 0, sp)
+        var fp = slice(str.clone(line), sp + 1, str_len(line))
+        if dep_file_fp(path) != fp {
+            return false
+        }
+        p = find_char(rest, "\n")
+    }
+    // 末行（可能无换行结尾）
+    if str_len(rest) > 0 {
+        var sp = find_char(rest, " ")
+        if sp < 0 {
+            return false
+        }
+        var path = slice(str.clone(rest), 0, sp)
+        var fp = slice(str.clone(rest), sp + 1, str_len(rest))
+        if dep_file_fp(path) != fp {
+            return false
+        }
+    }
+    return true
+}
+
+// 依赖感知缓存命中判定（keel_run_pipeline 内 kpass_front 后调用）：
+// 返回 1=命中（产物已复制到目标路径）/ 0=未命中（继续管线）/ -1=错误。
+pub func cache_try_hit_dep() -> i64 {
+    var artifact = output_artifact_path()
+    if str_len(artifact) == 0 {
+        return 0
+    }
+    var ck = cache_dir_value() + "/" + dep_cache_key()
+    // 主缓存对象 + .dep 清单 + 产物指纹全部对账才算命中
+    if !file_exists(ck) {
+        return 0
+    }
+    if !dep_manifest_ok(ck) {
+        return 0
+    }
+    if file_copy(ck, artifact) {
+        // 产物二次指纹核对（防缓存对象损坏/被篡改）
+        if dep_file_fp(artifact) == dep_file_fp(ck) {
+            println("缓存命中（依赖感知）: " + artifact)
+            return 1
+        }
+        return 0
+    }
+    return 0
+}
+
+// 编译成功后写依赖感知缓存：主对象（产物字节复制到聚合键名下）+
+// .dep 清单（指纹对账）。返回 0 / -1（写失败）。
+pub func cache_store_dep() -> i64 {
+    var artifact = output_artifact_path()
+    if str_len(artifact) == 0 {
+        return 0
+    }
+    if !file_exists(artifact) {
+        return 0
+    }
+    var cdir = cache_dir_value()
+    if !file_is_dir(cdir) {
+        if !mkdir_all(cdir) {
+            return -1
+        }
+    }
+    var ck = cdir + "/" + dep_cache_key()
+    if file_copy(artifact, ck) {
+        // 先写主对象，再写 .dep 清单（清单丢失时命中判定直接失效重编，安全）
+        if file_write(ck + ".dep", dep_manifest_text()) {
+            println("已缓存编译产物（依赖感知）: " + artifact)
+            return 0
+        }
+    }
+    return 0
+}
+
+// 31 位取模哈希（i64 无溢出风险；阶 *31+b mod M 足够散列且确定）。
+pub func str_hash(s: string) -> i64 {
+    var M: i64 = 2147483647
+    var h: i64 = 0
+    var i: i64 = 0
+    var n: i64 = str_len(s)
+    while i < n {
+        var b = str_byte(s, i)
+        if b < 0 {
+            b = b + 256
+        }
+        h = (h * 31 + b) % M
+        i = i + 1
+    }
+    if h < 0 {
+        h = 0 - h
+    }
+    return h
+}
+
+// 缓存键：把输入源码与全部输出相关参数织入哈希（改动任一即失效重编）。
+// p.9.20：优化键拆 L（LLVM/clang 轴）+ M（tiec 中端轴）+ TG（目标），须与
+// dep_cache_key 逐字段对齐——两处不同步会导致命中过期产物。
+pub func cache_key_str(src: string) -> string {
+    var level = effective_llvm_opt()
+    var topt = effective_tie_opt()
+    var m = src + "\n" + g_input + "\n" + g_output + "\nL" + to_string(level) +
+        "\nM" + to_string(topt) + "\nTG" + g_target + "\nR" + g_role
+    if g_shared {
+        m = m + "\nS1"
+    } else {
+        m = m + "\nS0"
+    }
+    if g_emit_ir {
+        m = m + "\nE1"
+    } else {
+        m = m + "\nE0"
+    }
+    // S1.4：fast-math 与越界检查影响产物，织入缓存键（默认关，缺省行为不变）
+    if g_cli_fast_math {
+        m = m + "\nF1"
+    } else {
+        m = m + "\nF0"
+    }
+    if g_cli_check_bounds {
+        m = m + "\nC1"
+    } else {
+        m = m + "\nC0"
+    }
+    m = m + "\nv" + g_cache_salt
+    return "tc" + to_string(str_hash(m))
+}
+
+// 目标产物路径（与 compile_logic/compile_library/compile_shared/kpass_emit 分歧
+// 一致）；无法判定（空输出 + 未知形态）返回 ""（此时不缓存）。
+pub func output_artifact_path() -> string {
+    if g_emit_ir {
+        if str_len(g_output) > 0 {
+            return replace_ext(g_output, "ll")
+        }
+        return replace_ext(g_input, "ll")
+    }
+    var disp = role_output(str.clone(g_role))
+    if disp == "lib" {
+        if str_len(g_output) > 0 {
+            return g_output
+        }
+        if g_shared {
+            if is_linux_target(g_target) {
+                return replace_ext(g_input, "so")
+            }
+            return replace_ext(g_input, "dll")
+        }
+        return replace_ext(g_input, "a")
+    }
+    // logic / script
+    if str_len(g_output) > 0 {
+        return g_output
+    }
+    if is_linux_target(g_target) {
+        return replace_ext(g_input, "")
+    }
+    return replace_ext(g_input, "exe")
+}
+
+// 编译缓存是否启用：非 --no-cache 且能解析到缓存目录。
+pub func cache_enabled() -> bool {
+    if g_no_cache {
+        return false
+    }
+    return str_len(cache_dir_value()) > 0
+}
+
+}

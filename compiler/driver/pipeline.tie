@@ -1,0 +1,449 @@
+type tie<class>
+// compiler/driver/pipeline.tie —— driver 编译管线（kpass 序列 / 后端驱动）子模块
+// ============================================================
+// 从 driver.tie 拆出（p.9.21 方法库化：driver 编排薄壳）。
+// 拆分范式：同编译单元跨文件（文本内联）——本文件只含函数与注释，
+// 顶层全局 var 与 import 树均留在 driver.tie 主文件，避免重复定义。
+// 风格 ns：函数在 `namespace driver` 内，一律 pub（driver 库 API 面）；
+// 主文件顶层 main() 以 driver.<名>() 调用。
+namespace driver {
+// 段 1 前端：词法 + 语法 + 语义（含 import）。失败返回 1（frontend 内部已
+// 打印诊断，wrapper 不重复打印）。
+pub func kpass_front() -> i64 {
+    if frontend(k_g_src, k_g_base_dir) < 0 {
+        return 1
+    }
+    return 0
+}
+
+// 段 2 中端：AST → tie-IR（tig_ast 复用 frontend 产物）。含 asm! 目标注入。
+pub func kpass_irgen() -> i64 {
+    var asm_target = normalize_target(g_target)
+    if asm_target == "trm" {
+        // p.7.3.3 路线 B：trm 字节码目标不带 CPU 三元组——IR 生成用本机默认
+        // （字节码产物与平台无关）
+        asm_target = ""
+    }
+    if str_len(asm_target) == 0 && g_cfg_root >= 0 {
+        var cfg_target = config.get_str(g_cfg_root, "target")
+        if str_len(cfg_target) > 0 {
+            asm_target = normalize_target(cfg_target)
+        }
+    }
+    if str_len(asm_target) == 0 {
+        asm_target = "x86_64-pc-windows-msvc"  // 本机默认（Windows x64 开发机）
+    }
+    irgen.set_target(asm_target)
+    unsafe {
+        var t2 = clock()
+    }
+    var rc = irgen.tig_ast()
+    unsafe {
+        var t2e = clock()
+    }
+    g_t_irgen = t2e - t2
+    if rc < 0 {
+        var msg = sm_err_msg
+        if str_len(msg) == 0 {
+            msg = "irgen 最小集之外的语句（尚未支持）"
+        }
+        println("IR 生成失败: " + msg)
+        return 1
+    }
+    // p.9.20.2 中端 pass 管道（t 轴）：irgen 之后、llvmgen 之前。
+    // 失败 = pass 内部错误（诊断由 pass 侧输出），终止编译。
+    var mrc = passes.run(effective_tie_opt())
+    if mrc != 0 {
+        println(diagcode.render_error(-1, -1, "中端 pass 失败（t" + to_string(effective_tie_opt()) + "）"))
+        return 1
+    }
+    return 0
+}
+
+// 段 3 中端旁路：--tieir-out 序列化（无 g_tieir_out 直接返回 0 通过）。
+pub func kpass_tieir() -> i64 {
+    if str_len(g_tieir_out) > 0 {
+        // p.9.20 §6.3：tieir 单元头携带 t 档与 pass 管道版本（可复现性自证）
+        ir_meta.set_tie_opt(effective_tie_opt())
+        ir_meta.set_pass_ver(passes.pipeline_ver())
+        if !tieir.write(g_tieir_out) {
+            println("tieir 序列化失败: " + tieir.err_msg())
+            return 1
+        }
+        println("已生成 tieir: " + g_tieir_out)
+    }
+    return 0
+}
+
+// 段 3b（p.7.3.3 路线 B）：trm 字节码目标——写出 .tieir 分发单元并终止
+// （不 llvm emit/link；可插拔后端，默认不启用）。输出路径优先级：
+// --tieir-out > -o > 输入同名 .tieir。
+pub func kpass_trmemit() -> i64 {
+    var out = g_tieir_out
+    if str_len(out) == 0 {
+        out = g_output
+    }
+    if str_len(out) == 0 {
+        out = replace_ext(g_input, "tieir")
+    }
+    // p.9.20 §6.3：trm 分发单元同样携带 t 档 / pass 管道版本
+    ir_meta.set_tie_opt(effective_tie_opt())
+    ir_meta.set_pass_ver(passes.pipeline_ver())
+    if !tieir.write(out) {
+        println(diagcode.render_error(-1, -1, "trm 目标后端失败: " + tieir.err_msg()))
+        return 1
+    }
+    println("trm 目标产物: " + out + "（tieir 字节码，供 trm 引擎加载执行）")
+    return 0
+}
+
+// 段 4 后端：tie-IR → .ll 文本 + 写盘。g_emit_ir 时打印阶段计时并返回 0
+//（成功停，link 段由驱动侧 max_steps 截断跳过）。
+pub func kpass_emit() -> i64 {
+    unsafe {
+        var t3 = clock()
+    }
+    var ll_text = llvmgen.emit()
+    unsafe {
+        var t3e = clock()
+    }
+    g_t_emit = t3e - t3
+    // r.1.4.4：未支持指令硬错误——不再静默降级为占位注释继续链接
+    if str_len(llvmgen.err_msg()) > 0 {
+        println(diagcode.render_error(-1, -1, "代码生成失败: " + llvmgen.err_msg()))
+        return 1
+    }
+    // IR 文件路径：--emit-ir → -o 或 输入.ll；否则中间文件（输出基准）
+    var ir_path = replace_ext(g_input, "ll")
+    if str_len(g_output) > 0 {
+        ir_path = replace_ext(g_output, "ll")
+    }
+    unsafe {
+        var t4 = clock()
+    }
+    if !file_write(ir_path, ll_text) {
+        println("文件操作失败: 写 IR 文件 " + ir_path)
+        return 1
+    }
+    unsafe {
+        var t4e = clock()
+    }
+    g_t_write = t4e - t4
+    if g_emit_ir {
+        // 阶段计时报告（TIEC_TIME=1）：parse/sem/irgen/emit/write 五段
+        if get_env("TIEC_TIME") == "1" {
+            println("[time] parse=" + to_string(g_t_parse) + "ms sem=" + to_string(g_t_sem) +
+                "ms irgen=" + to_string(g_t_irgen) + "ms emit=" + to_string(g_t_emit) +
+                "ms write=" + to_string(g_t_write) + "ms")
+        }
+        println("已生成 LLVM IR: " + ir_path)
+        return 0
+    }
+    return 0
+}
+
+// ==================== p.9.20 双轴优化档解析（含内存上限降档） ====================
+// 生效 LLVM/clang 轴优化档（l 轴）优先级：CLI -l/--llvm-opt 显式 > config
+// （含 profile 激活）> 默认 2。内存上限（--mem-limit / config tiec.mem_limit）
+// >0 表示节省内存意图，此时 l3 自动降为 l2（打印诊断警告）。0 = 不限，行为不变。
+pub func effective_llvm_opt() -> i64 {
+    var level = g_llvm_opt
+    if !g_llvm_set {
+        level = 2
+        if g_cfg_root >= 0 {
+            var cfg_opt = config.get_int(g_cfg_root, "llvm_opt")
+            if cfg_opt >= 1 && cfg_opt <= 3 {
+                level = cfg_opt
+            }
+        }
+    }
+    var limit = g_mem_limit
+    if limit == 0 && g_cfg_root >= 0 {
+        limit = config.get_int(g_cfg_root, "tiec.mem_limit")
+    }
+    if limit > 0 && level >= 3 {
+        // 降级行为不受 --no-warn 影响，只抑制打印
+        if !g_no_warn {
+            println(diagcode.render_warning(-1, -1, "内存上限 " + to_string(limit) + "MB 下 LLVM 优化档 l3 受限，已自动降为 l2"))
+        }
+        level = 2
+    }
+    return level
+}
+
+// 生效 tiec 中端轴优化档（t 轴）优先级：CLI -t/--tie-opt 显式 > config
+// （含 profile 激活）> 默认 0（零 pass，自举不动点不变；p.9.20）。
+// t 轴不受 --mem-limit 影响（pass 管道非内存大头）。
+pub func effective_tie_opt() -> i64 {
+    var level = g_tie_opt
+    if !g_tie_set && g_cfg_root >= 0 {
+        var cfg_t = config.get_int(g_cfg_root, "tiec_opt")
+        if cfg_t >= 0 && cfg_t <= 3 {
+            level = cfg_t
+        }
+    }
+    return level
+}
+
+// 段 5 后端：opt → 链接/归档（lib→compile_library/compile_shared，其余→
+// compile_logic 三路 link 分支）。
+pub func kpass_link() -> i64 {
+    var ir_path = replace_ext(g_input, "ll")
+    if str_len(g_output) > 0 {
+        ir_path = replace_ext(g_output, "ll")
+    }
+    var opt_path = replace_ext(str.clone(ir_path), "opt.ll")
+    // S3.1 + p.9.1.2：opt 优先级 CLI -O > 配置（含 profile）> 默认 2；受内存上限降档
+    var level = effective_llvm_opt()
+    var orc = tc.opt(ir_path, opt_path, level)
+    if orc != 0 {
+        println(diagcode.render_error(-1, -1, "中间优化失败: " + tc_err_msg))
+        return 1
+    }
+    // S3.1：target 优先级 CLI --target > 配置 target > 空（本机）
+    var target = normalize_target(g_target)
+    if str_len(target) == 0 && g_cfg_root >= 0 {
+        target = normalize_target(config.get_str(g_cfg_root, "target"))
+    }
+    var disp2 = role_output(str.clone(g_role))
+    if disp2 == "lib" {
+        // M5 动态库模式（--shared / 输出 .dll/.so）：走共享库链接（非静态库 .a）
+        if g_shared {
+            return compile_shared(ir_path, opt_path, target)
+        }
+        return compile_library(ir_path, opt_path, target)
+    }
+    // lib 之外（check/pass 已提前 return）：exe / 空 = 可执行管线
+    return compile_logic(ir_path, opt_path, target)
+}
+
+// driver 次引导：登记 5 个真实 pass + 1 条真实 pipeline（幂等，返回真实
+// pipeline 注册项 id）。真实 pass 的 impl_name = "kpass_*"。
+pub func keel_driver_boot() -> i64 {
+    var fd: table<i64> = table_new_i64()
+    var pf = keelreg.register("tiec::pass_front_real", "pass", "kpass_front", fd)
+    var idd: table<i64> = table_new_i64()
+    table_push(idd, pf)
+    var pi = keelreg.register("tiec::pass_irgen_real", "pass", "kpass_irgen", idd)
+    var itd: table<i64> = table_new_i64()
+    table_push(itd, pi)
+    var pt = keelreg.register("tiec::pass_tieir_real", "pass", "kpass_tieir", itd)
+    var etd: table<i64> = table_new_i64()
+    table_push(etd, pt)
+    var pe = keelreg.register("tiec::pass_emit_real", "pass", "kpass_emit", etd)
+    var ltd: table<i64> = table_new_i64()
+    table_push(ltd, pe)
+    var pl = keelreg.register("tiec::pass_link_real", "pass", "kpass_link", ltd)
+    // p.7.3.3 路线 B：trm 字节码目标可插拔后端（pass_trmemit + pipeline_trm；
+    // 默认不启用——pipeline_real 全程不动，默认编译链路逐字节不变）
+    var ptd: table<i64> = table_new_i64()
+    table_push(ptd, pi)
+    var ptm = keelreg.register("tiec::pass_trmemit_real", "pass", "kpass_trmemit", ptd)
+    var trmd: table<i64> = table_new_i64()
+    table_push(trmd, pf)
+    table_push(trmd, pi)
+    table_push(trmd, ptm)
+    g_trm_pipeline = keelreg.register("tiec::pipeline_trm", "pipeline", "", trmd)
+    var pdd: table<i64> = table_new_i64()
+    table_push(pdd, pf)
+    table_push(pdd, pi)
+    table_push(pdd, pt)
+    table_push(pdd, pe)
+    table_push(pdd, pl)
+    return keelreg.register("tiec::pipeline_real", "pipeline", "", pdd)
+}
+
+// C1 分派（impl_name "kpass_*" → 整数选择子 → driver 真实 pass）。
+pub func keel_dispatch(nm: string) -> i64 {
+    var sel: i64 = -1
+    if nm == "kpass_front" {
+        sel = 0
+    } else if nm == "kpass_irgen" {
+        sel = 1
+    } else if nm == "kpass_tieir" {
+        sel = 2
+    } else if nm == "kpass_emit" {
+        sel = 3
+    } else if nm == "kpass_link" {
+        sel = 4
+    } else if nm == "kpass_trmemit" {
+        sel = 5
+    }
+    switch sel {
+        case 0:
+            return kpass_front()
+        case 1:
+            return kpass_irgen()
+        case 2:
+            return kpass_tieir()
+        case 3:
+            return kpass_emit()
+        case 4:
+            return kpass_link()
+        case 5:
+            return kpass_trmemit()
+        default:
+            return -1
+    }
+}
+
+// 驱动注册表管线：读 pipeline:real 的「有序 pass 引用列表」，逐个按
+// impl_name 分派执行；任一非 0 立即中止返回（等价 executor.run_pipeline）。
+// max_steps 截断前缀（--emit-ir 场景断在 emit 后，跳过 opt/link）。
+// p.9.15.1：kpass_front（语义含 import 展开）完成后，sstate.g_imported 已含
+// 全部依赖路径——在此处做依赖感知缓存判定：命中则跳过后续 pass 直接返回成功
+//（产物已由缓存复制到目标路径，见 cache_try_hit_dep）。
+pub func keel_run_pipeline(pid: i64, max_steps: i64) -> i64 {
+    var n = keelreg.deps_count(pid)
+    if max_steps > 0 && max_steps < n {
+        n = max_steps
+    }
+    var i: i64 = 0
+    while i < n {
+        var ref_id = keelreg.deps_at(pid, i)
+        var iname = keelreg.impl_name_of(ref_id)
+        if iname == "" {
+            return -1
+        }
+        // p.9.15.1 依赖感知缓存：front 完成后判定（命中 → 后续 pass 跳过）。
+        // 仅对「真实管线」生效；trm 路线 B（独立分派）与 --emit-ir 前的
+        // 提前返回路径不受影响（g_trm_mode 单独拦截于 compile_program）。
+        if iname == "kpass_front" {
+            var frc = keel_dispatch(iname)
+            if frc != 0 {
+                return frc
+            }
+            if cache_enabled() {
+                var hit = cache_try_hit_dep()
+                if hit == 1 {
+                    return 0  // 命中：产物已复制，整条管线到此为止
+                }
+                if hit < 0 {
+                    return -1
+                }
+            }
+        } else {
+            var rc = keel_dispatch(iname)
+            if rc != 0 {
+                return rc
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+pub func compile_program(src: string) -> i64 {
+    // base_dir：输入路径的目录（import 展开需要）；\\ 归一化为 /
+    k_g_base_dir = dir_of(str.clone(g_input))
+    k_g_src = src
+    // Keel 骨架引导：boot（内建默认注册项）→ driver 次引导（真实注册项）。
+    // 幂等：重复调用不重复登记（register 重名返回原 id）。
+    keelboot.boot()
+    var real_pid = keel_driver_boot()
+    // --emit-ir：只跑 front→irgen→tieir→emit 前缀（emit 内成功停），跳过
+    // opt/link；否则全 5 段。
+    var steps: i64 = 5
+    if g_emit_ir {
+        steps = 4
+    }
+    // p.7.3.3 路线 B：trm 字节码目标（不缓存，产物 .tieir 独立分派）
+    if g_trm_mode {
+        return keel_run_pipeline(g_trm_pipeline, 3)
+    }
+    // p.9.15.1 编译缓存：依赖感知命中在 keel_run_pipeline 内 kpass_front 之后
+    // 判定（cache_try_hit_dep，见 keel_run_pipeline）；此处的早期判定仅保留
+    // --emit-ir / 无管线路径兜底（依赖集未知时走旧单文件键，仅复制产物）。
+    var rc = keel_run_pipeline(real_pid, steps)
+    if rc != 0 {
+        return rc
+    }
+    // p.9.15.1：管线成功后写依赖感知缓存（聚合键 + .dep 清单 + 产物指纹）。
+    if cache_enabled() {
+        var wrc = cache_store_dep()
+        if wrc < 0 {
+            return -1
+        }
+    }
+    return 0
+}
+
+// logic：clang 链接可执行文件；清理中间文件（除非 --keep-ir）。
+// 程序用了 tie-interp 库桥（file_*/regex_*/exec_output 等，irgen 置 g_used_interp）
+// → 链接 tie_interp.lib（Rust 桥）。exec_code/get_env/time_now 已内联到 libc，
+// std/runtime.a 退役——纯程序（无桥）不链接任何运行时库，零依赖。
+pub func compile_logic(ir_path: string, opt_path: string, target: string) -> i64 {
+    var exe_path = g_output
+    if str_len(exe_path) == 0 {
+        // r.1.6.1：Linux 可执行文件无扩展名（ELF）；Windows 默认 .exe
+        if is_linux_target(g_target) {
+            exe_path = replace_ext(g_input, "")
+        } else {
+            exe_path = replace_ext(g_input, "exe")
+        }
+    }
+    // need_interp = g_used_interp：有 Rust 桥才链 tie_interp.lib
+    var bres = tc.link_exe(opt_path, exe_path, target, g_used_interp, g_used_trmlite, g_used_wsock)
+    if bres != 0 {
+        println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
+        return 1
+    }
+    cleanup(ir_path, opt_path)
+    println("编译成功: " + exe_path)
+    return 0
+}
+
+// library：clang -c 目标文件 + llvm-ar 打包静态库；清理中间文件。
+pub func compile_library(ir_path: string, opt_path: string, target: string) -> i64 {
+    var lib_path = g_output
+    if str_len(lib_path) == 0 {
+        lib_path = replace_ext(g_input, "a")
+    }
+    var obj_path = replace_ext(g_input, "o")
+    var crc = tc.compile_object(opt_path, obj_path, target)
+    if crc != 0 {
+        println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
+        return 1
+    }
+    var arc = tc.archive(obj_path, lib_path)
+    if arc != 0 {
+        println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
+        return 1
+    }
+    cleanup(ir_path, opt_path)
+    file_delete(obj_path)
+    println("库编译成功: " + lib_path)
+    return 0
+}
+
+// 动态库：clang -shared 链接（Windows .dll / Linux .so，dllexport 导出面由
+// irgen 标记）；清理中间文件（除非 --keep-ir）。
+pub func compile_shared(ir_path: string, opt_path: string, target: string) -> i64 {
+    var dll_path = g_output
+    if str_len(dll_path) == 0 {
+        // 默认扩展名：linux 目标 → .so；其余（win/mac）→ .dll
+        if is_linux_target(target) {
+            dll_path = replace_ext(g_input, "so")
+        } else {
+            dll_path = replace_ext(g_input, "dll")
+        }
+    }
+    var src = tc.link_shared(opt_path, dll_path, target, g_used_interp, g_used_trmlite, g_used_wsock)
+    if src != 0 {
+        println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
+        return 1
+    }
+    cleanup(ir_path, opt_path)
+    println("动态库编译成功: " + dll_path)
+    return 0
+}
+
+// 清理中间 .ll / .opt.ll（--keep-ir 时保留）。
+pub func cleanup(ir_path: string, opt_path: string) {
+    if !g_keep_ir {
+        file_delete(ir_path)
+        file_delete(opt_path)
+    }
+}
+
+}
