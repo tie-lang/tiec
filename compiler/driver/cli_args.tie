@@ -1,0 +1,332 @@
+type tie<class>
+// compiler/driver/cli_args.tie —— driver CLI 参数与头部扫描子模块
+// ============================================================
+// 从 driver.tie 拆出（p.9.21 方法库化：driver 编排薄壳）。
+// 拆分范式：同编译单元跨文件（文本内联）——本文件只含函数与注释，
+// 顶层全局 var 与 import 树均留在 driver.tie 主文件，避免重复定义。
+// 风格 ns：函数在 `namespace driver` 内，一律 pub（driver 库 API 面）；
+// 主文件顶层 main() 以 driver.<名>() 调用。
+namespace driver {
+// 打印用法（--help）。返回 0。
+pub func usage() -> i64 {
+    println("tiec —— tie 自举编译器（tie 语言自写）")
+    println("用法: tiec <input.tie> [选项]")
+    println("  -o <file>        输出可执行文件（logic 默认输入同名 .exe；library 默认 .a）")
+    println("  -l<0-3>          LLVM/clang 优化轴：opt 子进程 + clang 档（默认 2；--llvm-opt= 等价；优先级 CLI > 配置/profile > 默认）")
+    println("  -t<0-3>          tiec 中端优化轴：tie-IR pass 管道（默认 0 = 零 pass；--tie-opt= 等价；p.9.20）")
+    println("            注：头部旧 `// tie:opt=N` 指令已移除（legacy），优化仅 CLI/config 控制")
+    println("  --mem-limit <MB>  内存上限（0 = 不限；>0 时 LLVM 轴 l3 受限自动降为 l2，利好老电脑）")
+    println("  --jobs <N>       编译并发度（0 = 默认；预留配置 advanced.threads，并行随 p.9.1.3 增量/缓存落地）")
+    println("  --no-cache       关闭编译缓存（默认开启：产物缓存到 ~/.tiec-cache 或 cache.dir，命中直接复制跳过编译）")
+    println("  --no-warn        跳过警告检查（tiec 警告与 LLVM 工具链警告一并静默；错误 error[E#####] 不受影响）")
+    println("  -w, --warn       显式开启前端警告检查（默认只报错，警告 pass 不运行）")
+    println("  --target <三元组>  交叉编译目标（如 x86_64-pc-windows-msvc）")
+    println("  --emit-ir        只生成 LLVM IR（.ll），不继续编译")
+    println("  --keep-ir        保留中间 IR 文件（.ll / .opt.ll）")
+    println("  --ffast-math     编译产物启用 fast-math（训练/性能优先；默认关）")
+    println("  --check-bounds   调试期数组越界检查（越界 panic，默认关）")
+    println("  --shared         编译为动态库（.dll/.so；library 角色，M5）")
+    println("  --prep-only      只做头部识别并打印结果")
+    println("  --config <f>     构建配置文件（默认查当前目录 config.data.tie）")
+    println("  --profile <p>    构建 profile（dev/release，覆盖配置顶层 profile 键）")
+    println("  --backend <b>    后端实现选择（win32；trm 为路线 B 字节码目标，可插拔；其他 port 未接入）")
+    println("  --lib-root <dir>  内置库根目录（存放 std/ext/rdu/sys；覆盖 TIE_LIB_ROOT 与默认 ~/.tiec-lib/tlib）")
+    println("  --tieir-out <f>  编译后序列化 tieir 分发单元（S3.2；.tieir 二进制）")
+    println("  --dump-irt <f>   只读 .tieir 并输出可读摘要（S3.2；不编译）")
+    println("  --dump-docs      解析输入源码后输出 doc 注释注册表摘要（p.9.11.29；不编译）")
+    println("  --help           显示本帮助")
+    return 0
+}
+
+// ==================== p.9.20 双轴优化档解析 ====================
+// 优化档值解析：严格单字符 '0'..'3'（负例返回 -1）。
+// 定义位置须早于 parse_args（tie 先定义后使用）。
+pub func parse_opt_level(s: string) -> i64 {
+    if str_len(s) != 1 {
+        return -1
+    }
+    var c = str_char(s, 0)
+    if c == "0" {
+        return 0
+    } else if c == "1" {
+        return 1
+    } else if c == "2" {
+        return 2
+    } else if c == "3" {
+        return 3
+    }
+    return -1
+}
+
+// 解析参数：返回 0 正常 / 2 请求帮助 / -1 参数错误。g_* 填充解析结果。
+pub func parse_args() -> i64 {
+    var n: i64 = arg_count()
+    var i: i64 = 0
+    var input_set: bool = false
+    while i < n {
+        var a = arg_string(i)
+        if a == "--help" || a == "-h" {
+            return 2
+        }
+        if a == "--emit-ir" {
+            g_emit_ir = true
+        } else if a == "--keep-ir" {
+            g_keep_ir = true
+        } else if a == "--ffast-math" {
+            g_cli_fast_math = true
+        } else if a == "--check-bounds" {
+            g_cli_check_bounds = true
+        } else if a == "--compress-data" {
+            g_compress_data = true
+        } else if a == "--lsp" {
+            g_lsp = true
+        } else if a == "--shared" {
+            g_shared = true
+        } else if a == "--prep-only" {
+            g_prep_only = true
+        } else if a == "-o" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_output = arg_string(i + 1)
+            i = i + 1
+        } else if str_len(a) >= 2 && str_char(a, 0) == "-" && (str_char(a, 1) == "l" || str_char(a, 1) == "t") {
+            // p.9.20 双轴：-l<0-3> LLVM/clang 轴 / -t<0-3> tiec 中端轴（粘连取值）。
+            // 负例（-l9 / -lx / 分离式 -l 2）统一落到下面的明确诊断，不退化成
+            // 通用「参数错误」（否则用户无法定位是优化档写错）。
+            var lv = parse_opt_level(str.slice(a, 2, str_len(a)))
+            if lv < 0 {
+                var hint = "无效优化档 '" + a + "'：应为 -l<0-3>（LLVM/clang 轴）或 -t<0-3>（tiec 中端轴），例 -l2 -t0"
+                if str_len(a) == 2 {
+                    hint = "优化档需粘连取值：-l<0-3>（LLVM/clang 轴）/ -t<0-3>（tiec 中端轴），例 -l2 -t0；不支持 '" + a + " <值>' 分离式"
+                }
+                println(diagcode.render_error(-1, -1, hint))
+                return -1
+            }
+            if str_char(a, 1) == "l" {
+                g_llvm_opt = lv
+                g_llvm_set = true
+            } else {
+                g_tie_opt = lv
+                g_tie_set = true
+            }
+        } else if has_prefix(a, "--llvm-opt=") {
+            g_llvm_opt = parse_opt_level(str.slice(a, 11, str_len(a)))
+            if g_llvm_opt < 0 {
+                println(diagcode.render_error(-1, -1, "无效 LLVM 优化档 '" + a + "'：应为 --llvm-opt=<0-3>"))
+                return -1
+            }
+            g_llvm_set = true
+        } else if has_prefix(a, "--tie-opt=") {
+            g_tie_opt = parse_opt_level(str.slice(a, 10, str_len(a)))
+            if g_tie_opt < 0 {
+                println(diagcode.render_error(-1, -1, "无效 tiec 优化档 '" + a + "'：应为 --tie-opt=<0-3>"))
+                return -1
+            }
+            g_tie_set = true
+        } else if str_len(a) >= 2 && str_char(a, 1) == "O" {
+            // p.9.20：-O* 硬移除（破坏性变更无兼容期），报错提示新用法
+            println(diagcode.render_error(-1, -1, "优化参数 -O* 已移除：拆分为 -l<L>（LLVM/clang 轴）与 -t<T>（tiec 中端轴），例：-l2 -t0；长参 --llvm-opt=<0-3> / --tie-opt=<0-3>"))
+            return -1
+        } else if a == "--mem-limit" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_mem_limit = parse_int(arg_string(i + 1))
+            i = i + 1
+        } else if a == "--jobs" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_jobs = parse_int(arg_string(i + 1))
+            i = i + 1
+        } else if a == "--no-cache" {
+            g_no_cache = true
+        } else if a == "--no-warn" {
+            // --no-warn：前端警告段（print_warns）与 driver 侧角色/优化档等
+            // 打印点全部静默；错误 error[E#####] 不受影响。降级行为
+            // （角色 output 回退 lib、O3→O2）照常执行，只抑制打印。
+            g_no_warn = true
+            g_front_warn = false
+        } else if a == "-w" || a == "--warn" {
+            // p.9.14.2 独立警告 pass：-w / --warn 显式开启前端警告检查
+            // （默认只报错）。与 --no-warn 相反；两者后出现者生效。
+            g_front_warn = true
+        } else if a == "--target" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_target = arg_string(i + 1)
+            if g_target == "trm" {
+                g_trm_mode = true
+            }
+            i = i + 1
+        } else if a == "--config" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_config_path = arg_string(i + 1)
+            i = i + 1
+        } else if a == "--profile" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_cli_profile = arg_string(i + 1)
+            i = i + 1
+        } else if a == "--backend" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_backend_cli = arg_string(i + 1)
+            if g_backend_cli == "trm" {
+                g_trm_mode = true
+            }
+            i = i + 1
+        } else if a == "--lib-root" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_lib_root_cli = arg_string(i + 1)
+            i = i + 1
+        } else if a == "--tieir-out" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_tieir_out = arg_string(i + 1)
+            i = i + 1
+        } else if a == "--dump-irt" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_dump_irt = arg_string(i + 1)
+            i = i + 1
+        } else if a == "--dump-docs" {
+            g_dump_docs = true
+        } else if str_len(a) > 1 && str_char(a, 0) == "-" {
+            // 未知选项
+            return -1
+        } else {
+            if input_set {
+                return -1
+            }
+            g_input = a
+            input_set = true
+        }
+        i = i + 1
+    }
+    if !input_set {
+        return -1
+    }
+    return 0
+}
+
+// 目标三元组别名归一化（对齐 Rust normalize_target）：已知别名映射，
+// 未知名称原样透传。
+pub func normalize_target(t: string) -> string {
+    // r.1.6.6：空目标 → 本机默认。Windows 主机（OS=Windows_NT 存在）保持空串
+    // （传统 Windows 链接路径，行为零变化）；POSIX 主机默认 Linux 三元组——
+    // Linux 自举链（tiec-linux 编译探针/回归程序无 --target 时）走 Linux 平台
+    // 分支与链接参数（sockaddr/管道无 Windows 假设）。
+    if str_len(t) == 0 {
+        var osv = get_env("OS")
+        var osl: i64 = str_len(osv)
+        var wflag: i64 = 0
+        var j: i64 = 0
+        while j + 7 <= osl {
+            if slice(str.clone(osv), j, j + 7) == "Windows" {
+                wflag = 1
+            }
+            j = j + 1
+        }
+        if wflag == 0 {
+            return "x86_64-unknown-linux-gnu"
+        }
+        return t
+    }
+    if t == "win-x64" || t == "windows-x64" {
+        return "x86_64-pc-windows-msvc"
+    }
+    if t == "win-x86" || t == "windows-x86" {
+        return "i686-pc-windows-msvc"
+    }
+    if t == "win-arm64" || t == "windows-arm64" {
+        return "aarch64-pc-windows-msvc"
+    }
+    if t == "linux-x64" || t == "linux-x86_64" {
+        return "x86_64-unknown-linux-gnu"
+    }
+    if t == "linux-arm64" {
+        return "aarch64-unknown-linux-gnu"
+    }
+    if t == "macos-x64" || t == "macos-x86_64" {
+        return "x86_64-apple-darwin"
+    }
+    if t == "macos-arm64" {
+        return "aarch64-apple-darwin"
+    }
+    return t
+}
+
+// 从源码头部识别文件类型声明（新体系）：
+//   `type tie` → 类型 type；`type tie<X>` → X（X ∈ script/data/ui/class/logic/port/db/ir/zd）。
+//   ir 角色：直接生成 LLVM IR（.ll），不继续 opt/clang 链接（等价 --emit-ir）。
+// 头部区 = 文件最前连续行（允许空行），遇第一个非空非声明行即结束；
+// 只扫前 20 行。无声明默认 logic（可执行）。
+// 旧 `// tie:xxx` 注释指令体系已彻底移除：该类行只是普通注释，不再识别
+// 角色与 opt/target 选项（opt 仅 CLI 默认 O2；target 仅 CLI）。
+// 返回 0 成功；声明语法非法返回 -1（由 main 报错退出）。
+pub func scan_header(src: string) -> i64 {
+    // 性能修复：不再对全文件 split_lines（大文件如 irgen_expr 10k+ 行时，
+    // split 全文件→逐行建 builder 是 O(n²) 字符处理病源）。改为 in-place 扫描
+    // 前 max_head 行（最多取 20 行含空行；正常头部 1-3 行即达，常提前 return）。
+    g_role = "logic"
+    g_role_param = ""
+    g_role_mods = table_new_string()
+    var n: i64 = str_len(src)
+    var pos: i64 = 0
+    var line_no: i64 = 1
+    var max_head: i64 = 20
+    while pos < n && line_no <= max_head {
+        var ln_e = pos
+        while ln_e < n && str_char(src, ln_e) != "\n" {
+            ln_e = ln_e + 1
+        }
+        var ln = str.slice(src, pos, ln_e)
+        // CRLF 兼容：旧实现走 split_lines（逐字节跳过 13），in-place 扫描须显式
+        // 剥离行尾 \r，否则 `type tie<X>\r` 被判为非法声明（CRLF 源回归）。
+        if ln_e > pos && str_char(src, ln_e - 1) == "\r" {
+            ln = str.slice(src, pos, ln_e - 1)
+        }
+        var ln2 = trim(ln)
+        if str_len(ln2) == 0 {
+            pos = ln_e + 1
+            line_no = line_no + 1
+            continue
+        }
+        if has_prefix(str.clone(ln2), "type tie") {
+            var rest = trim(str.slice(ln2, 8, str_len(ln2)))
+            if str_len(rest) == 0 {
+                g_role = "type"
+                return 0
+            }
+            // 期望 `<X>` 形式，且无尾随内容
+            if str_len(rest) >= 3 && str_char(rest, 0) == "<" && str_char(rest, str_len(rest) - 1) == ">" {
+                var sub = trim(slice(str.clone(rest), 1, str_len(rest) - 1))
+                // S1.4 R2/R3：多角色解析（基础[:参数][, 修饰...]）
+                if parse_role_decl(sub) == 0 {
+                    g_role = g_role_base
+                    return 0
+                }
+                println(diagcode.render_error(-1, -1, "文件类型声明错误: " + g_role_err + "（第 " + to_string(line_no) + " 行）"))
+                return -1
+            }
+            println(diagcode.render_error(-1, -1, "文件类型声明错误: 非法声明 '" + ln2 + "'（第 " + to_string(line_no) + " 行），应为 `type tie` 或 `type tie<类型>`"))
+            return -1
+        }
+        // 第一个非空非声明行：头部区结束
+        break
+    }
+    return 0
+}
+
+}

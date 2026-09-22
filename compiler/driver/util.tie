@@ -1,0 +1,376 @@
+type tie<class>
+// compiler/driver/util.tie —— driver 文本/路径工具子模块
+// ============================================================
+// 从 driver.tie 拆出（p.9.21 方法库化：driver 编排薄壳）。
+// 拆分范式：同编译单元跨文件（文本内联）——本文件只含函数与注释，
+// 顶层全局 var 与 import 树均留在 driver.tie 主文件，避免重复定义。
+// 风格 flat：顶层平铺函数。本组工具被同单元其他组件裸名依赖（实测
+// consteval.tie 等 12+ 处裸调 slice/trim/split_lines…），收进 ns 会切断
+// 这些调用；待语言层 L1 可见性梯度落地后再收敛进 driver ns。
+// 在 s 中查找子串 needle 首次出现位置（0 起字符索引）；未找到返回 -1。
+func find_str(s: string, needle: string) -> i64 {
+    var n = str_len(s)
+    var m = str_len(needle)
+    if m == 0 {
+        return 0
+    }
+    if m > n {
+        return -1
+    }
+    var i: i64 = 0
+    while i <= n - m {
+        var j: i64 = 0
+        var hit = true
+        while j < m {
+            if str_char(s, i + j) != str_char(needle, j) {
+                hit = false
+            }
+            j = j + 1
+        }
+        if hit {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+func split_char(s: string, sep: string) -> table<string> {
+    var out = table_new_string()
+    var n = str_len(s)
+    var start: i64 = 0
+    var i: i64 = 0
+    while i < n {
+        if str_char(s, i) == sep {
+            table_push(out, slice(s, start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    table_push(out, slice(s, start, n))
+    return out
+}
+
+// 按字符拆分（码点级；driver 自写工具）
+// 源码目录（不含文件名/扩展名）；无分隔符返回 "."
+func base_dir_of(p: string) -> string {
+    var n = str_len(p)
+    var i: i64 = n - 1
+    while i >= 0 {
+        var c = str_char(p, i)
+        if c == "/" || c == "\\" {
+            return slice(p, 0, i)
+        }
+        i = i - 1
+    }
+    return "."
+}
+
+// 剥离头部区的文件类型声明行（`type tie` / `type tie<X>`），返回清理后源码。
+// 新声明是真语法行，必须从正文中移除（旧 `// tie:` 是注释由 lexer 跳过，无需剥离）。
+// 头部区 = 文件最前连续行（允许空行），遇第一个非空非声明行即停止；
+// 声明行之外的行（含空行/注释/缩进）原样保留，\n 重连。
+// 性能重写（O(n)）：旧实现 out = out + ln 逐行拼接，每行复制全串 → O(n²)
+// （10k+ 行大文件显著）。改为单 StringBuilder 累积，语义逐字节等价：
+// 仅当此前已输出过非空行时才补 "\n"（等价于旧判据 str_len(out) > 0）。
+func strip_type_header(src: string) -> string {
+    var lines = split_lines(src)
+    var n: i64 = len(lines)
+    var sb = string_builder()
+    var emitted = false
+    var in_header = true
+    var i: i64 = 0
+    while i < n {
+        var ln = lines[i]
+        var t = trim(str.clone(ln))
+        if in_header {
+            if str_len(t) == 0 {
+                // 头部区空行：保留
+            } else if has_prefix(t, "type tie") {
+                // 声明行：剥离
+                i = i + 1
+                continue
+            } else {
+                in_header = false
+            }
+        }
+        if emitted {
+            sb_append(sb, "\n")
+        }
+        sb_append(sb, ln)
+        if str_len(ln) > 0 {
+            emitted = true
+        }
+        i = i + 1
+    }
+    return sb_build(sb)
+}
+
+// 按 \n 拆行（去行尾 \r）。
+// 性能重写（O(n)）：旧实现 line + c 拼接（每行 O(len²)）× str_char(s,i)
+// 从头扫（O(i)）三重平方。新实现字节级扫描（\n/\r 为 ASCII 单字节）+
+// StringBuilder 累积，语义不变（连续 \n 产空行；尾部无 \n 的末行保留）。
+func split_lines(s: string) -> table<string> {
+    // 性能修复：用单个 sb + sb_reset 复用，替代每行新建 string_builder——
+    // 大文件（irgen_expr 10k+ 行）下每行新建 builder 的构造/释放累积成
+    // O(n²) 字符处理病源（自举 prep 卡 11s+ 的主因）。sb_reset 已由编译器
+    // 认识（irgen_str s21_sb_reset），旧编译器可无障碍编译。
+    var rows = table_new_string()
+    var n: i64 = len(s)
+    var i: i64 = 0
+    var sb = string_builder()
+    while i < n {
+        var b = str_byte(s, i)
+        if b == 10 {
+            // \n：行结束（sb_reset 复用缓冲，消除每行新建）
+            table_push(rows, sb_build(sb))
+            sb_reset(sb)
+        } else if b != 13 {
+            // 非 \r：追加字节（二进制安全）
+            sb_append_byte(sb, b)
+        }
+        i = i + 1
+    }
+    // 尾部无 \n 的末行（非空才保留——与原实现一致）
+    var tail = sb_build(sb)
+    if tail != "" {
+        table_push(rows, tail)
+    }
+    return rows
+}
+
+// 判断 s 是否以 prefix 开头。
+func has_prefix(s: string, prefix: string) -> bool {
+    var n: i64 = str_len(s)
+    var m: i64 = str_len(prefix)
+    if n < m {
+        return false
+    }
+    var i: i64 = 0
+    while i < m {
+        if str_char(s, i) != str_char(prefix, i) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// 找字符串中首个 ch 的位置；未找到 -1。
+func find_char(s: string, ch: string) -> i64 {
+    var n: i64 = str_len(s)
+    var i: i64 = 0
+    while i < n {
+        if str_char(s, i) == ch {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// 取字符串 [start, end) 子串（码点级）。
+func slice(s: string, start: i64, end: i64) -> string {
+    var sb = string_builder()
+    var i: i64 = start
+    while i < end {
+        sb_append(sb, str_char(s, i))
+        i = i + 1
+    }
+    return sb_build(sb)
+}
+
+// 去除字符串首尾空白（空格/制表）。
+func trim(s: string) -> string {
+    var n: i64 = str_len(s)
+    var start: i64 = 0
+    var end: i64 = n
+    while start < end && (str_char(s, start) == " " || str_char(s, start) == "\t") {
+        start = start + 1
+    }
+    while end > start && (str_char(s, end - 1) == " " || str_char(s, end - 1) == "\t") {
+        end = end - 1
+    }
+    return slice(s, start, end)
+}
+
+// 取路径的目录部分（含末尾分隔符；无分隔符返回空串）；\ 与 / 都识别，
+// 输出归一化为 /（import 展开需要）。
+func dir_of(path: string) -> string {
+    var n: i64 = str_len(path)
+    var last: i64 = -1
+    var i: i64 = 0
+    while i < n {
+        var c = str_char(path, i)
+        if c == "/" || c == "\\" {
+            last = i
+        }
+        i = i + 1
+    }
+    if last < 0 {
+        return ""
+    }
+    var d = slice(path, 0, last + 1)
+    var sb = string_builder()
+    var j: i64 = 0
+    while j < str_len(d) {
+        var c2 = str_char(d, j)
+        if c2 == "\\" {
+            sb_append(sb, "/")
+        } else {
+            sb_append(sb, c2)
+        }
+        j = j + 1
+    }
+    return sb_build(sb)
+}
+
+// 替换路径扩展名（basename 最后一个 . 后替换；无 . 直接追加）。
+// 例：examples/hello.tie + "exe" → examples/hello.exe；a.opt.ll + "ll" → a.opt.ll。
+func replace_ext(path: string, new_ext: string) -> string {
+    var n: i64 = str_len(path)
+    var last_dot: i64 = -1
+    var i: i64 = 0
+    while i < n {
+        if str_char(path, i) == "." {
+            last_dot = i
+        }
+        i = i + 1
+    }
+    var base: string = str.clone(path)
+    if last_dot > 0 {
+        base = slice(path, 0, last_dot)
+    }
+    // r.1.6.1：空后缀（Linux 可执行文件无扩展名）→ 返回去扩展名的基名，不带尾点
+    if str_len(new_ext) == 0 {
+        return base
+    }
+    return base + "." + new_ext
+}
+
+// 取路径的文件名部分（最后一个 / 或 \ 之后；无分隔符返回原串）。
+func file_name_of(path: string) -> string {
+    var n: i64 = str_len(path)
+    var last: i64 = -1
+    var i: i64 = 0
+    while i < n {
+        var c = str_char(path, i)
+        if c == "/" || c == "\\" {
+            last = i
+        }
+        i = i + 1
+    }
+    if last < 0 {
+        return path
+    }
+    return slice(path, last + 1, n)
+}
+
+func role_from_filename(name: string) -> string {
+    g_name_param = ""
+    g_name_mods = table_new_string()
+    var n: i64 = str_len(name)
+    var first_dot: i64 = -1
+    var last_dot: i64 = -1
+    var i: i64 = 0
+    while i < n {
+        if str_char(name, i) == "." {
+            if first_dot < 0 {
+                first_dot = i
+            }
+            last_dot = i
+        }
+        i = i + 1
+    }
+    // 需要至少两段（首点存在且与末点不同）：xxx.<角色>.tie
+    if first_dot < 0 || last_dot <= first_dot {
+        return ""
+    }
+    if slice(str.clone(name), last_dot + 1, n) != "tie" {
+        return ""
+    }
+    var role = slice(name, first_dot + 1, last_dot)
+    // F1 连字符拆分：第一段（或从后往前找到的角色段）= 基础角色；
+    // 其后的连字符段 = 参数（紧跟基础）或修饰（与头部 parse_role_decl 对齐）
+    var segs = split_char(role, "-")
+    var base = segs[0]
+    var base_idx: i64 = 0
+    if !driver.is_valid_base_role(str.clone(base)) {
+        // 非角色名作首段（如 app.myproto-v2 的 app）：多段解析——
+        // 从后往前找已知角色段（含 config 注册的自定义角色）
+        var k = len(segs) - 1
+        var hit = false
+        while k >= 1 {
+            if driver.is_valid_base_role(str.clone(segs[k])) {
+                base = segs[k]
+                base_idx = k
+                hit = true
+                break
+            }
+            k = k - 1
+        }
+        if !hit {
+            return ""
+        }
+        // base 之前的段是工程名前缀，忽略
+    }
+    // 参数：角色段后的首个连字符段命中参数白名单 → g_name_param；其余段修饰
+    var seg_i: i64 = base_idx + 1
+    while seg_i < len(segs) {
+        var seg = segs[seg_i]
+        if str_len(g_name_param) == 0 && driver.is_valid_role_param(str.clone(base), str.clone(seg)) {
+            g_name_param = seg
+        } else if driver.is_valid_mod_role(str.clone(seg)) {
+            table_push(g_name_mods, seg)
+        } else {
+            // 未知段：非角色文件名（默认逻辑）
+            g_name_param = ""
+            g_name_mods = table_new_string()
+            return ""
+        }
+        seg_i = seg_i + 1
+    }
+    return base
+}
+
+// 动态库模式检测：--shared 显式开关，或输出路径扩展名为 .dll / .so（大小写不敏感）。
+func detect_shared_mode() -> bool {
+    if g_shared {
+        return true
+    }
+    if str_len(g_output) == 0 {
+        return false
+    }
+    return has_dll_so_ext(g_output)
+}
+
+// 路径是否以 .dll（4 字符）/ .so（3 字符）结尾（大小写不敏感）。
+func has_dll_so_ext(path: string) -> bool {
+    var n: i64 = str_len(path)
+    if n >= 4 {
+        var tail4 = slice(str.clone(path), n - 4, n)
+        if tail4 == ".dll" || tail4 == ".DLL" {
+            return true
+        }
+    }
+    if n >= 3 {
+        var tail3 = slice(str.clone(path), n - 3, n)
+        if tail3 == ".so" || tail3 == ".SO" {
+            return true
+        }
+    }
+    return false
+}
+
+// 目标三元组是否 Linux（.so 默认扩展名分派用）。
+func is_linux_target(target: string) -> bool {
+    var n: i64 = str_len(target)
+    var i: i64 = 0
+    while i <= n - 5 {
+        if slice(str.clone(target), i, i + 5) == "linux" {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
