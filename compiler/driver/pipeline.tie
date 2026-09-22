@@ -34,6 +34,9 @@ pub func kpass_irgen() -> i64 {
         asm_target = "x86_64-pc-windows-msvc"  // 本机默认（Windows x64 开发机）
     }
     irgen.set_target(asm_target)
+    // p.9.21 G3：装配职责上移到 driver——irgen 不再 import llvmgen；
+    // Linux main 入口 argc/argv 签名判据在此同步注入。
+    llvmgen.set_linux(is_linux_target(asm_target))
     unsafe {
         var t2 = clock()
     }
