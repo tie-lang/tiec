@@ -120,6 +120,25 @@ var g_fn_inst_lo: table<i64>;
 var g_fn_inst_hi: table<i64>;
 var g_hoisted_allocas: table<i64>;
 var g_hoisted_cnt: i64 = 0;
+// p.9.20.5 tail call：块尾「call → ret 其结果」的尾位置 call 收集（文本级
+// `tail` 提示标记；IR 不变）。LLVM 验证器仅要求尾位置正确，普通 tail 是
+// 优化提示而非硬约束（musttail 才严格），alloca 实参等场景 LLVM 自动放弃
+// 尾优化，无正确性风险。
+var g_tail_ids: table<i64>;
+var g_tail_enable: i64 = 0;   // t>=1 启用（t0 保持基线不动点）
+func tail_marked(inst_id: i64) -> i64 {
+    if g_tail_enable == 0 {
+        return 0
+    }
+    var i: i64 = 0
+    while i < len(g_tail_ids) {
+        if g_tail_ids[i] == inst_id {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
 // 重编号映射表（直索引）：旧值 id → 新值 id（-1 = 未设；旧值 id 稠密小整数）
 // 性能重写（p.9.14.3，O(n) 化）：值 id 全编译单调递增（ir_val_cnt 仅整次编译
 // 复位），旧方案每函数 g_ren_map = table_new 后 ren_def 首触即把表增长到该
@@ -146,6 +165,10 @@ var g_linux_target: i64 = 0;
 var g_linux_args: i64 = 0;
 
 namespace llvmgen {
+// p.9.20.5 tail call 开关（t>=1 启用文本级 tail 提示；t0 保持不动点基线）
+pub func set_tail_enable(v: i64) {
+    g_tail_enable = v
+}
 
 // 本地字符串切片 [start, end)（码点级；对齐 irgen.ig_slice）。
 // 历史 bug：global_ref 曾调用未定义的裸 `slice`，导致所有 import 本模块的
@@ -1248,8 +1271,29 @@ func gen_func(fid: i64) {
     // repro2_sort 大 string 冒泡；配合 irgen_stmt 引用计数修复系列 8e62a46/81b5775）。
     g_hoisted_allocas = table_new_i64()
     g_hoisted_cnt = 0
+    // tail call 收集：块尾 ret 的直接来源 call（p.9.20.5）
+    g_tail_ids = table_new_i64()
     if g_inst_blk_ready == 0 {
         build_inst_blk()
+    }
+    var tb: i64 = 0
+    var tnb = ir.block_count()
+    while tb < tnb {
+        if ir.block_func(tb) != fid {
+            tb = tb + 1
+            continue
+        }
+        var ts = ir_blocks_start[tb]
+        var te = ir_blocks_end[tb]
+        if te - ts >= 2 && ir.ins_op(te - 1) == 32 && ir.ins_ops_cnt(te - 1) >= 1 && ir.ins_opnd_kind(te - 1, 0) == 0 {
+            var trv = ir.ins_opnd(te - 1, 0)
+            var tci = te - 2
+            var top = ir.ins_op(tci)
+            if (top == 35 || top == 36) && ir.ins_val(tci) == trv && ir.ins_val(tci) >= 0 {
+                table_push(g_tail_ids, tci)
+            }
+        }
+        tb = tb + 1
     }
     // 性能：只遍历本函数指令区间 [lo, hi)（build_fn_inst_ranges 一次构建），
     // 替代全表扫描 O(F×N)（此前每函数都扫全部指令表）。保留 block_func 过滤

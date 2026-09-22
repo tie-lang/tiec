@@ -1210,6 +1210,8 @@ func main() -> i64 {
     }
     // S1.4：两个可选开关接线——--check-bounds → irgen（越界检查），--ffast-math → 后端工具链。
     irgen.set_check_bounds(g_cli_check_bounds)
+    // p.9.20.5 tail call：t>=1 启用文本级 tail 提示（t0 保持不动点基线）
+    llvmgen.set_tail_enable(effective_tie_opt() >= 1 ? 1 : 0)
     tc.set_fast_math(g_cli_fast_math)
     tc.set_no_warn(g_no_warn)
     // p.9.13.7-B：CLI 显式库根（--lib-root）注入前端 import 解析。
