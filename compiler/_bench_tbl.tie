@@ -1,0 +1,57 @@
+type tie<logic>
+// _bench_tbl.tie —— 表传参/赋值语义基准：按值复制 or 句柄共享？
+// 若表参数按值复制：consume(10万元素表) ×2000 次 ≈ 1.6GB 拷贝，必慢。
+unsafe extern fn clock() -> i64;
+
+func consume(t: table<i64>) -> i64 {
+    return t[0]
+}
+
+func consume_ref(t: ref table<i64>) -> i64 {
+    return t[0]
+}
+
+func main() -> i64 {
+    var t = table_new_i64()
+    var i: i64 = 0
+    while i < 100000 {
+        table_push(t, i)
+        i = i + 1
+    }
+    var acc: i64 = 0
+    var t0: i64 = 0
+    var t1: i64 = 0
+
+    // A) 表参数（无 ref）×2000 —— 若按值复制则 ~1.6GB 拷贝
+    unsafe { t0 = clock() }
+    i = 0
+    while i < 2000 {
+        acc = acc + consume(t)
+        i = i + 1
+    }
+    unsafe { t1 = clock() }
+    println("A 2000 x consume(100k tbl): " + to_string(t1 - t0) + "ms")
+
+    // B) ref 表参数 ×2000 —— 应恒快
+    unsafe { t0 = clock() }
+    i = 0
+    while i < 2000 {
+        acc = acc + consume_ref(t)
+        i = i + 1
+    }
+    unsafe { t1 = clock() }
+    println("B 2000 x consume_ref(100k tbl): " + to_string(t1 - t0) + "ms")
+
+    // C) 表赋值 ×2000（t2 = t）—— 若深复制则慢
+    unsafe { t0 = clock() }
+    i = 0
+    while i < 2000 {
+        var t2 = t
+        acc = acc + t2[1]
+        i = i + 1
+    }
+    unsafe { t1 = clock() }
+    println("C 2000 x t2 = t (100k): " + to_string(t1 - t0) + "ms")
+    println("acc=" + to_string(acc))
+    return 0
+}
