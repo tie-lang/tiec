@@ -563,524 +563,30 @@ func is_builtin_name(nm: string) -> bool {
 func builtin_expr(nm: string, id: i64) -> i64 {
     // ---------- S1.2 unsafe 指针/内存内置 ----------
     // 全部要求 unsafe 上下文（语义层 infer 已拦截安全代码调用）。
-    if nm == "addr_of" {
-        // addr_of(x) → 变量槽地址（ptr<变量类型>）；非变量表达式 → 求值落
-        // 内存后取地址（临时 alloca）
-        var arg = call_arg(id, 0)
-        var at = node_types[arg]
-        if at < 0 {
-            sm_err_msg = "addr_of() 实参类型未知（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        if s_tags[arg] == 6 {  // Var
-            var nid = interner.intern(sstate.name_str(arg))
-            if scope_get_global(nid) >= 0 {
-                g_builtin_res = g_lookup_alloca
-                return 0
-            }
-        }
-        var v = tig_expr(arg)
-        if v < 0 {
-            return -1
-        }
-        var alloca = ir.new_inst(g_cur_block, 20, at)
-        ir.add_operand(alloca, at, 2)
-        var ap = ir.get_value(alloca)
-        var st = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(st, at, 2)
-        ir.add_operand(st, v, 0)
-        ir.add_operand(st, ap, 0)
-        g_builtin_res = ap
-        return 0
-    }
-    if nm == "addr_of_field" {
-        // addr_of_field(obj, "field") → 聚合字段地址（agg_gep）。
-        // obj 为变量（槽地址）或表达式（落内存）。字段名是字符串字面量。
-        var obj = call_arg(id, 0)
-        var fname_node = call_arg(id, 1)
-        var agg_ty = node_types[obj]
-        if agg_ty < 0 {
-            sm_err_msg = "addr_of_field() 对象类型未知（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var fname = ""
-        if s_tags[fname_node] == 2 {  // StrLit
-            var raw = interner.lookup(s_names[fname_node])
-            var rn = str_len(raw)
-            if rn >= 2 && str_char(raw, 0) == "\"" && str_char(raw, rn - 1) == "\"" {
-                fname = str_slice(raw, 1, rn - 1)
-            }
-        }
-        if str_len(fname) == 0 {
-            sm_err_msg = "addr_of_field() 字段名必须是字符串字面量（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var fidx = agg_field_index(agg_ty, fname)
-        if fidx < 0 {
-            sm_err_msg = "addr_of_field() 字段 '" + fname + "' 不存在（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var oaddr: i64 = -1
-        if s_tags[obj] == 6 {
-            var nid2 = interner.intern(sstate.name_str(obj))
-            if scope_get_global(nid2) >= 0 {
-                oaddr = g_lookup_alloca
-            }
-        }
-        if oaddr < 0 {
-            var ov = tig_expr(obj)
-            if ov < 0 {
-                return -1
-            }
-            var alloca2 = ir.new_inst(g_cur_block, 20, agg_ty)
-            ir.add_operand(alloca2, agg_ty, 2)
-            oaddr = ir.get_value(alloca2)
-            var st2 = ir.new_inst(g_cur_block, 22, -1)
-            ir.add_operand(st2, agg_ty, 2)
-            ir.add_operand(st2, ov, 0)
-            ir.add_operand(st2, oaddr, 0)
-        }
-        var gp = ir.new_inst(g_cur_block, 27, agg_ty)  // agg_gep
-        ir.add_operand(gp, oaddr, 0)
-        ir.add_operand(gp, fidx, 2)
-        g_builtin_res = ir.get_value(gp)
-        return 0
-    }
-    if nm == "deref" {
-        // deref(p) → load 元素类型
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        var pt = node_types[call_arg(id, 0)]
-        var et = types.table_elem(pt)
-        if et < 0 {
-            sm_err_msg = "deref() 实参必须是指针类型（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var ld = ir.new_inst(g_cur_block, 21, et)  // load
-        ir.add_operand(ld, p, 0)
-        g_builtin_res = ir.get_value(ld)
-        return 0
-    }
-    if nm == "deref_write" {
-        // deref_write(p, v) → store 元素类型
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        var pt = node_types[call_arg(id, 0)]
-        var et = types.table_elem(pt)
-        if et < 0 {
-            sm_err_msg = "deref_write() 第 1 实参必须是指针类型（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var v = tig_expr(call_arg(id, 1))
-        if v < 0 {
-            return -1
-        }
-        var vt = node_types[call_arg(id, 1)]
-        if vt >= 0 && vt != et && (types.is_int(vt) || types.is_float(vt)) {
-            var cv = tig_coerce(v, vt, et)
-            if cv < 0 {
-                return -1
-            }
-            v = cv
-        }
-        var st = ir.new_inst(g_cur_block, 22, -1)  // store
-        ir.add_operand(st, et, 2)
-        ir.add_operand(st, v, 0)
-        ir.add_operand(st, p, 0)
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
-    if nm == "volatile_load" {
-        // volatile_load(p) → load volatile 元素类型（任务15：MMIO/硬件寄存器读，
-        // 发射 volatile 标志——LLVM 保证不被优化删除/合并/重排）。
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        var pt = node_types[call_arg(id, 0)]
-        var et = types.table_elem(pt)
-        if et < 0 {
-            sm_err_msg = "volatile_load() 实参必须是指针类型（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var vl = ir.new_inst(g_cur_block, 71, et)  // volatile_load（op 71）
-        ir.add_operand(vl, p, 0)
-        g_builtin_res = ir.get_value(vl)
-        return 0
-    }
-    if nm == "volatile_store" {
-        // volatile_store(p, v) → store volatile 元素类型（任务15：MMIO/硬件寄存器写，
-        // volatile 标志禁止优化删除/重排/合并）。
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        var pt = node_types[call_arg(id, 0)]
-        var et = types.table_elem(pt)
-        if et < 0 {
-            sm_err_msg = "volatile_store() 第 1 实参必须是指针类型（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var v = tig_expr(call_arg(id, 1))
-        if v < 0 {
-            return -1
-        }
-        var vt = node_types[call_arg(id, 1)]
-        if vt >= 0 && vt != et && (types.is_int(vt) || types.is_float(vt)) {
-            var cv = tig_coerce(v, vt, et)
-            if cv < 0 {
-                return -1
-            }
-            v = cv
-        }
-        var vs = ir.new_inst(g_cur_block, 72, -1)  // volatile_store（op 72）
-        ir.add_operand(vs, et, 2)  // 值类型 IMM
-        ir.add_operand(vs, v, 0)   // 值
-        ir.add_operand(vs, p, 0)   // 地址
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
-    if nm == "is_null" {
-        // is_null(p) → icmp eq p, null（llvmgen ptr 比较自动把 0 写 null；
-        // 立即数 0 必须 IMM 操作数——值 0 会被当值 id 查定义）
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        var ic = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
-        ir.add_operand(ic, p, 0)
-        ir.add_operand(ic, 0, 2)  // IMM 0（llvmgen ptr 上下文 → null）
-        ir.add_operand(ic, 0, 2)  // eq
-        g_builtin_res = ir.get_value(ic)
-        return 0
-    }
-    if nm == "ptr_add" {
-        // ptr_add(p, n) → p + n 元素步长（gep 单索引）
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        var pt = node_types[call_arg(id, 0)]
-        var et = types.table_elem(pt)
-        if et < 0 {
-            sm_err_msg = "ptr_add() 第 1 实参必须是指针类型（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var n = tig_expr(call_arg(id, 1))
-        if n < 0 {
-            return -1
-        }
-        var gp = ir.new_inst(g_cur_block, 23, et)  // gep（步长 = 元素大小）
-        ir.add_operand(gp, p, 0)
-        ir.add_operand(gp, n, 0)
-        g_builtin_res = ir.get_value(gp)
-        return 0
-    }
-    if nm == "ptr_to_int" {
-        // ptr_to_int(p) → ptrtoint i64
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        var pi = ir.new_inst(g_cur_block, 24, types.named(TK_I64))
-        ir.add_operand(pi, p, 0)
-        g_builtin_res = ir.get_value(pi)
-        return 0
-    }
-    if nm == "int_to_ptr" {
-        // int_to_ptr(i) → inttoptr ptr（字节指针 ptr<u8>）
-        var i = tig_expr(call_arg(id, 0))
-        if i < 0 {
-            return -1
-        }
-        var ip = ir.new_inst(g_cur_block, 25, types.named(TK_STR))  // inttoptr → ptr
-        ir.add_operand(ip, i, 0)
-        g_builtin_res = ir.get_value(ip)
-        return 0
-    }
-    if nm == "alloc" {
-        // alloc(n) → 原始字节缓冲（ptr<u8>，LLVM ptr 直传）。
-        // 修复（漏洞 A 类隐患）：裸 malloc 若标 TK_STR，llvmgen op36 会对它做
-        // 字符串补头扫描（strlen + tie_sso_alloc + memcpy）——对**未初始化**
-        // 堆缓冲 strlen 读的是垃圾，返回缓冲实际容量 = 垃圾长度：小则 4096 字节
-        // 写入越界（SSO 静态池/堆损坏，多会话交错读写出现字节串线/丢失），
-        // 大则扫描越界读未映射内存崩溃。故走 s21_raw_alloc_str（K_PTR 返回绕开
-        // 扫描，ptrtoint+inttoptr 包回 TK_STR 值），与编译器内部原始分配同范式。
-        var n = tig_expr(call_arg(id, 0))
-        if n < 0 {
-            return -1
-        }
-        g_builtin_res = s21_raw_alloc_str(n)
-        return 0
-    }
-    if nm == "free" {
-        // free(p) → libc free
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        tig_ext_call1("free", p, types.named(TK_STR), -1)
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
-    if nm == "memcpy" {
-        // memcpy(dst, src, n) → libc @memcpy(ptr, ptr, i64)
-        // 走 extern_call + extern_decl 映射（模块头不重复 declare）。
-        // 曾用 llvm.memcpy.p0.p0.i64 内在：user_extern_decl 按调用签名重建
-        // 声明 → 与模块头 4 参声明重复 → opt 报「invalid redefinition」。
-        var dst = tig_expr(call_arg(id, 0))
-        if dst < 0 {
-            return -1
-        }
-        var src = tig_expr(call_arg(id, 1))
-        if src < 0 {
-            return -1
-        }
-        var n = tig_expr(call_arg(id, 2))
-        if n < 0 {
-            return -1
-        }
-        var ats: table<i64> = table_new_i64()
-        var avs: table<i64> = table_new_i64()
-        table_push(ats, types.named(TK_STR))
-        table_push(avs, dst)
-        table_push(ats, types.named(TK_STR))
-        table_push(avs, src)
-        table_push(ats, types.named(TK_I64))
-        table_push(avs, n)
-        tig_ext_call_typed("memcpy", ats, avs, -1)
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
-    if nm == "memset" {
-        // memset(p, val, n) → libc @memset(ptr, i8, i64)
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        var val = tig_expr(call_arg(id, 1))
-        if val < 0 {
-            return -1
-        }
-        var n = tig_expr(call_arg(id, 2))
-        if n < 0 {
-            return -1
-        }
-        var val8 = s21_trunc_i8(val)  // val 为 i64 → trunc i8（@memset 第二参 i8）
-        var ats: table<i64> = table_new_i64()
-        var avs: table<i64> = table_new_i64()
-        table_push(ats, types.named(TK_STR))
-        table_push(avs, p)
-        table_push(ats, types.named(TK_I8))
-        table_push(avs, val8)
-        table_push(ats, types.named(TK_I64))
-        table_push(avs, n)
-        tig_ext_call_typed("memset", ats, avs, -1)
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
-    if nm == "slice_of" {
-        // slice_of(obj, start, len) → slice<元素类型> 聚合：指针 + 长度。
-        // 字符串路径：数据指针直接 + len（第一版）。
-        // 动态表路径（任务16）：表 → 连续内存切片——alloc 连续缓冲 + 逐元素
-        // tie_table_at_* 拷贝（全 .tie，无新增 Rust 桥；运行时表数据区在桥内）。
-        var arr = call_arg(id, 0)
-        var at2 = node_types[arr]
-        if types.is_table(at2) {
-            // ---------- 动态表 → 连续内存切片（任务16）----------
-            // 元素类型：table_elem（typed table<T>）→ var_table_elem（table_new_i64
-            // 等语义登记，裸 table 无元素信息）→ i64 兜底。
-            var etab: i64 = types.named(TK_I64)
-            var te2 = types.table_elem(at2)
-            if te2 >= 0 {
-                etab = te2
-            } else if s_tags[arr] == 6 {
-                var te3 = sinfer.var_table_elem(intern.intern(sstate.name_str(arr)))
-                if te3 >= 0 {
-                    etab = te3
-                }
-            }
-            var tb = tig_expr(arr)
-            if tb < 0 {
-                return -1
-            }
-            var start = tig_expr(call_arg(id, 1))
-            if start < 0 {
-                return -1
-            }
-            var cnt = tig_expr(call_arg(id, 2))
-            if cnt < 0 {
-                return -1
-            }
-            // 分配连续缓冲：cnt * elem_size 字节（malloc 返回 ptr<u8>）
-            var esz = elem_size(etab)
-            var esz_v = tig_int_lit_ty(esz, types.named(TK_I64))
-            var m = ir.new_inst(g_cur_block, 2, types.named(TK_I64))  // mul
-            ir.add_operand(m, esz_v, 0)
-            ir.add_operand(m, cnt, 0)
-            var buf = s21_raw_alloc_str(ir.get_value(m))  // 原始缓冲：绕开 TK_STR 补头扫描（漏洞 A 类）
-            // LLVM opaque ptr：malloc 结果 ptr 直接用于 gep（元素类型 = ins_ty，
-            // 步长按 etab）；无需 bitcast。
-            var bp = buf
-            var suffix = bridge_suffix(etab)
-            var ret_ty: i64 = types.named(TK_I64)
-            if suffix == "string" {
-                ret_ty = types.named(TK_STR)
-            } else if suffix == "f64" {
-                ret_ty = types.named(TK_F64)
-            } else if suffix == "bool" {
-                ret_ty = types.named(TK_BOOL)
-            }
-            // 运行时循环（cnt/start 是运行期值，不能用编译期展开）：计数器 i
-            // alloca 0..cnt，body 每次迭代 tie_table_at 读 + 写连续缓冲。
-            var i_a = ir.new_inst(g_cur_block, 20, types.named(TK_I64))  // alloca i64
-            ir.add_operand(i_a, types.named(TK_I64), 2)
-            var i_ptr = ir.get_value(i_a)
-            var i_zero = tig_int_lit_ty(0, types.named(TK_I64))
-            var st0 = ir.new_inst(g_cur_block, 22, -1)  // store 0 → i
-            ir.add_operand(st0, types.named(TK_I64), 2)
-            ir.add_operand(st0, i_zero, 0)
-            ir.add_operand(st0, i_ptr, 0)
-            var cond_blk = ir.new_block(g_cur_func, interner.intern("slc.cond"))
-            var body_blk = ir.new_block(g_cur_func, interner.intern("slc.body"))
-            var step_blk = ir.new_block(g_cur_func, interner.intern("slc.step"))
-            var exit_blk = ir.new_block(g_cur_func, interner.intern("slc.exit"))
-            var b0 = ir.new_inst(g_cur_block, 30, -1)  // br cond
-            ir.add_operand(b0, cond_blk, 1)
-            // cond 块：i < cnt → body，否则 exit
-            g_cur_block = cond_blk
-            var cur = ir.new_inst(g_cur_block, 21, types.named(TK_I64))  // load i
-            ir.add_operand(cur, i_ptr, 0)
-            var cur_v = ir.get_value(cur)
-            var cnd = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp slt
-            ir.add_operand(cnd, cur_v, 0)
-            ir.add_operand(cnd, cnt, 0)
-            ir.add_operand(cnd, 2, 2)  // slt
-            var cb = ir.new_inst(g_cur_block, 31, -1)  // cond_br
-            ir.add_operand(cb, ir.get_value(cnd), 0)
-            ir.add_operand(cb, body_blk, 1)
-            ir.add_operand(cb, exit_blk, 1)
-            // body 块：idx = start + i；读表元素；写缓冲 buf + i 元素步长
-            g_cur_block = body_blk
-            var cur2 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))  // load i
-            ir.add_operand(cur2, i_ptr, 0)
-            var i_v = ir.get_value(cur2)
-            var idx = ir.new_inst(g_cur_block, 0, types.named(TK_I64))  // add start + i
-            ir.add_operand(idx, start, 0)
-            ir.add_operand(idx, i_v, 0)
-            var ok_slot = ir.new_inst(g_cur_block, 20, types.named(TK_I8))  // alloca i8
-            ir.add_operand(ok_slot, types.named(TK_I8), 2)
-            var val = s21_table_at(tb, ir.get_value(idx), ir.get_value(ok_slot), ret_ty)
-            if val < 0 {
-                return -1
-            }
-            // 写缓冲：buf + i 元素步长（gep 单索引，i 为运行期值）
-            var gp = ir.new_inst(g_cur_block, 23, etab)
-            ir.add_operand(gp, bp, 0)
-            ir.add_operand(gp, i_v, 0)
-            var st = ir.new_inst(g_cur_block, 22, -1)  // store
-            ir.add_operand(st, etab, 2)
-            ir.add_operand(st, val, 0)
-            ir.add_operand(st, ir.get_value(gp), 0)
-            var bb = ir.new_inst(g_cur_block, 30, -1)  // br step
-            ir.add_operand(bb, step_blk, 1)
-            // step 块：i += 1
-            g_cur_block = step_blk
-            var cur3 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))  // load i
-            ir.add_operand(cur3, i_ptr, 0)
-            var i3 = ir.get_value(cur3)
-            var one = tig_int_lit_ty(1, types.named(TK_I64))
-            var inc = ir.new_inst(g_cur_block, 0, types.named(TK_I64))  // add i + 1
-            ir.add_operand(inc, i3, 0)
-            ir.add_operand(inc, one, 0)
-            var st2 = ir.new_inst(g_cur_block, 22, -1)  // store i+1 → i
-            ir.add_operand(st2, types.named(TK_I64), 2)
-            ir.add_operand(st2, ir.get_value(inc), 0)
-            ir.add_operand(st2, i_ptr, 0)
-            var sb = ir.new_inst(g_cur_block, 30, -1)  // br cond
-            ir.add_operand(sb, cond_blk, 1)
-            // exit 块
-            g_cur_block = exit_blk
-            g_builtin_res = make_slice2(buf, cnt, etab)
-            return 0
-        }
-        if at2 != TK_STR {
-            sm_err_msg = "slice_of() 第一版只支持字符串或动态表（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var et: i64 = types.named(TK_U8)
-        var pv: i64 = -1
-        if s_tags[arr] == 6 {
-            var nid3 = interner.intern(sstate.name_str(arr))
-            if scope_get_global(nid3) >= 0 {
-                pv = g_lookup_alloca
-            }
-        }
-        if pv < 0 {
-            pv = tig_expr(arr)
-            if pv < 0 {
-                return -1
-            }
-            // 字符串字面量（const_str = i64 指针整数）→ inttoptr 转 ptr
-            if s_tags[arr] == 2 {
-                var ip = ir.new_inst(g_cur_block, 25, types.named(TK_STR))
-                ir.add_operand(ip, pv, 0)
-                pv = ir.get_value(ip)
-            }
-        }
-        var start = tig_expr(call_arg(id, 1))
-        if start < 0 {
-            return -1
-        }
-        var cnt = tig_expr(call_arg(id, 2))
-        if cnt < 0 {
-            return -1
-        }
-        // 基址 + start 元素步长（u8 → 字节偏移）
-        var gp2 = ir.new_inst(g_cur_block, 23, et)
-        ir.add_operand(gp2, pv, 0)
-        ir.add_operand(gp2, start, 0)
-        var base = ir.get_value(gp2)
-        g_builtin_res = make_slice2(base, cnt, et)
-        return 0
-    }
-    if nm == "slice_len" {
-        var s = tig_expr(call_arg(id, 0))
-        if s < 0 {
-            return -1
-        }
-        g_builtin_res = slice_field(s, 1)  // 长度字段
-        return 0
-    }
-    if nm == "slice_index" {
-        // slice_index(s, i) → s[i]：gep 元素步长 + load
-        var s = tig_expr(call_arg(id, 0))
-        if s < 0 {
-            return -1
-        }
-        var st_ty = node_types[call_arg(id, 0)]
-        var et = types.table_elem(st_ty)
-        if et < 0 {
-            sm_err_msg = "slice_index() 实参必须是切片类型（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var i = tig_expr(call_arg(id, 1))
-        if i < 0 {
-            return -1
-        }
-        var sp = slice_field(s, 0)  // 指针字段
-        var gp3 = ir.new_inst(g_cur_block, 23, et)
-        ir.add_operand(gp3, sp, 0)
-        ir.add_operand(gp3, i, 0)
-        var ld2 = ir.new_inst(g_cur_block, 21, et)
-        ir.add_operand(ld2, ir.get_value(gp3), 0)
-        g_builtin_res = ir.get_value(ld2)
-        return 0
-    }
+    // ---------- S1.2 unsafe 指针/内存内置 ----------
+    if nm == "addr_of" { return bi_addr_of(nm, id) }
+    if nm == "addr_of_field" { return bi_addr_of_field(nm, id) }
+    if nm == "deref" { return bi_deref(nm, id) }
+    if nm == "deref_write" { return bi_deref_write(nm, id) }
+    if nm == "volatile_load" { return bi_volatile_load(nm, id) }
+    if nm == "volatile_store" { return bi_volatile_store(nm, id) }
+    if nm == "is_null" { return bi_is_null(nm, id) }
+    if nm == "ptr_add" { return bi_ptr_add(nm, id) }
+    if nm == "ptr_to_int" { return bi_ptr_to_int(nm, id) }
+    if nm == "int_to_ptr" { return bi_int_to_ptr(nm, id) }
+    if nm == "alloc" { return bi_alloc(nm, id) }
+    if nm == "free" { return bi_free(nm, id) }
+    if nm == "memcpy" { return bi_memcpy(nm, id) }
+    if nm == "memset" { return bi_memset(nm, id) }
+    if nm == "slice_of" { return bi_slice_of(nm, id) }
+    if nm == "slice_len" { return bi_slice_len(nm, id) }
+    if nm == "slice_index" { return bi_slice_index(nm, id) }
+    // ---------- S1.3 as_* 显式数值转换族 ----------
+    // as_i8/as_i16/as_i32/as_i64/as_u8/as_u16/as_u32/as_u64/as_f32/as_f64：
+    // 任意数字 → 目标类型（数值转换：截断/饱和由 LLVM 指令映射——trunc/sext/
+    // zext/fptosi/sitofp/fpext/fptrunc）。语义层已校验参数为数字。
+    var as_dst: i64 = -1
+    // ---------- S1.3 as_* 显式数值转换族 ----------
     // ---------- S1.3 as_* 显式数值转换族 ----------
     // as_i8/as_i16/as_i32/as_i64/as_u8/as_u16/as_u32/as_u64/as_f32/as_f64：
     // 任意数字 → 目标类型（数值转换：截断/饱和由 LLVM 指令映射——trunc/sext/
@@ -1149,426 +655,33 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         g_builtin_res = cv2
         return 0
     }
-    if nm == "exec_code" {
-        // runtime.a 退役：内联到 libc system（返回 i64，RAX 零扩展保证同旧 tie_exec_code）
-        var cv = tig_expr(call_arg(id, 0))
-        if cv < 0 {
-            return -1
-        }
-        g_builtin_res = tig_ext_call1("system", cv, types.named(TK_STR), types.named(TK_I64))
-        return 0
-    }
-    if nm == "time_now" {
-        // runtime.a 退役：内联到 libc time(0)（0 = NULL，返回 Unix 秒数）
-        g_builtin_res = tig_ext_call1("time", tig_int_lit(0), types.named(TK_I64), types.named(TK_I64))
-        return 0
-    }
-    if nm == "get_env" {
-        // runtime.a 退役：内联到 libc getenv（返回 char* → 自动补头为 tie 串）
-        var gv = tig_expr(call_arg(id, 0))
-        if gv < 0 {
-            return -1
-        }
-        g_builtin_res = tig_ext_call1("getenv", gv, types.named(TK_STR), types.named(TK_STR))
-        return 0
-    }
-    if nm == "exec_output" {
-        // p.6.4.6：内联 CreatePipe+CreateProcessW+ReadFile 捕获子进程 stdout（零 Rust 桥）。
-        // 不再经 tig_runtime_call（g_used_interp 桥）→ 不置位，不链接 tie_interp.lib。
-        var ev = tig_expr(call_arg(id, 0))
-        if ev < 0 {
-            return -1
-        }
-        g_builtin_res = tig_exec_output_inline(ev)
-        return 0
-    }
-    if nm == "str_len" {
-        // 去 Rust 桥（dev33 批次3 关联）：码点计数改为纯 tie 内联——
-        // 复用 s21_utf8_seq_len 步进循环累加（等价 tie_str_len），不再链接
-        // tie_interp.lib。返回码点数。
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        // 计数槽（i64）：初值 0；字节位置槽：初值 0
-        var cnt_a = ir.new_inst(g_cur_block, 20, types.named(TK_I64))
-        ir.add_operand(cnt_a, types.named(TK_I64), 2)
-        var cnt_ptr = ir.get_value(cnt_a)
-        var pos_a = ir.new_inst(g_cur_block, 20, types.named(TK_I64))
-        ir.add_operand(pos_a, types.named(TK_I64), 2)
-        var pos_ptr = ir.get_value(pos_a)
-        var zlit = tig_int_lit_ty(0, types.named(TK_I64))
-        var st0 = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(st0, types.named(TK_I64), 2)
-        ir.add_operand(st0, zlit, 0)
-        ir.add_operand(st0, cnt_ptr, 0)
-        var st0b = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(st0b, types.named(TK_I64), 2)
-        ir.add_operand(st0b, zlit, 0)
-        ir.add_operand(st0b, pos_ptr, 0)
-        // 四块：cond / body / step / exit
-        var cond_blk = ir.new_block(g_cur_func, interner.intern("sl.cond"))
-        var body_blk = ir.new_block(g_cur_func, interner.intern("sl.body"))
-        var step_blk = ir.new_block(g_cur_func, interner.intern("sl.step"))
-        var exit_blk = ir.new_block(g_cur_func, interner.intern("sl.exit"))
-        var b0 = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(b0, cond_blk, 1)
-        // cond：pos < byte_len(s) → body，否则 exit
-        g_cur_block = cond_blk
-        var cur = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-        ir.add_operand(cur, pos_ptr, 0)
-        var cur_v = ir.get_value(cur)
-        var blen = s21_str_head_len(v)
-        var ol = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
-        ir.add_operand(ol, cur_v, 0)
-        ir.add_operand(ol, blen, 0)
-        ir.add_operand(ol, 6, 2)  // ult
-        var ol_v = ir.get_value(ol)
-        var cb = ir.new_inst(g_cur_block, 31, -1)
-        ir.add_operand(cb, ol_v, 0)
-        ir.add_operand(cb, body_blk, 1)
-        ir.add_operand(cb, exit_blk, 1)
-        // body：cnt = cnt + 1；pos += utf8_seq_len(s, pos)
-        g_cur_block = body_blk
-        var curc = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-        ir.add_operand(curc, cnt_ptr, 0)
-        var curc_v = ir.get_value(curc)
-        var inc = s21_bin(0, curc_v, tig_int_lit(1))
-        var stc = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(stc, types.named(TK_I64), 2)
-        ir.add_operand(stc, inc, 0)
-        ir.add_operand(stc, cnt_ptr, 0)
-        var cur2 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-        ir.add_operand(cur2, pos_ptr, 0)
-        var cur2_v = ir.get_value(cur2)
-        var sl = s21_utf8_seq_len(v, cur2_v)
-        var np = s21_bin(0, cur2_v, sl)
-        var stp = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(stp, types.named(TK_I64), 2)
-        ir.add_operand(stp, np, 0)
-        ir.add_operand(stp, pos_ptr, 0)
-        var bbr = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(bbr, step_blk, 1)
-        // step → cond（空 step，跳回 cond 即可；此处直接 br cond）
-        g_cur_block = step_blk
-        var sb2 = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(sb2, cond_blk, 1)
-        // exit：结果 = cnt
-        g_cur_block = exit_blk
-        var ld = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-        ir.add_operand(ld, cnt_ptr, 0)
-        g_builtin_res = ir.get_value(ld)
-        return 0
-    }
-    if nm == "char_code" {
-        // 去 Rust 桥（dev33 批次3 关联）：单字符 → 码点，用已内联的
-        // s21_utf8_char_at(字符, 0)（等价 tie_char_code，纯 tie 生成，不再
-        // 链接 tie_interp.lib）。语义：UTF-8 解码单字符首码点 = 该码点。
-        var cc_arg = call_arg(id, 0)
-        var v = tig_expr(cc_arg)
-        if v < 0 {
-            return -1
-        }
-        // r.1 复查修复：char_code(<char> 值) —— char 是 i32 标量码点，
-        // 直接 zext i32→i64 返回；仅 string（ptr）走 UTF-8 首码点解码。
-        // 此前把 char 值当 ptr 交给 s21_utf8_char_at → opt "i32 used as ptr"。
-        if node_types[cc_arg] == types.named(TK_CHAR) {
-            g_builtin_res = s21_zext(v, types.named(TK_CHAR))
-            return 0
-        }
-        var zlit = tig_int_lit_ty(0, types.named(TK_I64))
-        g_builtin_res = s21_utf8_char_at(v, zlit)
-        return 0
-    }
-    if nm == "str_char" {
-        // 去 Rust 桥：取第 i 个码点字符，irgen 内联生成——字节位置循环跳过
-        // i 个码点（s21_utf8_seq_len 步进）→ s21_utf8_char_at 解码码点 →
-        // s21_codepoint_to_str 得单字符。不链接 tie_interp.lib。
-        // p6.x 缺陷根治：字节定位循环原仅以 k < i 终止，无 pos 边界检查——
-        // 调用方以 len(s)（字节数，O(1) 读头）为上界遍历含多字节 UTF-8
-        // （中文等码点 < 字节）的串时，i 会超过实际码点数，pos 越过串尾
-        // 继续读（s21_utf8_seq_len/s21_str_byte 越界 GEP+load → 0xC0000005，
-        // jcc-pack extract 崩溃根因）。修复：cond 增补 pos < blen 终止，
-        // 定位失败（pos >= blen）返回空串而非越界读。
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        var i = tig_expr(call_arg(id, 1))
-        if i < 0 {
-            return -1
-        }
-        var blen = s21_str_head_len(v)
-        // 位置槽（字节 pos）与步进计数器槽（已跳码点数）
-        var pos_a = ir.new_inst(g_cur_block, 20, types.named(TK_I64))
-        ir.add_operand(pos_a, types.named(TK_I64), 2)
-        var pos_ptr = ir.get_value(pos_a)
-        var k_a = ir.new_inst(g_cur_block, 20, types.named(TK_I64))
-        ir.add_operand(k_a, types.named(TK_I64), 2)
-        var k_ptr = ir.get_value(k_a)
-        var zlit = tig_int_lit_ty(0, types.named(TK_I64))
-        var stp = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(stp, types.named(TK_I64), 2)
-        ir.add_operand(stp, zlit, 0)
-        ir.add_operand(stp, pos_ptr, 0)
-        var stk = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(stk, types.named(TK_I64), 2)
-        ir.add_operand(stk, zlit, 0)
-        ir.add_operand(stk, k_ptr, 0)
-        // 五块：cond / body / exit 判定（after）/ ok / bad / merge
-        // cond：k < i 且 pos < blen → body；否则 → after
-        // after：pos < blen（定位到第 i 个码点）→ ok 解码；否则 → bad 空串
-        var cond_blk = ir.new_block(g_cur_func, interner.intern("sc.cond"))
-        var body_blk = ir.new_block(g_cur_func, interner.intern("sc.body"))
-        var after_blk = ir.new_block(g_cur_func, interner.intern("sc.after"))
-        var ok_blk = ir.new_block(g_cur_func, interner.intern("sc.ok"))
-        var bad_blk = ir.new_block(g_cur_func, interner.intern("sc.bad"))
-        var merge_blk = ir.new_block(g_cur_func, interner.intern("sc.merge"))
-        var res_a = ir.new_inst(g_cur_block, 20, types.named(TK_STR))
-        ir.add_operand(res_a, types.named(TK_STR), 2)
-        var res_ptr = ir.get_value(res_a)
-        var b0 = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(b0, cond_blk, 1)
-        // cond：k < i 且 pos < blen → body，否则 after
-        g_cur_block = cond_blk
-        var ku = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-        ir.add_operand(ku, k_ptr, 0)
-        var ku_v = ir.get_value(ku)
-        var ok = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp
-        ir.add_operand(ok, ku_v, 0)
-        ir.add_operand(ok, i, 0)
-        ir.add_operand(ok, 2, 2)  // slt
-        var ok_v = ir.get_value(ok)
-        var pu = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-        ir.add_operand(pu, pos_ptr, 0)
-        var pu_v = ir.get_value(pu)
-        var inb = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp
-        ir.add_operand(inb, pu_v, 0)
-        ir.add_operand(inb, blen, 0)
-        ir.add_operand(inb, 6, 2)  // ult
-        var inb_v = ir.get_value(inb)
-        var both = tig_and_i1(ok_v, inb_v)
-        var cb = ir.new_inst(g_cur_block, 31, -1)
-        ir.add_operand(cb, both, 0)
-        ir.add_operand(cb, body_blk, 1)
-        ir.add_operand(cb, after_blk, 1)
-        // body：pos += utf8_seq_len(s, pos)；k += 1
-        g_cur_block = body_blk
-        var pu2 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-        ir.add_operand(pu2, pos_ptr, 0)
-        var pu2_v = ir.get_value(pu2)
-        var sl = s21_utf8_seq_len(v, pu2_v)
-        var np = s21_bin(0, pu2_v, sl)  // add
-        var stp2 = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(stp2, types.named(TK_I64), 2)
-        ir.add_operand(stp2, np, 0)
-        ir.add_operand(stp2, pos_ptr, 0)
-        var ku2 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-        ir.add_operand(ku2, k_ptr, 0)
-        var ku2_v = ir.get_value(ku2)
-        var nk = s21_bin(0, ku2_v, tig_int_lit(1))
-        var stk2 = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(stk2, types.named(TK_I64), 2)
-        ir.add_operand(stk2, nk, 0)
-        ir.add_operand(stk2, k_ptr, 0)
-        var bbr = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(bbr, cond_blk, 1)
-        // after：pos < blen → ok（定位成功，解码），否则 bad（空串）
-        g_cur_block = after_blk
-        var pu3 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-        ir.add_operand(pu3, pos_ptr, 0)
-        var pu3_v = ir.get_value(pu3)
-        var inb2 = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp
-        ir.add_operand(inb2, pu3_v, 0)
-        ir.add_operand(inb2, blen, 0)
-        ir.add_operand(inb2, 6, 2)  // ult
-        var inb2_v = ir.get_value(inb2)
-        var cb2 = ir.new_inst(g_cur_block, 31, -1)
-        ir.add_operand(cb2, inb2_v, 0)
-        ir.add_operand(cb2, ok_blk, 1)
-        ir.add_operand(cb2, bad_blk, 1)
-        // bad：定位失败（pos 越过串尾仍未到第 i 个码点）→ 空串
-        g_cur_block = bad_blk
-        var empty = tig_str_lit(interner.intern("\"\""))
-        var stb = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(stb, types.named(TK_STR), 2)
-        ir.add_operand(stb, empty, 0)
-        ir.add_operand(stb, res_ptr, 0)
-        var brb = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(brb, merge_blk, 1)
-        // ok：解码 pos 处码点 → 单字符字符串
-        g_cur_block = ok_blk
-        var pz = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-        ir.add_operand(pz, pos_ptr, 0)
-        var pz_v = ir.get_value(pz)
-        var cp = s21_utf8_char_at(v, pz_v)
-        var cps = s21_codepoint_to_str(cp)
-        var sto = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(sto, types.named(TK_STR), 2)
-        ir.add_operand(sto, cps, 0)
-        ir.add_operand(sto, res_ptr, 0)
-        var bro = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(bro, merge_blk, 1)
-        // merge：结果 = res 槽
-        g_cur_block = merge_blk
-        g_builtin_res = s21_load(res_ptr, types.named(TK_STR))
-        return 0
-    }
-    if nm == "str_from_code" {
-        // 去 Rust 桥：码点 → 单字符 UTF-8 字符串，改 irgen 内联生成
-        // s21_codepoint_to_str（纯 tie 内联，不链接 tie_interp.lib）。
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        // 窄整数（trit/char/i8/i16/i32 等）先 sext 到 i64（s21 编码期望 i64）
-        var vt = node_types[call_arg(id, 0)]
-        var sv = v
-        if vt >= 0 && vt != types.named(TK_I64) && vt != types.named(TK_U64) {
-            var se = tig_sext(v, vt, types.named(TK_I64))
-            if se < 0 {
-                return -1
-            }
-            sv = se
-        }
-        g_builtin_res = s21_codepoint_to_str(sv)
-        return 0
-    }
+    // ---------- S1.3 checked_* 溢出检测族 ----------
+    if nm == "exec_code" { return bi_exec_code(nm, id) }
+    if nm == "time_now" { return bi_time_now(nm, id) }
+    if nm == "get_env" { return bi_get_env(nm, id) }
+    if nm == "exec_output" { return bi_exec_output(nm, id) }
+    if nm == "str_len" { return bi_str_len(nm, id) }
+    if nm == "char_code" { return bi_char_code(nm, id) }
+    if nm == "str_char" { return bi_str_char(nm, id) }
+    if nm == "str_from_code" { return bi_str_from_code(nm, id) }
     // ---------- S2.1 字符串 {ptr,len} 原语 ----------
     // 二进制安全字节访问 / UTF-8 码点解码 / StringBuilder（实现见文件尾 s21_* 组）。
-    if nm == "str_byte" {
-        // str_byte(s, i)：取第 i 字节（0 ≤ i < len(s)；越界未定义——调用方保证）
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        var i = tig_expr(call_arg(id, 1))
-        if i < 0 {
-            return -1
-        }
-        g_builtin_res = s21_str_byte(v, i)
-        return 0
-    }
-    if nm == "utf8_seq_len" {
-        // utf8_seq_len(s, i)：字节 i 起的 UTF-8 序列长度（1-4，按首字节判定）
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        var i = tig_expr(call_arg(id, 1))
-        if i < 0 {
-            return -1
-        }
-        g_builtin_res = s21_utf8_seq_len(v, i)
-        return 0
-    }
-    if nm == "utf8_char_at" {
-        // utf8_char_at(s, i)：字节 i 起的 UTF-8 码点值（分支按序列长度解码）
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        var i = tig_expr(call_arg(id, 1))
-        if i < 0 {
-            return -1
-        }
-        g_builtin_res = s21_utf8_char_at(v, i)
-        return 0
-    }
+    // ---------- S2.1 字符串 {ptr,len} 原语 ----------
+    if nm == "str_byte" { return bi_str_byte(nm, id) }
+    if nm == "utf8_seq_len" { return bi_utf8_seq_len(nm, id) }
+    if nm == "utf8_char_at" { return bi_utf8_char_at(nm, id) }
     // SSO 短串池回退 malloc 累计次数（dev33 批次3 验收探针用：断言 = 0）
-    if nm == "sso_malloc_count" {
-        llvmgen.sso_enable()
-        var cnt_id = interner.intern("@s21_sso_malloc_cnt")
-        var ldc = ir.new_inst(g_cur_block, 21, types.named(TK_I64))  // load
-        ir.add_operand(ldc, cnt_id, 3)  // OK_GLOBAL → @s21_sso_malloc_cnt
-        g_builtin_res = ir.get_value(ldc)
-        return 0
-    }
+    if nm == "sso_malloc_count" { return bi_sso_malloc_count(nm, id) }
     // 可捕获 panic（dev33 批次7 任务18）：catch_panic(f) -> bool
-    if nm == "catch_panic" {
-        var r = tig_catch_panic(id)
-        if r < 0 {
-            return -1
-        }
-        return 0
-    }
+    if nm == "catch_panic" { return bi_catch_panic(nm, id) }
     // 闭包 → C 回调函数指针（dev33 批次8 任务23）：cb_ptr(f) -> string
-    if nm == "cb_ptr" {
-        var r2 = tig_cb_ptr(id)
-        if r2 < 0 {
-            return -1
-        }
-        return 0
-    }
-    if nm == "string_builder" {
-        // string_builder()：新建 StringBuilder 句柄（i64；两级指针 {cap,len,data}）
-        g_builtin_res = s21_sb_new()
-        return 0
-    }
-    if nm == "sb_append" {
-        // sb_append(h, s)：原地追加字符串（容量不足自动倍增重分配）；返回 0
-        var h = tig_expr(call_arg(id, 0))
-        if h < 0 {
-            return -1
-        }
-        var v = tig_expr(call_arg(id, 1))
-        if v < 0 {
-            return -1
-        }
-        s21_sb_append(h, v)
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
-    if nm == "sb_append_byte" {
-        // sb_append_byte(h, b)：原地追加单字节（0-255，二进制安全含 \0）；返回 0
-        var h = tig_expr(call_arg(id, 0))
-        if h < 0 {
-            return -1
-        }
-        var b = tig_expr(call_arg(id, 1))
-        if b < 0 {
-            return -1
-        }
-        s21_sb_append_byte(h, b)
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
-    if nm == "sb_build" {
-        // sb_build(h)：一次性产出 string（{头, 数据, \0}；句柄仍有效可复用）
-        var h = tig_expr(call_arg(id, 0))
-        if h < 0 {
-            return -1
-        }
-        g_builtin_res = s21_sb_build(h)
-        return 0
-    }
-    if nm == "sb_reset" {
-        // sb_reset(h)：清空复用（len=0，cap/data 缓冲保留；build 后续写必须 reset）
-        var h = tig_expr(call_arg(id, 0))
-        if h < 0 {
-            return -1
-        }
-        g_builtin_res = s21_sb_reset(h)
-        return 0
-    }
-    if nm == "str_sub_bytes" {
-        // str_sub_bytes(s, lo, hi)：字节区间子串 [lo, hi)（clamp 越界；
-        // 配合码点→字节偏移表实现 lexeme 切片零重扫）
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        var lo = tig_expr(call_arg(id, 1))
-        if lo < 0 {
-            return -1
-        }
-        var hi = tig_expr(call_arg(id, 2))
-        if hi < 0 {
-            return -1
-        }
-        g_builtin_res = s21_str_sub_bytes(v, lo, hi)
-        return 0
-    }
+    if nm == "cb_ptr" { return bi_cb_ptr(nm, id) }
+    if nm == "string_builder" { return bi_string_builder(nm, id) }
+    if nm == "sb_append" { return bi_sb_append(nm, id) }
+    if nm == "sb_append_byte" { return bi_sb_append_byte(nm, id) }
+    if nm == "sb_build" { return bi_sb_build(nm, id) }
+    if nm == "sb_reset" { return bi_sb_reset(nm, id) }
+    if nm == "str_sub_bytes" { return bi_str_sub_bytes(nm, id) }
     // ---------- 网络原语（P0：std/net）----------
     // 参数签名：i=整数（窄整数 sext 到 i64）、s=字符串（ptr 直传）；桥符号 tie_<name>；
     // net_close 返回 i8→bool（icmp ne），两个 recv 返回堆串（tig_stmt 统一 free），其余 i64。
@@ -1681,41 +794,9 @@ func builtin_expr(nm: string, id: i64) -> i64 {
     // dyn_call / dyn_call_p（addr + 5×i64 实参）-> i64：op73 动态 C 调用
     // （字符串实参按 TK_STR 原样传 ptr = const char*；整数传 i64；可空指针传 0）。
     // cstr_to_string(addr) -> string：NUL 结尾 C 字符串 → tie 字符串。
-    if nm == "load_library" {
-        var namev = tig_expr(call_arg(id, 0))
-        if namev < 0 {
-            return -1
-        }
-        var w = tig_wide16(namev)
-        var h = tig_ext_call1("LoadLibraryW", w, types.named(TK_STR), types.named(TK_I64))
-        g_builtin_res = h
-        return 0
-    }
-    if nm == "get_proc" {
-        var hnd = tig_expr(call_arg(id, 0))
-        if hnd < 0 {
-            return -1
-        }
-        var nmv = tig_expr(call_arg(id, 1))
-        if nmv < 0 {
-            return -1
-        }
-        var hty = node_types[call_arg(id, 0)]
-        if hty != types.named(TK_I64) && hty != types.named(TK_U64) && hty >= 0 {
-            var sh = tig_sext(hnd, hty, types.named(TK_I64))
-            if sh < 0 {
-                return -1
-            }
-            hnd = sh
-        }
-        var ats: table<i64> = table_new_i64()
-        var avs: table<i64> = table_new_i64()
-        table_push(ats, types.named(TK_I64)); table_push(avs, hnd)
-        table_push(ats, types.named(TK_STR)); table_push(avs, nmv)
-        var p = tig_ext_call_typed("GetProcAddress", ats, avs, types.named(TK_I64))
-        g_builtin_res = p
-        return 0
-    }
+    // ---------- 动态加载原语（p.6.6.20 std/sqlite：winsqlite3.dll C ABI 桥） ----------
+    if nm == "load_library" { return bi_load_library(nm, id) }
+    if nm == "get_proc" { return bi_get_proc(nm, id) }
     if nm == "dyn_call" || nm == "dyn_call_p" {
         var T64 = types.named(TK_I64)
         var retmode: i64 = 0
@@ -1768,197 +849,14 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         g_builtin_res = ir.get_value(inst)
         return 0
     }
-    if nm == "cstr_to_string" {
-        var addr = tig_expr(call_arg(id, 0))
-        if addr < 0 {
-            return -1
-        }
-        // addr 是 i64 指针整数（dyn_call_p/get_proc 返回值）→ inttoptr → ptr，
-        // 否则 s21_gep 基址被 to_ptr 原样输出（i64 当 ptr → LLVM 类型错）
-        var ap = ir.new_inst(g_cur_block, 25, types.named(TK_STR))
-        ir.add_operand(ap, addr, 0)
-        var addrp = ir.get_value(ap)
-        var hv = s21_sb_new()
-        var ia = ir.new_inst(g_cur_block, 20, types.named(TK_I64))
-        ir.add_operand(ia, types.named(TK_I64), 2)
-        var ip = ir.get_value(ia)
-        s21_store(ip, tig_int_lit(0), types.named(TK_I64))
-        var hd = ir.new_block(g_cur_func, interner.intern("cs.h"))
-        var bd = ir.new_block(g_cur_func, interner.intern("cs.b"))
-        var ex = ir.new_block(g_cur_func, interner.intern("cs.x"))
-        var br0 = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(br0, hd, 1)
-        g_cur_block = hd
-        var iv = s21_load(ip, types.named(TK_I64))
-        var byt = s21_zext(s21_load(s21_gep(addrp, iv, false), types.named(TK_I8)), types.named(TK_I8))
-        var nul = tig_cmp_zero(byt, 0)
-        var cb = ir.new_inst(g_cur_block, 31, -1)
-        ir.add_operand(cb, nul, 0)
-        ir.add_operand(cb, ex, 1)
-        ir.add_operand(cb, bd, 1)
-        g_cur_block = bd
-        var iv2 = s21_load(ip, types.named(TK_I64))
-        s21_sb_append_byte(hv, byt)
-        s21_store(ip, s21_bin(0, iv2, tig_int_lit(1)), types.named(TK_I64))
-        var brb = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(brb, hd, 1)
-        g_cur_block = ex
-        g_builtin_res = s21_sb_build(hv)
-        return 0
-    }
-    if nm == "to_string" {
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        // 实参类型：f64 → 用 i128 内联除数换成「浮点暂保留 Rust 桥」见下；
-        // i64/u64 → tig_i64_to_str（去 Rust）；窄整数 sext → i64 后再内联。
-        var vt = node_types[call_arg(id, 0)]
-        if vt == types.named(TK_STR) {
-            // p.8.2.3 字符串插值：to_string(string) 返回自身（插值拼接链
-            // 统一包 to_string——string 段直通，数字/布尔段走数值转换）
-            g_builtin_res = v
-        } else if vt == types.named(TK_BOOL) {
-            // p.8.2.3 bool 插值：cond_br + phi → "true"/"false"
-            //（const_str 是 i64 指针整数，llvmgen 字符串 phi 分支自动转真 ptr）
-            var t_str = tig_str_lit(interner.intern("\"true\""))
-            var f_str = tig_str_lit(interner.intern("\"false\""))
-            var bcond = tig_cond_to_bool(v, types.named(TK_BOOL))
-            var t_blk = ir.new_block(g_cur_func, interner.intern("tos.t"))
-            var f_blk = ir.new_block(g_cur_func, interner.intern("tos.f"))
-            var m_blk = ir.new_block(g_cur_func, interner.intern("tos.m"))
-            var cbr = ir.new_inst(g_cur_block, 31, -1)
-            ir.add_operand(cbr, bcond, 0)
-            ir.add_operand(cbr, t_blk, 1)
-            ir.add_operand(cbr, f_blk, 1)
-            g_cur_block = t_blk
-            var br1 = ir.new_inst(g_cur_block, 30, -1)
-            ir.add_operand(br1, m_blk, 1)
-            g_cur_block = f_blk
-            var br2 = ir.new_inst(g_cur_block, 30, -1)
-            ir.add_operand(br2, m_blk, 1)
-            g_cur_block = m_blk
-            var phi = ir.new_inst(g_cur_block, 33, types.named(TK_STR))
-            ir.add_operand(phi, t_str, 0)
-            ir.add_operand(phi, t_blk, 1)
-            ir.add_operand(phi, f_str, 0)
-            ir.add_operand(phi, f_blk, 1)
-            g_builtin_res = ir.get_value(phi)
-        } else if vt == types.named(TK_F64) || vt == types.named(TK_F32) {
-            // p.6.4.4：去 Rust 桥（tie_to_string_f64）→ 内联 tig_f64_to_str
-            //（CRT snprintf "%.17g" → 带头串；Rust 最短表示差异可接受）。
-            var fv = v
-            if vt == types.named(TK_F32) {
-                fv = tig_coerce(v, types.named(TK_F32), types.named(TK_F64))  // fpext → f64
-            }
-            g_builtin_res = tig_f64_to_str(fv)
-        } else if vt == types.named(TK_I128) || vt == types.named(TK_U128) {
-            // 批次 2（i128/u128）：内联除法循环生成十进制串
-            g_builtin_res = tig_i128_to_str(v, vt == types.named(TK_I128))
-        } else if vt == types.named(TK_I64) {
-            g_builtin_res = tig_i64_to_str(v, true)
-        } else if vt == types.named(TK_U64) {
-            g_builtin_res = tig_i64_to_str(v, false)
-        } else if vt < 0 {
-            g_builtin_res = tig_i64_to_str(v, false)
-        } else {
-            // 窄类型（trit/char/i8/i16/i32/u8/u16/u32 等）：sext → i64
-            var sv = tig_sext(v, vt, types.named(TK_I64))
-            if sv < 0 {
-                return -1
-            }
-            g_builtin_res = tig_i64_to_str(sv, true)
-        }
-        return 0
-    }
-    if nm == "parse_int" {
-        // 去 Rust 桥（批次A）：tig_parse_int 内联 IR 生成（字节循环累加），
-        // 替代 Rust 桥 tie_parse_int。签名 (s, ok 出参槽) -> i64。不再置 g_used_interp。
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        var pio = ir.new_inst(g_cur_block, 20, types.named(TK_I8))  // alloca i8 ok
-        ir.add_operand(pio, types.named(TK_I8), 2)
-        g_builtin_res = tig_parse_int(v, ir.get_value(pio))
-        return 0
-    }
-    if nm == "parse_float" {
-        // p.6.4.4：去 Rust 桥（tie_parse_float）→ 内联 tig_parse_float IR（字节循环
-        // 十进制解析 + libm pow 指数缩放，有限精度）。签名 (s, ok 出参槽) -> f64。
-        // 不再置 g_used_interp。
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        var pfo = ir.new_inst(g_cur_block, 20, types.named(TK_I8))  // alloca i8
-        ir.add_operand(pfo, types.named(TK_I8), 2)
-        g_builtin_res = tig_parse_float(v, ir.get_value(pfo))
-        return 0
-    }
-    if nm == "parse_trit" {
-        // 去 Rust 桥（批次A）：tig_parse_trit 内联 IR 生成，替代桥 tie_parse_trit。
-        // 返回 i8（值域 -1/0/1，语义类型标 TK_TRIT）。不再置 g_used_interp。
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        var pto = ir.new_inst(g_cur_block, 20, types.named(TK_I8))  // alloca i8
-        ir.add_operand(pto, types.named(TK_I8), 2)
-        g_builtin_res = tig_parse_trit(v, ir.get_value(pto))
-        return 0
-    }
-    if nm == "to_trit" {
-        // i64 → 饱和钳制 trit（i8，值域 -1/0/1；对齐 interp_bin clamp_trit）：
-        // lt = x< -1 → -1；gt = x>1 → 1；否则 x。clamp 后 trunc i8。
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        var T64 = types.named(TK_I64)
-        var lt = tig_icmp_c(v, tig_int_lit(-1), 2)          // x < -1 (slt)
-        var c1 = tig_select_i(lt, tig_int_lit(-1), v, T64)  // c1 = clamp 下界
-        var gt = tig_icmp_c(c1, tig_int_lit(1), 3)          // x > 1 (sgt)
-        var c2 = tig_select_i(gt, tig_int_lit(1), c1, T64)  // c2 ∈ [-1,1]
-        g_builtin_res = s21_trunc_i8(c2)                    // i64 → i8 trit
-        return 0
-    }
-    if nm == "trit_val" {
-        // trit（i8）→ i64：sext 符号扩展（-1/0/1 → i64）
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        g_builtin_res = tig_sext(v, types.named(TK_I8), types.named(TK_I64))
-        return 0
-    }
-    if nm == "len" {
-        // S2.1：len(表) → tie_table_len；len(字符串) → 读 {ptr,len} 长度头（O(1)，
-        // 不再 strlen 扫描——字符串值统一带头部（字面量 .rodata 头 / str_cat 头 /
-        // 桥返回自动补头 / StringBuilder build 头）。行为与旧 strlen 一致（字节数）。
-        // L1：len(定长数组) → 编译期常量 N。
-        var a = call_arg(id, 0)
-        var at = node_types[a]
-        if at >= 0 && types.is_array(at) {
-            g_builtin_res = tig_int_lit_ty(types.array_len(at), types.named(TK_I64))
-            return 0
-        }
-        if at == types.named(TK_STR) {
-            // 字符串：读 ptr-8 的 i64 长度头（S2.1）
-            var v = tig_expr(a)
-            if v < 0 {
-                return -1
-            }
-            g_builtin_res = s21_str_head_len(v)
-            return 0
-        }
-        var v2 = tig_expr(a)
-        if v2 < 0 {
-            return -1
-        }
-        g_builtin_res = s21_table_len(v2)
-        return 0
-    }
+    if nm == "cstr_to_string" { return bi_cstr_to_string(nm, id) }
+    if nm == "to_string" { return bi_to_string(nm, id) }
+    if nm == "parse_int" { return bi_parse_int(nm, id) }
+    if nm == "parse_float" { return bi_parse_float(nm, id) }
+    if nm == "parse_trit" { return bi_parse_trit(nm, id) }
+    if nm == "to_trit" { return bi_to_trit(nm, id) }
+    if nm == "trit_val" { return bi_trit_val(nm, id) }
+    if nm == "len" { return bi_len(nm, id) }
     // P2b：any 拆箱（as_bool/as_string/as_char——仅 any 参数；as_i64/as_f64
     // 已在上方 as_dst 块重载处理）。P2d：as_table_* 拆箱为对应元素类型表
     //（返回表值 ptr，tag = 精确表类型 id，与装箱时的 tag 一致才匹配）。
@@ -2000,28 +898,7 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         return 0
     }
     // P2c：any_tag(x) → 读 {tag,payload} 的 tag 字段（标量 0-4 / 复合类型 id）
-    if nm == "any_tag" {
-        var a1 = call_arg(id, 0)
-        var av1 = tig_expr(a1)
-        if av1 < 0 {
-            return -1
-        }
-        var any_ty6 = types.named(TK_ANY)
-        var slot6 = ir.new_inst(g_cur_block, 20, any_ty6)
-        ir.add_operand(slot6, any_ty6, 2)
-        var sp6 = ir.get_value(slot6)
-        var st6 = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(st6, any_ty6, 2)
-        ir.add_operand(st6, av1, 0)
-        ir.add_operand(st6, sp6, 0)
-        var g6 = ir.new_inst(g_cur_block, 27, any_ty6)
-        ir.add_operand(g6, sp6, 0)
-        ir.add_operand(g6, 0, 2)
-        var ld6 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-        ir.add_operand(ld6, ir.get_value(g6), 0)
-        g_builtin_res = ir.get_value(ld6)
-        return 0
-    }
+    if nm == "any_tag" { return bi_any_tag(nm, id) }
     // P2d-D3：map 高阶——map_keys(m)→table<string>；map_values(m)→table<V>
     //（V 从实参 map<string,V> 类型解码）；map_contains(m, key)→bool（不 raise）
     if nm == "map_keys" || nm == "map_values" {
@@ -2043,18 +920,7 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         g_builtin_res = s21_map_extract(mv, m_vty, nm == "map_keys")
         return 0
     }
-    if nm == "map_contains" {
-        var m1 = tig_expr(call_arg(id, 0))
-        if m1 < 0 {
-            return -1
-        }
-        var k1 = tig_expr(call_arg(id, 1))
-        if k1 < 0 {
-            return -1
-        }
-        g_builtin_res = s21_map_contains(m1, k1)
-        return 0
-    }
+    if nm == "map_contains" { return bi_map_contains(nm, id) }
     if nm == "table_new_i64" || nm == "table_new_f64" || nm == "table_new_string" || nm == "table_new_bool" {
         var elem: i64 = types.named(TK_I64)
         if nm == "table_new_string" {
@@ -2068,144 +934,11 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         g_builtin_res = s21_table_new(esz_v)
         return 0
     }
-    if nm == "table_push" {
-        // 第 1 参数 = 表变量（语义已保证）；元素类型查 lv_telem/gb_telem
-        var tname_node = call_arg(id, 0)
-        var tname = sstate.name_str(tname_node)
-        var elem: i64 = types.named(TK_I64)
-        // 优先 irgen 作用域完整类型（table_new_f64() 初始化的变量 scope 里是
-        // table_of(f64) → 元素 f64）。var_table_elem 是语义层每函数重置的，
-        // irgen 阶段只可靠查到最后一次登记——跨函数场景（parse_series 里
-        // push parse_float 结果）会误判为 i64 导致 push_i64(double) 类型错
-        var te: i64 = -1
-        var tnid = interner.intern(tname)
-        // p.9.12.6 边界：table_push 不支持作用于行池 table<R>（行池无"追加"，只有按 id 写）
-        if rp_is(tnid) {
-            sm_err_msg = "table_push 不支持作用于行池 table<R>（p.9.12.6 边界，函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var tv_own = tblvar_get(tnid)
-        if tv_own >= 0 {
-            te = tv_own  // irgen 自维护登记（最可靠）
-        } else if scope_get(tnid) >= 0 && types.is_table(g_lookup_ty) {
-            var le = types.table_elem(g_lookup_ty)
-            if le > 0 {
-                te = le
-            }
-        }
-        // r.1.1.7：**目标表实参节点的语义类型**（按目标表元素静态类型，非值类型
-        // 启发）——table<T> 标注/推断的变量节点 node_types 是逐表达式语义推断，
-        // 不依赖按名登记的 lv_telem（后者在 irgen 阶段只剩最后一次登记，同模块
-        // 混合 i64/string 表时 ref 参数/局部表 push 会误取另一函数的同名登记 →
-        // 误选 string 桥生成 `store ptr <i64值>` → opt 类型错）。裸 table（
-        // table_new_* 返回）node_types 无元素类型，自然落空继续走 sinfer 兜底。
-        if te < 0 {
-            var aty = node_types[tname_node]
-            if types.is_table(aty) && !types.is_map(aty) && aty != types.named(TK_TABLE) {
-                var ale = types.table_elem(aty)
-                if ale > 0 {
-                    te = ale
-                }
-            }
-        }
-        if te < 0 {
-            te = sinfer.var_table_elem(tnid)
-        }
-
-        if te >= 0 {
-            elem = te
-        }
-        var t = tig_expr(tname_node)
-        if t < 0 {
-            return -1
-        }
-        var x = tig_expr(call_arg(id, 1))
-        if x < 0 {
-            return -1
-        }
-        // p.6.10.4：嵌套表元素 retain——push 表值（如容器表 push 另一张表）→ 容器
-        // 元素持有引用。容器 release 只释放 data 缓冲、不释放元素表，元素表由各自
-        // 引用方负责释放——此处在 push 前 retain 保证元素表引用计数正确不悬垂。
-        // r.1.1.4：仅**别名值**（变量/下标/字段读，tag≠7/12）retain（源槽仍持引用，
-        // 容器与源各自持 1 份）；**瞬态值**（调用返回 tag 7 / 表字面量 tag 12）所有权
-        // 转移给容器（rc 不变）——否则字面量 rc=1 + retain=2，容器 release 只 -1 剩
-        // 1 份无人释放 → 每 push 泄漏 1 引用（嵌套表/扁平表重绑定内存无界增长）。
-        // 在桥选/装箱之前对原始表句柄 retain（x 可能是后续装箱产物，非表句柄）。
-        var pv_t = node_types[call_arg(id, 1)]
-        var pv_tag = s_tags[call_arg(id, 1)]
-        if pv_t >= 0 && types.is_table(pv_t) && pv_tag != 7 && pv_tag != 12 {
-            tig_tbl_retain_call(x)
-        }
-        // 桥选择：按**值**的实际类型判定（嵌套表/字符串值 → push_string 存 ptr；
-        // 浮点值 → push_f64；曾按声明元素类型选桥——parse_series 把 parse_float
-        // 结果 push 进 i64 表会 push_i64(double) 类型错，Rust 按值类型选桥）
-        var suffix = bridge_suffix(elem)
-        var pty = types.named(TK_I64)
-        var vt = node_types[call_arg(id, 1)]
-        var ek = types.kind(elem)
-        if ek == K_STRUCT || ek == K_ENUM || ek == K_FN || ek == K_TUPLE || elem == types.named(TK_ANY) {
-            // P2a/P2b 复合元素：槽类型 = 元素类型 id（多字元素类型化 store）
-            pty = elem
-        } else if vt >= 0 && (types.is_table(vt) || types.is_map(vt) || vt == types.named(TK_STR)) {
-            suffix = "string"
-            pty = types.named(TK_STR)
-        } else if vt >= 0 && (vt == types.named(TK_F64) || vt == types.named(TK_F32)) {
-            suffix = "f64"
-            pty = types.named(TK_F64)
-        } else if suffix == "string" {
-            pty = types.named(TK_STR)
-        } else if suffix == "bool" {
-            pty = types.named(TK_BOOL)
-        }
-        if pty == types.named(TK_ANY) {
-            // P2b 异构元素装箱：推入值 → any {tag, payload}
-            var vt4 = node_types[call_arg(id, 1)]
-            if vt4 >= 0 && vt4 != types.named(TK_ANY) {
-                var bx = tig_box_any(x, vt4)
-                if bx < 0 {
-                    return -1
-                }
-                x = bx
-            }
-        }
-        s21_table_push(t, pty, x)
-        g_builtin_res = tig_int_lit(0)  // void 结果：哑值（调用方丢弃）
-        return 0
-    }
-    if nm == "exit" {
-        // 去 Rust 桥（dev33 批次3 关联）：exit 是 libc 符号（tig_ext_call1 经
-        // is_libc 不置 interp），原误置 g_used_interp 把纯 libc 程序也拉进
-        // tie_interp.lib。移除——link_exe 的 prefer_interp=false 时仅链 runtime.a。
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        // C 运行时 exit() 自带 stdio flush，无需显式 fflush
-        tig_ext_call1("exit", v, types.named(TK_I64), -1)
-        g_builtin_res = tig_int_lit(0)  // exit 不返回：哑值
-        return 0
-    }
-    if nm == "arg_count" {
-        // p.6.4.1：内联 CommandLineToArgvW（shell32，非 interp 桥）
-        g_builtin_res = tig_arg_count()
-        return 0
-    }
-    if nm == "arg_string" {
-        var i = tig_expr(call_arg(id, 0))
-        if i < 0 {
-            return -1
-        }
-        g_builtin_res = tig_arg_string(i)
-        return 0
-    }
-    if nm == "file_read" {
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        g_builtin_res = tig_read_file(p)
-        return 0
-    }
+    if nm == "table_push" { return bi_table_push(nm, id) }
+    if nm == "exit" { return bi_exit(nm, id) }
+    if nm == "arg_count" { return bi_arg_count(nm, id) }
+    if nm == "arg_string" { return bi_arg_string(nm, id) }
+    if nm == "file_read" { return bi_file_read(nm, id) }
     if nm == "file_write" || nm == "file_append" {
         var p = tig_expr(call_arg(id, 0))
         if p < 0 {
@@ -2218,14 +951,7 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         g_builtin_res = tig_write_file(p, c, nm == "file_append")
         return 0
     }
-    if nm == "file_size" {
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        g_builtin_res = tig_size_inline(p)
-        return 0
-    }
+    if nm == "file_size" { return bi_file_size(nm, id) }
     if nm == "file_is_dir" || nm == "file_is_file" {
         var p = tig_expr(call_arg(id, 0))
         if p < 0 {
@@ -2238,43 +964,11 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         }
         return 0
     }
-    if nm == "file_exists" {
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        g_builtin_res = tig_exists_inline(p)
-        return 0
-    }
-    if nm == "file_delete" {
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        g_builtin_res = tig_delete_inline(p)
-        return 0
-    }
-    if nm == "print_err" {
-        var v = tig_expr(call_arg(id, 0))
-        if v < 0 {
-            return -1
-        }
-        tig_print_err(v)  // CRT _write fd=2（p.6.4.1，零 Rust 桥）
-        g_builtin_res = tig_int_lit(0)  // void：哑值
-        return 0
-    }
-    if nm == "mkdir_all" {
-        var p = tig_expr(call_arg(id, 0))
-        if p < 0 {
-            return -1
-        }
-        g_builtin_res = tig_mkdir_all(p)
-        return 0
-    }
-    if nm == "regex_find_all" {
-        // p.6.4.8：内联纯 tie 最小正则引擎（不再经 Rust tie_interp 桥）
-        return tig_regex_find_all(id)
-    }
+    if nm == "file_exists" { return bi_file_exists(nm, id) }
+    if nm == "file_delete" { return bi_file_delete(nm, id) }
+    if nm == "print_err" { return bi_print_err(nm, id) }
+    if nm == "mkdir_all" { return bi_mkdir_all(nm, id) }
+    if nm == "regex_find_all" { return bi_regex_find_all(nm, id) }
     // ---------- M4/M6 补齐：系统能力内置（对齐 Rust ir.rs 同名单分支）----------
     // 数学库（libm，llvmgen 无条件 declare；f64 → f64）。
     // 整数实参（sqrt(4)）→ sitofp 提升为 f64（LLVM 类型必须匹配）
@@ -2314,25 +1008,8 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         g_builtin_res = ir.get_value(bc)
         return 0
     }
-    if nm == "pow" {
-        var pv1 = tig_expr(call_arg(id, 0))
-        if pv1 < 0 {
-            return -1
-        }
-        var pv2 = tig_expr(call_arg(id, 1))
-        if pv2 < 0 {
-            return -1
-        }
-        var p1t = node_types[call_arg(id, 0)]
-        var p2t = node_types[call_arg(id, 1)]
-        var pf1 = tig_to_f64(pv1, p1t)
-        var pf2 = tig_to_f64(pv2, p2t)
-        if pf1 < 0 || pf2 < 0 {
-            return -1
-        }
-        g_builtin_res = tig_ext_call2("pow", pf1, types.named(TK_F64), pf2, types.named(TK_F64), types.named(TK_F64))
-        return 0
-    }
+    // ---------- M4/M6 补齐：系统能力内置（对齐 Rust ir.rs 同名单分支） ----------
+    if nm == "pow" { return bi_pow(nm, id) }
     if nm == "atan2" || nm == "copysign" || nm == "fmod" || nm == "remainder" || nm == "hypot" {
         var dv1 = tig_expr(call_arg(id, 0))
         if dv1 < 0 {
@@ -2356,15 +1033,8 @@ func builtin_expr(nm: string, id: i64) -> i64 {
     // ReadFile 逐字节读到 \n/EOF，去 Rust 桥 tie_read_line，**不置 g_used_interp**。
     // 支持无缓冲管道（脚本交互）：`echo hello | probe` 读到 "hello"；\r\n 规整、
     // \n 去除；EOF（管道关闭 / Ctrl-Z）返回已收集串或空串。
-    if nm == "read_line" {
-        g_builtin_res = tig_read_line()
-        return 0
-    }
-    if nm == "cwd" {
-        // p.6.4.1：内联 GetCurrentDirectoryW + UTF-16→UTF-8（非 interp 桥）
-        g_builtin_res = tig_cwd()
-        return 0
-    }
+    if nm == "read_line" { return bi_read_line(nm, id) }
+    if nm == "cwd" { return bi_cwd(nm, id) }
     // 单字符串参数 → ptr 返回（previously list_dir/walk_dir 亦走此处；现已内联）；
     // path_*/http_get/msg_t 仍走 tie_* 桥（path_* 留待 p.6.4.10，http 属 p.6.4.9）
     if nm == "list_dir" || nm == "walk_dir" {
@@ -2379,80 +1049,30 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         }
         return 0
     }
-    if nm == "http_get" {
-        // p.6.4.9：http_get 内联 HTTP/1.1（去 Rust 桥 tie_http_get）——URL 解析 +
-        // 连接 + GET + 读响应体；仅 http://，失败返回空串。置位 g_used_wsock。
-        g_used_wsock = true
-        var sv = tig_expr(call_arg(id, 0))
-        if sv < 0 {
-            return -1
-        }
-        g_builtin_res = tig_http_get(sv)
-        return 0
-    }
+    if nm == "http_get" { return bi_http_get(nm, id) }
     // path_* 原语：p.6.4.10 内联纯 tie IR 生成（tig_path_*，见 irgen_path.tie），
     // 去 Rust tie_path_* 桥，不再置 g_used_interp（p.6.4 残留桥清零）。
-    if nm == "path_basename" {
-        return tig_path_basename(id)
-    }
-    if nm == "path_dirname" {
-        return tig_path_dirname(id)
-    }
-    if nm == "path_abs" {
-        return tig_path_abs(id)
-    }
-    if nm == "path_normalize" {
-        return tig_path_normalize(id)
-    }
-    if nm == "eval" {
-        // p.6.4.10：eval 降级——tie:script 解释器未内嵌（完整实现=内嵌解释器，
-        // 工作量巨大，留待 p.6.6 后补）。保留签名但语义降级：返回空串，**不置
-        // g_used_interp**（不再经 tie_eval_expr Rust 桥，不链 tie_interp.lib）。
-        // 原语义（docs/tie-script.md：eval 注册模块顶层定义）在纯 tie 解释器
-        // compiler/interp（interp.eval）中已实现；builtin eval/eval_call 仅被
-        // examples/script_demo.tie / repl/repl.tie（demo）使用。
-        g_builtin_res = tig_str_lit(interner.intern("\"\""))
-        return 0
-    }
+    if nm == "path_basename" { return bi_path_basename(nm, id) }
+    if nm == "path_dirname" { return bi_path_dirname(nm, id) }
+    if nm == "path_abs" { return bi_path_abs(nm, id) }
+    if nm == "path_normalize" { return bi_path_normalize(nm, id) }
+    if nm == "eval" { return bi_eval(nm, id) }
     // 双字符串参数 → ptr 返回（path_join：p.6.4.10 仍留 tie_path_join Rust 桥，
     // path_* 系列待后续去桥；eval_call：p.6.4.10 降级不置 g_used_interp）
-    if nm == "eval_call" {
-        // p.6.4.10：eval_call 降级——同 eval（tie:script 解释器未内嵌，留待
-        // p.6.6 后补）。保留签名但返回空串，**不置 g_used_interp**（去 tie_eval_call
-        // Rust 桥，不链 tie_interp.lib）。原语义见 docs/tie-script.md。
-        g_builtin_res = tig_str_lit(interner.intern("\"\""))
-        return 0
-    }
+    if nm == "eval_call" { return bi_eval_call(nm, id) }
     // path_join：p.6.4.10 内联纯 tie IR 生成（同 basename/dirname 系列）
-    if nm == "path_join" {
-        return tig_path_join(id)
-    }
+    if nm == "path_join" { return bi_path_join(nm, id) }
     // regex_find：p.6.4.8 内联纯 tie 最小正则引擎
-    if nm == "regex_find" {
-        return tig_regex_find(id)
-    }
+    if nm == "regex_find" { return bi_regex_find(nm, id) }
     // regex_replace：p.6.4.8 内联纯 tie 最小正则引擎
-    if nm == "regex_replace" {
-        return tig_regex_replace(id)
-    }
+    if nm == "regex_replace" { return bi_regex_replace(nm, id) }
     // regex_group：p.6.4.8 内联纯 tie 最小正则引擎
-    if nm == "regex_group" {
-        return tig_regex_group(id)
-    }
+    if nm == "regex_group" { return bi_regex_group(nm, id) }
     // regex_match：p.6.4.8 内联纯 tie 最小正则引擎
-    if nm == "regex_match" {
-        return tig_regex_match(id)
-    }
+    if nm == "regex_match" { return bi_regex_match(nm, id) }
     // 单字符串参数 i8 返回 → bool（file_exists 已有；remove_dir_all/mkdir_all 已有
     // mkdir_all；此处补 remove_dir_all）
-    if nm == "remove_dir_all" {
-        var rv = tig_expr(call_arg(id, 0))
-        if rv < 0 {
-            return -1
-        }
-        g_builtin_res = tig_remove_dir_all(rv)
-        return 0
-    }
+    if nm == "remove_dir_all" { return bi_remove_dir_all(nm, id) }
     // file_copy/file_move/copy_dir：内联 CopyFileW/MoveFileW/SHFileOperationW
     if nm == "file_copy" || nm == "file_move" || nm == "copy_dir" {
         var f1 = tig_expr(call_arg(id, 0))
@@ -2494,36 +1114,11 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         return 0
     }
     // byte_read：读文件为字节表（tig_byte_read 原生 libc 实现，失败 exit(1)）
-    if nm == "byte_read" {
-        var pv = tig_expr(call_arg(id, 0))
-        if pv < 0 {
-            return -1
-        }
-        g_builtin_res = tig_byte_read(pv)
-        return 0
-    }
+    if nm == "byte_read" { return bi_byte_read(nm, id) }
     // byte_write：路径 + 字节表 → bool（tig_byte_write 原生 libc 实现）
-    if nm == "byte_write" {
-        var w1 = tig_expr(call_arg(id, 0))
-        if w1 < 0 {
-            return -1
-        }
-        var w2 = tig_expr(call_arg(id, 1))
-        if w2 < 0 {
-            return -1
-        }
-        g_builtin_res = tig_byte_write(w1, w2)
-        return 0
-    }
+    if nm == "byte_write" { return bi_byte_write(nm, id) }
     // p.6.9.1 stdio：stdin_read(n) → i64 字节表（tig_stdin_read 内联 GetStdHandle+ReadFile）
-    if nm == "stdin_read" {
-        var sn = tig_expr(call_arg(id, 0))
-        if sn < 0 {
-            return -1
-        }
-        g_builtin_res = tig_stdin_read(sn)
-        return 0
-    }
+    if nm == "stdin_read" { return bi_stdin_read(nm, id) }
     // stdout_write_bytes(字节表) / stdout_write_str(串) → 写入字节数（tig_stdout_write_*）
     if nm == "stdout_write_bytes" || nm == "stdout_write_str" {
         var so1 = tig_expr(call_arg(id, 0))
@@ -2538,715 +1133,66 @@ func builtin_expr(nm: string, id: i64) -> i64 {
         return 0
     }
     // bit_read：字节表 + 位置 → i64（tig_bit_read 原生实现，越界 0）
-    if nm == "bit_read" {
-        var b1 = tig_expr(call_arg(id, 0))
-        if b1 < 0 {
-            return -1
-        }
-        var b2 = tig_expr(call_arg(id, 1))
-        if b2 < 0 {
-            return -1
-        }
-        g_builtin_res = tig_bit_read(b1, b2)
-        return 0
-    }
+    if nm == "bit_read" { return bi_bit_read(nm, id) }
     // bit_write：字节表 + 位置 + 位 → bool（tig_bit_write 原生实现，越界 false）
-    if nm == "bit_write" {
-        var bw1 = tig_expr(call_arg(id, 0))
-        if bw1 < 0 {
-            return -1
-        }
-        var bw2 = tig_expr(call_arg(id, 1))
-        if bw2 < 0 {
-            return -1
-        }
-        var bw3 = tig_expr(call_arg(id, 2))
-        if bw3 < 0 {
-            return -1
-        }
-        g_builtin_res = tig_bit_write(bw1, bw2, bw3)
-        return 0
-    }
+    if nm == "bit_write" { return bi_bit_write(nm, id) }
     // byte_concat：字节表 + 字节表 → 字节表（tig_byte_concat 原生实现）
-    if nm == "byte_concat" {
-        var c1 = tig_expr(call_arg(id, 0))
-        if c1 < 0 {
-            return -1
-        }
-        var c2 = tig_expr(call_arg(id, 1))
-        if c2 < 0 {
-            return -1
-        }
-        g_builtin_res = tig_byte_concat(c1, c2)
-        return 0
-    }
+    if nm == "byte_concat" { return bi_byte_concat(nm, id) }
     // set_env：内联 SetEnvironmentVariableW（UTF-16 桥）；msg_set_lang：单参 void
-    if nm == "set_env" {
-        var e1 = tig_expr(call_arg(id, 0))
-        if e1 < 0 {
-            return -1
-        }
-        var e2 = tig_expr(call_arg(id, 1))
-        if e2 < 0 {
-            return -1
-        }
-        tig_set_env(e1, e2)
-        g_builtin_res = tig_int_lit(0)  // void：哑值
-        return 0
-    }
+    if nm == "set_env" { return bi_set_env(nm, id) }
     // ---------- p.6.4.7 消息系统原语（纯 tie：运行期全局表内联查表） ----------
     // 不再走 tie_msg_* Rust 桥（g_used_interp=false）。状态 = 运行期程序全局槽
     // @__msg_lang / @__msg_keys / @__msg_langs / @__msg_texts（惰性登记 + 惰性建表，
     // 见 tig_msg_reg_globals / tig_msg_ensure）。
-    if nm == "msg_set_lang" {
-        tig_msg_reg_globals()
-        var e1 = tig_expr(call_arg(id, 0))
-        if e1 < 0 {
-            return -1
-        }
-        tig_msg_gstore("__msg_lang", types.named(TK_STR), e1)
-        g_builtin_res = tig_int_lit(0)  // void：哑值
-        return 0
-    }
-    if nm == "msg_get_lang" {
-        tig_msg_reg_globals()
-        g_builtin_res = tig_msg_gload("__msg_lang", types.named(TK_STR))
-        return 0
-    }
-    if nm == "msg_register" {
-        var q1 = tig_expr(call_arg(id, 0))
-        if q1 < 0 {
-            return -1
-        }
-        var q2 = tig_expr(call_arg(id, 1))
-        if q2 < 0 {
-            return -1
-        }
-        var q3 = tig_expr(call_arg(id, 2))
-        if q3 < 0 {
-            return -1
-        }
-        tig_msg_register(q1, q2, q3)
-        g_builtin_res = tig_int_lit(0)  // void：哑值
-        return 0
-    }
-    if nm == "msg_t" {
-        tig_msg_reg_globals()
-        var s1 = tig_expr(call_arg(id, 0))
-        if s1 < 0 {
-            return -1
-        }
-        // 当前语言查表；未命中回退 key 本身
-        g_builtin_res = tig_msg_find(s1, tig_msg_gload("__msg_lang", types.named(TK_STR)), s1)
-        return 0
-    }
-    if nm == "msg_t_lang" {
-        tig_msg_reg_globals()
-        var a1 = tig_expr(call_arg(id, 0))
-        if a1 < 0 {
-            return -1
-        }
-        var a2 = tig_expr(call_arg(id, 1))
-        if a2 < 0 {
-            return -1
-        }
-        // 指定语言查表；未命中返空串（对齐 Rust 桥原语义，ext/log 回退链 lookup 依赖）
-        g_builtin_res = tig_msg_find(a1, a2, tig_str_lit(interner.intern("\"\"")))
-        return 0
-    }
+    // ---------- p.6.4.7 消息系统原语（纯 tie：运行期全局表内联查表） ----------
+    if nm == "msg_set_lang" { return bi_msg_set_lang(nm, id) }
+    if nm == "msg_get_lang" { return bi_msg_get_lang(nm, id) }
+    if nm == "msg_register" { return bi_msg_register(nm, id) }
+    if nm == "msg_t" { return bi_msg_t(nm, id) }
+    if nm == "msg_t_lang" { return bi_msg_t_lang(nm, id) }
     // rand_range：i64 半开区间 [min,max)；内联 libc rand()（非密码学安全）
-    if nm == "rand_range" {
-        var d1 = tig_expr(call_arg(id, 0))
-        if d1 < 0 {
-            return -1
-        }
-        var d2 = tig_expr(call_arg(id, 1))
-        if d2 < 0 {
-            return -1
-        }
-        g_builtin_res = tig_rand_range(d1, d2)
-        return 0
-    }
+    if nm == "rand_range" { return bi_rand_range(nm, id) }
     // table_at：表 + 下标 → 元素（与 t[i] 同语义；元素类型 fallback 判定）
-    if nm == "table_at" {
-        var tb = tig_expr(call_arg(id, 0))
-        if tb < 0 {
-            return -1
-        }
-        var ti = tig_expr(call_arg(id, 1))
-        if ti < 0 {
-            return -1
-        }
-        // 元素类型：语义节点类型（表实参的 node_types 可能是 TK_TABLE——元素类型
-        // 按 var_table_elem 尽力推断，失败 fallback i64）
-        var elem: i64 = types.named(TK_I64)
-        var tn = call_arg(id, 0)
-        if s_tags[tn] == 6 {
-            var te = sinfer.var_table_elem(intern.intern(sstate.name_str(tn)))
-            if te >= 0 {
-                elem = te
-            }
-        }
-        var suffix = bridge_suffix(elem)
-        var ret_ty = types.named(TK_I64)
-        var ek2 = types.kind(elem)
-        if ek2 == K_STRUCT || ek2 == K_ENUM || ek2 == K_FN || ek2 == K_TUPLE {
-            // P2a 复合元素：返回类型 = 元素类型 id（多字元素类型化 load）
-            ret_ty = elem
-        } else if suffix == "string" {
-            ret_ty = types.named(TK_STR)
-        } else if suffix == "f64" {
-            // f64 表元素：返回类型 double（曾落默认 i64 → `call i64 @tie_table_at_f64`
-            // 与 declare 的 double 返回不匹配，opt 报类型错）
-            ret_ty = types.named(TK_F64)
-        } else if suffix == "bool" {
-            ret_ty = types.named(TK_BOOL)
-        }
-        var ok_slot = ir.new_inst(g_cur_block, 20, types.named(TK_I8))  // alloca i8
-        ir.add_operand(ok_slot, types.named(TK_I8), 2)
-        var ok_addr = ir.get_value(ok_slot)
-        g_builtin_res = s21_table_at(tb, ti, ok_addr, ret_ty)
-        return 0
-    }
-    // p.8.1.6 表删除/缩表原语：table_pop(t) → 表尾元素（空表返回零值）。
-    // 语义 = tbl_at(len-1, slot) + 非空则 tbl_set_len(len-1)。弹出元素所有权
-    // 转移给调用方（rc 不变，与 push 瞬态值转移对称——容器不再持有该元素，
-    // 调用方变量赋值免 retain（函数调用 tag 7）、出口 release 恰好 -1 平衡）。
-    if nm == "table_pop" {
-        var tb = tig_expr(call_arg(id, 0))
-        if tb < 0 {
-            return -1
-        }
-        // 元素类型推断链（对齐 table_push）：tblvar_get → scope 完整类型 →
-        // node_types → sinfer 兜底
-        var elem: i64 = types.named(TK_I64)
-        var tn = call_arg(id, 0)
-        var tnid = interner.intern(sstate.name_str(tn))
-        var tv_own = tblvar_get(tnid)
-        if tv_own >= 0 {
-            elem = tv_own
-        } else if scope_get(tnid) >= 0 && types.is_table(g_lookup_ty) {
-            var le = types.table_elem(g_lookup_ty)
-            if le > 0 {
-                elem = le
-            }
-        }
-        if s_tags[tn] == 6 {
-            var aty = node_types[tn]
-            if types.is_table(aty) && !types.is_map(aty) && aty != types.named(TK_TABLE) {
-                var ale = types.table_elem(aty)
-                if ale > 0 {
-                    elem = ale
-                }
-            }
-        }
-        if elem == types.named(TK_I64) && s_tags[tn] == 6 {
-            var te = sinfer.var_table_elem(tnid)
-            if te >= 0 {
-                elem = te
-            }
-        }
-        var suffix = bridge_suffix(elem)
-        var ret_ty = types.named(TK_I64)
-        var ek2 = types.kind(elem)
-        if ek2 == K_STRUCT || ek2 == K_ENUM || ek2 == K_FN || ek2 == K_TUPLE {
-            ret_ty = elem
-        } else if suffix == "string" {
-            ret_ty = types.named(TK_STR)
-        } else if suffix == "f64" {
-            ret_ty = types.named(TK_F64)
-        } else if suffix == "bool" {
-            ret_ty = types.named(TK_BOOL)
-        }
-        var T64 = types.named(TK_I64)
-        var len_v = s21_table_len(tb)
-        var ok_slot2 = ir.new_inst(g_cur_block, 20, types.named(TK_I8))  // alloca i8
-        ir.add_operand(ok_slot2, types.named(TK_I8), 2)
-        var ok_addr2 = ir.get_value(ok_slot2)
-        // 尾下标钳制：len>0 ? len-1 : 0——空表时 last=0，tbl_at 越界（0<0）写零
-        // 且 ok=0 → 不 set_len（tl_tbl.tbl_at 仅判 `i<len`，负下标 i=-1 会被误判
-        // 命中并拷贝 data-8 垃圾，且 ok=1 触发错误 set_len 使 len 变负）
-        var last = tig_select_i(tig_icmp_c(len_v, tig_int_lit(0), 3),
-            s21_bin(1, len_v, tig_int_lit(1)), tig_int_lit(0), T64)
-        var val = s21_table_at(tb, last, ok_addr2, ret_ty)
-        // 深表元素（元素为表）：槽存 i64 句柄，返回给表变量槽（ptr）须 inttoptr
-        // 还原——对齐 s21_table_new 的 t21_intp 桥（表变量槽类型是 ptr）。
-        if types.is_table(elem) {
-            var pip = ir.new_inst(g_cur_block, 25, types.named(TK_STR))  // inttoptr
-            ir.add_operand(pip, val, 0)
-            val = ir.get_value(pip)
-        }
-        // 非空（ok!=0）→ set_len(len-1)：cond_br + 汇合
-        var okv = s21_load(ok_addr2, types.named(TK_I8))
-        var cond = tig_cond_to_bool(okv, types.named(TK_I8))
-        var ok_blk = ir.new_block(g_cur_func, interner.intern("tblp.ok"))
-        var merge_blk = ir.new_block(g_cur_func, interner.intern("tblp.mg"))
-        var cbr = ir.new_inst(g_cur_block, 31, -1)
-        ir.add_operand(cbr, cond, 0)
-        ir.add_operand(cbr, ok_blk, 1)
-        ir.add_operand(cbr, merge_blk, 1)
-        g_cur_block = ok_blk
-        tl_void_2("tl_tbl$tbl_set_len", t21_ptri(tb), last)
-        var br1 = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(br1, merge_blk, 1)
-        g_cur_block = merge_blk
-        g_builtin_res = val
-        return 0
-    }
-    // p.8.1.6 表删除/缩表原语：table_trunc(t, n) → void。
-    // 截断到 n（n≤0 → 空表；n≥len → 不变）。深表（元素为表）缩掉的部分逐元素
-    // release（引用计数 -1，防缩表悬垂/泄漏）；标量/字符串表直接 set_len。
-    if nm == "table_trunc" {
-        var tb2 = tig_expr(call_arg(id, 0))
-        if tb2 < 0 {
-            return -1
-        }
-        var nv = tig_expr(call_arg(id, 1))
-        if nv < 0 {
-            return -1
-        }
-        var T64b = types.named(TK_I64)
-        var len_v2 = s21_table_len(tb2)
-        // 钳制 n 到 [0, len]：n<0 → 0；n>len → len（越界安全截断）
-        var nz = tig_select_i(tig_icmp_c(nv, tig_int_lit(0), 2), tig_int_lit(0), nv, T64b)
-        var nn = tig_select_i(tig_icmp_c(nz, len_v2, 3), len_v2, nz, T64b)
-        // 元素类型推断（对齐 table_pop）：深表（元素为表）需逐元素 release
-        var elem2: i64 = types.named(TK_I64)
-        var tn2 = call_arg(id, 0)
-        var tnid2 = interner.intern(sstate.name_str(tn2))
-        var tv_own2 = tblvar_get(tnid2)
-        if tv_own2 >= 0 {
-            elem2 = tv_own2
-        } else if scope_get(tnid2) >= 0 && types.is_table(g_lookup_ty) {
-            var le2 = types.table_elem(g_lookup_ty)
-            if le2 > 0 {
-                elem2 = le2
-            }
-        }
-        if s_tags[tn2] == 6 {
-            var aty2 = node_types[tn2]
-            if types.is_table(aty2) && !types.is_map(aty2) && aty2 != types.named(TK_TABLE) {
-                var ale2 = types.table_elem(aty2)
-                if ale2 > 0 {
-                    elem2 = ale2
-                }
-            }
-        }
-        if elem2 == types.named(TK_I64) && s_tags[tn2] == 6 {
-            var te2 = sinfer.var_table_elem(tnid2)
-            if te2 >= 0 {
-                elem2 = te2
-            }
-        }
-        var is_deep: bool = types.is_table(elem2)
-        // 条件：nn < len → 截断路径（缩表）；否则原样
-        var cond2 = tig_icmp_c(nn, len_v2, 2)  // nn < len (slt)
-        var cut_blk = ir.new_block(g_cur_func, interner.intern("tblt.cut"))
-        var merge_blk2 = ir.new_block(g_cur_func, interner.intern("tblt.mg"))
-        var cbr2 = ir.new_inst(g_cur_block, 31, -1)
-        ir.add_operand(cbr2, cond2, 0)
-        ir.add_operand(cbr2, cut_blk, 1)
-        ir.add_operand(cbr2, merge_blk2, 1)
-        g_cur_block = cut_blk
-        if is_deep {
-            // 释放循环（alloca 槽计数，免 phi）：i 从 len-1 递减到 nn；
-            // tbl_at(t, i, slot) 取元素句柄 + tl_tbl$tbl_release(-1)
-            var islot = ir.new_inst(g_cur_block, 20, T64b)
-            ir.add_operand(islot, T64b, 2)
-            var islotp = ir.get_value(islot)
-            s21_store(islotp, s21_bin(1, len_v2, tig_int_lit(1)), T64b)  // i = len-1
-            var head = ir.new_block(g_cur_func, interner.intern("tblt.hd"))
-            var body = ir.new_block(g_cur_func, interner.intern("tblt.bd"))
-            var exit = ir.new_block(g_cur_func, interner.intern("tblt.ex"))
-            var br0 = ir.new_inst(g_cur_block, 30, -1)
-            ir.add_operand(br0, head, 1)
-            g_cur_block = head
-            var i_v = s21_load(islotp, T64b)
-            var cond3 = tig_icmp_c(i_v, nn, 5)  // i >= nn → 继续释放（sge）
-            var cbr3 = ir.new_inst(g_cur_block, 31, -1)
-            ir.add_operand(cbr3, cond3, 0)
-            ir.add_operand(cbr3, body, 1)
-            ir.add_operand(cbr3, exit, 1)
-            g_cur_block = body
-            var slot2 = ir.new_inst(g_cur_block, 20, T64b)  // 元素槽（句柄 i64）
-            ir.add_operand(slot2, T64b, 2)
-            var slot2p = ir.get_value(slot2)
-            var ok_slot3 = ir.new_inst(g_cur_block, 20, types.named(TK_I8))
-            ir.add_operand(ok_slot3, types.named(TK_I8), 2)
-            var ok_addr3 = ir.get_value(ok_slot3)
-            s21_table_at(tb2, i_v, ok_addr3, T64b)
-            var e_v = s21_load(slot2p, T64b)
-            var atys3 = table_new_i64()
-            var avs3 = table_new_i64()
-            table_push(atys3, T64b)
-            table_push(avs3, e_v)
-            tig_trmlite_call("tl_tbl$tbl_release", atys3, avs3, -1)
-            s21_store(islotp, s21_bin(1, i_v, tig_int_lit(1)), T64b)  // i-1
-            var br2 = ir.new_inst(g_cur_block, 30, -1)
-            ir.add_operand(br2, head, 1)
-            g_cur_block = exit
-        }
-        tl_void_2("tl_tbl$tbl_set_len", t21_ptri(tb2), nn)
-        var br3 = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(br3, merge_blk2, 1)
-        g_cur_block = merge_blk2
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
-    // ---------- trm-lite 轻量执行体原语（阶段1块2：spawn/yield/collect）----------
-    if nm == "spawn" {
-        // spawn(f) → i64 任务 id。f 为 fn() -> i64 / fn() -> void 闭包：提取
-        // env(槽0)/entry(槽1)，调 trm_lite_sched$spawn_task 入队轻量执行体
-        //（trm_lite.a 静态链接，用户无需 import）。返回任务 id。
-        g_used_trmlite = true
-        // 替代路径检测：当前模块已 import trm-lite（同名运行时函数已定义）→ 报错。
-        // 内置与 import 是替代运行时路径，混用会导致 extern declare 与 define 冲突。
-        // p.6.5.1 扩展：复杂形态汇总库（tl_runtime_ctx::ctx_*，独立命名空间）亦为
-        // 替代路径——import 复杂形态（import 即选择）后使用内置 spawn → 明确报错。
-        if sstate.fn_def_node("trm_lite_sched::spawn_task") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_spawn") >= 0 {
-            sm_err_msg = "spawn 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var fn_node = call_arg(id, 0)
-        var fv = tig_expr(fn_node)
-        if fv < 0 {
-            return -1
-        }
-        var fty = node_types[fn_node]
-        if fty < 0 || !types.is_fn(fty) {
-            sm_err_msg = "spawn 参数必须是函数值（fn() -> i64 / fn() -> void），函数 " + g_cur_fn_name
-            return -1
-        }
-        var fret = types.fn_ret_ty(fty)
-        var rcode: i64 = 0
-        if fret == types.named(TK_VOID) {
-            rcode = 1
-        } else if fret != types.named(TK_I64) {
-            sm_err_msg = "spawn 暂只支持返回 i64/void 的闭包（当前 " + types.type_name(fret) + "），函数 " + g_cur_fn_name
-            return -1
-        }
-        // f 落 alloca 聚合，提取 env（槽0）/ entry（槽1）
-        var fa = ir.new_inst(g_cur_block, 20, fty)
-        ir.add_operand(fa, fty, 2)
-        var fap = ir.get_value(fa)
-        var st0 = ir.new_inst(g_cur_block, 22, -1)
-        ir.add_operand(st0, fty, 2)
-        ir.add_operand(st0, fv, 0)
-        ir.add_operand(st0, fap, 0)
-        var g0 = ir.new_inst(g_cur_block, 27, fty)  // agg_gep 0（env）
-        ir.add_operand(g0, fap, 0)
-        ir.add_operand(g0, 0, 2)
-        var ld0 = ir.new_inst(g_cur_block, 21, types.named(TK_STR))
-        ir.add_operand(ld0, ir.get_value(g0), 0)
-        var env_v = ir.get_value(ld0)
-        var g1 = ir.new_inst(g_cur_block, 27, fty)  // agg_gep 1（entry）
-        ir.add_operand(g1, fap, 0)
-        ir.add_operand(g1, 1, 2)
-        var ld1 = ir.new_inst(g_cur_block, 21, types.named(TK_STR))
-        ir.add_operand(ld1, ir.get_value(g1), 0)
-        var entry_v = ir.get_value(ld1)
-        // env/entry → i64（ptrtoint；trm-lite 队列以 i64 承载指针）
-        var pe = ir.new_inst(g_cur_block, 24, types.named(TK_I64))
-        ir.add_operand(pe, env_v, 0)
-        var env_i = ir.get_value(pe)
-        var pn = ir.new_inst(g_cur_block, 24, types.named(TK_I64))
-        ir.add_operand(pn, entry_v, 0)
-        var entry_i = ir.get_value(pn)
-        var rc = tig_int_lit_ty(rcode, types.named(TK_I64))
-        var ats: table<i64> = table_new_i64()
-        var avs: table<i64> = table_new_i64()
-        table_push(ats, types.named(TK_I64)); table_push(avs, entry_i)
-        table_push(ats, types.named(TK_I64)); table_push(avs, env_i)
-        table_push(ats, types.named(TK_I64)); table_push(avs, rc)
-        g_builtin_res = tig_trmlite_call("trm_lite_sched$spawn_task", ats, avs, types.named(TK_I64))
-        // p.6.7.6 S-pool：首个 spawn 置池闸后，发常驻 worker 线程（CreateThread × P）
-        // 并行抢执行；后续 spawn 闸=0 直接复用已建线程（常驻，不随 drain 终止）。
-        tig_s_pool_start()
-        return 0
-    }
-    if nm == "yield" {
-        // yield() → p.6.7.6 重定义为**同步点**：等 S-pool 全部已入队任务完成
-        //（任务由常驻 worker 线程并行执行；yield 不再手动排空）。返回哑值 0。
-        // 与 actor 等待循环统一走 trm_lite_sched$yield_wait。
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_sched::queued_count") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_drain") >= 0 {
-            sm_err_msg = "yield 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var T64y = types.named(TK_I64)
-        tig_trmlite_call("trm_lite_sched$yield_wait", tig_empty_types(), tig_empty_vals(), T64y)
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
-    if nm == "gosched" {
-        // gosched() → p.6.7.10 协作抢占：显式让出点（纯让出不等待）。
-        // 双形态统一：简单形态（无 import）调 trm_lite_sched$gosched；复杂形态
-        // （import tl_runtime_ctx / trm_lite_ws）调 trm_lite_ws$gosched（同语义，
-        // 与简单形态互为替代运行时路径——编译期按模块内形状分派，不互斥报错）。
-        g_used_trmlite = true
-        var T64s = types.named(TK_I64)
-        var sym: string = "trm_lite_sched$gosched"
-        if sstate.fn_def_node("trm_lite_ws::sync_cs") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_gosched") >= 0 {
-            sym = "trm_lite_ws$gosched"
-        }
-        tig_trmlite_call(sym, tig_empty_types(), tig_empty_vals(), T64s)
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
-    if nm == "collect" {
-        // collect() → i64（本轮回收对象数）：调 trm_lite_gc$collect
-        //（stop-the-world mark-sweep，trm_lite.a 静态链接）。
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_gc::collect") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_collect") >= 0 {
-            sm_err_msg = "collect 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var T64 = types.named(TK_I64)
-        g_builtin_res = tig_trmlite_call("trm_lite_gc$collect", tig_empty_types(), tig_empty_vals(), T64)
-        return 0
-    }
+    if nm == "table_at" { return bi_table_at(nm, id) }
+    if nm == "table_pop" { return bi_table_pop(nm, id) }
+    if nm == "table_trunc" { return bi_table_trunc(nm, id) }
+    // ---------- trm-lite 轻量执行体原语（阶段1块2：spawn/yield/collect） ----------
+    if nm == "spawn" { return bi_spawn(nm, id) }
+    if nm == "yield" { return bi_yield(nm, id) }
+    if nm == "gosched" { return bi_gosched(nm, id) }
+    if nm == "collect" { return bi_collect(nm, id) }
     // ---------- channel 原语（p.6.5.7：mailbox 承载，静态链接 trm_lite.a）----------
     // ch_open() → i64 新通道句柄；入队前初始化各平行数组/环形缓冲（trm_lite.a 内部完成）。
-    if nm == "ch_open" {
-        g_used_trmlite = true
-        // 复杂形态汇总结构冲突检测：import trm_lite_chan / tl_runtime_ctx 后使用内置 → 报错。
-        if sstate.fn_def_node("trm_lite_chan::ch_open") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_ch_open") >= 0 {
-            sm_err_msg = "ch_open 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var T64ch = types.named(TK_I64)
-        g_builtin_res = tig_trmlite_call("trm_lite_chan$ch_open", tig_empty_types(), tig_empty_vals(), T64ch)
-        return 0
-    }
+    // ---------- channel 原语（p.6.5.7：mailbox 承载，静态链接 trm_lite.a） ----------
+    if nm == "ch_open" { return bi_ch_open(nm, id) }
     // ch_send(ch, v) → i64（0=入队成功 1=失败：通道关闭或队列满）。
-    if nm == "ch_send" {
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_chan::ch_send") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_ch_send") >= 0 {
-            sm_err_msg = "ch_send 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var T64s = types.named(TK_I64)
-        var c_nd = call_arg(id, 0)
-        var c_v = tig_expr(c_nd)
-        if c_v < 0 {
-            return -1
-        }
-        var v_nd = call_arg(id, 1)
-        var v_v = tig_expr(v_nd)
-        if v_v < 0 {
-            return -1
-        }
-        var ats: table<i64> = table_new_i64()
-        var avs: table<i64> = table_new_i64()
-        table_push(ats, T64s); table_push(avs, c_v)
-        table_push(ats, T64s); table_push(avs, v_v)
-        g_builtin_res = tig_trmlite_call("trm_lite_chan$ch_send", ats, avs, T64s)
-        return 0
-    }
+    if nm == "ch_send" { return bi_ch_send(nm, id) }
     // ch_send_block(ch, v) → i64（p.9.5.x T3 背压：队满阻塞等待空位；0=已入队
     // 1=通道关闭）。trm_lite_chan$ch_send_block 条件变量等待，Go 阻塞 send。
-    if nm == "ch_send_block" {
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_chan::ch_send_block") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_ch_send") >= 0 {
-            sm_err_msg = "ch_send_block 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var T64sb = types.named(TK_I64)
-        var c_nd2 = call_arg(id, 0)
-        var c_v2 = tig_expr(c_nd2)
-        if c_v2 < 0 {
-            return -1
-        }
-        var v_nd2 = call_arg(id, 1)
-        var v_v2 = tig_expr(v_nd2)
-        if v_v2 < 0 {
-            return -1
-        }
-        var ats2: table<i64> = table_new_i64()
-        var avs2: table<i64> = table_new_i64()
-        table_push(ats2, T64sb); table_push(avs2, c_v2)
-        table_push(ats2, T64sb); table_push(avs2, v_v2)
-        g_builtin_res = tig_trmlite_call("trm_lite_chan$ch_send_block", ats2, avs2, T64sb)
-        return 0
-    }
+    if nm == "ch_send_block" { return bi_ch_send_block(nm, id) }
     // ch_recv(ch) → i64（消息值；0=空未关；-1=已关闭且空）。
-    if nm == "ch_recv" {
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_chan::ch_recv") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_ch_recv") >= 0 {
-            sm_err_msg = "ch_recv 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var T64r = types.named(TK_I64)
-        var c_nd2 = call_arg(id, 0)
-        var c_v2 = tig_expr(c_nd2)
-        if c_v2 < 0 {
-            return -1
-        }
-        var ats2: table<i64> = table_new_i64()
-        var avs2: table<i64> = table_new_i64()
-        table_push(ats2, T64r); table_push(avs2, c_v2)
-        g_builtin_res = tig_trmlite_call("trm_lite_chan$ch_recv", ats2, avs2, T64r)
-        return 0
-    }
+    if nm == "ch_recv" { return bi_ch_recv(nm, id) }
     // ch_close(ch) → void：置关闭位（幂等）；唤醒等待者。trm_lite_chan$ch_close。
-    if nm == "ch_close" {
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_chan::ch_close") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_ch_close") >= 0 {
-            sm_err_msg = "ch_close 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var T64cc = types.named(TK_I64)
-        var c_nd3 = call_arg(id, 0)
-        var c_v3 = tig_expr(c_nd3)
-        if c_v3 < 0 {
-            return -1
-        }
-        var ats3: table<i64> = table_new_i64()
-        var avs3: table<i64> = table_new_i64()
-        table_push(ats3, T64cc); table_push(avs3, c_v3)
-        tig_trmlite_call("trm_lite_chan$ch_close", ats3, avs3, -1)  // void 桥
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
+    if nm == "ch_close" { return bi_ch_close(nm, id) }
     // ---------- p.6.7.12 ch_select：多路收发（平行数组承载） ----------
     // ch_select(handles: table<i64>, actions: table<i64>, values: table<i64>)
     //   → i64（命中分支下标 0 起 / -1 无可执行分支）。actions[i]=1 recv / -1 send。
     // 三个表实参经 t21_ptri 转 i64 句柄传入（运行时自行按容器布局读元素）。
-    if nm == "ch_select" {
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_chan::ch_select") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_ch_select") >= 0 {
-            sm_err_msg = "ch_select 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var T64cs = types.named(TK_I64)
-        var ats_cs: table<i64> = table_new_i64()
-        var avs_cs: table<i64> = table_new_i64()
-        var k2: i64 = 0
-        while k2 < 3 {
-            var av = tig_expr(call_arg(id, k2))
-            if av < 0 {
-                return -1
-            }
-            table_push(ats_cs, T64cs)
-            table_push(avs_cs, t21_ptri(av))   // 表 → 句柄 i64
-            k2 = k2 + 1
-        }
-        g_builtin_res = tig_trmlite_call("trm_lite_chan$ch_select", ats_cs, avs_cs, T64cs)
-        return 0
-    }
+    // ---------- p.6.7.12 ch_select：多路收发（平行数组承载） ----------
+    if nm == "ch_select" { return bi_ch_select(nm, id) }
     // ---------- WaitGroup 原语（p.6.7.11：Go sync.WaitGroup 语义，trm_lite_wg$*） ----------
     // wg_new() → i64 新组句柄。
-    if nm == "wg_new" {
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_wg::wg_new") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_wg_new") >= 0 {
-            sm_err_msg = "wg_new 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var T64w = types.named(TK_I64)
-        g_builtin_res = tig_trmlite_call("trm_lite_wg$wg_new", tig_empty_types(), tig_empty_vals(), T64w)
-        return 0
-    }
+    // ---------- WaitGroup 原语（p.6.7.11：Go sync.WaitGroup 语义，trm_lite_wg$*） ----------
+    if nm == "wg_new" { return bi_wg_new(nm, id) }
     // wg_add(h, n) → void。
-    if nm == "wg_add" {
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_wg::wg_add") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_wg_add") >= 0 {
-            sm_err_msg = "wg_add 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var ah = call_arg(id, 0)
-        var av = tig_expr(ah)
-        if av < 0 {
-            return -1
-        }
-        var an = call_arg(id, 1)
-        var avv = tig_expr(an)
-        if avv < 0 {
-            return -1
-        }
-        var T64wa = types.named(TK_I64)
-        var atsa: table<i64> = table_new_i64()
-        var avsa: table<i64> = table_new_i64()
-        table_push(atsa, T64wa); table_push(avsa, av)
-        table_push(atsa, T64wa); table_push(avsa, avv)
-        tig_trmlite_call("trm_lite_wg$wg_add", atsa, avsa, -1)
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
+    if nm == "wg_add" { return bi_wg_add(nm, id) }
     // wg_done(h) → void。
-    if nm == "wg_done" {
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_wg::wg_done") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_wg_done") >= 0 {
-            sm_err_msg = "wg_done 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var dh = call_arg(id, 0)
-        var dv = tig_expr(dh)
-        if dv < 0 {
-            return -1
-        }
-        var T64wd = types.named(TK_I64)
-        var atsd: table<i64> = table_new_i64()
-        var avsd: table<i64> = table_new_i64()
-        table_push(atsd, T64wd); table_push(avsd, dv)
-        tig_trmlite_call("trm_lite_wg$wg_done", atsd, avsd, -1)
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
+    if nm == "wg_done" { return bi_wg_done(nm, id) }
     // wg_wait(h) → void。
-    if nm == "wg_wait" {
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_wg::wg_wait") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_wg_wait") >= 0 {
-            sm_err_msg = "wg_wait 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var wh = call_arg(id, 0)
-        var wv = tig_expr(wh)
-        if wv < 0 {
-            return -1
-        }
-        var T64ww = types.named(TK_I64)
-        var atsw: table<i64> = table_new_i64()
-        var avsw: table<i64> = table_new_i64()
-        table_push(atsw, T64ww); table_push(avsw, wv)
-        tig_trmlite_call("trm_lite_wg$wg_wait", atsw, avsw, -1)
-        g_builtin_res = tig_int_lit(0)
-        return 0
-    }
+    if nm == "wg_wait" { return bi_wg_wait(nm, id) }
     // wg_count(h) → i64（r.1.5.2）：剩余未 done 计数（观察量，wg_wait 轮询用；
     // trm-lite wg 实现：计数归零钳 0，返回值即 g_wg_cnt[h-1]）。
-    if nm == "wg_count" {
-        g_used_trmlite = true
-        if sstate.fn_def_node("trm_lite_wg::wg_count") >= 0 ||
-            sstate.fn_def_node("tl_runtime_ctx::ctx_wg_count") >= 0 {
-            sm_err_msg = "wg_count 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
-            return -1
-        }
-        var cc = call_arg(id, 0)
-        var cv = tig_expr(cc)
-        if cv < 0 {
-            return -1
-        }
-        var T64wc = types.named(TK_I64)
-        var atsc: table<i64> = table_new_i64()
-        var avsc: table<i64> = table_new_i64()
-        table_push(atsc, T64wc); table_push(avsc, cv)
-        g_builtin_res = tig_trmlite_call("trm_lite_wg$wg_count", atsc, avsc, T64wc)
-        return 0
-    }
+    if nm == "wg_count" { return bi_wg_count(nm, id) }
     return -1  // 非内置
 }
 
