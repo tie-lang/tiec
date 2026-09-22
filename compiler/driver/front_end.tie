@@ -1,0 +1,95 @@
+type tie<class>
+// compiler/driver/front_end.tie —— driver 前端调用与诊断输出子模块
+// ============================================================
+// 从 driver.tie 拆出（p.9.21 方法库化：driver 编排薄壳）。
+// 拆分范式：同编译单元跨文件（文本内联）——本文件只含函数与注释，
+// 顶层全局 var 与 import 树均留在 driver.tie 主文件，避免重复定义。
+// 风格 ns：函数在 `namespace driver` 内，一律 pub（driver 库 API 面）；
+// 主文件顶层 main() 以 driver.<名>() 调用。
+namespace driver {
+pub func frontend(src: string, base_dir: string) -> i64 {
+    // T5.3 内存版：parse_ast 返回 0/-1（成功时 AST 在 ast 节点池内存），
+    // 失败时由 parser.ast_err_protocol() 组装与 parse_src 相同的 "ERR:line col msg"
+    unsafe {
+        var t0 = clock()
+    }
+    var prc = parser.parse_ast(src)
+    unsafe {
+        var t0e = clock()
+    }
+    g_t_parse = t0e - t0
+    if prc < 0 {
+        println(diagcode.render_err_proto(parser.ast_err_protocol()))
+        return -1
+    }
+    unsafe {
+        var t1 = clock()
+    }
+    diagcode.warn_unreg_reset()
+    // p.9.14.2 独立警告 pass：把前端警告开关传给 semantic（-w 开启、默认只报错）。
+    // 必须在 check_ast 之前设置——语义侧警告收集/遍历全程由该开关门控。
+    semantic.set_warn_enabled(g_front_warn)
+    var sem = semantic.check_ast(base_dir)
+    unsafe {
+        var t1e = clock()
+    }
+    g_t_sem = t1e - t1
+    if has_prefix(str.clone(sem), "ERR:") {
+        println(diagcode.render_err_proto(sem))
+        return -1
+    }
+    // p.9.14.1：语义警告改结构化事件直发（driver 从 semantic.warn_* 直读渲染，
+    // 不再解析 OK 协议中的 ;W: 文本段）
+    print_warns()
+    return 0
+}
+
+// p.9.14.1：从 semantic 结构化警告事件直读渲染（warning[W#####] @l:c: 名字；建议。）。
+// 替代旧的 ";W:l c msg" 文本协议解析（序列化→再解析→二次归一化）。渲染仅一次
+// （diagcode.render_warning 输出端归一化），渲染结果与旧路径逐字节等价。
+pub func print_warns() -> string {
+    // --no-warn：整个前端警告段不打印
+    if g_no_warn {
+        return ""
+    }
+    var n = semantic.warn_count()
+    var i: i64 = 0
+    while i < n {
+        println(diagcode.render_warning(semantic.warn_line_at(i), semantic.warn_col_at(i), semantic.warn_msg_at(i)))
+        i = i + 1
+    }
+    // 未登记警告审计（TIEC_WARN_AUDIT=1）：新增了警告发射点却忘了 warn_reg 时立刻暴露，
+    // 而不是静默渲染成 W00000。与错误侧 E00000 兜底的可观测性对齐。
+    if get_env("TIEC_WARN_AUDIT") == "1" {
+        var uc = diagcode.warn_unreg_count()
+        if uc > 0 {
+            println("[warn-audit] 未登记警告 " + to_string(uc) + " 条：" + diagcode.warn_unreg_list())
+        }
+    }
+    return ""
+}
+
+// ERR 协议文本 → "行:列: 消息"（协议 ERR:<line> <col> <msg>）。
+pub func err_span(proto: string) -> string {
+    var rest = slice(str.clone(proto), 4, str_len(proto))
+    var sp1 = find_char(str.clone(rest), " ")
+    if sp1 < 0 {
+        return proto
+    }
+    var sp2: i64 = -1
+    var i: i64 = sp1 + 1
+    while i < str_len(rest) {
+        if str_char(rest, i) == " " {
+            sp2 = i
+            break
+        }
+        i = i + 1
+    }
+    if sp2 < 0 {
+        return rest
+    }
+    return "@" + slice(str.clone(rest), 0, sp1) + ":" + slice(str.clone(rest), sp1 + 1, sp2) + ": " +
+        slice(str.clone(rest), sp2 + 1, str_len(rest))
+}
+
+}
