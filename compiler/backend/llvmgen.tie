@@ -518,3 +518,4 @@ pub func emit() -> string {
 
 import "./llvmgen_p1.tie"
 import "./llvmgen_p2.tie"
+import "./llvmgen_inst_gen.tie"
