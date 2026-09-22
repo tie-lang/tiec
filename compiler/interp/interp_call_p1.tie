@@ -1,0 +1,231 @@
+type tie<class>
+// compiler/interp/interp_call_p1.tie —— 分片 1（p.9.21.3 单文件 ≤800 行）
+// ============================================================
+// 由 split_parts.py 按行数贪心分片：只搬函数与紧邻注释，
+// 顶层全局 var 与 import 树仍留在 interp_call.tie。
+namespace interp {
+// 函数调用：内置函数 → 用户函数 → 报错。返回值 id；失败置 g_err 返回 -1。
+// args = 实参值 id 表；arg_nodes = 实参 AST 节点表（by_ref 需取实参变量名）。
+func call_fn(name: string, args: table<i64>, arg_nodes: table<i64>) -> i64 {
+    // 内置函数（对齐 Rust call_fn 的 match name 分支）
+    if is_builtin(name) {
+        return call_builtin(name, args)
+    }
+    // 用户函数（REPL 中定义的；命名空间函数以全名注册）
+    var f = isess.f_get(name)
+    if f < 0 {
+        g_err = "未定义的函数 '" + name + "'"
+        return -1
+    }
+    // FnDef 泛型槽偏移：children = [类型参数槽, 返回类型, 参数..., 函数体]，
+    // 形参从 1 + soff 起（对齐 sstate.slot_off——曾按旧布局读 children[1+i]，
+    // 泛型槽引入后把槽/返回类型误当形参绑定，函数调用全错位）
+    var fsoff: i64 = 0
+    if isess.nchild(f) > 1 {
+        var fc0 = isess.nchild_at(f, 0)
+        if fc0 < 0 {
+            fsoff = 1
+        } else if isess.ntag(fc0) == N_TYPE_PARAMS {
+            fsoff = 1
+        }
+    }
+    // 参数个数区间检查（默认值参数）：实参数必须在 [必选数, 总形参数] 内；
+    // 变参（最后一个形参 aux==1）：无上界，必选数不含变参本身
+    var total = isess.naux(f)
+    var has_var: bool = false
+    var required: i64 = 0
+    var pi: i64 = 0
+    while pi < total {
+        var p = isess.nchild_at(f, 1 + fsoff + pi)
+        if isess.naux(p) == 1 {
+            has_var = true   // 变参形参（aux 标记）
+        } else if isess.nchild_at(p, 1) < 0 {
+            required = required + 1
+        }
+        pi = pi + 1
+    }
+    if len(args) < required || (!has_var && len(args) > total) {
+        var cnt_desc = ""
+        if has_var {
+            cnt_desc = to_string(required) + "+"
+        } else if required == total {
+            cnt_desc = to_string(total)
+        } else {
+            cnt_desc = to_string(required) + "-" + to_string(total)
+        }
+        g_err = "函数 '" + name + "' 期望 " + cnt_desc + " 个参数，实际 " + to_string(len(args)) + " 个"
+        return -1
+    }
+    // 函数体执行期间，裸调用按本函数命名空间前缀补全
+    var saved_ns = isess.ns_save()
+    if rfind_ns_str(name) >= 0 {
+        env_ns = ns_prefix_of_name(name)
+    }
+    // 保存调用者的作用域起点，压参后本函数作用域从参数作用域开始
+    var saved_base = env_base
+    isess.scope_push()
+    isess.ref_push()
+    var i: i64 = 0
+    while i < total {
+        var p = isess.nchild_at(f, 1 + fsoff + i)
+        var pname = isess.nname_str(p)
+        if isess.naux(p) == 1 {
+            // 变参：剩余全部实参打包为 Value 表（支持 len/下标/for）
+            var tv = ivalue.new_table()
+            var ai: i64 = i
+            while ai < len(args) {
+                tv = ivalue.table_push_val(tv, args[ai])
+                ai = ai + 1
+            }
+            isess.var_declare(pname, tv)
+        } else if isess.nval(p) == 1 {
+            // T0.3 by_ref：实参必须是可寻址表变量；引用槽记录调用方变量名。
+            // 注意：tie 的 || 不短路，先判越界再取节点
+            if i >= len(arg_nodes) {
+                g_err = "函数 '" + name +
+                    "' 的 ref 参数需要可寻址的表变量实参（字面量/下标/调用结果不可取地址）"
+                isess.ref_pop()
+                isess.scope_pop()
+                env_base = saved_base
+                isess.ns_restore(saved_ns)
+                return -1
+            }
+            if isess.ntag(arg_nodes[i]) != N_VAR {
+                g_err = "函数 '" + name +
+                    "' 的 ref 参数需要可寻址的表变量实参（字面量/下标/调用结果不可取地址）"
+                isess.ref_pop()
+                isess.scope_pop()
+                env_base = saved_base
+                isess.ns_restore(saved_ns)
+                return -1
+            }
+            isess.ref_add(pname, isess.nname_str(arg_nodes[i]))
+        } else {
+            var v: i64 = -1
+            if i < len(args) {
+                v = args[i]
+            } else {
+                // 缺省参数按默认值表达式求值补齐（限字面量/空表，无作用域依赖）
+                var def = isess.nchild_at(p, 1)
+                if def >= 0 {
+                    v = gen_expr(def)
+                    if g_err != "" {
+                        isess.ref_pop()
+                        isess.scope_pop()
+                        env_base = saved_base
+                        isess.ns_restore(saved_ns)
+                        return -1
+                    }
+                } else {
+                    g_err = "函数 '" + name + "' 缺少第 " + to_string(i + 1) +
+                        " 个参数且无默认值"
+                    isess.ref_pop()
+                    isess.scope_pop()
+                    env_base = saved_base
+                    isess.ns_restore(saved_ns)
+                    return -1
+                }
+            }
+            isess.var_declare(pname, v)
+        }
+        i = i + 1
+    }
+    env_base = isess.scope_top()
+    var body = isess.nchild_at(f, isess.nchild(f) - 1)
+    if dbg_on {
+        dbg_enter(name, isess.nline(body))
+    }
+    exec_block(body)
+    if dbg_on {
+        dbg_leave()
+    }
+    isess.ref_pop()
+    isess.scope_pop()
+    env_base = saved_base
+    isess.ns_restore(saved_ns)
+    if g_err != "" {
+        return -1
+    }
+    // 处理 return 传播
+    if g_flow == FL_RETURN {
+        g_flow = FL_NORMAL
+        return g_flow_val
+    }
+    if g_flow == FL_BREAK {
+        g_err = "break" + label_space(g_flow_label) + "逃出函数体（内部错误）"
+        return -1
+    }
+    if g_flow == FL_CONTINUE {
+        g_err = "continue" + label_space(g_flow_label) + "逃出函数体（内部错误）"
+        return -1
+    }
+    g_flow = FL_NORMAL
+    if g_lastval >= 0 {
+        return g_lastval
+    }
+    return ivalue.new_void()
+}
+
+// 内置函数名单（对齐 Rust call_fn 的内置分支；T4.1 核心子集）。
+// S3.3 新增：gensym（H3 显式卫生唯一标识符）、eval_code（C3 编译期
+// 代码生成——仅宏体环境可用，运行期语义层拦截）。
+func is_builtin(name: string) -> bool {
+    if name == "println" || name == "print" || name == "len" || name == "str_len" ||
+        name == "str_char" || name == "char_code" || name == "to_string" ||
+        name == "parse_int" || name == "parse_float" ||
+        name == "parse_trit" || name == "to_trit" || name == "trit_val" ||
+        name == "table_new_i64" || name == "table_new_f64" ||
+        name == "table_new_string" || name == "table_new_bool" ||
+        name == "table_at" || name == "eval" || name == "eval_call" {
+        return true
+    }
+    if name == "gensym" || name == "eval_code" || name == "eval_expr" {
+        return true
+    }
+    // M4（dev33 批次9 任务27）：compile_error("消息") 宏内主动报编译错误——
+    // 置 g_err 上抛，mexpand 以调用点行列号报「宏展开失败」。
+    if name == "compile_error" {
+        return true
+    }
+    // M4 过程宏（dev33 批次9）：token 流 API——tokenize（源码→token 流）、
+    // deparse（token 流→源码）、token_len/token_tag_at/token_lexeme_at
+    // （token 流检视）。仅宏环境（编译期 interp）可用。
+    if name == "tokenize" || name == "deparse" || name == "token_len" ||
+        name == "token_tag_at" || name == "token_lexeme_at" {
+        return true
+    }
+    // tsh 脚本运行时（shell 角色，p.9.4）：把过程/环境/文件桥开放给解释器
+    // 求值——tsh 脚本可直接 `var x = get_env("K")`、`exec_code("cmd")` 等。
+    // 这些基础原语在编译端内联到 libc/win32（无 tie_interp 依赖），解释器直调。
+    if name == "get_env" || name == "set_env" || name == "exec_code" ||
+        name == "exec_output" || name == "cwd" || name == "time_now" ||
+        name == "file_read" || name == "file_write" || name == "file_append" ||
+        name == "file_exists" || name == "path_join" ||
+        name == "mkdir_all" || name == "remove_dir_all" {
+        return true
+    }
+    // tsh 脚本字符串/目录/参数/哈希/超时内建（p.9.4 脚本语义升级）：
+    // 字符串 contains/has_prefix/has_suffix/split_lines/split_char/substr/
+    // replace_all/is_empty；字面 `|` 逃逸 pipe_char；目录枚举 list_dir/walk_dir；
+    // 脚本参数 arg_count/arg_at；file SHA256 get_file_hash；exit(n) 条件退出。
+    if name == "contains" || name == "has_prefix" || name == "has_suffix" ||
+        name == "split_lines" || name == "split_char" || name == "substr" ||
+        name == "replace_all" || name == "is_empty" || name == "pipe_char" ||
+        name == "path_basename" ||
+        name == "list_dir" || name == "walk_dir" ||
+        name == "arg_count" || name == "arg_at" ||
+        name == "get_file_hash" || name == "exec_code_timeout" ||
+        name == "exit" {
+        return true
+    }
+    // 批次④确定性内建：remove_file（确定删单文件，替代 exec del 的 flake）、
+    // sort_strings（字符串表按字节序排序）、regex_findstr（findstr 正则子集
+    // 命中判断）、sleep_ms（libc Sleep 短暂等待）。
+    if name == "remove_file" || name == "sort_strings" ||
+        name == "regex_findstr" || name == "sleep_ms" {
+        return true
+    }
+    return false
+}
+
+}
