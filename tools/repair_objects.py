@@ -17,6 +17,7 @@ env:   GH_TOKEN    (only used to sanity-check; gh carries its own auth)
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -62,19 +63,81 @@ def from_lazy(sha):
     return None
 
 
-def from_api(sha):
-    for repo in REPOS:
-        r = run([GH, "api", "/repos/%s/git/blobs/%s" % (repo, sha)], timeout=25)
-        if r is None or r.returncode != 0:
-            continue
-        try:
-            payload = json.loads(r.stdout.decode("utf-8"))
-        except ValueError:
-            continue
-        if payload.get("encoding") == "base64":
-            return base64.b64decode(payload["content"])
+def _decode_api(payload, kind):
+    """Turn a Git Data API payload back into the canonical object bytes.
+
+    Returns None when the payload cannot be reconstructed exactly — callers
+    verify the bytes by hashing, so an inexact rebuild is simply skipped
+    instead of poisoning the odb.
+    """
+    if payload.get("encoding") == "base64":
+        return base64.b64decode(payload["content"])
+    if "content" in payload:
         return payload["content"].encode("utf-8")
+    if kind == "commits":
+        try:
+            out = ["tree %s" % payload["tree"]["sha"]]
+            for p in payload.get("parents", []):
+                out.append("parent %s" % p["sha"])
+            for role in ("author", "committer"):
+                who = payload[role]
+                ts, tz = _parse_gitdate(who["date"])
+                out.append("%s %s <%s> %d %s" % (role, who["name"], who["email"], ts, tz))
+            out.append("")
+            out.append(payload["message"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        return ("\n".join(out)).encode("utf-8")
     return None
+
+
+def _parse_gitdate(iso):
+    """ISO-8601 (2018-09-12T10:31:12Z) -> (unix_seconds, +HHMM offset)."""
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(Z|[+-]\d{2}:?\d{2})$", iso)
+    if not m:
+        raise ValueError(iso)
+    y, mo, d, h, mi, s = (int(x) for x in m.groups()[:6])
+    off = m.group(7)
+    if off == "Z":
+        delta, tztext = 0, "+0000"
+    else:
+        sign = 1 if off[0] == "+" else -1
+        body = off[1:].replace(":", "")
+        delta = sign * (int(body[:2]) * 3600 + int(body[2:]) * 60)
+        tztext = ("%+03d%02d" % (sign * int(body[:2]), int(body[2:])))
+    import calendar
+
+    ts = calendar.timegm((y, mo, d, h, mi, s, 0, 0, 0)) - delta
+    return ts, tztext
+
+
+def from_api(sha):
+    """Fetch one object through the GitHub REST API (works for orphaned objects).
+
+    RCA (2026-09-22): the endpoint used to be written with a leading slash
+    ("/repos/..."). Under Git Bash on Windows the gh CLI rewrites such an
+    argument into a filesystem path, so every call failed with
+    "invalid API endpoint: C:/.../repos/..." and NOTHING was ever restored.
+    The endpoint is now relative, and the object kind is probed instead of
+    assuming a blob — the odb also lost a commit, which /git/blobs/ cannot
+    serve. Callers verify the reconstructed bytes by hashing them, so a bad
+    reconstruction can never be written into the odb.
+
+    returns (data, kind) or (None, None)
+    """
+    for repo in REPOS:
+        for kind, ep in (("blobs", "blobs"), ("commits", "commits"), ("trees", "trees")):
+            r = run([GH, "api", "repos/%s/git/%s/%s" % (repo, ep, sha)], timeout=25)
+            if r is None or r.returncode != 0:
+                continue
+            try:
+                payload = json.loads(r.stdout.decode("utf-8"))
+            except ValueError:
+                continue
+            data = _decode_api(payload, kind)
+            if data:
+                return data, {"blobs": "blob", "commits": "commit", "trees": "tree"}[kind]
+    return None, None
 
 
 def log(line):
@@ -93,13 +156,13 @@ def main():
     for sha in todo:
         if time.time() - t0 > budget:
             break
-        data, how = None, ""
+        data, kind, how = None, None, ""
         for attempt in range(2):
             data = from_lazy(sha)
             if data:
-                how = "lazy"
+                kind, how = "blob", "lazy"
                 break
-            data = from_api(sha)
+            data, kind = from_api(sha)
             if data:
                 how = "api"
                 break
@@ -109,14 +172,14 @@ def main():
             log("FAIL  %s (unavailable this round)" % sha)
             time.sleep(1)
             continue
-        w = git(["hash-object", "-w", "--stdin"], DST, timeout=60, input=data)
+        w = git(["hash-object", "-w", "-t", kind, "--stdin"], DST, timeout=60, input=data)
         got = w.stdout.decode().strip() if w else ""
         if got == sha:
             ok += 1
-            log("OK    %s %s (%d bytes)" % (sha, how, len(data)))
+            log("OK    %s %s/%s (%d bytes)" % (sha, how, kind, len(data)))
         else:
             bad += 1
-            log("BAD   %s -> %s" % (sha, got))
+            log("BAD   %s -> %s (kind=%s)" % (sha, got, kind))
     left = len([s for s in todo if not present(s)])
     log("--- round done ok=%d bad=%d remaining=%d ---" % (ok, bad, left))
 
