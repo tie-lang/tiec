@@ -1,0 +1,97 @@
+type tie<logic>
+// _bench_prim.tie —— 运行时原语复杂度微基准（临时探针，不入库）
+// 结果逐段写盘（防超时丢输出）。判定：str_len / str_char 是否 O(n)？
+// table_push 是否均摊 O(1)？
+unsafe extern fn clock() -> i64;
+
+func report(path: string, txt: string) {
+    file_write(path, file_read(path) + txt)
+}
+
+func main() -> i64 {
+    var outp = "_bench_prim_out.txt"
+    // 构造 4MB ASCII 串
+    var sb = string_builder()
+    var k: i64 = 0
+    while k < 4000000 {
+        sb_append_byte(sb, 97)
+        k = k + 1
+    }
+    var s = sb_build(sb)
+    // 构造 4KB ASCII 串
+    var sb2 = string_builder()
+    k = 0
+    while k < 4096 {
+        sb_append_byte(sb2, 97)
+        k = k + 1
+    }
+    var s2 = sb_build(sb2)
+    report(outp, "built 4MB=" + to_string(len(s)) + " 4KB=" + to_string(len(s2)) + "\n")
+    var acc: i64 = 0
+    var t0: i64 = 0
+    var t1: i64 = 0
+
+    // A) str_len × 1000（4MB 串）—— 若 O(n) 此组 ~ 秒级
+    unsafe { t0 = clock() }
+    var i: i64 = 0
+    while i < 1000 {
+        acc = acc + str_len(s)
+        i = i + 1
+    }
+    unsafe { t1 = clock() }
+    report(outp, "A 1k x str_len(4MB): " + to_string(t1 - t0) + "ms\n")
+
+    // B) str_len × 1000（4KB 串）—— 与 A 对比得单价
+    unsafe { t0 = clock() }
+    i = 0
+    while i < 1000 {
+        acc = acc + str_len(s2)
+        i = i + 1
+    }
+    unsafe { t1 = clock() }
+    report(outp, "B 1k x str_len(4KB): " + to_string(t1 - t0) + "ms\n")
+
+    // C) str_char(末位) × 1000（4MB）
+    var ch: string = ""
+    unsafe { t0 = clock() }
+    i = 0
+    while i < 1000 {
+        ch = str_char(s, 3999999)
+        i = i + 1
+    }
+    unsafe { t1 = clock() }
+    report(outp, "C 1k x str_char(end,4MB): " + to_string(t1 - t0) + "ms\n")
+
+    // D) str_byte(末位) × 1000（4MB）—— 应恒 O(1)
+    unsafe { t0 = clock() }
+    i = 0
+    while i < 1000 {
+        acc = acc + str_byte(s, 3999999)
+        i = i + 1
+    }
+    unsafe { t1 = clock() }
+    report(outp, "D 1k x str_byte(end,4MB): " + to_string(t1 - t0) + "ms\n")
+
+    // E) table_push × 1,000,000 —— 若每次 O(n) 重分配则此组必慢
+    unsafe { t0 = clock() }
+    var t = table_new_i64()
+    i = 0
+    while i < 1000000 {
+        table_push(t, i)
+        i = i + 1
+    }
+    unsafe { t1 = clock() }
+    report(outp, "E 1M x table_push: " + to_string(t1 - t0) + "ms len=" + to_string(len(t)) + "\n")
+
+    // F) table 索引读 × 1,000,000
+    unsafe { t0 = clock() }
+    i = 0
+    while i < 1000000 {
+        acc = acc + t[i / 2]
+        i = i + 1
+    }
+    unsafe { t1 = clock() }
+    report(outp, "F 1M x t[i]: " + to_string(t1 - t0) + "ms\n")
+    report(outp, "acc=" + to_string(acc) + " ch=" + ch + "\n")
+    return 0
+}
