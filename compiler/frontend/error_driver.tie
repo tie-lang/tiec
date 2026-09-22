@@ -4,6 +4,10 @@ type tie<logic>
 // 遍历 tests/errors/golden/*.tie，对每个文件跑 semantic.check_src，
 // 将语义/语法错误输出为「语义错误 @行:列: 消息」（与 .stderr golden 对齐；
 // 原 Rust 基线 test-errors.ps1/regenerate-golden.ps1 已随 0-Rust 退役，2026-09-13 删除）。
+//
+// 库归属（p.9.21 G3）：本文件是**编排入口**（自带 main，驱动 sema 跑语料），
+// 不属于 diag 库（diag 库 = diagcode/errors 数据表与对外渲染），因此门禁矩阵
+// 将其归到 driver 库。放在 frontend/ 只是历史路径，diag 库不持有对 sema 的依赖。
 import "./semantic.tie"
 
 // 从 "ERR:line col msg" 提取 line/col/msg，并根据消息内容判断错误类型前缀：

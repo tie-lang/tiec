@@ -6,7 +6,7 @@ type tie<class>
 // 对应 proto/semantic.tie 1548-1976（builtin_call）逻辑搬移。
 // 返回约定：类型 id = 正常返回；-1 = void；-2 = 参数错误已报；-3 = 非内置。
 // 依赖：./sstate.tie（AST 全局 + 错误槽）+ ./stype.tie（类型构造/查询，
-// 经其传递可达 ../middle/data.tie 内置表与 types 类型系统）。
+// 经其传递可达 ../middle/types.tie 类型系统与 TK_* 关键字常量）。
 // 树式无环：由 sinfer.tie import。
 import "./stype.tie"
 

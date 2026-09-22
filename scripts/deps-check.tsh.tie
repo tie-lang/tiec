@@ -475,7 +475,12 @@ func init_rules() {
     rule(0, "compiler\\lib\\columnar.tie", L_COLUMNAR)
     rule(0, "compiler\\lib\\dispatch.tie", L_CORE)
     rule(0, "compiler\\frontend\\ast.tie", L_AST)
-    rule(0, "compiler\\frontend\\stype.tie", L_TYPES)
+    // 注意：frontend/stype.tie 不是 tie.types 库——它是**语义层**的 AST→类型 id
+    // 映射器（s* 家族成员），归 sema；tie.types = middle/types.tie 的类型 id 编码。
+    rule(0, "compiler\\frontend\\stype.tie", L_SEMA)
+    // error_driver.tie 是错误 golden 语料的**编排入口**（自带 main，驱动 sema），
+    // 不是 diag 库的成员——归 driver，否则 diag 会被算成反向依赖 sema。
+    rule(0, "compiler\\frontend\\error_driver.tie", L_DRIVER)
     rule(0, "compiler\\middle\\data.tie", L_IR)
     rule(0, "compiler\\middle\\ir.tie", L_IR)
     rule(0, "compiler\\middle\\ir_meta.tie", L_IR)
@@ -497,7 +502,7 @@ func init_rules() {
     //     （例如 middle\types_q1.tie 落到 middle\ → ir，被误判成 types → ir 越界）。
     rule(1, "compiler\\config", L_CONFIG)
     rule(1, "compiler\\driver\\", L_DRIVER)
-    rule(1, "compiler\\frontend\\stype", L_TYPES)
+    rule(1, "compiler\\frontend\\stype", L_SEMA)
     rule(1, "compiler\\frontend\\lex", L_LEX)
     rule(1, "compiler\\frontend\\diagcode", L_DIAG)
     rule(1, "compiler\\frontend\\error", L_DIAG)
