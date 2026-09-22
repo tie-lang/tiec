@@ -705,10 +705,14 @@ func gen_inst(inst_id: i64) {
             args = args + pty + " " + typed_ref(inst_id, k + 1)
             k = k + 2
         }
+        var tpre = ""
+        if tail_marked(inst_id) == 1 {
+            tpre = "tail "
+        }
         if ir.ins_ty(inst_id) < 0 || ir.ins_ty(inst_id) == TK_VOID {
-            line("call void @" + sym + "(" + args + ")")
+            line(tpre + "call void @" + sym + "(" + args + ")")
         } else {
-            line(reg + " = call " + llvm_ty(ir.ins_ty(inst_id)) + " @" + sym + "(" + args + ")")
+            line(reg + " = " + tpre + "call " + llvm_ty(ir.ins_ty(inst_id)) + " @" + sym + "(" + args + ")")
         }
         return
     }
