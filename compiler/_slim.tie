@@ -1,0 +1,139 @@
+type tie<logic>
+// compiler/_slim.tie —— 临时瘦入口（沙箱单命令 120s 构建约束专用，不入库）
+// ============================================================
+// 只接 front → irgen → emit → opt → link 最小管线（省去 interp/repl/trm/
+// keel/dap 等模块的 import 树），供本会话用新前端源码编译验证语料。
+// 用法：_slim <input.tie> -o <out.exe>
+// 契约对齐 driver.tie：ERR 协议渲染、编译成功打印、退出码 0/1。
+
+import "./backend/irgen.tie"
+import "./backend/toolchain.tie"
+import "./frontend/diagcode.tie"
+import "/std/string.tie"
+import "./_slimh.tie"
+
+// 扩展名替换（driver.tie replace_ext 的最小复刻）
+func s_replace_ext(path: string, new_ext: string) -> string {
+    var n = str_len(path)
+    var i = n - 1
+    while i >= 0 {
+        if str_char(path, i) == "." {
+            var base = str.slice(path, 0, i)
+            if str_len(new_ext) == 0 {
+                return base
+            }
+            return base + "." + new_ext
+        }
+        i = i - 1
+    }
+    return path
+}
+
+// ERR: 前缀判断（has_prefix 由 _slimh.tie 提供）
+
+func main() -> i64 {
+    var n = arg_count()
+    if n < 1 {
+        println("用法: _slim <input.tie> -o <out.exe> | --dump-docs <input.tie>")
+        return 2
+    }
+    var input = arg_string(0)
+    var output = ""
+    var dump_docs = false
+    var i: i64 = 1
+    while i < n {
+        var a = arg_string(i)
+        if a == "-o" {
+            if i + 1 >= n {
+                return 2
+            }
+            output = arg_string(i + 1)
+            i = i + 2
+        } else if a == "--dump-docs" {
+            dump_docs = true
+            i = i + 1
+        } else {
+            i = i + 1
+        }
+    }
+    if !file_exists(input) {
+        println("读取源码失败: " + input)
+        return 1
+    }
+    var src = file_read(input)
+    if str_len(src) == 0 {
+        println("读取源码失败: " + input)
+        return 1
+    }
+    // 剥离 `type tie<X>` 头部声明行（对齐 driver.strip_type_header）
+    src = strip_type_header(src)
+
+    // 段 1 前端：词法 + 语法 + 语义（对齐 driver.frontend）
+    var base_dir = "./"
+    var prc = parser.parse_ast(src)
+    if prc < 0 {
+        println(diagcode.render_err_proto(parser.ast_err_protocol()))
+        return 1
+    }
+    // --dump-docs：解析后输出 doc 注释注册表摘要（p.9.11.29）
+    if dump_docs {
+        print(pstmt_top.pdoc_dump())
+        return 0
+    }
+    var sem = semantic.check_ast(base_dir)
+    if has_prefix(sem, "ERR:") {
+        println(diagcode.render_err_proto(sem))
+        return 1
+    }
+
+    // 段 2 中端：AST → tie-IR（对齐 driver.kpass_irgen 本机默认目标）
+    irgen.set_target("x86_64-pc-windows-msvc")
+    var rc = irgen.tig_ast()
+    if rc < 0 {
+        var msg = sm_err_msg
+        if str_len(msg) == 0 {
+            msg = "irgen 最小集之外的语句（尚未支持）"
+        }
+        println("IR 生成失败: " + msg)
+        return 1
+    }
+
+    // 段 3 后端：tie-IR → .ll
+    var ll_text = llvmgen.emit()
+    if str_len(llvmgen.err_msg()) > 0 {
+        println(diagcode.render_error(-1, -1, "代码生成失败: " + llvmgen.err_msg()))
+        return 1
+    }
+    var ir_path = s_replace_ext(input, "ll")
+    if !file_write(ir_path, ll_text) {
+        println("文件操作失败: 写 IR 文件 " + ir_path)
+        return 1
+    }
+
+    // 段 4 链接：opt O2 → link_exe（对齐 driver.kpass_link/compile_logic）
+    var opt_path = s_replace_ext(str.clone(ir_path), "opt.ll")
+    var orc = tc.opt(ir_path, opt_path, 2)
+    if orc != 0 {
+        println(diagcode.render_error(-1, -1, "中间优化失败: " + tc_err_msg))
+        return 1
+    }
+    var exe_path = output
+    if str_len(exe_path) == 0 {
+        exe_path = s_replace_ext(input, "exe")
+    }
+    var bres = tc.link_exe(opt_path, exe_path, "", false, false, false)
+    if bres != 0 {
+        println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
+        return 1
+    }
+    println("编译成功: " + exe_path)
+    return 0
+}
+// rebuild-bump: p.9.11.30 lexer fixes (cache key does not cover imports)
+// rebuild-bump-2: p.9.11.28 expect_stmt_end (cache key does not cover imports)
+// rebuild-bump-3: p.9.11.28 EXPR_STMT unwrap
+// rebuild-bump-4: EXPR_STMT unwrap (session restart)
+// rebuild-bump-5: p.9.11.32 alias + p.9.11.31 selective import
+// rebuild-bump-6: alias probes + selimp probes
+// rebuild-bump-7: selimp optional semi
+// rebuild-bump-8: alias reserved keyword + alias_id rename
