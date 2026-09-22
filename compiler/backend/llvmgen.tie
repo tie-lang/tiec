@@ -142,8 +142,8 @@ var g_ren_next: i64 = 1;
 // 防止函数体指令重编号为 %0 与形参撞号（opt：instruction expected to be
 // numbered '%2' or greater）。
 var g_ren_base: i64 = 0;
-// r.1.6.3：编译目标是否 Linux（irgen.set_target 经 set_linux 注入；空/Windows
-// 恒 0）——main 入口带 argc/argv 签名 + entry 捕获 store 的平台分支判据。
+// r.1.6.3：编译目标是否 Linux（入口侧 driver/pipeline.tie 经 set_linux 注入；
+// 空/Windows 恒 0）——main 入口带 argc/argv 签名 + entry 捕获 store 的平台分支判据。
 var g_linux_target: i64 = 0;
 // r.1.6.3：程序是否使用 arg_* 内置（irgen 首调 linux_args_enable 置位）。置位
 // 后：Linux 目标下 main 定义带 `i32 %0, ptr %1`（argc/argv，CRT 注入），entry
@@ -182,7 +182,7 @@ pub func global_scalar_reg(nm: string, ty: i64) {
     table_push(g_global_strs, -1)
 }
 
-// r.1.6.3：注入编译目标是否 Linux（irgen.set_target 同步调用；幂等）。
+// r.1.6.3：注入编译目标是否 Linux（入口侧 driver/pipeline.tie 同步调用；幂等）。
 // 驱动 main 带参签名（g_linux_target）与 entry 捕获（g_linux_args）双判定。
 pub func set_linux(v: bool) {
     if v {
