@@ -514,3 +514,4 @@ pub func tig_shared_rt_init() -> i64 {
 
 import "./irgen_p1.tie"
 import "./irgen_p2.tie"
+import "./irgen_stmt_gen.tie"
