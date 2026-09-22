@@ -451,6 +451,9 @@ func init_matrix() {
     allow(L_TRM, L_IR)
     allow(L_TRM, L_INTERNER)
     allow(L_TRM, L_COLUMNAR)
+    // p.9.21 G3：trm 加载 .tieir 分发单元是该后端自身的输入契约（正向后端依赖，
+    // 非越界）——加载器读模块 ABI 恒合法，故不把 tieir 并入 ir 库。
+    allow(L_TRM, L_TIEIR)
 
     // 基础方法库（interner/bytes/core）对所有库开放 + driver 持编排权
     var i: i64 = 0
@@ -490,6 +493,11 @@ func init_rules() {
     rule(0, "compiler\\zdpub.tie", L_DRIVER)
     rule(0, "compiler\\zdwrite.tie", L_DRIVER)
     // 前缀规则（由具体到泛化）
+    // 注：`_pN`/`_qN` 分片文件必须跟随其主文件的库归属，否则会落到目录级泛化规则上
+    //     （例如 middle\types_q1.tie 落到 middle\ → ir，被误判成 types → ir 越界）。
+    rule(1, "compiler\\config", L_CONFIG)
+    rule(1, "compiler\\driver\\", L_DRIVER)
+    rule(1, "compiler\\frontend\\stype", L_TYPES)
     rule(1, "compiler\\frontend\\lex", L_LEX)
     rule(1, "compiler\\frontend\\diagcode", L_DIAG)
     rule(1, "compiler\\frontend\\error", L_DIAG)
@@ -503,6 +511,8 @@ func init_rules() {
     rule(1, "compiler\\backend\\toolchain", L_LLVMGEN)
     rule(1, "compiler\\interp\\", L_INTERP)
     rule(1, "compiler\\middle\\pass\\", L_PASSES)
+    rule(1, "compiler\\middle\\passes", L_PASSES)
+    rule(1, "compiler\\middle\\types", L_TYPES)
     rule(1, "compiler\\middle\\", L_IR)
     rule(1, "compiler\\keel\\", L_DRIVER)
     rule(1, "compiler\\dbug\\", L_DRIVER)
