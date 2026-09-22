@@ -6,11 +6,11 @@ type tie<class>
 // 最小可行集：函数定义/参数/局部变量/算术/比较/if/for 范围/println/print/
 // return。未支持语句返回 -1（后续迭代扩展）。
 // 依赖：./../frontend/semantic.tie（check_src 填 AST + 类型表；sstate/types/
-// interner 经其 import 树传递可达）+ ./llvmgen.tie（消费 tie-IR，保持单根树，
-// ir 经 llvmgen 传递可达）。树式无环：driver_test import 本文件。
+// interner 经其 import 树传递可达）。llvmgen 不再由本文件引入——p.9.21 G3
+// 收口 irgen→llvmgen 反向依赖：改由 driver 侧显式 import 并在注入编译目标时
+// 同步调用 llvmgen.set_linux，irgen 不再持有后端引用。
 import "./../frontend/semantic.tie"
 import "./../frontend/consteval.tie"
-import "./llvmgen.tie"
 import "./irgen_str.tie"
 import "./irgen_vtable.tie"
 import "./irgen_closure.tie"
@@ -269,10 +269,10 @@ namespace irgen {
 
 
 // 注入编译目标（driver 调用：normalize_target(g_target)，空则本机默认）。
-// r.1.6.3：同步注入 llvmgen（Linux main 入口 argc/argv 签名平台判据）。
+// r.1.6.3 起 Linux main 入口 argc/argv 签名判据由 driver 侧同步注入 llvmgen
+// （见 driver/pipeline.tie kpass_irgen），本模块不再反向调用 llvmgen。
 pub func set_target(t: string) {
     g_asm_target = t
-    llvmgen.set_linux(tig_is_linux())
 }
 
 // 注入动态库模式（driver 在 detect_shared_mode 后调用，M5 dev33 批次 12）。

@@ -7,6 +7,7 @@ type tie<logic>
 // 契约对齐 driver.tie：ERR 协议渲染、编译成功打印、退出码 0/1。
 
 import "./backend/irgen.tie"
+import "./backend/llvmgen.tie"  // p.9.21 G3：irgen 不再反向 import 后端，装配上移到入口
 import "./backend/toolchain.tie"
 import "./frontend/diagcode.tie"
 import "/std/string.tie"
@@ -88,6 +89,7 @@ func main() -> i64 {
 
     // 段 2 中端：AST → tie-IR（对齐 driver.kpass_irgen 本机默认目标）
     irgen.set_target("x86_64-pc-windows-msvc")
+    llvmgen.set_linux(tig_is_linux())  // 与 driver/pipeline.tie 同构：入口侧同步平台判据
     var rc = irgen.tig_ast()
     if rc < 0 {
         var msg = sm_err_msg
