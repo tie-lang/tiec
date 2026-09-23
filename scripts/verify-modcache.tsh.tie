@@ -84,7 +84,7 @@ func frag_count() -> i64 {
     var c: i64 = 0
     var i: i64 = 0
     while i < len(names) {
-        if has_suffix(names[i], ".tieir") {
+        if has_suffix(names[i], ".tir") {
             c = c + 1
         }
         i = i + 1

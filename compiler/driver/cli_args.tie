@@ -33,8 +33,8 @@ pub func usage() -> i64 {
     println("  --profile <p>    构建 profile（dev/release，覆盖配置顶层 profile 键）")
     println("  --backend <b>    后端实现选择（win32；trm 为路线 B 字节码目标，可插拔；其他 port 未接入）")
     println("  --lib-root <dir>  内置库根目录（存放 std/ext/rdu/sys；覆盖 TIE_LIB_ROOT 与默认 ~/.tiec-lib/tlib）")
-    println("  --tieir-out <f>  编译后序列化 tieir 分发单元（S3.2；.tieir 二进制）")
-    println("  --dump-irt <f>   只读 .tieir 并输出可读摘要（S3.2；不编译）")
+    println("  --tieir-out <f>  编译后序列化 tieir 分发单元（S3.2；.tir 二进制）")
+    println("  --dump-irt <f>   只读 .tir 并输出可读摘要（S3.2；不编译）")
     println("  --dump-docs      解析输入源码后输出 doc 注释注册表摘要（p.9.11.29；不编译）")
     println("  --help           显示本帮助")
     return 0

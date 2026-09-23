@@ -2,7 +2,7 @@ type tie<class>
 // compiler/middle/ir_meta.tie —— 自举 v2 T2.2：tie-IR 元信息侧表
 // ============================================================
 // 里程碑：自举 v2 计划 T2.2（用户决策 2026-08-10：IR 保留源元数据，
-// pkg 分发从源码切换为二进制 IR——侧表是 .tieir 序列化（T6.1）的
+// pkg 分发从源码切换为二进制 IR——侧表是 .tir 序列化（T6.1）的
 // 数据源）。本模块与 ir.tie（IR 本体）配套：**本体只管结构，侧表管
 // 元信息**，两者通过指令/符号 id 关联。llvmgen（T2.8）消费本体，
 // 错误定位/包导出/文档工具链消费本模块。
@@ -13,7 +13,7 @@ type tie<class>
 //   2. sym_table：函数/struct/命名空间 -> 符号名（池 id）+ 签名
 //      （池 id）+ 类别 + 可见性 + 源 span——跨包 import 契约的基础
 //   3. export_table：包级公开 API 清单（install/build 链接目标，
-//      .tieir 导出节数据源）
+//      .tir 导出节数据源）
 //   4. doc_comment 表：符号/节点 id -> 文档字符串池 id（**词法保留
 //      /// 注释是 T2.4 的事**，本任务先建表结构 + setter/getter）
 //   5. 模块头元数据：包名/版本/依赖图/IR 版本/编译器版本
@@ -76,10 +76,10 @@ var meta_doc_vals: table<i64>;         // 文档字符串池 id
 // -1 是表达式会被语义层拦截，实测 2026-08-11；dump 时按 0 判未设置）
 var meta_pkg_name: i64 = 0;        // 包名（池 id；0 = 未设置）
 var meta_pkg_version: i64 = 0;     // 包版本（池 id，如 "0.1.0"）
-var meta_ir_version: i64 = 0;      // IR 格式版本号（.tieir 头校验用）
+var meta_ir_version: i64 = 0;      // IR 格式版本号（.tir 头校验用）
 var meta_compiler_version: i64 = 0;// 编译器版本（池 id）
 // p.9.20 双轴优化：单元头携带中端轴档位——t 级别决定 tie-IR 是否经 pass
-// 改写，pass 管道版本决定 pass 集合/顺序；两者共同构成 .tieir 的可复现性
+// 改写，pass 管道版本决定 pass 集合/顺序；两者共同构成 .tir 的可复现性
 // 契约（同 (源码, l, t, pass 版本) → 逐字节恒等）。
 var meta_tie_opt: i64 = 0;        // 生效 tiec 中端轴档 t（0-3）
 var meta_pass_ver: i64 = 0;       // 中端 pass 管道版本（passes.pipeline_ver）
@@ -317,7 +317,7 @@ pub func doc_count() -> i64 {
     return len(meta_doc_keys)
 }
 
-// ---------- 模块头元数据（.tieir 头节数据源）----------
+// ---------- 模块头元数据（.tir 头节数据源）----------
 
 // 设置包名（池 id）。
 pub func set_pkg_name(name_id: i64) {
@@ -337,7 +337,7 @@ pub func get_pkg_version() -> i64 {
     return meta_pkg_version
 }
 
-// 设置 IR 格式版本号（.tieir 头校验；本模块初版 = 1）。
+// 设置 IR 格式版本号（.tir 头校验；本模块初版 = 1）。
 pub func set_ir_version(v: i64) {
     meta_ir_version = v
 }
@@ -355,7 +355,7 @@ pub func get_compiler_version() -> i64 {
     return meta_compiler_version
 }
 
-// 设置生效 tiec 中端轴档 t（p.9.20；0 = 零 pass）。写入 .tieir 单元头，
+// 设置生效 tiec 中端轴档 t（p.9.20；0 = 零 pass）。写入 .tir 单元头，
 // 使分发单元的优化档可自证（反序列化侧可校验复现条件）。
 pub func set_tie_opt(v: i64) {
     meta_tie_opt = v

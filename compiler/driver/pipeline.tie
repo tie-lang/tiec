@@ -91,16 +91,16 @@ pub func kpass_tieir() -> i64 {
     return 0
 }
 
-// 段 3b（p.7.3.3 路线 B）：trm 字节码目标——写出 .tieir 分发单元并终止
+// 段 3b（p.7.3.3 路线 B）：trm 字节码目标——写出 .tir 分发单元并终止
 // （不 llvm emit/link；可插拔后端，默认不启用）。输出路径优先级：
-// --tieir-out > -o > 输入同名 .tieir。
+// --tieir-out > -o > 输入同名 .tir。
 pub func kpass_trmemit() -> i64 {
     var out = g_tieir_out
     if str_len(out) == 0 {
         out = g_output
     }
     if str_len(out) == 0 {
-        out = replace_ext(g_input, "tieir")
+        out = replace_ext(g_input, "tir")
     }
     // p.9.20 §6.3：trm 分发单元同样携带 t 档 / pass 管道版本
     ir_meta.set_tie_opt(effective_tie_opt())
@@ -363,7 +363,7 @@ pub func compile_program(src: string) -> i64 {
     if g_emit_ir {
         steps = 4
     }
-    // p.7.3.3 路线 B：trm 字节码目标（不缓存，产物 .tieir 独立分派）
+    // p.7.3.3 路线 B：trm 字节码目标（不缓存，产物 .tir 独立分派）
     if g_trm_mode {
         return keel_run_pipeline(g_trm_pipeline, 3)
     }

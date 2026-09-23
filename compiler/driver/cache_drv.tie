@@ -379,7 +379,7 @@ pub func mod_cache_update() -> i64 {
         var p = paths[i2]
         var fp = dep_file_fp(p)
         var key = "tm" + to_string(str_hash(p + "|" + fp + "|" + g_cache_salt + "|M" + to_string(topt) + "|TG" + g_target))
-        var frag = cdir + "/" + key + ".tieir"
+        var frag = cdir + "/" + key + ".tir"
         if file_exists(frag) {
             hits = hits + 1
         } else {
