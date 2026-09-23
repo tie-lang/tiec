@@ -183,8 +183,14 @@ pub func infer_expr_var(id: i64) -> i64 {
             g_typed = g_typed + 1
             return lt
         }
-        var gt = gb_find_ns(nid)
-        if gt >= 0 {
+        // p.9.21.5 II2 A2b：裸名经前缀补全命中 ns 常量时同样跟随 L1 梯度
+        var gkey = gb_find_ns_key(nid)
+        if gkey >= 0 {
+            var vc = sstate.check_const_visibility_nid(gkey, id)
+            if vc < 0 {
+                return -1
+            }
+            var gt = gb_find(gkey)
             node_types[id] = gt
             g_typed = g_typed + 1
             return gt
