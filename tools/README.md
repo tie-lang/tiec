@@ -1,92 +1,85 @@
-# tiec/tools —— 开发工具 / Development tooling
+# tiec/tools —— 开发工具（100% tie / Development tooling, pure tie）
 
-> 本目录存放**开发期**使用的脚本：自举不动点校验、大文件拆分器、仓库对象库修复。
-> EN: Development-time scripts: fixed-point bootstrap check, oversized-file splitters,
-> and odb repair. None of them ship with the compiler.
+> 本目录存放**开发期**使用的工具，全部为 tie 实现（编译型 `tie<logic>` 程序）；
+> 脚本一律走 `scripts/*.tsh.tie`（tshell）。**禁止 Python / shell 脚本**——
+> 工具链自身也是 tie dogfood 的一部分（2026-09-23 用户拍板：100% tie）。
+> EN: Development-time tools, all written in tie and compiled by tiec itself;
+> scripts live in `scripts/*.tsh.tie` (tshell). Python/shell scripts are not
+> allowed - the toolchain is part of the tie dogfood (user decision, 2026-09-23).
 >
-> 所有脚本的仓库根一律取自环境变量 `TIEC_ROOT`，未设置时用当前工作目录，便于换机使用。
-> EN: Every script resolves the repo root from `TIEC_ROOT` (falls back to the cwd).
+> 仓库根取自当前工作目录（在 repo 根运行）；编译方式：
+> `compiler\tiec.exe tools\<名>.tie -o <tmp>\<名>.exe`。
 
 ## 一、自举不动点校验 / Fixed-point bootstrap check
 
+见 `scripts/bootstrap-fp.tsh.tie`（tshell 脚本）：
+
 ```sh
-sh tools/fp.sh [输出目录]        # 默认 ../_tiec_verify/fp
+tsh_main.exe -f scripts\bootstrap-fp.tsh.tie [输出目录] [fresh]
 ```
 
-三阶不动点：`tiec.exe` 编 driver → n1 → n2 → n3，`SHA(n2) == SHA(n3)` 即达成。
-约 100 秒；输出目录默认在仓库外侧，避免污染工作树。
-EN: Three-stage bootstrap; a matching n2/n3 hash means the fixed point holds.
+三阶不动点：`tiec.exe` 编 driver → n1 → n2 → n3，n2 与 n3 逐字节一致即达成
+（certutil 求 SHA256 只比哈希行）。约 100 秒；输出目录默认在仓库外侧。
+三阶各约 35 秒——单命令 120 秒上限内跑不完三阶时，脚本按产物**断点续跑**
+（传 `fresh` 强制全部重跑）。
+EN: Three-stage bootstrap; matching n2/n3 hashes mean the fixed point holds.
+Stages resume from existing artifacts so no single command exceeds the
+2-minute limit; pass `fresh` to rebuild everything.
 
-## 二、拆分器 / Splitters（`tools/split/`）
+## 二、审计工具 / Audits（编译型，原生速度）
 
-全部为通用器：只搬「函数 + 其紧邻上方注释块」，绝不搬 `import` / 顶层全局 `var` /
-`namespace` 包裹行，并输出函数集完整性校验（前集必须 ⊆ 后集）。
-
-| 脚本 | 适用形态 | 用法 |
+| 工具 | 用途 | 用法 |
 |---|---|---|
-| `split_parts.py` | 文件过大、函数可整块搬走（**命名空间感知**，顶层函数保持顶层身份） | `python split_parts.py plan\|apply <相对compiler的路径> [每片预算行]` |
-| `split_dispatch.py` | `if <VAR> == <整数> { ... }` 巨型调度器按分支提取 | `python split_dispatch.py plan\|apply <路径> <函数名> <分派变量> <落盘文件>` |
-| `split_dispatch_segments.py` | **哨兵分派链分段**：`if <cond> {…}` 长链切成连续段函数，runner 遇非哨兵即返回 | `python split_dispatch_segments.py plan\|apply <路径> <函数名> <前缀> [预算] [分片名]` |
-| `split_branch_blocks.py` | **语句级**提取：任意条件的 `if ... { ... }` 平铺分支（`split_dispatch.py` 只认整数字面量链） | `python split_branch_blocks.py plan\|apply <路径> <函数名> [前缀] [预算] [分片名]` |
-| `split_builtin_branches.py` | `builtin_expr` 式 `if nm == "名字"` 分支提取（按段注释归域） | `python split_builtin_branches.py plan\|apply` |
-| `split_expr_files.py` | 按域把大文件里的函数搬到多个新文件（一次性记录，范式参考） | `python split_expr_files.py plan\|apply` |
-| `split_driver.py` | `driver` 同命名空间跨文件范式（flat / ns 两种风格） | `python split_driver.py plan\|apply <组名,…>` |
+| `func_audit.tie` | 超 300 行函数审计（D4） | `fa.exe [上限]`（默认 300） |
+| `orphan_check.tie` | 没有任何文件 import 的源码（G8 孤儿） | `oc.exe` |
+| `visibility_survey.tie` | 各命名空间 pub / 私有函数分布（II1 诊断） | `vs.exe` |
 
-`split_branch_blocks.py` 的安全判据（不满足就跳过该分支，绝不硬搬）：
+三者共用同一套原语：`exec_output`（`dir /s /b` 取文件清单）、`file_read`、
+字符串/注释感知的花括号计数、逐函数回溯所属命名空间（**不要用括号深度栈
+逐行归类**——tie 源码缩进不规则且存在零缩进 `if`，实测会撕碎归属）。
+`orphan_check` 的路径归一化必须先 `/`→`\` 再切段（import 目标用正斜杠、
+`dir /s /b` 用反斜杠，不统一则 `.` 段切不出来）。
+EN: All three scan `compiler/` with string/comment-aware brace counting and
+the backward namespace attribution verified during the G1/G2 splits.
 
-* 分支体最后一条顶层语句必须是 `return`（否则「贯穿到下一分支」的语义会丢）；
-* 分支不读取兄弟语句声明的局部（函数前置 `var` 除外——会被原样复写进提子函数）；
-* 分支自己声明的局部不得被分支外读取（比对时**跳过字符串内容与 `ns.member` 调用**，
-  否则消息串里的 `{k: v}`、`types.is_map` 会被误判成耦合）；
-* 沿用原函数的形参表与返回类型（`check_stmt(s)` 不能写成 `(id)`）。
+## 三、历史拆分工具的去向 / Where the old splitters went
 
-环境变量：`TIEC_ROOT` 仓库根；`TIE_SPLIT_EXCLUDE` 逗号分隔的不搬函数名（`split_parts.py`）。
-EN: `split_parts.py` is the generic namespace-aware function packer; the other four are
-shape-specific extractors kept as working references.
+p.9.21.2/3 的大文件拆分（G1）曾用一次性 Python 工具辅助，现按 100% tie 约束
+移出仓库（git 历史可考）；拆分时踩坑总结沉淀为**规则**（见下），未来若需
+再拆，按规则用 tie 重写工具。
+EN: The one-shot Python splitters used during the G1 splits were removed per
+the pure-tie decision (see git history); their lessons survive as the rules
+below.
 
 ### 拆分铁律 / Splitting rules（实测总结）
 
-* `else-if` 链与多行条件块必须**整块**搬（含起始 `if` 与闭合 `}`），切短会把后续函数吞进体内。
-* 与相邻语句共享局部变量时按**区域**搬（向上吞并紧邻 `var`/注释，向下到下一个同级块起点）。
-* 花括号计数必须**字符串/注释感知**（源码里 `{` 常出现在注释与字符串中）。
-* 拆出文件只含函数与注释：不含 `import`、不含顶层全局 `var`（globals 与 import 树留主文件）。
-* `namespace X {` **之前**定义的函数是顶层函数，被其他 ns 裸名调用——分片必须按各函数
-  自身的命名空间上下文包裹，否则报「未定义函数」。
-* 分片文件绝不覆盖既有分片（用 `_qN` 而非复用 `_pN`）；改完必须做函数集完整性校验。
-* `main` 必须留在顶层（放进 `namespace` 会链接期缺入口）。
-* 每次改动后 `grep` 核验标记存在（替换不匹配会静默跳过）。
-* **块闭合判定**：多行条件的 `if` 首行括号平衡但块未开（须见到 `{` 后才收口）；`} else if …`
-  行会闭合上一臂（链是一块，不能在 `} else` 处收口）。
-* **别按固定缩进找语句**：源码里存在零缩进 `if` 混在缩进体内的情况（早期工具遗留），按缩进扫描
-  会撕碎分支；先用 `git diff -w` 验证做纯空白重排缩进，再跑拆分工具。
-* 顺序流水线型长函数（非分派链）**不能**机械切段：局部变量跨段共享且 tie 表按值传参，必须按
-  语义段落手工提取并逐段 regress。
+* `else-if` 链与多行条件块必须**整块**搬（含起始 `if` 与闭合 `}`）。
+* 与相邻语句共享局部变量时按**区域**搬，或就地保留。
+* 花括号计数必须**字符串/注释感知**。
+* 拆出文件只含函数与注释：不含 `import`、不含顶层全局 `var`。
+* `namespace X {` 之前定义的函数是顶层函数，跨 ns 裸调依赖其顶层身份。
+* 分片文件绝不覆盖既有分片（用 `_qN`）；改完做函数集完整性校验。
+* `main` 必须留在顶层（放进 ns 会链接期缺入口）。
+* 分片 import 插在 `namespace` 行**之前**（ns 体内只允许函数/类/嵌套 ns）。
+* 顺序流水线型长函数（非分派链）**不能**机械切段：局部变量跨段共享且表
+  按值传参，必须按语义段落手工提取并逐段 regress。
 
-## 三、审计 / Audits
+## 四、odb 修复 / odb repair（过程记录，工具已移除）
 
-```sh
-python tools/func_len.py [仓库根] [上限]     # 单函数行数审计（默认 300 行）
-python tools/orphan_check.py [仓库根]        # 列出没有任何文件 import 的源码（孤儿）
-```
+2026-09-16 的 repack 中断曾掏空本机对象库；当时用 Python 工具回填了 33/36
+个对象（其余 3 个服务端已 404）。修复过程等价于：
 
-`func_len.py` 的花括号计数对字符串与注释感知（源码里 `{` 常出现在字符串/注释中）；
-`orphan_check.py` 只报告不删除——入口文件、`_` 探针、独立自检本就无人 import。
-EN: `func_len.py` audits the per-function line limit; `orphan_check.py` reports
-unreferenced sources, leaving the deletion decision to you.
+1. `git fsck --connectivity-only` 收集缺失对象清单；
+2. 对每个缺失 blob：`gh api repos/<owner>/<name>/git/blobs/<sha>` 取
+   base64 → 解码 → `git hash-object -w --stdin`，**写回前必须哈希校验**
+   （复现原 SHA 才落库）；commit/tree 走 `/git/commits` / `/git/trees`；
+3. 清理指向不可恢复对象的悬空 reflog。
 
-## 四、对象库修复 / odb repair
+预防：`git config gc.auto 0`、`maintenance.auto false`（本机删除被重定向到
+回收站，「先删旧 pack 后写新 pack」类操作被 120 秒中断会掏空对象库——严禁
+在本机仓库跑 `git gc` / `git repack` / `git prune`）。
 
-```sh
-python tools/repair_objects.py <秒预算> [缺失 blob 清单]
-```
+## 五、复现探针 / Reproduction probes
 
-本机删除被重定向到回收站，`git` 的「先删旧 pack、后写新 pack」类操作一旦被 120 秒上限
-打断会掏空对象库；该脚本按内容校验（`git hash-object -w` 必须复现原 SHA）从 blobless
-partial clone 与 GitHub REST API 两路回填缺失对象。
-EN: Rehydrates blobs missing from the local odb, content-verified against their SHA.
-
-## 五、其它 / Others
-
-* `repair_objects.py` 的 `TIEC_PARTIAL` / `TIEC_REPOS` / `TIEC_GH` 等环境变量见文件头注释。
-* 复现探针放在 `tiec/tests/_p*_probe/`（例如 `_p921_interp_flag_probe/flag_nested_if.tie`
-  记录解释器「标志位 + 嵌套 if/else 不终止」缺陷）。
+复现探针放在 `compiler/tests/_p*_probe/`（例如 `_p921_interp_flag_probe/flag_nested_if.tie`
+记录解释器「标志位 + 嵌套 if/else 不终止」缺陷）。
