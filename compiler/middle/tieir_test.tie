@@ -1,5 +1,5 @@
 type tie<logic>
-// compiler/middle/tieir_test.tie —— tie.tieir 库独立自检（p.9.21 G7 库资格②）
+// compiler/middle/tieir_test.tie —— tie.tir 库独立自检（p.9.21 G7 库资格②）
 // ============================================================
 // 无 driver 可跑：本文件即入口（tie<logic>），只 import 被测库（tieir_ser
 // 链载 ir/ir_meta/interner/std/bytes），覆盖序列化模块的全部对外契约：
@@ -175,7 +175,7 @@ func main() {
     }
 
     // ---------- 文件往返 ----------
-    var path = "_tieir_test_tmp.tieir"
+    var path = "_tieir_test_tmp.tir"
     if !check(tieir.write(path), "写入 tieir 文件") {
         ok = false
     }
@@ -255,7 +255,7 @@ func main() {
     table_push(mods2, 0)
     table_push(mods2, 1)
     tieir.set_fn_mods(mods2)
-    var slice_path = "_tieir_slice_test.tieir"
+    var slice_path = "_tieir_slice_test.tir"
     var wok = tieir.write_mod_slice(slice_path, 1, "src/libg.tie", "fp123")
     if !check(wok, "片段写入成功") {
         ok = false
@@ -318,6 +318,62 @@ func main() {
     tieir.set_fn_mods(bad_mods)
     if !check(!tieir.write_mod_slice(slice_path, 0, "x.tie", "fp"), "归属表规模不符 → 拒绝") {
         ok = false
+    }
+
+    // ---------- 多函数交错 roundtrip（p.9.21.7 / D1 回归核心） ----------
+    // 真实 irgen 形态：边建函数边建体（f 全建完再建 g）→ ops 段为每函数
+    // [参数][操作数] 交错。序列化 → 反序列化 → 值空间重映射（重建 = 参数
+    // 0..P-1 先行、结果 P.. 按序）后必须语义等价。
+    ir.new_module()
+    ir_meta.reset_meta()
+    ir_meta.set_ir_version(1)
+    // f：1 参数，add(param, param)（结果值原空间 = 1）
+    var mf: table<i64> = table_new_i64()
+    table_push(mf, 3)
+    var rf = ir.new_func(interner.intern("rf"), 3, mf)
+    var rfe = ir.new_block(rf, interner.intern("fentry"))
+    var rfi = ir.new_inst(rfe, 0, 3)
+    ir.add_operand(rfi, 0, 0)
+    ir.add_operand(rfi, 0, 0)
+    // g：2 参数，add(p0,p1)（原空间参数 2,3、结果 4），随后 ret
+    var mg: table<i64> = table_new_i64()
+    table_push(mg, 3)
+    table_push(mg, 3)
+    var rg = ir.new_func(interner.intern("rg"), 3, mg)
+    var rge = ir.new_block(rg, interner.intern("gentry"))
+    var rgi = ir.new_inst(rge, 0, 3)
+    ir.add_operand(rgi, 2, 0)
+    ir.add_operand(rgi, 3, 0)
+    var rgi2 = ir.new_inst(rge, 32, -1)
+    ir.add_operand(rgi2, ir.get_value(rgi), 0)
+    if !check(ir.func_count() == 2 && ir.inst_count() == 3 && ir.value_count() == 5,
+              "D1 前置：2 函数 3 指令 5 值") {
+        ok = false
+    }
+    var t_d1 = tieir.serialize()
+    var rc_d1 = tieir.deserialize(t_d1)
+    if !check(rc_d1 == 0, "D1 多函数交错 roundtrip 成功") {
+        ok = false
+    }
+    if rc_d1 == 0 {
+        if !check(ir.func_count() == 2, "D1 函数数 = 2") {
+            ok = false
+        }
+        // 重建值空间：f 参数 0；g 参数 1,2（P=3）；结果按序：f add→3、g add→4
+        if !check(ir.ins_val(0) == 3, "D1 fn0 结果值重映射 = 3") {
+            ok = false
+        }
+        if !check(ir.ins_val(1) == 4, "D1 fn1 结果值重映射 = 4") {
+            ok = false
+        }
+        // g 的 add 操作数 = g 参数（原 2,3）→ 重建 1,2
+        if !check(ir.ins_opnd(1, 0) == 1 && ir.ins_opnd(1, 1) == 2, "D1 跨函数参数引用重映射") {
+            ok = false
+        }
+        // ret 引用 g add 结果（原 4）→ 重建 4
+        if !check(ir.ins_opnd(2, 0) == 4, "D1 函数内结果引用重映射") {
+            ok = false
+        }
     }
 
     // ---------- 汇总 ----------

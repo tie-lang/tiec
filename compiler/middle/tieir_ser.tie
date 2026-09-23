@@ -1,9 +1,9 @@
 type tie<class>
-// compiler/middle/tieir_ser.tie —— S3.2：tieir 序列化模块（.tieir 二进制格式）
+// compiler/middle/tieir_ser.tie —— S3.2：tieir 序列化模块（.tir 二进制格式）
 // ============================================================
 // 里程碑：库/包模型 S3.2（docs/plans/tieir-format.md S3 + package-model.md L2）。
 // 把当前编译单元的 IR 本体（ir.tie 列式表）+ 元信息侧表（ir_meta.tie）序列化
-// 为**二进制 .tieir 分发格式**（段 1-7），并可反序列化回内存结构（roundtrip）、
+// 为**二进制 .tir 分发格式**（段 1-7），并可反序列化回内存结构（roundtrip）、
 // 输出可读摘要（dump）、计算内容哈希（P5c 签名载体）。
 //
 // # 段布局（对齐 tieir-format.md §2.1）
@@ -409,7 +409,7 @@ pub func deserialize(t: table<i64>) -> i64 {
     }
     if t[0] != TIEIR_MAGIC0 || t[1] != TIEIR_MAGIC1 || t[2] != TIEIR_MAGIC2 ||
         t[3] != TIEIR_MAGIC3 || t[4] != TIEIR_MAGIC4 {
-        set_err("tieir 魔数不匹配（非 .tieir 文件）")
+        set_err("tieir 魔数不匹配（非 .tir 文件）")
         return -1
     }
     tieir_pos = 5
@@ -524,6 +524,12 @@ pub func deserialize(t: table<i64>) -> i64 {
         return -1
     }
     var fi2: i64 = 0
+    // p.9.21.7（D1）：文件布局 = 原模块交错序（每函数 [参数][指令操作数]），
+    // fpo/ops_off 是原布局位置——**不能**与重建自然偏移（函数表先建 → 参数
+    // 0..P-1 连续）比对。原布局一致性改由指令段的函数边界 fpo 连续性校验
+    //（见下方 inst 循环）；此处仅记录 + 基础边界检查。
+    var fpos = table_new_i64()
+    var fpcs = table_new_i64()
     while fi2 < fn_n {
         var fnm = rd_i64(t)
         var frt = rd_i64(t)
@@ -539,6 +545,14 @@ pub func deserialize(t: table<i64>) -> i64 {
             set_err("tieir 函数参数数非法（" + to_string(fpc) + "）")
             return -1
         }
+        if fpo < 0 {
+            set_err("tieir 函数参数段偏移非法（函数 " + to_string(fi2) + "）")
+            return -1
+        }
+        if fi2 == 0 && fpo != 0 {
+            set_err("tieir 首函数参数段偏移非 0")
+            return -1
+        }
         var ptys = table_new_i64()
         var pk2: i64 = 0
         while pk2 < fpc {
@@ -550,14 +564,11 @@ pub func deserialize(t: table<i64>) -> i64 {
             pk2 = pk2 + 1
         }
         var fid = ir.new_func(fnm, frt, ptys)
-        // 校验序列化偏移与重建自然偏移一致（roundtrip 一致性的关键项）
-        if ir.func_params_off(fid) != fpo {
-            set_err("tieir 函数参数段偏移不一致（函数 " + to_string(fid) + "）")
-            return -1
-        }
         ir.func_export_set(fid, fex)
         // 入口块在块表重建后校验（此处记录期望值，用哨兵 -1 占位）
         //（ir_meta 无函数入口槽，校验放块表重建后：块表 func 列一致性）
+        table_push(fpos, fpo)
+        table_push(fpcs, fpc)
         fi2 = fi2 + 1
     }
     // 块表
@@ -573,6 +584,7 @@ pub func deserialize(t: table<i64>) -> i64 {
     // new_block 的 start/end 初始为 0，须等 new_inst 填充后再比对）
     var blk_starts = table_new_i64()
     var blk_ends = table_new_i64()
+    var bfunc = table_new_i64()
     var bi2: i64 = 0
     while bi2 < blk_n {
         var bfn = rd_i64(t)
@@ -586,12 +598,17 @@ pub func deserialize(t: table<i64>) -> i64 {
             set_err("tieir 块所属函数越界（块 " + to_string(bi2) + " → 函数 " + to_string(bfn) + "）")
             return -1
         }
+        table_push(bfunc, bfn)
         var bid = ir.new_block(bfn, bnm)
         table_push(blk_starts, bst)
         table_push(blk_ends, ben)
         bi2 = bi2 + 1
     }
-    // 指令表（操作数交织：值 + kind）
+    // 指令表（操作数交织：值 + kind）。
+    // p.9.21.7（D1）值空间重映射：文件值 id = 原模块交错创建序（函数边界处
+    // 参数领号、结果随指令领号）；重建模块函数表先建 → 参数 0..P-1、结果
+    // P.. 顺序领号。remap[原 id] = 重建 id；文件内部一致性由
+    // ①结果值连续性（ivl == next_orig）②函数边界 fpo 连续性 双校验保证。
     var ins_n = rd_i64(t)
     if tieir_err != "" {
         return -1
@@ -599,6 +616,26 @@ pub func deserialize(t: table<i64>) -> i64 {
     if ins_n < 0 || ins_n > 10000000 {
         set_err("tieir 指令数非法（" + to_string(ins_n) + "）")
         return -1
+    }
+    // 累计参数基址（重建参数 id = cum_params[k] + j）
+    var cum_params = table_new_i64()
+    var p_total: i64 = 0
+    var ci: i64 = 0
+    while ci < fn_n {
+        table_push(cum_params, p_total)
+        p_total = p_total + fpcs[ci]
+        ci = ci + 1
+    }
+    var remap = table_new_i64()
+    var remap_n: i64 = 0
+    var next_orig: i64 = 0
+    var alloc_fns: i64 = 0
+    var result_ord: i64 = 0
+    var cur_fn: i64 = -1
+    var expected_fpo: i64 = 0
+    var fops_accum: i64 = 0
+    if fn_n > 0 {
+        expected_fpo = fpos[0]
     }
     var ii2: i64 = 0
     while ii2 < ins_n {
@@ -619,13 +656,65 @@ pub func deserialize(t: table<i64>) -> i64 {
             set_err("tieir 指令所属块越界（指令 " + to_string(ii2) + " → 块 " + to_string(owner) + "）")
             return -1
         }
-        var iid = ir.new_inst(owner, iop, ity)
-        if ir.ins_val(iid) != ivl {
-            set_err("tieir 指令结果值不一致（指令 " + to_string(ii2) + "）")
+        var k = bfunc[owner]
+        if k < cur_fn {
+            set_err("tieir 指令所属函数乱序（指令 " + to_string(ii2) + "）")
             return -1
         }
-        if ir.ins_ops_off(iid) != iof {
-            set_err("tieir 指令操作数段偏移不一致（指令 " + to_string(ii2) + "）")
+        if k > cur_fn {
+            // 收尾当前函数（fpo 连续性）+ 跳过空函数 + 进入函数 k
+            if cur_fn >= 0 {
+                expected_fpo = expected_fpo + fpcs[cur_fn] + fops_accum
+            }
+            var m = cur_fn + 1
+            while m < k {
+                expected_fpo = expected_fpo + fpcs[m]
+                m = m + 1
+            }
+            if fpos[k] != expected_fpo {
+                set_err("tieir 函数参数段偏移不连续（函数 " + to_string(k) + "）")
+                return -1
+            }
+            // 原值空间：函数 cur_fn+1..k 的参数在各自边界领号
+            var m2 = cur_fn + 1
+            while m2 <= k {
+                var j2: i64 = 0
+                while j2 < fpcs[m2] {
+                    var oid = next_orig + j2
+                    while remap_n <= oid {
+                        table_push(remap, 0 - 1)
+                        remap_n = remap_n + 1
+                    }
+                    remap[oid] = cum_params[m2] + j2
+                    j2 = j2 + 1
+                }
+                next_orig = next_orig + fpcs[m2]
+                m2 = m2 + 1
+            }
+            alloc_fns = k + 1
+            cur_fn = k
+            fops_accum = 0
+        }
+        fops_accum = fops_accum + icn
+        // 结果值：文件 ivl 必须 == next_orig（原空间结果按序领号）
+        var expect_rebuilt: i64 = 0 - 1
+        if ivl >= 0 {
+            if ivl != next_orig {
+                set_err("tieir 指令结果值非连续（指令 " + to_string(ii2) + " 文件 " + to_string(ivl) + " 期望 " + to_string(next_orig) + "）")
+                return -1
+            }
+            expect_rebuilt = p_total + result_ord
+            result_ord = result_ord + 1
+            next_orig = next_orig + 1
+            while remap_n <= ivl {
+                table_push(remap, 0 - 1)
+                remap_n = remap_n + 1
+            }
+            remap[ivl] = expect_rebuilt
+        }
+        var iid = ir.new_inst(owner, iop, ity)
+        if ivl >= 0 && ir.ins_val(iid) != expect_rebuilt {
+            set_err("tieir 指令结果值重建不一致（指令 " + to_string(ii2) + "）")
             return -1
         }
         var ok2: i64 = 0
@@ -635,6 +724,18 @@ pub func deserialize(t: table<i64>) -> i64 {
             if tieir_err != "" {
                 return -1
             }
+            // kind 0 = SSA 值（重映射）；kind 1 = 块（重建索引与文件一致，透传）
+            if okd == 0 {
+                if ov < 0 || ov >= remap_n {
+                    set_err("tieir 值操作数越界（指令 " + to_string(ii2) + " 值 " + to_string(ov) + "）")
+                    return -1
+                }
+                if remap[ov] < 0 {
+                    set_err("tieir 值操作数引用未定义（指令 " + to_string(ii2) + " 值 " + to_string(ov) + "）")
+                    return -1
+                }
+                ov = remap[ov]
+            }
             ir.add_operand(iid, ov, okd)
             ok2 = ok2 + 1
         }
@@ -643,6 +744,21 @@ pub func deserialize(t: table<i64>) -> i64 {
             return -1
         }
         ii2 = ii2 + 1
+    }
+    // 尾部无指令函数的参数（原空间收尾分配；重建侧已在函数表建好）
+    while alloc_fns < fn_n {
+        var j3: i64 = 0
+        while j3 < fpcs[alloc_fns] {
+            var oid2 = next_orig + j3
+            while remap_n <= oid2 {
+                table_push(remap, 0 - 1)
+                remap_n = remap_n + 1
+            }
+            remap[oid2] = cum_params[alloc_fns] + j3
+            j3 = j3 + 1
+        }
+        next_orig = next_orig + fpcs[alloc_fns]
+        alloc_fns = alloc_fns + 1
     }
     // 指令重建完成后：校验块区间与序列化值一致（roundtrip 一致性关键项）
     var bj2: i64 = 0

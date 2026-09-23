@@ -63,10 +63,10 @@ var NEG_CHAR: string = "var c = 'a";              // 无尾换行 → 字符字�
 var NEG_MULTI: string = "var c = 'ab'";           // 多字符 → 只能包含一个字符
 var NEG_ESC: string = "var s = \"\\q\"";          // 未知转义 → 未知转义序列 \q
 var NEG_COMMENT: string = "var x = 1 /* oops";    // 块注释未闭合
-var NEG_CHAR2: string = "var x = 1 @";            // 无法识别的字符 '@'
+var NEG_CHAR2: string = "var x = 1 ~";            // 无法识别的字符 '¥'（@ 已是合法注解符 p.9.11.12）
 var NEG_LINE: string = "var a = 1\nvar b = \"oops"; // 第 2 行字符串未闭合
 var NEG_ESCMISS: string = "var s = \"\\";          // 反斜杠后 EOF → 转义符后缺少字符
-var NEG_CP: string = "var 你好x = 1 @\n";          // 码点列号：@ 在 col 13（非字节 15）
+var NEG_CP: string = "var 你好x = 1 ~\n";          // 码点列号：¥ 在 col 13（非字节 15；@ 已合法化）
 
 // ---------- doc 注释保留样例（全局初始化须为字面量，故在 main 内拼接）----------
 var DOCSRC_P1: string = "/// 计算 a+b\n/// 并输出结果\nfunc add(a: i64, b: i64) -> i64 {\n"
@@ -143,7 +143,7 @@ func main() {
     ok = check_str(fmt_lex_err(), "词法错误 @1:11: 块注释未闭合", "负例 块注释未闭合") && ok
     okn = lexer.run_lex(NEG_CHAR2)
     ok = check(!okn, "负例 无法识别字符 应报错") && ok
-    ok = check_str(fmt_lex_err(), "词法错误 @1:11: 无法识别的字符 '@'", "负例 无法识别字符") && ok
+    ok = check_str(fmt_lex_err(), "词法错误 @1:11: 无法识别的字符 '~'", "负例 无法识别字符") && ok
     okn = lexer.run_lex(NEG_LINE)
     ok = check(!okn, "负例 多行未闭合 应报错") && ok
     ok = check_str(fmt_lex_err(), "词法错误 @2:9: 字符串未闭合", "负例 多行行号") && ok
@@ -152,7 +152,7 @@ func main() {
     ok = check_str(fmt_lex_err(), "词法错误 @1:9: 转义符后缺少字符", "负例 转义符后缺少字符") && ok
     okn = lexer.run_lex(NEG_CP)
     ok = check(!okn, "负例 码点列号 应报错") && ok
-    ok = check_str(fmt_lex_err(), "词法错误 @1:13: 无法识别的字符 '@'", "负例 码点列号") && ok
+    ok = check_str(fmt_lex_err(), "词法错误 @1:13: 无法识别的字符 '~'", "负例 码点列号") && ok
 
     // ---------- doc 注释保留（dump_docs 附随验证）----------
     // DOCSRC：两段 doc（/// 连续拼接 + /** */ 块）附着到 func add / struct Point；

@@ -111,8 +111,8 @@ var g_backend_cli: string = "";   // --backend <b> 指定（空 = 配置 tiec.ba
 // p.9.13.7-B 内置库零副本：--lib-root <dir> 显式指定库根（优先级最高，
 // 覆盖 TIE_LIB_ROOT 环境变量与默认 ~/.tiec-lib/tlib；空 = 未指定）。
 var g_lib_root_cli: string = "";
-// S3.2：tieir 分发（--tieir-out <f> 编译后序列化 .tieir；--dump-irt <f> 只读 dump）
-var g_tieir_out: string = "";     // --tieir-out 指定（空 = 不输出 .tieir）
+// S3.2：tieir 分发（--tieir-out <f> 编译后序列化 .tir；--dump-irt <f> 只读 dump）
+var g_tieir_out: string = "";     // --tieir-out 指定（空 = 不输出 .tir）
 var g_dump_irt: string = "";      // --dump-irt <f> 指定（空 = 不 dump）
 // p.9.11.29：--dump-docs 短路——解析输入源码后输出 doc 注释注册表摘要
 var g_dump_docs: bool = false;
@@ -205,7 +205,7 @@ func main() -> i64 {
         }
         return exec_code(tsp_path)
     }
-    // S3.2：--dump-irt 短路——只读 .tieir 输出可读摘要（不编译）
+    // S3.2：--dump-irt 短路——只读 .tir 输出可读摘要（不编译）
     if str_len(g_dump_irt) > 0 {
         var drc = tieir.read(g_dump_irt)
         if drc != 0 {
