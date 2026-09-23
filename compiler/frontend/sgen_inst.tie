@@ -298,6 +298,9 @@ pub func instantiate_struct(gti: i64, args: table<i64>) -> i64 {
         sm_err_col = 1
         return -1
     }
+    // p.9.21.6-1 模块边界显式化：实例化 struct 的来源模块 = 模板定义所在
+    // 文件（node = gty_node[gti]；new_node 是合成节点无文件归属，不能反查）
+    st_mod[si] = sstate.file_id_of_node(node)
     // 字段拍平（实例化 struct 无父；cls_done 置位 → collect_all_struct_fields 跳过）
     cls_done[si] = 1
     cls_fldoff[si] = len(fld_names)

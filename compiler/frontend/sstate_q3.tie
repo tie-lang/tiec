@@ -29,4 +29,65 @@ pub func imported_paths() -> table<string> {
     return out
 }
 
+// ==================== p.9.21.6-1 模块边界显式化访问器 ====================
+// 模块 = import 的文件：主文件 = 0，导入文件按展开顺序 1..k（与 g_imported
+// 下标差 1）。g_file_base 升序（expand_imports/expand_one_import 维护），
+// 节点 id 落在 [g_file_base[k], g_file_base[k+1]) 即属文件 k。
+
+// 节点 id -> 来源文件 id（模块 id）。g_file_base 未初始化 / 节点越界时
+// 兜底 0（主文件）——实例化等无源场景安全降级，不改变既有行为。
+pub func file_id_of_node(node: i64) -> i64 {
+    var n = len(g_file_base)
+    if n == 0 || node < 0 {
+        return 0
+    }
+    var lo: i64 = 0
+    var hi: i64 = n - 1
+    var ans: i64 = 0
+    while lo <= hi {
+        var mid = (lo + hi) / 2
+        if g_file_base[mid] <= node {
+            ans = mid
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    return ans
+}
+
+// 文件 id -> 归一化路径。0（主文件）返回 ""（主文件路径由 driver 持有
+// g_input）；k >= 1 = g_imported[k-1]（g_imported push 顺序与文件 id 推进
+// 顺序一致，expand_one_import 实测同序）；越界返回 ""。
+pub func file_path_of(fid: i64) -> string {
+    if fid <= 0 || fid > len(g_imported) {
+        return ""
+    }
+    return g_imported[fid - 1]
+}
+
+// 签名来源模块（越界兜底 0）
+pub func sig_module(sig: i64) -> i64 {
+    if sig < 0 || sig >= len(sg_mod) {
+        return 0
+    }
+    return sg_mod[sig]
+}
+
+// 全局变量行来源模块（pos = gb_keys 二分命中下标；越界兜底 0）
+pub func gb_module(pos: i64) -> i64 {
+    if pos < 0 || pos >= len(gb_mod) {
+        return 0
+    }
+    return gb_mod[pos]
+}
+
+// struct 行来源模块（idx = struct 索引；越界兜底 0）
+pub func st_module(idx: i64) -> i64 {
+    if idx < 0 || idx >= len(st_mod) {
+        return 0
+    }
+    return st_mod[idx]
+}
+
 }
