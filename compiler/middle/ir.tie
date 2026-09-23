@@ -88,6 +88,29 @@ var op_names: table<string>;           // opcode 表：名
 var op_groups: table<i64>;             // opcode 表：组号（OP_GRP_*）
 var op_descs: table<string>;           // opcode 表：T2.8 消费说明
 
+// # pub 方法全集（组件契约，p.9.21 G7 库资格①；增删须同步此处与 ROAD）
+//   （含 ir_meta.tie——元信息与本本体配套，同一库的两个入口）
+//   生命周期：new_module reset_meta
+//   构造：new_value new_func new_block new_inst set_cur_fn add_operand
+//     func_export_set set_inst_span set_inst_file set_sym export_add
+//     set_doc set_pkg_name set_pkg_version set_ir_version
+//     set_compiler_version set_tie_opt set_pass_ver set_dep
+//   读取（函数/块/指令/值）：func_count func_name func_ret
+//     func_params_off func_params_cnt param_val func_param_ty func_entry
+//     func_inst_total func_exported func_inline block_func block_name
+//     block_start block_end inst_count ins_op ins_ty ins_val ins_ops_off
+//     ins_ops_cnt ins_opnd ins_opnd_kind get_value inst_line inst_col
+//     inst_file span_count value_count
+//   opcode 表：op_count op_name op_group op_desc
+//   变换（pass 管线用）：set_opnd rewrite_to_const compact_dead diag_len_ops
+//     diag_len_ops_kind diag_off
+//   符号表 / 导出面 / doc：sym_find sym_count sym_name sym_sig sym_kind
+//     sym_vis sym_line sym_col export_func export_count exp_name exp_sig
+//     exp_line exp_col doc_count get_doc
+//   元信息：dep_count dep_name dep_ver get_ir_version get_pkg_name
+//     get_pkg_version get_compiler_version get_tie_opt get_pass_ver dump_meta
+//   自检：middle/ir_test.tie（无 driver 可跑，builder 单元验收）。
+
 namespace ir {
 // ---------- opcode 数据表（懒构建，权威 55 条）----------
 
