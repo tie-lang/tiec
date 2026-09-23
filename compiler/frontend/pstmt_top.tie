@@ -98,6 +98,17 @@ pub func parse_program() -> i64 {
                 }
                 ast.set_val(s, ast.val(s) + 2)   // val bit1 = ispub
                 ast.collect_stmt(stmts, s)
+            } else if nxt == lex_const {
+                // p.9.21.5 II2：`pub const` —— 常量纳入 pub API 面（A2b：
+                // 常量可见性跟随 L1 梯度）。val bit0 = is_const（parse_var_decl
+                // 置位），bit1 = ispub（此处置位，与 macro 同款）。
+                putil.advance()   // pub
+                var s = pstmt.parse_var_decl(1)
+                if s < 0 {
+                    return -1
+                }
+                ast.set_val(s, ast.val(s) + 2)   // val bit1 = ispub
+                ast.collect_stmt(stmts, s)
             } else if nxt == lex_import {
                 // p.9.11.14 重导出：`pub import "path" [as 别名]`（内联模型
                 // 零成本；parse_import 内部消化 pub 前缀）

@@ -9,7 +9,10 @@ namespace scollect {
 // 函数同前缀规则，引用端 ns::NAME / 裸名+前缀补全命中）
 pub func collect_global_var(v: i64, full: string) -> i64 {
     var nm = full
-    var is_const = s_vals[v]
+    // val bit0 = is_const（p.9.21.5 II2 起 bit1 = ispub——`pub const`；按位取，
+    // 勿用等值判断：val=3（pub const）曾因 == 1 等值判断被误判为非 const，
+    // 导致 ns::NAME 值引用落 E00393）
+    var is_const = s_vals[v] & 1
     var ty_node = sstate.child(v, 0)
     var init = sstate.child(v, 1)
     // 必须显式标注类型

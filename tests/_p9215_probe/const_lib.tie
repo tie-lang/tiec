@@ -1,4 +1,4 @@
-// 被导入方：顶层常量 + ns 常量 + pub const（后者当前无法解析 = II2 缺口复现）
+// 顶层 pub const：库把常量纳入 pub API 面（II2 主用例，已支持）
 const TOP_A: i64 = 5
 pub const TOP_PUB: i64 = 6
 
