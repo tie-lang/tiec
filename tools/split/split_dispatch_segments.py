@@ -177,12 +177,14 @@ def decls(body):
     return out
 
 
-def groups(items, lines):
+def groups(items, lines, ignore=frozenset()):
     """Merge items that share locals into atomic groups.
 
     A cut between two items is only safe when neither reads a local the other
     declares; otherwise the segment boundary moves the declaration away from its
-    use. Union-find over items, then pack whole groups.
+    use. Union-find over items, then pack whole groups. `ignore` names names the
+    runner re-declares inside every segment (the prologue), which would
+    otherwise chain every branch together through the dispatch variable.
     """
     n = len(items)
     toks = [set(words(lines[s:e + 1])) for s, e in items]
@@ -202,7 +204,7 @@ def groups(items, lines):
 
     for i in range(n):
         for j in range(i + 1, n):
-            if (decl[i] & toks[j]) - decl[j] or (decl[j] & toks[i]) - decl[i]:
+            if ((decl[i] & toks[j]) - decl[j]) - ignore or ((decl[j] & toks[i]) - decl[i]) - ignore:
                 union(i, j)
     merged = {}
     for i in range(n):
@@ -287,8 +289,28 @@ def main():
         tail = items[last_if + 1:]
         items = items[:last_if + 1]
 
+    # Prologue: the brace-free `var` declarations before the first dispatch
+    # branch. They are copied into every segment, so branches can keep reading
+    # them, and they are excluded from the coupling analysis.
+    prologue = []
+    first_if = len(items)
+    for n, (s, e) in enumerate(items):
+        k = s
+        while k < e and (lines[k].strip() == "" or lines[k].strip().startswith("//")):
+            k += 1
+        if re.match(r"^\s*if\b", lines[k]):
+            first_if = n
+            break
+    for s, e in items[:first_if]:
+        for k in range(s, e + 1):
+            if re.match(r"^\s*var\b", lines[k]):
+                prologue.append(lines[k])
+    pro_vars = frozenset(decls(prologue))
+    pro_items = items[:first_if]
+    items = items[first_if:]
+
     # ---- pack into segments, keeping local-variable groups atomic ------------
-    atomic = groups(items, lines)
+    atomic = groups(items, lines, pro_vars)
     segs, cur, curlen = [], [], 0
     for grp in atomic:
         ln = sum(e - s + 1 for s, e in grp)
@@ -324,6 +346,8 @@ def main():
         if ns:
             out.append("namespace %s {" % ns)
         out.append("%sfunc %sseg%d(%s) %s {" % (pad, prefix, n, params, ret))
+        for ln in prologue:
+            out.append(ln)
         for s, e in arr:
             out.extend(lines[s:e + 1])
         out.append("%s    return -1  // 本段未命中" % pad)
@@ -342,6 +366,8 @@ def main():
         for k in range(s, e + 1):
             drop.add(k)
     runner = []
+    for s, e in pro_items:      # the prologue stays in the runner
+        runner.extend(lines[s:e + 1])
     runner.append("%s    var r: i64 = 0" % pad)
     for nm_ in seg_names:
         runner.append("%s    r = %s(%s)" % (pad, nm_, args))
