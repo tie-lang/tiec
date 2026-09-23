@@ -919,6 +919,8 @@ pub func ensure() {
     table_push(cat_codes, "E00451")
     table_push(cat_keys, "布尔只能做逻辑运算与相等比较")
     table_push(cat_codes, "E00452")
+    table_push(cat_keys, "常量%是命名空间%的私有常量（默认私有，%显式导出），不可在命名空间之外引用")
+    table_push(cat_codes, "E00649")
     table_push(cat_keys, "悬空注解：%注解后必须是函数、%或%声明")
     table_push(cat_codes, "E00453")
     table_push(cat_keys, "推导式%筛选条件必须是%，实际是%")

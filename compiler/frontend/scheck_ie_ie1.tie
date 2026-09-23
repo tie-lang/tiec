@@ -177,7 +177,7 @@ pub func check_stmt_assign(s: i64) -> i64 {
             is_global = true
         }
         if is_global {
-            if sinfer.gb_const_of(gkey) == 1 {
+            if (sinfer.gb_const_of(gkey) & 1) == 1 {
                 sm_err_line = s_lines[s]
                 sm_err_col = s_cols[s]
                 sm_err_msg = "不能给 const 变量 '" + nm + "' 赋值"
