@@ -20,16 +20,18 @@ type tie<logic>
 //
 // # 语言边界应用（同 ir_test.tie）
 //   - import 文本内联后与本库顶层常量同作用域：**不定义本地常量**，
-//     opcode 一律字面量 + 注释（op_name 访问器防漂移）；
+//     opcode/类型 id 一律字面量 + 注释（op_name 访问器防漂移）；
 //   - 前缀调用（ir / ir_meta / tieir）；断言失败累积用嵌套 if。
 //
 // 运行（repo 根）：
 //   compiler\tiec.exe compiler\middle\tieir_test.tie -o <tmp>\tieirtest.exe
 //   <tmp>\tieirtest.exe      # -> 「tieir 自检通过」exit 0
 
+// 注：只 import 被测库链（tieir_ser → ir_meta → interner → std/bytes）。
+// 类型 id 用字面量 + 注释（3 = TK_I64，10 = TK_F64）——若 import types.tie
+// 会造出 tieir → types 越界边（tieir 库的合法依赖只有 ir）。
 import "./tieir_ser.tie"
 import "./ir_meta.tie"
-import "./types.tie"
 
 func check(ok: bool, what: string) -> bool {
     if !ok {
@@ -48,17 +50,19 @@ func build_module() -> table<i64> {
     ir_meta.set_ir_version(1)
     ir_meta.set_compiler_version(interner.intern("tiec-0.0.1"))
     ir_meta.set_dep(interner.intern("std"), interner.intern("1.0.0"))
+    // 类型 id 字面量：3 = TK_I64，10 = TK_F64（types.tie 权威；不 import
+    // types.tie——那会造出 tieir → types 越界边，tieir 的合法依赖只有 ir）
     var nm_f = interner.intern("f")
     var params: table<i64> = table_new_i64()
-    table_push(params, types.named(3))
-    table_push(params, types.named(3))
-    var f = ir.new_func(nm_f, types.named(3), params)
+    table_push(params, 3)
+    table_push(params, 3)
+    var f = ir.new_func(nm_f, 3, params)
     var blk_entry = ir.new_block(f, interner.intern("entry"))
     var blk_then = ir.new_block(f, interner.intern("if.then"))
-    var i0 = ir.new_inst(blk_entry, 0, types.named(3))
+    var i0 = ir.new_inst(blk_entry, 0, 3)
     ir.add_operand(i0, 0, 0)
     ir.add_operand(i0, 1, 0)
-    var i1 = ir.new_inst(blk_entry, 12, types.named(10))
+    var i1 = ir.new_inst(blk_entry, 12, 10)
     ir.add_operand(i1, 0, 0)
     ir.add_operand(i1, 1, 0)
     ir.add_operand(i1, 2, 2)
