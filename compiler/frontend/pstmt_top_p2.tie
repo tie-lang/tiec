@@ -48,18 +48,23 @@ func parse_namespace() -> i64 {
                 }
                 table_push(body_stmts, st)
             } else if tag == lex_pub {
-                // p.9.21.5 II2：pub func；`pub const` 暂仅支持**顶层**——
-                // 命名空间内 pub const 的值解析有缺陷（实测解析成兄弟常量的值，
-                // 复现件 tests/_p9215_probe/），修复前显式拒绝，避免静默错值。
+                // p.9.21.5 II2：pub func / pub const（val bit1 = ispub，
+                // 常量可见性跟随 L1 梯度）；其余 pub 形态落到 parse_fn_def
                 if putil.peek_n(1) == lex_const {
-                    putil.set_err(putil.peek_line(), putil.peek_col(), "pub const 暂仅支持顶层声明（命名空间内请用 const + ns::NAME 引用；ns 级 pub const 待 p.9.21.5 跟进）")
-                    return -1
+                    putil.advance()   // pub
+                    var sc = pstmt.parse_var_decl(1)
+                    if sc < 0 {
+                        return -1
+                    }
+                    ast.set_val(sc, ast.val(sc) + 2)   // val bit1 = ispub
+                    table_push(body_stmts, sc)
+                } else {
+                    var st = parse_fn_def()
+                    if st < 0 {
+                        return -1
+                    }
+                    table_push(body_stmts, st)
                 }
-                var st = parse_fn_def()
-                if st < 0 {
-                    return -1
-                }
-                table_push(body_stmts, st)
             } else if tag == lex_unsafe {
                 // S1.2：unsafe fn / unsafe extern（按下一 token 分派）
                 var nxtb = putil.peek_n(1)

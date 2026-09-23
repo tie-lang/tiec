@@ -558,6 +558,48 @@ pub func check_visibility(full_name: string, sig: i64, call_node: i64) -> i64 {
     return -1
 }
 
+// ns 常量可见性（A2b：常量可见性跟随 L1 梯度，p.9.21.5 II2）：
+// 返回 0 = 可见 / -1 = 拦截（sm_err_* 已置）。pub 位读 gb_const 槽 bit1
+// （collect_global_var 编码）；顶层常量（全名无 ::）豁免；档位语义与
+// check_visibility 完全一致（A1a 全开放 / A1b 同 ns+子 ns / A1c 同顶层包 /
+// A1d 仅精确同 ns）。
+pub func check_const_visibility_nid(nid: i64, node: i64) -> i64 {
+    var idx = bs_find(gb_keys, nid)
+    if idx < 0 {
+        return 0
+    }
+    if (gb_const[idx] & 2) == 2 {
+        return 0
+    }
+    if g_vis_level == 0 {
+        return 0
+    }
+    var full_name = intern.lookup(nid)
+    var last = rfind_ns(full_name)
+    if last < 0 {
+        return 0
+    }
+    var prefix = str.slice(full_name, 0, last)
+    var cur = cur_ns_prefix()
+    if cur == prefix {
+        return 0
+    }
+    if has_prefix_str(cur, prefix + "::") {
+        if g_vis_level <= 2 {
+            return 0
+        }
+        // A1d：子 ns 不豁免，落到拦截
+    } else if g_vis_level == 2 {
+        if first_ns_seg(cur) == first_ns_seg(prefix) {
+            return 0
+        }
+    }
+    sm_err_line = s_lines[node]
+    sm_err_col = s_cols[node]
+    sm_err_msg = "常量 '" + full_name + "' 是命名空间 '" + prefix + "' 的私有常量（默认私有，`pub const` 显式导出），不可在命名空间之外引用"
+    return -1
+}
+
 // 当前函数命名空间前缀（可见性校验用）
 pub func cur_ns_prefix() -> string {
     var out: string = ""

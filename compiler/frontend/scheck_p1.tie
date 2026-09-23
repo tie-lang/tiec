@@ -239,7 +239,7 @@ func w16_record(nid: i64, ln: i64, cl: i64) {
     if ty < 0 || !types.is_table(ty) {
         return
     }
-    if sinfer.gb_const_of(nid) == 1 {
+    if (sinfer.gb_const_of(nid) & 1) == 1 {
         return
     }
     var i: i64 = 0

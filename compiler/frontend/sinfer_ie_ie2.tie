@@ -107,6 +107,11 @@ pub func infer_expr_path(id: i64) -> i64 {
         // p.9.12.4：命名空间内 const 以全名登记 gb_*，`ns::NAME` 路径作值
         // 引用即为该全局常量（i64/string/f64/bool 标量；表/函数路径不在此列）
         var pnid = intern.intern(pname)
+        // p.9.21.5 II2 A2b：ns 常量值引用跟随 L1 梯度（pub const 放行）
+        var vc = sstate.check_const_visibility_nid(pnid, id)
+        if vc < 0 {
+            return -1
+        }
         var pgt = gb_find(pnid)
         if pgt >= 0 {
             node_types[id] = pgt
