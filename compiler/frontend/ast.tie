@@ -24,6 +24,15 @@ type tie<class>
 //   node_cols       : 起始列（1 起）
 //   节点 i 的子节点 = node_children[node_child_off[i] .. +node_nchild[i])
 //
+// # pub 方法全集（组件契约，p.9.21 G7 库资格①；增删须同步此处与 ROAD）
+//   池生命周期：reset count
+//   字段访问器：tag name val aux line col set_val
+//   构造与链接：new_node set_children
+//   子节点遍历：child_count child_at is_stmt_list collect_stmt
+//   自检：frontend/ast_test.tie（无 driver 可跑）。
+//   说明：N_* tag 常量是**数据契约**的一部分（与 parser.tie 权威表一致），
+//   不在「方法」之列但同样受契约保护——增删 tag 须同步 parser 与本文档。
+//
 // # 节点字段布局规范（children 列表按序，-1 = 无；权威见 parser.tie 头）
 //   表达式：IntLit[val=值] / FloatLit[name=lexeme] / StrLit[name=lexeme]
 //     CharLit[name=lexeme] / BoolLit[val=0/1] / TritLit[val=-1/0/1]
