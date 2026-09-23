@@ -1,0 +1,212 @@
+type tie<logic>
+// tools/func_audit.tie —— 单函数行数审计（p.9.21 D4：单函数 ≤300 行）
+// ============================================================
+// 100% tie 实现（编译型 tie<logic> 程序，原生速度）。遍历 compiler/ 下全部
+// .tie 源文件，找出超过行数上限的函数并按行数降序打印。
+//
+// 用法（repo 根）：
+//   compiler\tiec.exe tools\func_audit.tie -o <tmp>\fa.exe
+//   <tmp>\fa.exe [上限]            （默认 300）
+// 退出码 0。
+//
+// # 判定规则（与拆分工具一致，实测铁律）
+//   - 函数起始：行首（含缩进）`func` / `pub func`；
+//   - 块闭合：花括号计数**字符串/注释感知**（源码里 { 常出现在字符串与注释）；
+//   - 多行条件的 `if` 首行括号平衡但块未开——本审计只按 `func` 起始，
+//     函数体内不再细分，规避该坑；
+//   - 跳过目录：_bak / proto / backuptmp / tests；跳过 `_` 前缀与 README 文件。
+
+import "../compiler/frontend/lexer.tie"
+
+// ---------- 小工具 ----------
+func has_prefix(s: string, p: string) -> bool {
+    var n = str_len(s)
+    var m = str_len(p)
+    if m > n {
+        return false
+    }
+    return str.slice(s, 0, m) == p
+}
+
+func has_suffix(s: string, p: string) -> bool {
+    var n = str_len(s)
+    var m = str_len(p)
+    if m > n {
+        return false
+    }
+    return str.slice(s, n - m, n) == p
+}
+
+func contains(s: string, sub: string) -> bool {
+    return str.find(s, sub) >= 0
+}
+
+// 该行「代码部分」（剥掉字符串内容与 // 注释）
+func strip_code(ln: string) -> string {
+    var out = ""
+    var in_str: bool = false
+    var i: i64 = 0
+    var n = str_len(ln)
+    while i < n {
+        var c = str_char(ln, i)
+        if in_str {
+            if c == "\\" {       // 反斜杠：跳过转义
+                i = i + 2
+                continue
+            }
+            if c == "\"" {
+                in_str = false
+            }
+            out = out + str.slice(ln, i, i + 1)
+            i = i + 1
+            continue
+        }
+        if c == "\"" {
+            in_str = true
+            out = out + str.slice(ln, i, i + 1)
+            i = i + 1
+            continue
+        }
+        if c == "/" && i + 1 < n && str_char(ln, i + 1) == "/" {
+            break                  // // 注释
+        }
+        out = out + str.slice(ln, i, i + 1)
+        i = i + 1
+    }
+    return out
+}
+
+// 单行花括号净变化（字符串/注释感知）
+func line_delta(ln: string) -> i64 {
+    var sline = strip_code(ln)
+    var d: i64 = 0
+    var i: i64 = 0
+    var n = str_len(sline)
+    while i < n {
+        var c = str_char(sline, i)
+        if c == "{" {
+            d = d + 1
+        } else if c == "}" {
+            d = d - 1
+        }
+        i = i + 1
+    }
+    return d
+}
+
+func is_skip_path(p: string) -> bool {
+    if contains(p, "\\_bak") {
+        return true
+    }
+    if contains(p, "\\proto\\") {
+        return true
+    }
+    if contains(p, "\\backuptmp\\") {
+        return true
+    }
+    if contains(p, "\\tests\\") {
+        return true
+    }
+    if contains(p, "\\_ghidra_out\\") {
+        return true
+    }
+    return false
+}
+
+func base_name(p: string) -> string {
+    var n = str_len(p)
+    var i = n - 1
+    while i >= 0 {
+        if str_char(p, i) == "\\" {   // 反斜杠
+            return str.slice(p, i + 1, n)
+        }
+        i = i - 1
+    }
+    return p
+}
+
+// ---------- 主逻辑 ----------
+func main() -> i64 {
+    var limit: i64 = 300
+    if arg_count() >= 1 {
+        limit = parse_int(arg_string(0))
+    }
+    // 文件清单（原生 dir /s /b，tsh 脚本同款约束：重活交原生工具）
+    var listing = exec_output("cmd /c dir /s /b compiler\\*.tie")
+    var all = str.split(listing, "\n")
+    var results: table<string> = table_new_string()   // "行数|路径|函数名"，逐条 println
+    var files: i64 = 0
+    var hits: i64 = 0
+
+    var fi: i64 = 0
+    while fi < len(all) {
+        var path = str.trim(all[fi])
+        if str_len(path) > 0 && has_suffix(path, ".tie") && !is_skip_path(path) {
+            var bn = base_name(path)
+            if !has_prefix(bn, "_") && !has_prefix(bn, "README") {
+                files = files + 1
+                var content = file_read(path)
+                var lines = str.split(content, "\n")
+                var ln: i64 = 0
+                var n = len(lines)
+                while ln < n {
+                    var raw = str.trim(lines[ln])
+                    var is_func: bool = false
+                    if has_prefix(raw, "func ") || has_prefix(raw, "pub func ") {
+                        is_func = true
+                    }
+                    if is_func {
+                        // 函数名
+                        var head = raw
+                        if has_prefix(head, "pub ") {
+                            head = str.trim(str.slice(head, 4, str_len(head)))
+                        }
+                        var after = str.slice(head, 5, str_len(head))
+                        var fname = ""
+                        var ci: i64 = 0
+                        var cn = str_len(after)
+                        while ci < cn {
+                            var c = str_char(after, ci)
+                            if c == "(" {        // "("
+                                ci = cn
+                                continue
+                            }
+                            fname = fname + str.slice(after, ci, ci + 1)
+                            ci = ci + 1
+                        }
+                        // 块闭合（字符串/注释感知）
+                        var d: i64 = 0
+                        var seen: bool = false
+                        var j = ln
+                        var kend = n - 1
+                        while j < n {
+                            var dl = line_delta(lines[j])
+                            d = d + dl
+                            if contains(strip_code(lines[j]), "{") {
+                                seen = true
+                            }
+                            if seen && d == 0 {
+                                kend = j
+                                j = n
+                                continue
+                            }
+                            j = j + 1
+                        }
+                        var flen = kend - ln + 1
+                        if flen > limit {
+                            hits = hits + 1
+                            println(to_string(flen) + "  " + path + "  " + fname)
+                        }
+                        ln = kend + 1
+                        continue
+                    }
+                    ln = ln + 1
+                }
+            }
+        }
+        fi = fi + 1
+    }
+    println("--- " + to_string(hits) + " function(s) over " + to_string(limit) +
+        " lines (scanned " + to_string(files) + " files) ---")
+    return 0
+}

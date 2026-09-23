@@ -1,0 +1,270 @@
+type tie<logic>
+// tools/visibility_survey.tie —— 命名空间可见性普查（p.9.21.4 II1 诊断）
+// ============================================================
+// 100% tie 实现（编译型 tie<logic> 程序）。逐库统计命名空间内函数的
+// pub / 私有分布，以及不受可见性护栏约束的顶层函数数量——设计要求的
+// 「API 面普查」，供 II1 梯度落地前核对现状。
+//
+// 用法（repo 根）：
+//   compiler\tiec.exe tools\visibility_survey.tie -o <tmp>\vs.exe
+//   <tmp>\vs.exe
+// 退出码 0。
+//
+// # 归属算法（与拆分工具一致，实测可靠）
+//   函数 → 向上回溯最近的**未闭合** `namespace`（逐行累加花括号净变化）；
+//   回溯不到 = 顶层函数（当前可见性规则恒放行）。不要用「括号深度栈」
+//   逐行归类——tie 源码缩进不规则且存在零缩进 if（实测会撕碎归属）。
+//
+// # 跳过目录：_bak / proto / backuptmp / tests；跳过 `_` 前缀与 README 文件。
+
+import "../compiler/frontend/lexer.tie"
+
+func has_prefix(s: string, p: string) -> bool {
+    var n = str_len(s)
+    var m = str_len(p)
+    if m > n {
+        return false
+    }
+    return str.slice(s, 0, m) == p
+}
+
+func has_suffix(s: string, p: string) -> bool {
+    var n = str_len(s)
+    var m = str_len(p)
+    if m > n {
+        return false
+    }
+    return str.slice(s, n - m, n) == p
+}
+
+func contains(s: string, sub: string) -> bool {
+    return str.find(s, sub) >= 0
+}
+
+// 该行代码部分（剥掉字符串内容与 // 注释）
+func strip_code(ln: string) -> string {
+    var out = ""
+    var in_str: bool = false
+    var i: i64 = 0
+    var n = str_len(ln)
+    while i < n {
+        var c = str_char(ln, i)
+        if in_str {
+            if c == "\\" {
+                i = i + 2
+                continue
+            }
+            if c == "\"" {
+                in_str = false
+            }
+            out = out + str.slice(ln, i, i + 1)
+            i = i + 1
+            continue
+        }
+        if c == "\"" {
+            in_str = true
+            out = out + str.slice(ln, i, i + 1)
+            i = i + 1
+            continue
+        }
+        if c == "/" && i + 1 < n && str_char(ln, i + 1) == "/" {
+            break
+        }
+        out = out + str.slice(ln, i, i + 1)
+        i = i + 1
+    }
+    return out
+}
+
+func line_delta(ln: string) -> i64 {
+    var sline = strip_code(ln)
+    var d: i64 = 0
+    var i: i64 = 0
+    var n = str_len(sline)
+    while i < n {
+        var c = str_char(sline, i)
+        if c == "{" {
+            d = d + 1
+        } else if c == "}" {
+            d = d - 1
+        }
+        i = i + 1
+    }
+    return d
+}
+
+func is_skip_path(p: string) -> bool {
+    if contains(p, "\\_bak") {
+        return true
+    }
+    if contains(p, "\\proto\\") {
+        return true
+    }
+    if contains(p, "\\backuptmp\\") {
+        return true
+    }
+    if contains(p, "\\tests\\") {
+        return true
+    }
+    if contains(p, "\\_ghidra_out\\") {
+        return true
+    }
+    return false
+}
+
+func base_name(p: string) -> string {
+    var n = str_len(p)
+    var i = n - 1
+    while i >= 0 {
+        if str_char(p, i) == "\\" {
+            return str.slice(p, i + 1, n)
+        }
+        i = i - 1
+    }
+    return p
+}
+
+// 该行向上最近的未闭合 namespace 名；无则空串（= 顶层）
+func ns_of(lines: table<string>, idx: i64) -> string {
+    var ns = ""
+    var t = idx
+    while t >= 0 {
+        var open = str.trim(strip_code(lines[t]))
+        if has_prefix(open, "namespace ") {
+            var d: i64 = 0
+            var u = t
+            while u <= idx {
+                d = d + line_delta(lines[u])
+                u = u + 1
+            }
+            if d > 0 {
+                var rest = str.slice(open, 10, str_len(open))
+                // namespace 后到 { 之间是名字
+                var b = str.find(rest, "{")
+                if b < 0 {
+                    b = str_len(rest)
+                }
+                ns = str.trim(str.slice(rest, 0, b))
+                t = -1
+                continue
+            }
+        }
+        t = t - 1
+    }
+    return ns
+}
+
+func main() -> i64 {
+    var listing = exec_output("cmd /c dir /s /b compiler\\*.tie")
+    var all = str.split(listing, "\n")
+    // 平行表：ns 名 / pub 数 / 私有数（线性查找聚合，库数量 ~60 可接受）
+    var ns_names: table<string> = table_new_string()
+    var ns_pub: table<i64> = table_new_i64()
+    var ns_priv: table<i64> = table_new_i64()
+    var top_total: i64 = 0
+
+    var fi: i64 = 0
+    while fi < len(all) {
+        var path = str.trim(all[fi])
+        if str_len(path) > 0 && has_suffix(path, ".tie") && !is_skip_path(path) {
+            var bn = base_name(path)
+            if !has_prefix(bn, "_") && !has_prefix(bn, "README") {
+                var lines = str.split(file_read(path), "\n")
+                var ln: i64 = 0
+                var n = len(lines)
+                while ln < n {
+                    var raw = str.trim(lines[ln])
+                    var is_func: bool = false
+                    var is_pub: bool = false
+                    if has_prefix(raw, "pub func ") {
+                        is_func = true
+                        is_pub = true
+                    } else if has_prefix(raw, "func ") {
+                        is_func = true
+                    }
+                    if is_func {
+                        var ns = ns_of(lines, ln)
+                        if ns == "" {
+                            top_total = top_total + 1
+                        } else {
+                            // 找到同名 ns 槽位（无则新建）
+                            var slot: i64 = -1
+                            var k: i64 = 0
+                            while k < len(ns_names) {
+                                if ns_names[k] == ns {
+                                    slot = k
+                                    k = len(ns_names)
+                                    continue
+                                }
+                                k = k + 1
+                            }
+                            if slot < 0 {
+                                table_push(ns_names, ns)
+                                table_push(ns_pub, 0)
+                                table_push(ns_priv, 0)
+                                slot = len(ns_names) - 1
+                            }
+                            if is_pub {
+                                ns_pub[slot] = ns_pub[slot] + 1
+                            } else {
+                                ns_priv[slot] = ns_priv[slot] + 1
+                            }
+                        }
+                        // 跳到该函数块闭合（避免把函数体内的形似函数行再计一次）
+                        var d: i64 = 0
+                        var seen: bool = false
+                        var j = ln
+                        var kend = n - 1
+                        while j < n {
+                            d = d + line_delta(lines[j])
+                            if contains(strip_code(lines[j]), "{") {
+                                seen = true
+                            }
+                            if seen && d == 0 {
+                                kend = j
+                                j = n
+                                continue
+                            }
+                            j = j + 1
+                        }
+                        ln = kend + 1
+                        continue
+                    }
+                    ln = ln + 1
+                }
+            }
+        }
+        fi = fi + 1
+    }
+
+    // ---------- 输出（按名字排序打印为「pub 私有 ns」再人工核对）----------
+    println("namespace pub private")
+    var printed: i64 = 0
+    var total_pub: i64 = 0
+    var total_priv: i64 = 0
+    while printed < len(ns_names) {
+        // 选择当前未打印中最小名（选择排序；ns 数 ~60 可接受）
+        var best: i64 = -1
+        var k: i64 = 0
+        while k < len(ns_names) {
+            if ns_names[k] != "" {
+                if best < 0 {
+                    best = k
+                } else if ns_names[k] < ns_names[best] {
+                    best = k
+                }
+            }
+            k = k + 1
+        }
+        println(ns_names[best] + " " + to_string(ns_pub[best]) + " " + to_string(ns_priv[best]))
+        total_pub = total_pub + ns_pub[best]
+        total_priv = total_priv + ns_priv[best]
+        ns_names[best] = ""
+        printed = printed + 1
+    }
+    println("--- " + to_string(printed) + " namespaces, " +
+        to_string(total_pub + total_priv) + " ns functions (pub " + to_string(total_pub) +
+        " / private " + to_string(total_priv) + "), " + to_string(top_total) +
+        " top-level (guard exempt) ---")
+    return 0
+}
