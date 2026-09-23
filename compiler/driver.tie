@@ -29,6 +29,8 @@ import "./backend/toolchain.tie"
 import "./config.tie"
 // S3.2：tieir 序列化（--tieir-out 输出分发单元 / --dump-irt 读回 dump）
 import "./middle/tieir_ser.tie"
+// p.9.21.6-2：模块级 tieir 片段（模块化缓存写侧；set_fn_mods + write_mod_slice）
+import "./middle/tieir_slice.tie"
 import "./middle/passes.tie"
 // p.9.20：单元头写入 t 档 / pass 管道版本（ir_meta 侧表）
 import "./middle/ir_meta.tie"
@@ -80,7 +82,7 @@ var g_no_warn: bool = false;      // --no-warn：跳过警告检查（不发射/
 // -w 开启、--no-warn 关闭）。驱动 semantic.set_warn_enabled；与 g_no_warn（LLVM 工具链
 // 静默 + 角色/优化档降级行为）语义分离——默认只报错只关前端警告检查，不干扰降级逻辑。
 var g_front_warn: bool = false;
-var g_cache_salt: string = "tiec-cache-v1";  // 缓存键盐：编译器输出形态变更（如 optimizer 改动）时递增，强制旧缓存失效
+var g_cache_salt: string = "tiec-cache-v2";  // 缓存键盐：编译器输出形态变更（如 optimizer 改动/固定点升格）时递增，强制旧缓存失效（p.9.19.8 遗留补：升格必 bump）
 var g_emit_ir: bool = false;
 var g_keep_ir: bool = false;
 var g_cli_fast_math: bool = false;    // --ffast-math：训练性能优先（编译产物启用 fast-math，默认关）
