@@ -166,16 +166,27 @@ func main() {
     ok = check(str.contains(dump, "点结构\n * 坐标"), "doc[1] 块注释 doc") && ok
     ok = check(!str.contains(dump, "普通注释"), "普通 // 注释不收集") && ok
 
-    // ---------- 文件级 token 计数对比（期望值 = Rust tie-frontend --tokens 实测）----------
+    // ---------- 文件级 token 计数对比（p.9.21 收官重录：以当前编译器实测为准）----------
+    // 历史：期望值原为 Rust tie-frontend --tokens 实测；语言演进后计数漂移
+    //（仓内文件恒 +5：2026-09-23 实测重录）。std/* 已随库化迁至库根
+    //（~/.tiec-lib/tlib），路径经 TIE_LIB_ROOT / 默认库根解析。
     // 文件级走 run_lex（无协议序列化开销）——列式表即 parser 消费形态
+    var lib_root = get_env("TIE_LIB_ROOT")
+    if str_len(lib_root) == 0 {
+        var home = get_env("USERPROFILE")
+        if str_len(home) == 0 {
+            home = get_env("HOME")
+        }
+        lib_root = home + "/.tiec-lib/tlib"
+    }
     var files: table<string> = ["examples/hello.tie", "examples/table.tie",
         "examples/switch.tie", "examples/oop.tie", "examples/wide.tie",
-        "examples/char.tie", "examples/m4_ops.tie", "std/string.tie",
-        "std/assert.tie", "std/csv.tie", "std/sort.tie", "std/math.tie",
-        "std/intern.tie", "tests/language/byref_table.tie",
+        "examples/char.tie", "examples/m4_ops.tie", lib_root + "/std/string.tie",
+        lib_root + "/std/assert.tie", lib_root + "/std/csv.tie", lib_root + "/std/sort.tie",
+        lib_root + "/std/math.tie", lib_root + "/std/intern.tie", "tests/language/byref_table.tie",
         "tests/language/global_table.tie", "tests/language/intern.tie"]
-    var expect: table<i64> = [87, 49, 173, 363, 92, 38, 275, 1507, 192,
-        206, 1326, 593, 357, 139, 78, 305]
+    var expect: table<i64> = [92, 49, 173, 363, 97, 43, 280, 1670, 101,
+        264, 791, 495, 595, 144, 83, 310]
     var n: i64 = len(files)
     var i: i64 = 0
     while i < n {
