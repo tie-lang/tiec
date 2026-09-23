@@ -23,6 +23,17 @@ type tie<class>
 // # ASI：行尾自动补分号；行尾二元运算符/逗号/冒号/点/开括号/大括号/分号/
 //   else/in 不补（++/-- 不算二元运算符，后缀 i++ 行尾应补；S2.3 起 '?' 后缀
 //   解包符同样不算，行尾 `expr ?` 应补分号断句）。
+//
+// # pub 方法全集（组件契约，p.9.21 G7 库资格①；增删须同步此处与 ROAD）
+//   扫描入口：run_lex(src) -> bool（true = 成功，token 表含末尾 Eof）
+//   协议输出：tokenize(src) -> string（首行 <N>: 逐 token 协议；出错为 ERR 协议）
+//   token 读取：token_count token_tag token_line token_col
+//               token_lexeme_id token_lexeme
+//   错误槽位（run_lex 返回 false 后读取）：lex_err_line lex_err_col lex_err_msg
+//   doc 注释：dump_docs
+//   自检：frontend/lex_test.tie（golden 基线，无 driver 可跑）。
+//   说明：lex_* tag 常量是**数据契约**的一部分（0-79 对齐 Rust TokenKind），
+//   不在「方法」之列但同样受契约保护。
 import "./lex_scan.tie"
 
 namespace lexer {
