@@ -1,0 +1,124 @@
+type tie<tsh>
+// scripts/bootstrap-fp.tsh.tie —— 自举不动点校验（p.9.21：三阶，纯 tie/tshell）
+// ============================================================
+// 三阶不动点：tiec(入库) 编 driver → n1 → n2 → n3；SHA(n2)==SHA(n3) 即不动点
+// （本脚本用 fc /b 逐字节比对代替手工算 SHA——重活交原生工具，tsh 约定）。
+// 约 100 秒跑完三阶。
+//
+// 用法（repo 根）：
+//   tsh_main.exe -f scripts\bootstrap-fp.tsh.tie [输出目录]
+// 输出目录默认 ..\_tiec_verify\fp（仓库外侧，避免污染工作树）。
+// 输出：FIXED-POINT OK（exit 0）/ FIXED-POINT MISMATCH（exit 1）。
+//
+// 注意：编译语义/上限/诊断类改动必须「先落改动 → 自举升格 → 再改依赖它的
+// 源码」；缓存键不含编译器版本，一律 --no-cache。
+
+var tiec = ".\\compiler\\tiec.exe"
+var src = "compiler\\driver.tie"
+var flags = "-l2 -t0 --no-warn --no-cache"
+var out = "..\\_tiec_verify\\fp"
+if arg_count() >= 1 && !is_empty(arg_at(0)) {
+    out = arg_at(0)
+}
+
+// ---------- 0. 输出目录 ----------
+// 路径一律不加引号：cmd /c 的引号剥离规则会在整条命令以引号开头时剥掉
+// 首尾引号（regress-s21 同款约定；输出目录默认无空格，勿改成带空格路径）
+exec_code("cmd /c if not exist " + out + " mkdir " + out)
+// 断点续跑：三阶各约 35 秒，三阶连跑会顶到单命令 120 秒上限——产物已存在
+// 则跳过该阶（传 fresh 强制全部重跑）。n1/n2 是确定性产物，续跑语义等价。
+var fresh: bool = false
+if arg_count() >= 2 && arg_at(1) == "fresh" {
+    fresh = true
+}
+
+// ---------- 1..3 三阶 ----------
+if fresh || !file_exists(out + "\\n1.exe") {
+    var rc1 = exec_code("cmd /c " + tiec + " " + src + " " + flags + " -o " + out + "\\n1.exe >nul 2>&1")
+    if rc1 != 0 {
+        println("[1/4] 入库 tiec 编译失败 rc=" + to_string(rc1))
+        exit(1)
+    }
+}
+println("[1/4] n1 完成")
+
+if fresh || !file_exists(out + "\\n2.exe") {
+    var rc2 = exec_code("cmd /c " + out + "\\n1.exe " + src + " " + flags + " -o " + out + "\\n2.exe >nul 2>&1")
+    if rc2 != 0 {
+        println("[2/4] n1 自编失败 rc=" + to_string(rc2))
+        exit(1)
+    }
+}
+println("[2/4] n2 完成")
+
+if fresh || !file_exists(out + "\\n3.exe") {
+    var rc3 = exec_code("cmd /c " + out + "\\n2.exe " + src + " " + flags + " -o " + out + "\\n3.exe >nul 2>&1")
+    if rc3 != 0 {
+        println("[3/4] n2 自编失败 rc=" + to_string(rc3))
+        exit(1)
+    }
+}
+println("[3/4] n3 完成")
+
+// certutil 过滤后的输出里找 64 字符的哈希行；找不到返回空串
+func hash_line(s: string) -> string {
+    var lines = split_lines(s)
+    var i: i64 = 0
+    while i < len(lines) {
+        var t = trim_ws(lines[i])
+        if str_len(t) == 64 {
+            return t
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+func is_ws(ch: string) -> bool {
+    if ch == " " {
+        return true
+    }
+    if ch == "\t" {
+        return true
+    }
+    if ch == "\r" {
+        return true
+    }
+    if ch == "\n" {
+        return true
+    }
+    return false
+}
+
+// 去两端空白（deps-check 同款）
+func trim_ws(s: string) -> string {
+    var a: i64 = 0
+    var n = str_len(s)
+    while a < n && is_ws(str_char(s, a)) {
+        a = a + 1
+    }
+    var b = n
+    while b > a && is_ws(str_char(s, b - 1)) {
+        b = b - 1
+    }
+    return substr(s, a, b)
+}
+
+// ---------- 4. 逐字节比对 n2 vs n3 ----------
+// 用 certutil 求 SHA256 后只比哈希行。两个坑（实测）：
+//   1. 中文 locale 下 certutil 输出 GBK 文本，file_read 读不进（返回空）→
+//      管道接 find /v ":" 只留哈希行（三行里唯一不含冒号的就是哈希）；
+//   2. 不用 fc /b：exec_code 对 fc 的返回码在本环境不可靠（一致文件也报
+//      MISMATCH）。
+// 注意：tsh 解释器（REPL v1）不支持 str.xxx 限定调用——哈希行提取用内建
+// split_lines + 自写 trim_ws（deps-check 同款约束）。
+exec_code("cmd /c certutil -hashfile " + out + "\\n2.exe SHA256 | find /v \":\" > " + out + "\\h2.txt")
+exec_code("cmd /c certutil -hashfile " + out + "\\n3.exe SHA256 | find /v \":\" > " + out + "\\h3.txt")
+var d2 = hash_line(file_read(out + "\\h2.txt"))
+var d3 = hash_line(file_read(out + "\\h3.txt"))
+if d2 == d3 && str_len(d2) == 64 {
+    println("[4/4] FIXED-POINT OK（SHA256 = " + d2 + "）")
+    exit(0)
+}
+println("[4/4] FIXED-POINT MISMATCH（n2=[" + d2 + "] n3=[" + d3 + "]）")
+exit(1)
