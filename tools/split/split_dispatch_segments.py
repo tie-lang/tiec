@@ -271,12 +271,21 @@ def main():
     # ---- collect top-level items of the body --------------------------------
     items = top_items(lines, a, b, body_ind)
 
-    # the trailing `return <sentinel>` is kept in the runner, not in a segment
+    # the trailing "nothing matched" tail stays in the runner: it is usually more
+    # than one line (set g_err, then return the sentinel), so take everything
+    # after the last dispatch branch rather than just a final `return`.
     tail = None
-    if items:
-        last_start, last_end = items[-1]
-        if last_start == last_end and re.match(r"^\s*return\b", lines[last_start]):
-            tail = items.pop()
+    last_if = -1
+    for n, (s, e) in enumerate(items):
+        # items carry their leading comments, so look at the first code line
+        k = s
+        while k < e and (lines[k].strip() == "" or lines[k].strip().startswith("//")):
+            k += 1
+        if re.match(r"^\s*if\b", lines[k]):
+            last_if = n
+    if 0 <= last_if < len(items) - 1:
+        tail = items[last_if + 1:]
+        items = items[:last_if + 1]
 
     # ---- pack into segments, keeping local-variable groups atomic ------------
     atomic = groups(items, lines)
@@ -340,7 +349,10 @@ def main():
         runner.append("%s        return r" % pad)
         runner.append("%s    }" % pad)
     if tail:
-        runner.append(lines[tail[0]])
+        for s, e in tail:
+            for k in range(s, e + 1):
+                pass
+        runner.extend(ln for s, e in tail for ln in lines[s:e + 1])
     else:
         runner.append("%s    return -1" % pad)
     kept = []
