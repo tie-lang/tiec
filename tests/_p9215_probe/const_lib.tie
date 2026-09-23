@@ -1,0 +1,7 @@
+// 被导入方：顶层常量 + ns 常量 + pub const（后者当前无法解析 = II2 缺口复现）
+const TOP_A: i64 = 5
+pub const TOP_PUB: i64 = 6
+
+namespace thing {
+    const NS_A: i64 = 7
+}

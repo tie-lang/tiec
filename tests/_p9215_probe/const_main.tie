@@ -1,0 +1,6 @@
+// 引用方：顶层常量跨文件可见 ✓ / ns 常量经 ns::NAME 跨文件可见 ✓ / ns.NAME 不适用
+import "./const_lib.tie"
+
+func main() -> i64 {
+    return TOP_A + thing::NS_A
+}
