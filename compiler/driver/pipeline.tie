@@ -60,6 +60,18 @@ pub func kpass_irgen() -> i64 {
         println(diagcode.render_error(-1, -1, "中端 pass 失败（t" + to_string(effective_tie_opt()) + "）"))
         return 1
     }
+    // p.9.21.6-2 模块级 tieir 片段缓存：归属注入 + 逐模块命中/写入。
+    // 缓存关闭（--no-cache / 无缓存目录）时不做任何事；片段写入失败只损失
+    // 该模块片段，编译不受影响（单元级缓存与产物链路零改动）。
+    if cache_enabled() {
+        var af = mod_attribution_fill()
+        if af == 0 {
+            var mc = mod_cache_update()
+            if mc < 0 {
+                return -1
+            }
+        }
+    }
     return 0
 }
 

@@ -319,4 +319,78 @@ pub func cache_enabled() -> bool {
     return str_len(cache_dir_value()) > 0
 }
 
+// ==================== p.9.21.6-2 模块级 tieir 片段缓存 ====================
+// 模块 = import 的文件（主文件 = 0，导入文件按展开顺序 1..k）。irgen + pass
+// 管道完成后，按模块写/命中标准格式 tieir 片段（tieir.write_mod_slice）。
+// 命中判定 = 缓存键（源路径 + 源指纹 + 编译器盐 + t 档 + 目标）——片段字节
+// 不参与判定（全量池使字节可随无关文件漂移，见 tieir_slice.tie 头注）。
+// 片段写入失败（如归属不连续）只损失该模块片段，编译不受影响。
+
+// 函数归属平行表：ir 函数 id → 来源模块 id。经 函数全名 → sstate.fn_sig →
+// sig_module 反查；编译器合成函数（无语义签名）归属模块 0（主文件）。
+pub func mod_attribution_fill() -> i64 {
+    var mods: table<i64> = table_new_i64()
+    var nf = ir.func_count()
+    var fi: i64 = 0
+    while fi < nf {
+        var nm = intern.lookup(ir.func_name(fi))
+        var sig = sstate.fn_sig(nm)
+        var m: i64 = 0
+        if sig >= 0 {
+            m = sstate.sig_module(sig)
+        }
+        table_push(mods, m)
+        fi = fi + 1
+    }
+    tieir.set_fn_mods(mods)
+    return 0
+}
+
+// 模块列表 = 入口文件 + 导入文件（与 dep_depset 同源；下标即模块 id）。
+// 逐模块：键命中 → 计数；未命中 → 写片段。TIEC_INC=1 时打印命中汇总。
+// 返回 0 / -1（缓存目录创建失败）。
+pub func mod_cache_update() -> i64 {
+    var cdir = cache_dir_value() + "/mods"
+    if !file_is_dir(cdir) {
+        if !mkdir_all(cdir) {
+            return -1
+        }
+    }
+    var paths: table<string> = table_new_string()
+    table_push(paths, str.clone(g_input))
+    var imp = semantic.imported_paths()
+    var i: i64 = 0
+    while i < len(imp) {
+        table_push(paths, imp[i])
+        i = i + 1
+    }
+    // 片段键：IR 级产物——只含源指纹 + 编译器盐 + t 档 + 目标（L 轴只影响
+    // opt/link，不影响 IR；role/shared/emit 同理不织入）
+    var topt = effective_tie_opt()
+    var hits: i64 = 0
+    var written: i64 = 0
+    var n = len(paths)
+    var i2: i64 = 0
+    while i2 < n {
+        var p = paths[i2]
+        var fp = dep_file_fp(p)
+        var key = "tm" + to_string(str_hash(p + "|" + fp + "|" + g_cache_salt + "|M" + to_string(topt) + "|TG" + g_target))
+        var frag = cdir + "/" + key + ".tieir"
+        if file_exists(frag) {
+            hits = hits + 1
+        } else {
+            if tieir.write_mod_slice(frag, i2, p, fp) {
+                written = written + 1
+            }
+        }
+        i2 = i2 + 1
+    }
+    var inc = get_env("TIEC_INC")
+    if inc == "1" {
+        // 机器可读（ASCII，跨编码管道安全）：MODCACHE <命中>/<总数> written <写入>
+        println("MODCACHE " + to_string(hits) + "/" + to_string(n) + " written " + to_string(written))
+    }
+    return 0
+}
+
 }

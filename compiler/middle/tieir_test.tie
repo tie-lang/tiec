@@ -31,6 +31,7 @@ type tie<logic>
 // 类型 id 用字面量 + 注释（3 = TK_I64，10 = TK_F64）——若 import types.tie
 // 会造出 tieir → types 越界边（tieir 库的合法依赖只有 ir）。
 import "./tieir_ser.tie"
+import "./tieir_slice.tie"
 import "./ir_meta.tie"
 
 func check(ok: bool, what: string) -> bool {
@@ -201,6 +202,121 @@ func main() {
     var t3 = tieir.serialize()
     t3[0] = 65   // 破坏魔数
     if !check(tieir.deserialize(t3) != 0, "魔数损坏 → 拒绝") {
+        ok = false
+    }
+
+    // ---------- 模块片段 roundtrip（p.9.21.6-2，tieir_slice） ----------
+    // 构造 2 函数 2 模块：f（模块 0，1 参数 1 块 1 指令）/ g（模块 1，2 参数
+    // 2 块 4 指令）。写模块 1 片段 → 清空 → 读回 → 断言只含 g 且 id 平移正确。
+    ir.new_module()
+    ir_meta.reset_meta()
+    ir_meta.set_ir_version(1)
+    var nm_g = interner.intern("g")
+    // f（模块 0）：1 参数，entry 块，1 条 add
+    var pf: table<i64> = table_new_i64()
+    table_push(pf, 3)
+    var f2 = ir.new_func(interner.intern("f"), 3, pf)
+    var fe = ir.new_block(f2, interner.intern("fentry"))
+    var fi0 = ir.new_inst(fe, 0, 3)
+    ir.add_operand(fi0, 0, 0)
+    ir.add_operand(fi0, 0, 0)
+    // g（模块 1）：2 参数，entry+then 两块，add/icmp/br/ret 四指令
+    var pg: table<i64> = table_new_i64()
+    table_push(pg, 3)
+    table_push(pg, 3)
+    var g2 = ir.new_func(nm_g, 3, pg)
+    var ge = ir.new_block(g2, interner.intern("gentry"))
+    var gt = ir.new_block(g2, interner.intern("gthen"))
+    var gi0 = ir.new_inst(ge, 0, 3)
+    ir.add_operand(gi0, 2, 0)
+    ir.add_operand(gi0, 3, 0)
+    var gi1 = ir.new_inst(ge, 12, 10)
+    ir.add_operand(gi1, 2, 0)
+    ir.add_operand(gi1, 3, 0)
+    ir.add_operand(gi1, 2, 2)
+    var gi2 = ir.new_inst(ge, 31, -1)
+    ir.add_operand(gi2, ir.get_value(gi1), 0)
+    ir.add_operand(gi2, gt, 1)
+    ir.add_operand(gi2, ge, 1)
+    var gi3 = ir.new_inst(gt, 32, -1)
+    ir.add_operand(gi3, ir.get_value(gi0), 0)
+    ir_meta.set_sym(nm_g, interner.intern("fn(a: i64, b: i64) -> i64"), 0, 1, 2, 1)
+    ir_meta.export_func(g2, 1, 1)
+    ir_meta.set_inst_span(gi0, 20, 1)
+    ir_meta.set_inst_span(gi1, 21, 1)
+    ir_meta.set_inst_span(gi2, 22, 1)
+    ir_meta.set_inst_span(gi3, 23, 1)
+    // 全量基线：2 函数 / 3 块 / 5 指令 / 值 0..5（f 参数 0 + f 结果 1 + g 参数 2,3 + g 结果 4,5）
+    if !check(ir.func_count() == 2 && ir.value_count() == 6, "片段前置：2 函数 6 值") {
+        ok = false
+    }
+    // 归属注入：f → 模块 0，g → 模块 1
+    var mods2: table<i64> = table_new_i64()
+    table_push(mods2, 0)
+    table_push(mods2, 1)
+    tieir.set_fn_mods(mods2)
+    var slice_path = "_tieir_slice_test.tieir"
+    var wok = tieir.write_mod_slice(slice_path, 1, "src/libg.tie", "fp123")
+    if !check(wok, "片段写入成功") {
+        ok = false
+    }
+    if wok {
+        ir.new_module()
+        ir_meta.reset_meta()
+        var rrc = tieir.read(slice_path)
+        if !check(rrc == 0, "片段 roundtrip 读回成功") {
+            ok = false
+        }
+        if rrc == 0 {
+            if !check(ir.func_count() == 1, "片段函数数 = 1") {
+                ok = false
+            }
+            if !check(ir.func_name(0) == nm_g, "片段函数名 = g") {
+                ok = false
+            }
+            if !check(ir.block_count() == 2, "片段块数 = 2") {
+                ok = false
+            }
+            if !check(ir.inst_count() == 4, "片段指令数 = 4") {
+                ok = false
+            }
+            if !check(ir.value_count() == 4, "片段值数 = 4（2 参数 + 2 结果）") {
+                ok = false
+            }
+            // 值平移：V0 = 2（f 占 0,1）→ g 的参数 2,3 → 0,1；add 结果 4 → 2
+            if !check(ir.ins_val(0) == 2 && ir.ins_val(1) == 3, "片段结果值平移") {
+                ok = false
+            }
+            // 操作数平移：add 两操作数 = 参数 2,3 → 0,1
+            if !check(ir.ins_opnd(0, 0) == 0 && ir.ins_opnd(0, 1) == 1, "片段值操作数平移") {
+                ok = false
+            }
+            // 块操作数平移：br 的 then 块 gt（原 2）→ 1
+            if !check(ir.ins_opnd(2, 1) == 1 && ir.ins_opnd_kind(2, 1) == 1, "片段块操作数平移") {
+                ok = false
+            }
+            if !check(ir.func_entry(0) == 0, "片段入口块平移") {
+                ok = false
+            }
+            if !check(ir_meta.sym_count() == 1 && ir_meta.export_count() == 1, "片段符号/导出子集") {
+                ok = false
+            }
+            if !check(ir_meta.span_count() == 4 && ir_meta.inst_line(0) == 20, "片段 span 子集") {
+                ok = false
+            }
+            if !check(ir_meta.get_pkg_name() == interner.intern("tiec-modslice"), "片段包名标记") {
+                ok = false
+            }
+            if !check(ir_meta.dep_count() == 1, "片段来源依赖") {
+                ok = false
+            }
+        }
+    }
+    file_delete(slice_path)
+    // 归属表规模不符 → 拒绝写入（防误用：空表 = 未注入）
+    var bad_mods: table<i64> = table_new_i64()
+    tieir.set_fn_mods(bad_mods)
+    if !check(!tieir.write_mod_slice(slice_path, 0, "x.tie", "fp"), "归属表规模不符 → 拒绝") {
         ok = false
     }
 

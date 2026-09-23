@@ -1,0 +1,437 @@
+type tie<class>
+// compiler/middle/tieir_slice.tie —— p.9.21.6-2 模块级 tieir 片段（模块化缓存写侧）
+// ============================================================
+// 把当前单元的 IR 按「来源模块」切分序列化：单模块的函数 + 其块/指令/操作数/
+// span/关联符号与导出行，写成**标准格式 .tieir 单元**（段 1-7 布局与 tieir_ser
+// 完全一致，tieir.read 可 roundtrip 重建）。
+//
+// # 片段重建原理（重映射表；函数表按模块**不**连续——菱形导入使展开顺序
+//   main→a→shared→b 的函数表序为 [main, shared, a, b]，模块 id 序与表序
+//   不一致，故不能纯算术平移）
+//   - 函数：按原序取 frag_fn_mods == mod_id 的子集 → 新 id = 子集序号；
+//   - 块：按原序取「所属函数被选中」的子集 → 新 id 独立重编（映射表）；
+//   - 指令：按原序取「属于选中块」的子集 → 新 id 独立重编（映射表）；
+//     块的新 start/end = 其指令段的新区间（预扫累计）；
+//   - 值：SSA 值函数局部（参数在 new_func 领号、结果随指令领号，函数内
+//     连续）→ 每函数独立平移：new = vbase(i) + (old - v_start(i))，其中
+//     v_start = 参数段首值（无参取首个结果值），vbase = 前序选中函数的
+//     值数累计；与 tieir.deserialize 的自然重建逐字段一致（offsets/值编号
+//     是 roundtrip 校验项，公式见 tieir_ser.deserialize 段 5）；
+//   - 操作数：kind 0（值）按所属函数平移；kind 1（块）查块映射；其余
+//     （立即数/池 id/全局名）原样。
+//   跨函数值引用（SSA 违例）→ 拒绝写入（err_msg），driver 侧降级为该模块
+//   片段缺失，单元级缓存不受影响。
+//
+// # 归属注入（语言边界）
+//   中端不 import driver：driver 计算函数归属（ir.func_name → sstate.fn_sig →
+//   sig_module）后经 set_fn_mods 注入平行表（表按值传参拷贝，函数数规模）。
+//   未注入或规模不符 → 拒绝写入。
+//
+// # 全量池说明
+//   片段字符串池 = interner 全量快照（同编译单元，id 即下标）——跨模块常量
+//   折叠可使片段字节随其他文件变动；片段缓存**命中由缓存键（源指纹 + 编译器
+//   盐）判定**，与片段字节无关。组装消费侧（层 II 收口）须改过滤池，已在
+//   designs/tiec-modularization-design.md 标注。
+//
+// # pub 方法全集（增删须同步 ROAD）
+//   set_fn_mods(m)（driver 注入归属）/ write_mod_slice(path, mod_id, src_path,
+//   src_fp) -> bool / err_msg 转承 tieir_ser。
+//
+// 自检：middle/tieir_test.tie 追加片段 roundtrip 用例（2 函数 2 模块 →
+// 写模块 1 片段 → 反序列化 → 结构断言）。
+
+import "./tieir_ser.tie"
+
+// 函数归属平行表（下标 = ir 函数 id，值 = 来源模块 id；空表 = 未注入）。
+var frag_fn_mods: table<i64>;
+
+namespace tieir {
+
+// driver 注入归属平行表（表按值传参，整表拷贝一次，函数数规模）。
+pub func set_fn_mods(m: table<i64>) {
+    frag_fn_mods = m
+}
+
+// 写模块 mod_id 的 tieir 片段到 path。src_path/src_fp 写入模块头依赖段
+// （片段自述来源）。成功 true；失败 false（err_msg 取因）。
+pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: string) -> bool {
+    tieir_err = ""
+    var nf = ir.func_count()
+    if len(frag_fn_mods) != nf {
+        set_err("片段归属表未注入或规模不符（" + to_string(len(frag_fn_mods)) + "/" + to_string(nf) + "）")
+        return false
+    }
+    // ---- 选中函数集（原序）----
+    var sel_fn: table<i64> = table_new_i64()
+    var fi: i64 = 0
+    while fi < nf {
+        if frag_fn_mods[fi] == mod_id {
+            table_push(sel_fn, fi)
+        }
+        fi = fi + 1
+    }
+    var n_sel = len(sel_fn)
+    // 函数重映射表（原 id → 子集序号；未选中 = -1）
+    var fn_new: table<i64> = table_new_i64()
+    fi = 0
+    while fi < nf {
+        table_push(fn_new, -1)
+        fi = fi + 1
+    }
+    var i: i64 = 0
+    while i < n_sel {
+        fn_new[sel_fn[i]] = i
+        i = i + 1
+    }
+    // ---- 块/指令重映射 + 每函数值信息（预扫）----
+    // 选中块的平行表（原 id 顺 / 新 id 顺）与其新指令区间
+    var blk_new: table<i64> = table_new_i64()   // 原 id → 新 id（未选中 -1）
+    var bi: i64 = 0
+    var nb = ir.block_count()
+    while bi < nb {
+        table_push(blk_new, -1)
+        bi = bi + 1
+    }
+    var inst_new: table<i64> = table_new_i64()  // 原 id → 新 id（未选中 -1）
+    var ii: i64 = 0
+    var ni = ir.inst_count()
+    while ii < ni {
+        table_push(inst_new, -1)
+        ii = ii + 1
+    }
+    // 每选中函数：v_start（值起点）/ 值数 / 操作数总数
+    var f_vstart: table<i64> = table_new_i64()
+    var f_vsize: table<i64> = table_new_i64()
+    var f_opcnt: table<i64> = table_new_i64()
+    var f_vset: table<i64> = table_new_i64()    // v_start 是否已定（0/1）
+    i = 0
+    while i < n_sel {
+        table_push(f_vstart, -1)
+        table_push(f_vsize, 0)
+        table_push(f_opcnt, 0)
+        table_push(f_vset, 0)
+        i = i + 1
+    }
+    // 块预扫（原序）：选中块分配新 id + 指令重映射 + 每函数统计。
+    // 块表按函数创建序分组，选中函数的块在原序下相对有序 → 直接单遍。
+    var sel_blk_cnt: i64 = 0
+    var sel_inst_cnt: i64 = 0
+    // 选中块的新指令区间（与块遍历序平行）
+    var blk_nstart: table<i64> = table_new_i64()
+    var blk_nend: table<i64> = table_new_i64()
+    bi = 0
+    while bi < nb {
+        var bf = ir.block_func(bi)
+        var si = -1
+        if bf >= 0 && bf < nf {
+            si = fn_new[bf]
+        }
+        if si >= 0 {
+            blk_new[bi] = sel_blk_cnt
+            table_push(blk_nstart, sel_inst_cnt)
+            var bs = ir.block_start(bi)
+            var be = ir.block_end(bi)
+            var ii2 = bs
+            while ii2 < be {
+                inst_new[ii2] = sel_inst_cnt
+                sel_inst_cnt = sel_inst_cnt + 1
+                // 函数统计：结果值 / 操作数 / v_start
+                var iv = ir.ins_val(ii2)
+                if iv >= 0 {
+                    if f_vset[si] == 0 {
+                        f_vstart[si] = iv
+                        f_vset[si] = 1
+                    }
+                    f_vsize[si] = f_vsize[si] + 1
+                }
+                f_opcnt[si] = f_opcnt[si] + ir.ins_ops_cnt(ii2)
+                ii2 = ii2 + 1
+            }
+            table_push(blk_nend, sel_inst_cnt)
+            sel_blk_cnt = sel_blk_cnt + 1
+        }
+        bi = bi + 1
+    }
+    // 参数计值（v_start 无参时取 param_val；v_size 含参数）
+    i = 0
+    while i < n_sel {
+        var f = sel_fn[i]
+        var pc = ir.func_params_cnt(f)
+        if pc > 0 {
+            // 参数在 new_func 时先于本函数任何结果值领号 → v_start 恒为参数段首值
+            f_vstart[i] = ir.param_val(f, 0)
+            f_vset[i] = 1
+            f_vsize[i] = f_vsize[i] + pc
+            f_opcnt[i] = f_opcnt[i] + pc
+        } else {
+            if f_vset[i] == 0 {
+                // 无参无结果：值域空，v_start 置 -1（无值引用可发生）
+                f_vstart[i] = -1
+                f_vset[i] = 1
+            }
+        }
+        i = i + 1
+    }
+    // 每函数值基址/操作数基址累计
+    var f_vbase: table<i64> = table_new_i64()
+    var f_obase: table<i64> = table_new_i64()
+    var vcum: i64 = 0
+    var ocum: i64 = 0
+    i = 0
+    while i < n_sel {
+        table_push(f_vbase, vcum)
+        table_push(f_obase, ocum)
+        vcum = vcum + f_vsize[i]
+        ocum = ocum + f_opcnt[i]
+        i = i + 1
+    }
+    // ---- 序列化（布局同 tieir_ser.serialize，值域换成选中子集） ----
+    tieir_out = table_new_i64()
+    // 段 1：魔数 + 版本
+    table_push(tieir_out, TIEIR_MAGIC0)
+    table_push(tieir_out, TIEIR_MAGIC1)
+    table_push(tieir_out, TIEIR_MAGIC2)
+    table_push(tieir_out, TIEIR_MAGIC3)
+    table_push(tieir_out, TIEIR_MAGIC4)
+    wr_i64(tieir_out, TIEIR_VERSION)
+    // 段 2：模块头（包名标片段；依赖段 = 来源路径 + 指纹，片段自述）
+    var hp = wr_sec_head(tieir_out, SEC_HEAD)
+    var hs = len(tieir_out)
+    wr_str(tieir_out, "tiec-modslice")
+    wr_str(tieir_out, "mod:" + to_string(mod_id))
+    wr_i64(tieir_out, ir_meta.get_ir_version())
+    wr_str(tieir_out, pool_str(ir_meta.get_compiler_version()))
+    wr_i64(tieir_out, ir_meta.get_tie_opt())
+    wr_i64(tieir_out, ir_meta.get_pass_ver())
+    wr_i64(tieir_out, 1)
+    wr_str(tieir_out, src_path)
+    wr_str(tieir_out, src_fp)
+    wr_sec_end(tieir_out, hp, hs)
+    // 段 3：字符串池（全量快照，id 即下标）
+    var sp = wr_sec_head(tieir_out, SEC_STRPOOL)
+    var ss = len(tieir_out)
+    var pool_n = interner.len()
+    wr_i64(tieir_out, pool_n)
+    var pi: i64 = 0
+    while pi < pool_n {
+        wr_str(tieir_out, interner.name_str(pi))
+        pi = pi + 1
+    }
+    wr_sec_end(tieir_out, sp, ss)
+    // 段 4：符号表（选中函数同名行子集）
+    var yp = wr_sec_head(tieir_out, SEC_SYMTAB)
+    var ys = len(tieir_out)
+    var sym_sel: i64 = 0
+    var si: i64 = 0
+    while si < ir_meta.sym_count() {
+        var matched: bool = false
+        if n_sel > 0 {
+            var fk = 0
+            while fk < n_sel {
+                if ir_meta.sym_name(si) == ir.func_name(sel_fn[fk]) {
+                    matched = true
+                }
+                fk = fk + 1
+            }
+        }
+        if matched {
+            sym_sel = sym_sel + 1
+        }
+        si = si + 1
+    }
+    wr_i64(tieir_out, sym_sel)
+    si = 0
+    while si < ir_meta.sym_count() {
+        var matched2: bool = false
+        if n_sel > 0 {
+            var fk2 = 0
+            while fk2 < n_sel {
+                if ir_meta.sym_name(si) == ir.func_name(sel_fn[fk2]) {
+                    matched2 = true
+                }
+                fk2 = fk2 + 1
+            }
+        }
+        if matched2 {
+            wr_i64(tieir_out, ir_meta.sym_name(si))
+            wr_i64(tieir_out, ir_meta.sym_sig(si))
+            wr_i64(tieir_out, ir_meta.sym_kind(si))
+            wr_i64(tieir_out, ir_meta.sym_vis(si))
+            wr_i64(tieir_out, ir_meta.sym_line(si))
+            wr_i64(tieir_out, ir_meta.sym_col(si))
+        }
+        si = si + 1
+    }
+    wr_sec_end(tieir_out, yp, ys)
+    // 段 5：IR 主体（选中子集 + 重映射）
+    var ip = wr_sec_head(tieir_out, SEC_IRBODY)
+    var is_ = len(tieir_out)
+    // 函数表
+    wr_i64(tieir_out, n_sel)
+    i = 0
+    while i < n_sel {
+        var f = sel_fn[i]
+        wr_i64(tieir_out, ir.func_name(f))
+        wr_i64(tieir_out, ir.func_ret(f))
+        // params_off 新值 = 前序选中函数的参数+操作数累计（与重建自然偏移一致）
+        wr_i64(tieir_out, f_obase[i])
+        wr_i64(tieir_out, ir.func_params_cnt(f))
+        // 入口块重映射（-1 = 无块）
+        var en = ir.func_entry(f)
+        if en >= 0 {
+            en = blk_new[en]
+        }
+        wr_i64(tieir_out, en)
+        wr_i64(tieir_out, ir.func_inst_total(f))
+        wr_i64(tieir_out, ir.func_exported(f))
+        var pk: i64 = 0
+        while pk < ir.func_params_cnt(f) {
+            wr_i64(tieir_out, ir.func_param_ty(f, pk))
+            pk = pk + 1
+        }
+        i = i + 1
+    }
+    // 块表
+    wr_i64(tieir_out, sel_blk_cnt)
+    bi = 0
+    while bi < nb {
+        if blk_new[bi] >= 0 {
+            wr_i64(tieir_out, fn_new[ir.block_func(bi)])
+            wr_i64(tieir_out, ir.block_name(bi))
+            wr_i64(tieir_out, blk_nstart[blk_new[bi]])
+            wr_i64(tieir_out, blk_nend[blk_new[bi]])
+        }
+        bi = bi + 1
+    }
+    // 指令表（选中子集按原序；操作数重映射）
+    wr_i64(tieir_out, sel_inst_cnt)
+    // 每函数操作数游标（重算：走选中函数序，逐步累加）
+    var f_ocur: table<i64> = table_new_i64()
+    i = 0
+    while i < n_sel {
+        table_push(f_ocur, f_obase[i] + ir.func_params_cnt(sel_fn[i]))
+        i = i + 1
+    }
+    bi = 0
+    while bi < nb {
+        if blk_new[bi] >= 0 {
+            var bf = ir.block_func(bi)
+            var sfi = fn_new[bf]
+            var bs = ir.block_start(bi)
+            var be = ir.block_end(bi)
+            var ii3 = bs
+            while ii3 < be {
+                wr_i64(tieir_out, blk_new[bi])
+                wr_i64(tieir_out, ir.ins_op(ii3))
+                wr_i64(tieir_out, ir.ins_ty(ii3))
+                // 结果值平移（-1 = 无结果，原样）
+                var vv = ir.ins_val(ii3)
+                if vv >= 0 {
+                    if f_vstart[sfi] < 0 || vv < f_vstart[sfi] {
+                        set_err("片段值引用越界（指令 " + to_string(ii3) + " 值 " + to_string(vv) + "）")
+                        return false
+                    }
+                    vv = f_vbase[sfi] + (vv - f_vstart[sfi])
+                }
+                wr_i64(tieir_out, vv)
+                // 操作数偏移：函数内顺序累计（与重建自然偏移一致）
+                wr_i64(tieir_out, f_ocur[sfi])
+                f_ocur[sfi] = f_ocur[sfi] + ir.ins_ops_cnt(ii3)
+                wr_i64(tieir_out, ir.ins_ops_cnt(ii3))
+                var ok: i64 = 0
+                while ok < ir.ins_ops_cnt(ii3) {
+                    var ov = ir.ins_opnd(ii3, ok)
+                    var kd = ir.ins_opnd_kind(ii3, ok)
+                    // kind 0 = SSA 值（函数内平移）；1 = 块（查表）；其余原样
+                    if kd == 0 {
+                        if ov < f_vstart[sfi] {
+                            set_err("片段值操作数越界（指令 " + to_string(ii3) + " 值 " + to_string(ov) + "）")
+                            return false
+                        }
+                        ov = f_vbase[sfi] + (ov - f_vstart[sfi])
+                    } else {
+                        if kd == 1 {
+                            if ov < 0 || ov >= nb || blk_new[ov] < 0 {
+                                set_err("片段块操作数越界（指令 " + to_string(ii3) + " 块 " + to_string(ov) + "）")
+                                return false
+                            }
+                            ov = blk_new[ov]
+                        }
+                    }
+                    wr_i64(tieir_out, ov)
+                    wr_i64(tieir_out, kd)
+                    ok = ok + 1
+                }
+                ii3 = ii3 + 1
+            }
+        }
+        bi = bi + 1
+    }
+    wr_sec_end(tieir_out, ip, is_)
+    // 段 6：导出表（选中函数同名行子集）
+    var ep = wr_sec_head(tieir_out, SEC_EXPORT)
+    var es = len(tieir_out)
+    var exp_sel: i64 = 0
+    var ei: i64 = 0
+    while ei < ir_meta.export_count() {
+        var m3: bool = false
+        if n_sel > 0 {
+            var fk3 = 0
+            while fk3 < n_sel {
+                if ir_meta.exp_name(ei) == ir.func_name(sel_fn[fk3]) {
+                    m3 = true
+                }
+                fk3 = fk3 + 1
+            }
+        }
+        if m3 {
+            exp_sel = exp_sel + 1
+        }
+        ei = ei + 1
+    }
+    wr_i64(tieir_out, exp_sel)
+    ei = 0
+    while ei < ir_meta.export_count() {
+        var m4: bool = false
+        if n_sel > 0 {
+            var fk4 = 0
+            while fk4 < n_sel {
+                if ir_meta.exp_name(ei) == ir.func_name(sel_fn[fk4]) {
+                    m4 = true
+                }
+                fk4 = fk4 + 1
+            }
+        }
+        if m4 {
+            wr_i64(tieir_out, ir_meta.exp_name(ei))
+            wr_i64(tieir_out, ir_meta.exp_sig(ei))
+            wr_i64(tieir_out, ir_meta.exp_line(ei))
+            wr_i64(tieir_out, ir_meta.exp_col(ei))
+        }
+        ei = ei + 1
+    }
+    wr_sec_end(tieir_out, ep, es)
+    // 段 7：span 段（选中指令的行子集，与片段指令同序）
+    var pp = wr_sec_head(tieir_out, SEC_SPAN)
+    var ps = len(tieir_out)
+    wr_i64(tieir_out, sel_inst_cnt)
+    bi = 0
+    while bi < nb {
+        if blk_new[bi] >= 0 {
+            var bs2 = ir.block_start(bi)
+            var be2 = ir.block_end(bi)
+            var ii4 = bs2
+            while ii4 < be2 {
+                wr_i64(tieir_out, ir_meta.inst_file(ii4))
+                wr_i64(tieir_out, ir_meta.inst_line(ii4))
+                wr_i64(tieir_out, ir_meta.inst_col(ii4))
+                ii4 = ii4 + 1
+            }
+        }
+        bi = bi + 1
+    }
+    wr_sec_end(tieir_out, pp, ps)
+    return bytes.write(path, tieir_out)
+}
+
+}   // namespace tieir
