@@ -193,16 +193,30 @@ pub func count() -> i64 {
     return len(d_keys)
 }
 
-// 第 i 个登记序号的函数名（与 find 互逆；i 越界返回空串）。
+// 登记序号 -> 函数名：find 的逆运算（i 越界或未登记返回空串）。
 // 供遍历分派表批量调用（C1 文档示例：for 遍历逐项分派）。
-pub func at(i: i64) -> string {
-    if i < 0 {
+//
+// RCA（p.9.21 G7，独立自检抓出）：本函数原先直接返回 d_keys[i]
+// （按**升序表位置**取名），而 find 返回的是**登记序号**（d_vals）——
+// 两者不是同一坐标系，`at(find(x)) == x` 只在「登记顺序恰好等于
+// 码点序」时成立，与文件头「与 find 互逆」的契约相悖。库刚建立时
+// 无任何调用方（全仓 grep 确认），故按文档语义修正实现而非改契约：
+// 现按登记序号线性反查（d_vals 是 0..n-1 的置换，合法序号必命中）。
+// 分派表规模 < 64 且 at 非热路径，O(n) 扫描可接受；若未来成为热点，
+// 可加一张「序号 -> 位置」并行表，契约不变。
+pub func at(seq: i64) -> string {
+    if seq < 0 {
         return ""
     }
-    if i >= len(d_keys) {
-        return ""
+    var n = len(d_keys)
+    var i: i64 = 0
+    while i < n {
+        if d_vals[i] == seq {
+            return d_keys[i]
+        }
+        i = i + 1
     }
-    return d_keys[i]
+    return ""
 }
 
 }   // namespace dispatch
