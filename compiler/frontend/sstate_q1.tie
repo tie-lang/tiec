@@ -1,0 +1,707 @@
+type tie<class>
+// compiler/frontend/sstate_q1.tie —— 分片 1（p.9.21.3 单文件 ≤800 行）
+// ============================================================
+// 只搬函数与紧邻注释；顶层全局 var 与 import 树仍留在 sstate.tie。
+// 顶层函数保持顶层身份（跨 ns 裸调依赖），ns 内函数按上下文包 namespace。
+namespace sstate {
+// ==================== 工具：协议解析 ====================
+// 读取协议行字段（空格分隔，返回第 k 个字段字符串；k 从 0）
+pub func pf(line: string, k: i64) -> string {
+    var start: i64 = 0
+    var cur: i64 = 0
+    var n = str_len(line)
+    var i: i64 = 0
+    var seg: i64 = 0
+    while i <= n {
+        var at_end: bool = false
+        if i == n {
+            at_end = true
+        } else {
+            if str_char(line, i) == " " {
+                at_end = true
+            }
+        }
+        if at_end {
+            if seg == k {
+                return str.slice(line, start, i)
+            }
+            seg = seg + 1
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+// 十进制字符串 → i64（协议字段解析用；支持负号）
+pub func parse_dec(s: string) -> i64 {
+    var n = str_len(s)
+    var v: i64 = 0
+    var neg: bool = false
+    var i: i64 = 0
+    if n > 0 {
+        if str_char(s, 0) == "-" {
+            neg = true
+            i = 1
+        }
+    }
+    while i < n {
+        var cc = char_code(str_char(s, i))
+        if cc >= 48 {
+            if cc <= 57 {
+                v = v * 10 + (cc - 48)
+            }
+        }
+        i = i + 1
+    }
+    if neg {
+        v = 0 - v
+    }
+    return v
+}
+
+// ==================== 工具：协议行单次扫描解析 ====================
+// 整行字段一次字符扫描直接累积为 i64，返回字段值表。字段下标对应协议行：
+//   0=id 1=tag 2=name 3=val 4=aux 5=line 6=col 7=nchild 8..=子节点 id
+// 逐字节等价于原 pf(line,k) + parse_dec 组合：字段以单个空格分隔、全部为
+// 十进制整数（允许负号）。语义对齐 parse_dec——负号仅在字段首字符判定、
+// 字段内非数字字符跳过、空字段累积为 0。
+// 性能动机：原 load_ast/append_ast 每行调用 pf 8+ 次（每次 pf 内部
+// str.slice 生成一个字段子串）再各自 parse_dec 独立扫描，大文件（3000+
+// 节点）反序列化是性能热点；本函数整行单遍扫描、零中间字段子串分配
+// （每行仅一次 str.slice 生成行串本身），把每行的 8+ 次字符串分配降为 0。
+func parse_row(line: string) -> table<i64> {
+    var out: table<i64> = table_new_i64() // 字段值累积表（按出现顺序 push）
+    var n = str_len(line)                 // 行长度（协议行行尾仅 \n，无 \r）
+    var v: i64 = 0                        // 当前字段的十进制累积值
+    var neg: bool = false                 // 当前字段为负数（仅字段首字符判定）
+    var in_field: bool = false            // 已进入字段（防御行内连续空格）
+    var i: i64 = 0
+    while i < n {
+        var ch = str_char(line, i)
+        if ch == " " {
+            // 空格 = 字段分隔符：把已累积的当前字段落盘，并重置字段状态
+            if in_field {
+                if neg {
+                    v = 0 - v
+                }
+                table_push(out, v)
+                v = 0
+                neg = false
+                in_field = false
+            }
+        } else {
+            if !in_field {
+                // 字段首字符：仅此位置判定负号（对齐 parse_dec 的开头负号语义）
+                in_field = true
+                if ch == "-" {
+                    neg = true
+                } else {
+                    var cc = char_code(ch)
+                    if cc >= 48 {
+                        if cc <= 57 {
+                            v = v * 10 + (cc - 48)
+                        }
+                    }
+                }
+            } else {
+                // 字段中间字符：跳过非数字，只累积十进制位（对齐 parse_dec）
+                var cc = char_code(ch)
+                if cc >= 48 {
+                    if cc <= 57 {
+                        v = v * 10 + (cc - 48)
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    // 行尾没有空格：把最后一个字段落盘（整行为空时 out 保持空表）
+    if in_field {
+        if neg {
+            v = 0 - v
+        }
+        table_push(out, v)
+    }
+    return out
+}
+
+// 加载 AST 协议文本（首行 N: + 每行 id tag name val aux line col nchild c1...）
+// 重建 9 列全局表。返回 0 成功 / -1 失败。
+pub func load_ast(ast_text: string) -> i64 {
+    // 首行 N:
+    var first_end: i64 = 0
+    var n = str_len(ast_text)
+    var i: i64 = 0
+    while i < n {
+        if str_char(ast_text, i) == "\n" {
+            first_end = i
+            break
+        }
+        i = i + 1
+    }
+    if first_end == 0 {
+        return -1
+    }
+    var head = str.slice(ast_text, 0, first_end)
+    var cnt = parse_dec(str.slice(head, 0, str_len(head) - 1))
+    s_n = cnt
+    // 预分配 9 列（push -1 占位，避免后续超界）
+    s_tags = table_new_i64()
+    s_names = table_new_i64()
+    s_vals = table_new_i64()
+    s_aux = table_new_i64()
+    s_coff = table_new_i64()
+    s_nchild = table_new_i64()
+    s_children = table_new_i64()
+    s_lines = table_new_i64()
+    s_cols = table_new_i64()
+    node_types = table_new_i64()
+    g_cmp_getter = table_new_i64()
+    g_cmp_setter = table_new_i64()
+    var k: i64 = 0
+    while k < cnt {
+        table_push(s_tags, 0)
+        table_push(s_names, 0)
+        table_push(s_vals, 0)
+        table_push(s_aux, 0)
+        table_push(s_coff, 0)
+        table_push(s_nchild, 0)
+        table_push(s_lines, 0)
+        table_push(s_cols, 0)
+        table_push(node_types, -1)
+        table_push(g_cmp_getter, -1)
+        table_push(g_cmp_setter, -1)
+        k = k + 1
+    }
+    // 逐行解析节点（parse_row 整行单次扫描直接累积 i64，零字段子串分配）
+    var pos: i64 = first_end + 1
+    var node_id: i64 = 0
+    while pos < n && node_id < cnt {
+        var line_end: i64 = pos
+        while line_end < n {
+            if str_char(ast_text, line_end) == "\n" {
+                break
+            }
+            line_end = line_end + 1
+        }
+        // 整行字段一次扫描：f[0]=id f[1]=tag f[2]=name f[3]=val
+        // f[4]=aux f[5]=line f[6]=col f[7]=nchild f[8..]=子节点 id
+        var f: table<i64> = parse_row(str.slice(ast_text, pos, line_end))
+        s_tags[node_id] = f[1]
+        s_names[node_id] = f[2]
+        s_vals[node_id] = f[3]
+        s_aux[node_id] = f[4]
+        s_nchild[node_id] = f[7]
+        s_lines[node_id] = f[5]
+        s_cols[node_id] = f[6]
+        node_id = node_id + 1
+        pos = line_end + 1
+    }
+    // 计算子节点偏移并填充 s_children
+    var off: i64 = 0
+    var j: i64 = 0
+    while j < cnt {
+        s_coff[j] = off
+        off = off + s_nchild[j]
+        j = j + 1
+    }
+    // 二次扫描：填充 s_children
+    s_children = table_new_i64()
+    var z: i64 = 0
+    while z < off {
+        table_push(s_children, 0)
+        z = z + 1
+    }
+    pos = first_end + 1
+    node_id = 0
+    while pos < n && node_id < cnt {
+        var line_end: i64 = pos
+        while line_end < n {
+            if str_char(ast_text, line_end) == "\n" {
+                break
+            }
+            line_end = line_end + 1
+        }
+        // 子节点字段从下标 8 起连续排列，直接按 f[8 + c] 取用
+        var f: table<i64> = parse_row(str.slice(ast_text, pos, line_end))
+        var nc = s_nchild[node_id]
+        var base = s_coff[node_id]
+        var c: i64 = 0
+        while c < nc {
+            s_children[base + c] = f[8 + c]
+            c = c + 1
+        }
+        node_id = node_id + 1
+        pos = line_end + 1
+    }
+    return 0
+}
+
+// ==================== import 展开：追加合并 AST ====================
+// 把 import 文件的 AST 协议文本节点追加到当前 s_* 表末尾。
+// 新节点 id 自动 = 原 id + base（当前节点总数）；子节点 id 同步偏移。
+// 返回新节点段起点 base（>=0 成功；-1 失败）——调用方可用
+// base + 新文件节点数 - 1 定位该文件的顶层 StmtList root。
+pub func append_ast(ast_text: string) -> i64 {
+    // 首行 N:
+    var first_end: i64 = 0
+    var n = str_len(ast_text)
+    var i: i64 = 0
+    while i < n {
+        if str_char(ast_text, i) == "\n" {
+            first_end = i
+            break
+        }
+        i = i + 1
+    }
+    if first_end == 0 {
+        return -1
+    }
+    var head = str.slice(ast_text, 0, first_end)
+    var cnt = parse_dec(str.slice(head, 0, str_len(head) - 1))
+    var base = len(s_tags)
+    // 逐行解析节点并追加（子节点先暂存，第二次扫描填偏移）
+    var pos: i64 = first_end + 1
+    var node_id: i64 = 0
+    var new_offs: table<i64> = table_new_i64()
+    while pos < n && node_id < cnt {
+        var line_end: i64 = pos
+        while line_end < n {
+            if str_char(ast_text, line_end) == "\n" {
+                break
+            }
+            line_end = line_end + 1
+        }
+        // 整行字段一次扫描：f[0]=id f[1]=tag f[2]=name f[3]=val
+        // f[4]=aux f[5]=line f[6]=col f[7]=nchild f[8..]=子节点 id
+        var f: table<i64> = parse_row(str.slice(ast_text, pos, line_end))
+        table_push(s_tags, f[1])
+        table_push(s_names, f[2])
+        table_push(s_vals, f[3])
+        table_push(s_aux, f[4])
+        table_push(s_coff, 0)
+        table_push(s_nchild, f[7])
+        table_push(s_lines, f[5])
+        table_push(s_cols, f[6])
+        table_push(node_types, -1)
+        table_push(g_cmp_getter, -1)
+        table_push(g_cmp_setter, -1)
+        table_push(new_offs, 0)
+        node_id = node_id + 1
+        pos = line_end + 1
+    }
+    // 计算新节点子段偏移（相对 s_children 当前末尾）
+    var off = len(s_children)
+    var j: i64 = 0
+    while j < cnt {
+        new_offs[j] = off
+        off = off + s_nchild[base + j]
+        j = j + 1
+    }
+    // 二次扫描：填充子节点（id 偏移 +base，-1 哨兵保持）
+    pos = first_end + 1
+    node_id = 0
+    while pos < n && node_id < cnt {
+        var line_end: i64 = pos
+        while line_end < n {
+            if str_char(ast_text, line_end) == "\n" {
+                break
+            }
+            line_end = line_end + 1
+        }
+        // 子节点字段从下标 8 起连续排列，直接按 f[8 + c] 取用
+        var f: table<i64> = parse_row(str.slice(ast_text, pos, line_end))
+        s_coff[base + node_id] = new_offs[node_id]
+        var nc = s_nchild[base + node_id]
+        var c: i64 = 0
+        while c < nc {
+            var cid = f[8 + c]
+            if cid >= 0 {
+                cid = cid + base
+            }
+            table_push(s_children, cid)
+            c = c + 1
+        }
+        node_id = node_id + 1
+        pos = line_end + 1
+    }
+    s_n = len(s_tags)
+    return base
+}
+
+// ==================== 节点访问辅助 ====================
+pub func nchild(id: i64) -> i64 {
+    return s_nchild[id]
+}
+
+pub func child(id: i64, k: i64) -> i64 {
+    return s_children[s_coff[id] + k]
+}
+
+pub func name_str(id: i64) -> string {
+    var nid = s_names[id]
+    if nid < 0 {
+        return ""
+    }
+    return intern.lookup(nid)
+}
+
+// ==================== immut 只读形参集合（p.9.11.11） ====================
+// 每函数（scheck.check_fn）重置——清空集合；check_fn 参数循环对 immut 形参
+// 逐一 im_insert 登记其变量名池 id。赋值/自增自减/字段&下标写经 im_is 拒绝。
+pub func im_reset() {
+    g_im_keys = table_new_i64()
+    g_im_vals = table_new_i64()
+}
+
+pub func im_insert(nid: i64) {
+    var i: i64 = 0
+    while i < len(g_im_keys) {
+        if g_im_keys[i] == nid {
+            return
+        }
+        i = i + 1
+    }
+    table_push(g_im_keys, nid)
+    table_push(g_im_vals, 1)
+}
+
+pub func im_is(nid: i64) -> bool {
+    var i: i64 = 0
+    while i < len(g_im_keys) {
+        if g_im_keys[i] == nid {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// 名字池 id → 字符串（im_root 返回的是名字池 id，非节点 id；name_str 只接受节点 id）
+pub func im_name(nid: i64) -> string {
+    if nid < 0 {
+        return ""
+    }
+    return intern.lookup(nid)
+}
+
+// 取赋值目标链的根变量名池 id：从 base 沿 child(0) 上行，遇 S_N_VAR 返回其名；
+// 非纯变量/字段/索引链（S_N_UNARY/方法返回值等）返回 -1（不判定 immut）。
+pub func im_root(base: i64) -> i64 {
+    if base < 0 {
+        return -1
+    }
+    var cur = base
+    var guard: i64 = 0
+    while guard < 64 {
+        var t = s_tags[cur]
+        if t == S_N_VAR {
+            return s_names[cur]
+        }
+        if t == S_N_FIELD_ACCESS || t == S_N_INDEX || t == S_N_TUPLE_FIELD {
+            if s_nchild[cur] > 0 {
+                cur = s_children[s_coff[cur]]
+            } else {
+                return -1
+            }
+        } else {
+            return -1
+        }
+        guard = guard + 1
+    }
+    return -1
+}
+
+// 泛型槽偏移判定（2026-08-14 泛型语法布局，权威约定见 ast.tie 头部注释）：
+// 返回 1 表示 children 头部有「泛型槽/类型实参槽」——children[0] == -1 哨兵
+// （非泛型但槽仍占位）或 children[0] 是 N_TYPE_PARAMS / N_TYPE_ARGS 节点。
+// 消费方读取「返回类型 / 第 i 个参数 / 第 i 个字段 / 第 i 个实参 / 接收者」
+// 等位置时必须 +1 偏移。适用节点：FnDef / Struct（N_TYPE_PARAMS 槽）、
+// Call / MethodCall / StructType（N_TYPE_ARGS 槽）——T1 起这些节点恒有槽，
+// 故对它们恒返回 1。无子节点（nchild==0）或首子节点非槽 → 0。
+pub func slot_off(node: i64) -> i64 {
+    if s_nchild[node] <= 0 {
+        return 0
+    }
+    var c0 = s_children[s_coff[node]]
+    if c0 < 0 {
+        return 1  // -1 哨兵：泛型槽存在但为空
+    }
+    var t0 = s_tags[c0]
+    if t0 == S_N_TYPE_PARAMS || t0 == S_N_TYPE_ARGS {
+        return 1
+    }
+    return 0
+}
+
+// ==================== 可寻址与可见性辅助 ====================
+// P8 可寻址判定（对齐 Rust is_addressable_expr）：只有变量或字段访问链可寻址。
+pub func is_addressable(id: i64) -> bool {
+    var tag = s_tags[id]
+    if tag == 6 {
+        return true
+    }
+    if tag == 15 {
+        return is_addressable(child(id, 0))
+    }
+    return false
+}
+
+// 字符串前缀判定（s 是否以 pre 开头）
+pub func has_prefix_str(s: string, pre: string) -> bool {
+    var n = str_len(s)
+    var m = str_len(pre)
+    if n < m {
+        return false
+    }
+    var i: i64 = 0
+    while i < m {
+        if str_char(s, i) != str_char(pre, i) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+// 查找最后一个 "::" 的位置（命名空间分隔；返回 ':' 下标，-1 = 无）
+pub func rfind_ns(s: string) -> i64 {
+    var n = str_len(s)
+    var i: i64 = 0
+    var last: i64 = -1
+    while i + 1 < n {
+        if str_char(s, i) == ":" {
+            if str_char(s, i + 1) == ":" {
+                last = i
+            }
+        }
+        i = i + 1
+    }
+    return last
+}
+
+// 私有函数可见性校验（对齐 Rust check_visibility，M2.1.7）：
+// 返回 0 = 可见 / -1 = 私有拦截（sm_err_* 已置）。
+// 规则：显式 pub 放行；顶层函数（全名无 ::）恒放行；同命名空间或**子命名空间**
+// 放行（ns_stack 前缀匹配 prefix）；否则报私有调用错误。
+pub func check_visibility(full_name: string, sig: i64, call_node: i64) -> i64 {
+    // S1.2：sg_pub 复用为标志位（bit0=pub, bit1=unsafe）
+    if (sg_pub[sig] & 1) == 1 {
+        return 0
+    }
+    var last = rfind_ns(full_name)
+    if last < 0 {
+        return 0
+    }
+    var prefix = str.slice(full_name, 0, last)
+    var cur = cur_ns_prefix()
+    if cur == prefix {
+        return 0
+    }
+    if has_prefix_str(cur, prefix + "::") {
+        return 0
+    }
+    sm_err_line = s_lines[call_node]
+    sm_err_col = s_cols[call_node]
+    sm_err_msg = "函数 '" + full_name + "' 是命名空间 '" + prefix + "' 的私有函数（默认私有，`pub func` 显式导出），不可在命名空间之外调用"
+    return -1
+}
+
+// 当前函数命名空间前缀（可见性校验用）
+pub func cur_ns_prefix() -> string {
+    var out: string = ""
+    var i: i64 = 0
+    while i < ns_top {
+        if i > 0 {
+            out = out + "::"
+        }
+        out = out + intern.lookup(ns_stack[i])
+        i = i + 1
+    }
+    return out
+}
+
+// ==================== 符号表（并行排序表 + 二分）====================
+// 二分查找升序 keys，返回下标或 -1
+pub func bs_find(keys: table<i64>, k: i64) -> i64 {
+    var lo: i64 = 0
+    var hi: i64 = len(keys) - 1
+    while lo <= hi {
+        var mid = (lo + hi) / 2
+        var kv = keys[mid]
+        if kv == k {
+            return mid
+        }
+        if kv < k {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    return -1
+}
+
+// ==================== S2.2 闭包：扁平段内线性查找 ====================
+// 闭包语义状态表的参数名段/局部名段/捕获名段都是「声明/登记顺序」扁平段
+// （非升序，不能用 bs_find）。段内成员判定用线性扫（段通常很小：闭包参数
+// 数、局部数、捕获数都有限）。off = 段起始下标，n = 段长度，k = 目标名 id。
+// 返回 1 = 在段内，0 = 不在。
+pub func seg_has(seg: table<i64>, off: i64, n: i64, k: i64) -> i64 {
+    var i: i64 = 0
+    while i < n {
+        if seg[off + i] == k {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+// 重置 moved 状态（每函数开始时调用）
+pub func lv_moved_reset() {
+    lv_moved = table_new_i64()
+}
+
+// 标记变量为 moved（有序插入；重复标记幂等）
+pub func lv_moved_mark(nid: i64) {
+    if bs_find(lv_moved, nid) >= 0 {
+        return
+    }
+    var n = len(lv_moved)
+    var lo: i64 = 0
+    var hi: i64 = n - 1
+    var pos: i64 = n
+    while lo <= hi {
+        var mid = (lo + hi) / 2
+        if lv_moved[mid] < nid {
+            lo = mid + 1
+        } else {
+            pos = mid
+            hi = mid - 1
+        }
+    }
+    table_push(lv_moved, 0)
+    var i: i64 = n
+    while i > pos {
+        lv_moved[i] = lv_moved[i - 1]
+        i = i - 1
+    }
+    lv_moved[pos] = nid
+}
+
+// 变量是否已移动（1=moved / 0=live）
+pub func lv_moved_is(nid: i64) -> i64 {
+    if bs_find(lv_moved, nid) >= 0 {
+        return 1
+    }
+    return 0
+}
+
+// 清除单个变量的 moved 标记（重新赋值后变量恢复 live）。
+// tie 表无法物理截断，直接重建表（每函数 moved 量极小，成本可忽略）。
+pub func lv_moved_unmark(nid: i64) {
+    var idx = bs_find(lv_moved, nid)
+    if idx < 0 {
+        return
+    }
+    var rebuild = table_new_i64()
+    var n = len(lv_moved)
+    var j: i64 = 0
+    while j < n {
+        if lv_moved[j] != nid {
+            table_push(rebuild, lv_moved[j])
+        }
+        j = j + 1
+    }
+    lv_moved = rebuild
+}
+
+// 快照当前 moved 状态（深拷贝独立表）。分支检查用：保存分支入口状态，
+// 分支结束用 lv_moved_restore 恢复——分支内 return/赋值触发的移动标记
+// **不泄漏到分支外**（分支互斥路径，如 `if m == 0 { return s }` 后 s 仍 live）。
+// std/compiler 迁移关键：无分支敏感时此类合法模式被误报 use-of-moved。
+pub func lv_moved_snap() -> table<i64> {
+    var snap = table_new_i64()
+    var n = len(lv_moved)
+    var i: i64 = 0
+    while i < n {
+        table_push(snap, lv_moved[i])
+        i = i + 1
+    }
+    return snap
+}
+
+// 恢复 moved 状态（深拷贝重建独立表，避免与快照共享底层数组）。
+pub func lv_moved_restore(snap: table<i64>) {
+    var rebuild = table_new_i64()
+    var n = len(snap)
+    var j: i64 = 0
+    while j < n {
+        table_push(rebuild, snap[j])
+        j = j + 1
+    }
+    lv_moved = rebuild
+}
+
+// 有序插入 keys（返回插入位置），vals 并行同步插入
+pub func sorted_insert(keys: table<i64>, vals: table<i64>, k: i64, v: i64) -> i64 {
+    var n = len(keys)
+    var lo: i64 = 0
+    var hi: i64 = n - 1
+    var pos: i64 = n
+    while lo <= hi {
+        var mid = (lo + hi) / 2
+        if keys[mid] < k {
+            lo = mid + 1
+        } else {
+            pos = mid
+            hi = mid - 1
+        }
+    }
+    table_push(keys, 0)
+    table_push(vals, 0)
+    var i: i64 = n
+    while i > pos {
+        keys[i] = keys[i - 1]
+        vals[i] = vals[i - 1]
+        i = i - 1
+    }
+    keys[pos] = k
+    vals[pos] = v
+    return pos
+}
+
+// 函数表三列有序插入（keys/vals/nodes 并行同步移位；reg_fn 专用）。
+// 返回插入位置。
+pub func sorted_insert_fn(keys: table<i64>, vals: table<i64>, nodes: table<i64>, k: i64, v: i64, nd: i64) -> i64 {
+    var n = len(keys)
+    var lo: i64 = 0
+    var hi: i64 = n - 1
+    var pos: i64 = n
+    while lo <= hi {
+        var mid = (lo + hi) / 2
+        if keys[mid] < k {
+            lo = mid + 1
+        } else {
+            pos = mid
+            hi = mid - 1
+        }
+    }
+    table_push(keys, 0)
+    table_push(vals, 0)
+    table_push(nodes, 0)
+    var i: i64 = n
+    while i > pos {
+        keys[i] = keys[i - 1]
+        vals[i] = vals[i - 1]
+        nodes[i] = nodes[i - 1]
+        i = i - 1
+    }
+    keys[pos] = k
+    vals[pos] = v
+    nodes[pos] = nd
+    return pos
+}
+
+}
