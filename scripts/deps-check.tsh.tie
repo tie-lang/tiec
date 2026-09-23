@@ -471,9 +471,12 @@ func init_matrix() {
 func init_rules() {
     // 精确规则（先匹配）
     rule(0, "compiler\\lib\\interner.tie", L_INTERNER)
+    rule(0, "compiler\\lib\\interner_test.tie", L_INTERNER)
     rule(0, "compiler\\lib\\bytes.tie", L_BYTES)
     rule(0, "compiler\\lib\\columnar.tie", L_COLUMNAR)
+    rule(0, "compiler\\lib\\columnar_test.tie", L_COLUMNAR)
     rule(0, "compiler\\lib\\dispatch.tie", L_CORE)
+    rule(0, "compiler\\lib\\dispatch_test.tie", L_CORE)
     rule(0, "compiler\\frontend\\ast.tie", L_AST)
     // 注意：frontend/stype.tie 不是 tie.types 库——它是**语义层**的 AST→类型 id
     // 映射器（s* 家族成员），归 sema；tie.types = middle/types.tie 的类型 id 编码。
@@ -512,6 +515,8 @@ func init_rules() {
     rule(1, "compiler\\frontend\\p", L_PARSE)
     rule(1, "compiler\\frontend\\s", L_SEMA)
     rule(1, "compiler\\backend\\irgen", L_IRGEN)
+    rule(1, "compiler\\backend\\builtin_expr_seg", L_IRGEN)
+    rule(1, "compiler\\backend\\tig_expr_seg", L_IRGEN)
     rule(1, "compiler\\backend\\llvmgen", L_LLVMGEN)
     rule(1, "compiler\\backend\\toolchain", L_LLVMGEN)
     rule(1, "compiler\\interp\\", L_INTERP)
