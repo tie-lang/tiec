@@ -29,6 +29,9 @@ pub func frontend(src: string, base_dir: string) -> i64 {
     // p.9.14.2 独立警告 pass：把前端警告开关传给 semantic（-w 开启、默认只报错）。
     // 必须在 check_ast 之前设置——语义侧警告收集/遍历全程由该开关门控。
     semantic.set_warn_enabled(g_front_warn)
+    // p.9.21.4 II1 可见性梯度：把 CLI 档位传给语义层（默认 1 = A1b = 历史行为）。
+    // 必须在 check_ast 之前设置——check_visibility 在调用解析点全程消费该档位。
+    sstate.set_visibility(g_cli_visibility)
     var sem = semantic.check_ast(base_dir)
     unsafe {
         var t1e = clock()
