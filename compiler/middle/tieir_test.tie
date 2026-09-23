@@ -1,0 +1,208 @@
+type tie<logic>
+// compiler/middle/tieir_test.tie —— tie.tieir 库独立自检（p.9.21 G7 库资格②）
+// ============================================================
+// 无 driver 可跑：本文件即入口（tie<logic>），只 import 被测库（tieir_ser
+// 链载 ir/ir_meta/interner/std/bytes），覆盖序列化模块的全部对外契约：
+//   - serialize：当前模块 → 字节表（非空、含魔数/版本/段结构）；
+//   - content_hash：可复现（两次一致），与 hash_bytes 对字节区间一致；
+//   - deserialize：字节表 → 完整重建 IR + 元信息（函数/块/指令/值编号/
+//     操作数与类别/span/符号表/导出面/doc/包名/依赖）；
+//   - write / read：文件往返（写 → 清空模块 → 读回 → 结构一致）；
+//   - 防伪造校验：魔数 / 版本字节被破坏时拒绝反序列化。
+// 全部通过输出「tieir 自检通过」exit 0；任一失败打印明细 exit 1。
+//
+// # 构造的 IR（与 ir_test.tie 同构，便于人工核对）
+//   define i64 @f(i64 %0, i64 %1) {
+//     entry:  %2 = add %0,%1 ; %3 = icmp %0,%1 ; br %3, if.then, entry
+//     if.then: ret %2
+//   }
+//   值编号 0..3 单调；ret 无结果值。附 2 条 span、1 条符号、1 条导出、1 条 doc。
+//
+// # 语言边界应用（同 ir_test.tie）
+//   - import 文本内联后与本库顶层常量同作用域：**不定义本地常量**，
+//     opcode 一律字面量 + 注释（op_name 访问器防漂移）；
+//   - 前缀调用（ir / ir_meta / tieir）；断言失败累积用嵌套 if。
+//
+// 运行（repo 根）：
+//   compiler\tiec.exe compiler\middle\tieir_test.tie -o <tmp>\tieirtest.exe
+//   <tmp>\tieirtest.exe      # -> 「tieir 自检通过」exit 0
+
+import "./tieir_ser.tie"
+import "./ir_meta.tie"
+import "./types.tie"
+
+func check(ok: bool, what: string) -> bool {
+    if !ok {
+        println("自检失败: " + what)
+    }
+    return ok
+}
+
+// 构造与 ir_test.tie 同构的 2 块小函数。
+// 返回 [状态, 首指令 id, icmp 指令 id]（状态 0 = 构造成功）。
+func build_module() -> table<i64> {
+    ir.new_module()
+    ir_meta.reset_meta()
+    ir_meta.set_pkg_name(interner.intern("demo_pkg"))
+    ir_meta.set_pkg_version(interner.intern("0.1.0"))
+    ir_meta.set_ir_version(1)
+    ir_meta.set_compiler_version(interner.intern("tiec-0.0.1"))
+    ir_meta.set_dep(interner.intern("std"), interner.intern("1.0.0"))
+    var nm_f = interner.intern("f")
+    var params: table<i64> = table_new_i64()
+    table_push(params, types.named(3))
+    table_push(params, types.named(3))
+    var f = ir.new_func(nm_f, types.named(3), params)
+    var blk_entry = ir.new_block(f, interner.intern("entry"))
+    var blk_then = ir.new_block(f, interner.intern("if.then"))
+    var i0 = ir.new_inst(blk_entry, 0, types.named(3))
+    ir.add_operand(i0, 0, 0)
+    ir.add_operand(i0, 1, 0)
+    var i1 = ir.new_inst(blk_entry, 12, types.named(10))
+    ir.add_operand(i1, 0, 0)
+    ir.add_operand(i1, 1, 0)
+    ir.add_operand(i1, 2, 2)
+    var i2 = ir.new_inst(blk_entry, 31, -1)
+    ir.add_operand(i2, ir.get_value(i1), 0)
+    ir.add_operand(i2, blk_then, 1)
+    ir.add_operand(i2, blk_entry, 1)
+    var i3 = ir.new_inst(blk_then, 32, -1)
+    ir.add_operand(i3, ir.get_value(i0), 0)
+    ir_meta.set_inst_span(i0, 10, 5)
+    ir_meta.set_inst_span(i2, 12, 3)
+    ir_meta.set_sym(nm_f, interner.intern("fn(a: i64, b: i64) -> i64"), 0, 1, 1, 1)
+    ir_meta.export_func(f, 1, 1)
+    ir_meta.set_doc(0, interner.intern("/// 计算 a+b"))
+    var good: bool = true
+    if !check(ir.func_count() == 1, "构造完成（1 函数）") {
+        good = false
+    }
+    if !check(ir.value_count() == 4, "值编号 0..3") {
+        good = false
+    }
+    if !good {
+        var bad: table<i64> = table_new_i64()
+        table_push(bad, -1)
+        table_push(bad, 0)
+        table_push(bad, 0)
+        return bad
+    }
+    var res: table<i64> = table_new_i64()
+    table_push(res, 0)
+    table_push(res, i0)
+    table_push(res, i1)
+    return res
+}
+
+func main() {
+    var ok: bool = true
+    var built = build_module()
+    if built[0] < 0 {
+        exit(1)
+    }
+    var i0 = built[1]
+    var i1 = built[2]
+
+    // ---------- 序列化 + 内容哈希 ----------
+    var t = tieir.serialize()
+    if !check(len(t) > 50, "序列化字节表非空") {
+        ok = false
+    }
+    var h1 = tieir.content_hash()
+    var h2 = tieir.content_hash()
+    if !check(h1 == h2, "内容哈希可复现") {
+        ok = false
+    }
+    if !check(tieir.hash_bytes(t, 13, len(t)) == h1, "hash_bytes 与 content_hash 一致") {
+        ok = false
+    }
+
+    // ---------- 反序列化 roundtrip ----------
+    var rc = tieir.deserialize(t)
+    if !check(rc == 0, "反序列化成功") {
+        ok = false
+    }
+    if rc == 0 {
+        if !check(ir.func_count() == 1, "roundtrip 函数数") {
+            ok = false
+        }
+        if !check(ir.inst_count() == 4, "roundtrip 指令数") {
+            ok = false
+        }
+        if !check(ir.value_count() == 4, "roundtrip 值编号") {
+            ok = false
+        }
+        if !check(ir.block_count() == 2, "roundtrip 块数") {
+            ok = false
+        }
+        if !check(ir_meta.sym_count() == 1, "roundtrip 符号数") {
+            ok = false
+        }
+        if !check(ir_meta.export_count() == 1, "roundtrip 导出数") {
+            ok = false
+        }
+        if !check(ir_meta.span_count() == 3, "roundtrip span 数") {
+            ok = false
+        }
+        if !check(ir_meta.inst_line(0) == 10, "roundtrip span 行") {
+            ok = false
+        }
+        if !check(ir_meta.get_pkg_name() == interner.intern("demo_pkg"), "roundtrip 包名") {
+            ok = false
+        }
+        if !check(ir_meta.dep_count() == 1, "roundtrip 依赖") {
+            ok = false
+        }
+        if !check(ir.ins_opnd(i0, 0) == 0 && ir.ins_opnd_kind(i0, 0) == 0,
+                  "roundtrip 操作数与类别") {
+            ok = false
+        }
+        if !check(ir.ins_val(i1) == 3, "roundtrip 指令结果值") {
+            ok = false
+        }
+        var dump = tieir.dump_text()
+        if !check(len(dump) > 40, "dump_text 非空") {
+            ok = false
+        }
+        if !check(tieir.content_hash() == h1, "roundtrip 后内容哈希一致") {
+            ok = false
+        }
+    }
+
+    // ---------- 文件往返 ----------
+    var path = "_tieir_test_tmp.tieir"
+    if !check(tieir.write(path), "写入 tieir 文件") {
+        ok = false
+    }
+    ir.new_module()
+    ir_meta.reset_meta()
+    var rc2 = tieir.read(path)
+    if !check(rc2 == 0, "读取 tieir 文件") {
+        ok = false
+    }
+    if rc2 == 0 {
+        if !check(ir.func_count() == 1 && ir_meta.export_count() == 1,
+                  "文件读回结构一致") {
+            ok = false
+        }
+    }
+    file_delete(path)
+
+    // ---------- 防伪造校验 ----------
+    var t2 = tieir.serialize()
+    t2[5] = 99   // 破坏版本字节
+    if !check(tieir.deserialize(t2) != 0, "版本字节损坏 → 拒绝") {
+        ok = false
+    }
+    var t3 = tieir.serialize()
+    t3[0] = 65   // 破坏魔数
+    if !check(tieir.deserialize(t3) != 0, "魔数损坏 → 拒绝") {
+        ok = false
+    }
+
+    // ---------- 汇总 ----------
+    if !ok {
+        exit(1)
+    }
+    println("tieir 自检通过")
+}
