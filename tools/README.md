@@ -26,6 +26,7 @@ EN: Three-stage bootstrap; a matching n2/n3 hash means the fixed point holds.
 |---|---|---|
 | `split_parts.py` | 文件过大、函数可整块搬走（**命名空间感知**，顶层函数保持顶层身份） | `python split_parts.py plan\|apply <相对compiler的路径> [每片预算行]` |
 | `split_dispatch.py` | `if <VAR> == <整数> { ... }` 巨型调度器按分支提取 | `python split_dispatch.py plan\|apply <路径> <函数名> <分派变量> <落盘文件>` |
+| `split_dispatch_segments.py` | **哨兵分派链分段**：`if <cond> {…}` 长链切成连续段函数，runner 遇非哨兵即返回 | `python split_dispatch_segments.py plan\|apply <路径> <函数名> <前缀> [预算] [分片名]` |
 | `split_branch_blocks.py` | **语句级**提取：任意条件的 `if ... { ... }` 平铺分支（`split_dispatch.py` 只认整数字面量链） | `python split_branch_blocks.py plan\|apply <路径> <函数名> [前缀] [预算] [分片名]` |
 | `split_builtin_branches.py` | `builtin_expr` 式 `if nm == "名字"` 分支提取（按段注释归域） | `python split_builtin_branches.py plan\|apply` |
 | `split_expr_files.py` | 按域把大文件里的函数搬到多个新文件（一次性记录，范式参考） | `python split_expr_files.py plan\|apply` |
@@ -54,6 +55,12 @@ shape-specific extractors kept as working references.
 * 分片文件绝不覆盖既有分片（用 `_qN` 而非复用 `_pN`）；改完必须做函数集完整性校验。
 * `main` 必须留在顶层（放进 `namespace` 会链接期缺入口）。
 * 每次改动后 `grep` 核验标记存在（替换不匹配会静默跳过）。
+* **块闭合判定**：多行条件的 `if` 首行括号平衡但块未开（须见到 `{` 后才收口）；`} else if …`
+  行会闭合上一臂（链是一块，不能在 `} else` 处收口）。
+* **别按固定缩进找语句**：源码里存在零缩进 `if` 混在缩进体内的情况（早期工具遗留），按缩进扫描
+  会撕碎分支；先用 `git diff -w` 验证做纯空白重排缩进，再跑拆分工具。
+* 顺序流水线型长函数（非分派链）**不能**机械切段：局部变量跨段共享且 tie 表按值传参，必须按
+  语义段落手工提取并逐段 regress。
 
 ## 三、审计 / Audits
 
