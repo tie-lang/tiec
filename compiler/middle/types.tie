@@ -41,6 +41,21 @@ type tie<class>
 //
 // 调用：import 后 types.named(...) / types.type_name(...)
 // 命名规范：命名空间内函数不加 types_ 前缀；内部工具私有（非 pub）。
+//
+// # pub 方法全集（组件契约，p.9.21 G7 库资格①；增删须同步此处与 ROAD）
+//   构造（O(1) 编码）：named table_of map_of struct_of tuple_of var_of
+//     enum_of ptr_of slice_of atomic_of array_of fn_of fn_of2
+//     port_of actor_of guard_of
+//   判别（kind / 判据族）：kind low is_array array_elem array_len
+//     fn_ret_ty fn_nparams_of fn_param_of fn_param_ref fn_has_var_of
+//     is_port is_actor guard_cap guard_cap_name is_guard
+//     is_int is_float is_number is_bool_like is_wide is_table is_map
+//     is_enum is_typevar is_ptr is_slice is_atomic is_fn is_unsafe_ty
+//     table_elem
+//   登记（名字回填，语义阶段调用）：set_struct_name set_enum_name
+//     set_port_name set_actor_name
+//   文本：type_name
+//   自检：middle/types_test.tie（无 driver 可跑）。
 
 import "../lib/interner.tie"
 
