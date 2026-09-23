@@ -1,0 +1,277 @@
+type tie<class>
+// compiler/interp/call_builtin_seg2.tie —— call_builtin 分派链分段 2（p.9.21 G2 单函数 ≤300 行）
+// ============================================================
+// 只含函数与注释：import 树与顶层全局 var 仍留在原主文件；
+// 与原函数同 namespace，跨文件裸名互调；段尾 return <sentinel> = 本段未命中。
+namespace interp {
+func call_builtin_seg2(name: string, args: table<i64>) -> i64 {
+    if name == "tokenize" {
+        if len(args) != 1 {
+            g_err = "tokenize 需要一个字符串参数"
+            return -1
+        }
+        if ivalue.type_of(args[0]) != T_STR {
+            g_err = "tokenize 需要一个字符串参数"
+            return -1
+        }
+        var ok = lexer.run_lex(ivalue.str_val(args[0]))
+        if !ok {
+            g_err = "tokenize 失败: 词法错误 @" + to_string(lexer.lex_err_line()) + ":" +
+                to_string(lexer.lex_err_col()) + ": " + lexer.lex_err_msg()
+            return -1
+        }
+        var cnt = lexer.token_count()
+        var n: i64 = 0
+        var k: i64 = 0
+        while k < cnt {
+            if lexer.token_tag(k) == lex_eof {
+                break
+            }
+            n = n + 1
+            k = k + 1
+        }
+        var out: string = to_string(n) + ":\n"
+        var j: i64 = 0
+        while j < n {
+            out = out + to_string(lexer.token_tag(j)) + " " +
+                escape_token_lexeme(lexer.token_lexeme(j)) + "\n"
+            j = j + 1
+        }
+        return ivalue.new_str(out)
+    }
+    // deparse：token 流文本 → 源码字符串（逐 token 发射原始拼写，token 间单空格；
+    // 反序列化保证 tokenize(deparse(tokenize(s))) == tokenize(s)）。
+    if name == "deparse" {
+        if len(args) != 1 {
+            g_err = "deparse 需要一个 token 流参数"
+            return -1
+        }
+        if ivalue.type_of(args[0]) != T_STR {
+            g_err = "deparse 需要一个 token 流参数"
+            return -1
+        }
+        var src = deparse_tokens(ivalue.str_val(args[0]))
+        if g_err != "" {
+            return -1
+        }
+        return ivalue.new_str(src)
+    }
+    if name == "token_len" {
+        if len(args) != 1 {
+            g_err = "token_len 需要一个 token 流参数"
+            return -1
+        }
+        if ivalue.type_of(args[0]) != T_STR {
+            g_err = "token_len 需要一个 token 流参数"
+            return -1
+        }
+        var n = parse_tokens(ivalue.str_val(args[0]))
+        if g_err != "" {
+            return -1
+        }
+        return ivalue.new_int(n)
+    }
+    if name == "token_tag_at" {
+        if len(args) != 2 {
+            g_err = "token_tag_at 需要 token 流与下标参数"
+            return -1
+        }
+        if ivalue.type_of(args[0]) != T_STR || ivalue.type_of(args[1]) != T_INT {
+            g_err = "token_tag_at 需要 token 流与下标参数"
+            return -1
+        }
+        var n = parse_tokens(ivalue.str_val(args[0]))
+        if g_err != "" {
+            return -1
+        }
+        var i = ivalue.int_val(args[1])
+        if i < 0 || i >= n {
+            g_err = "token_tag_at 下标越界：索引 " + to_string(i) + " 超出长度 " + to_string(n)
+            return -1
+        }
+        return ivalue.new_int(g_tk_tags[i])
+    }
+    if name == "token_lexeme_at" {
+        if len(args) != 2 {
+            g_err = "token_lexeme_at 需要 token 流与下标参数"
+            return -1
+        }
+        if ivalue.type_of(args[0]) != T_STR || ivalue.type_of(args[1]) != T_INT {
+            g_err = "token_lexeme_at 需要 token 流与下标参数"
+            return -1
+        }
+        var n = parse_tokens(ivalue.str_val(args[0]))
+        if g_err != "" {
+            return -1
+        }
+        var i = ivalue.int_val(args[1])
+        if i < 0 || i >= n {
+            g_err = "token_lexeme_at 下标越界：索引 " + to_string(i) + " 超出长度 " + to_string(n)
+            return -1
+        }
+        return ivalue.new_str(g_tk_lexemes[i])
+    }
+    // tsh 脚本运行时桥（过程/环境/文件；与 is_builtin 同集，直接转发基础原语）
+    if name == "get_env" {
+        return ivalue.new_str(get_env(ivalue.str_val(args[0])))
+    }
+    if name == "set_env" {
+        set_env(ivalue.str_val(args[0]), ivalue.str_val(args[1]))
+        return ivalue.new_bool(true)
+    }
+    if name == "exec_code" {
+        return ivalue.new_int(exec_code(ivalue.str_val(args[0])))
+    }
+    if name == "exec_output" {
+        return ivalue.new_str(exec_output(ivalue.str_val(args[0])))
+    }
+    if name == "cwd" {
+        return ivalue.new_str(cwd())
+    }
+    if name == "time_now" {
+        return ivalue.new_int(time_now())
+    }
+    if name == "file_read" {
+        return ivalue.new_str(file_read(ivalue.str_val(args[0])))
+    }
+    if name == "file_write" {
+        return ivalue.new_bool(file_write(ivalue.str_val(args[0]), ivalue.str_val(args[1])))
+    }
+    if name == "file_append" {
+        // E 裁决：自动补尾换行——内容非空且不以 \n/\r 结尾时补一个 \n
+        //（使逐行追加语义稳定；便于脚本 file_read 后按行解析）
+        var content = ivalue.str_val(args[1])
+        if content != "" {
+            var n = str_len(content)
+            var lastc = str_char(content, n - 1)
+            if lastc != "\n" && lastc != "\r" {
+                content = content + "\n"
+            }
+        }
+        return ivalue.new_bool(file_append(ivalue.str_val(args[0]), content))
+    }
+    if name == "file_exists" {
+        return ivalue.new_bool(file_exists(ivalue.str_val(args[0])))
+    }
+    if name == "path_join" {
+        return ivalue.new_str(path_join(ivalue.str_val(args[0]), ivalue.str_val(args[1])))
+    }
+    if name == "mkdir_all" {
+        return ivalue.new_bool(mkdir_all(ivalue.str_val(args[0])))
+    }
+    if name == "remove_dir_all" {
+        return ivalue.new_bool(remove_dir_all(ivalue.str_val(args[0])))
+    }
+    // ==================== tsh 脚本语义内建（p.9.4 升级） ====================
+    // 字符串内建：contains / has_prefix / has_suffix / split_lines / split_char /
+    // substr / replace_all / is_empty。
+    if name == "contains" {
+        if len(args) != 2 || ivalue.type_of(args[0]) != T_STR || ivalue.type_of(args[1]) != T_STR {
+            g_err = "contains 需要两个字符串参数（hay, needle）"
+            return -1
+        }
+        return ivalue.new_bool(b_contains(ivalue.str_val(args[0]), ivalue.str_val(args[1])))
+    }
+    if name == "has_prefix" {
+        if len(args) != 2 {
+            g_err = "has_prefix 需要两个字符串参数"
+            return -1
+        }
+        return ivalue.new_bool(b_has_prefix(ivalue.str_val(args[0]), ivalue.str_val(args[1])))
+    }
+    if name == "has_suffix" {
+        if len(args) != 2 {
+            g_err = "has_suffix 需要两个字符串参数"
+            return -1
+        }
+        return ivalue.new_bool(b_has_suffix(ivalue.str_val(args[0]), ivalue.str_val(args[1])))
+    }
+    if name == "split_lines" {
+        if len(args) != 1 || ivalue.type_of(args[0]) != T_STR {
+            g_err = "split_lines 需要一个字符串参数"
+            return -1
+        }
+        return b_lines_to_table(split_content_lines(ivalue.str_val(args[0])))
+    }
+    if name == "split_char" {
+        if len(args) != 2 || ivalue.type_of(args[0]) != T_STR || ivalue.type_of(args[1]) != T_STR {
+            g_err = "split_char 需要字符串与分隔符参数"
+            return -1
+        }
+        var c = ivalue.str_val(args[1])
+        if str_len(c) != 1 {
+            g_err = "split_char 分隔符必须是单字符"
+            return -1
+        }
+        return b_split_char_to_table(ivalue.str_val(args[0]), c)
+    }
+    if name == "substr" {
+        if len(args) != 3 || ivalue.type_of(args[0]) != T_STR ||
+            ivalue.type_of(args[1]) != T_INT || ivalue.type_of(args[2]) != T_INT {
+            g_err = "substr 需要字符串与两个整数参数（s, start, end）"
+            return -1
+        }
+        var s = ivalue.str_val(args[0])
+        var lo = ivalue.int_val(args[1])
+        var hi = ivalue.int_val(args[2])
+        if lo < 0 { lo = 0 }
+        if hi > str_len(s) { hi = str_len(s) }
+        if lo >= hi {
+            return ivalue.new_str("")
+        }
+        return ivalue.new_str(b_str_sub(s, lo, hi))
+    }
+    if name == "replace_all" {
+        if len(args) != 3 {
+            g_err = "replace_all 需要三个字符串参数（s, old, new）"
+            return -1
+        }
+        return ivalue.new_str(b_replace_all(ivalue.str_val(args[0]),
+            ivalue.str_val(args[1]), ivalue.str_val(args[2])))
+    }
+    if name == "is_empty" {
+        if len(args) != 1 {
+            g_err = "is_empty 需要一个字符串参数"
+            return -1
+        }
+        return ivalue.new_bool(str_len(ivalue.str_val(args[0])) == 0)
+    }
+    // 字面 `|` 逃逸（管道分派劫持规避）：返回单字 "|"。
+    if name == "pipe_char" {
+        if len(args) != 0 {
+            g_err = "pipe_char 不需要参数"
+            return -1
+        }
+        return ivalue.new_str("|")
+    }
+    if name == "path_basename" {
+        // 路径末尾段（去反斜杠/斜杠结尾后的最后一段；无分隔 → 原样）
+        if len(args) != 1 {
+            g_err = "path_basename 需要一个字符串参数"
+            return -1
+        }
+        return ivalue.new_str(b_basename(ivalue.str_val(args[0])))
+    }
+    // 目录枚举 → table<string>（返回 Value::Table）
+    if name == "list_dir" || name == "walk_dir" {
+        if len(args) != 1 {
+            g_err = name + " 需要一个目录路径参数"
+            return -1
+        }
+        var t = list_dir(ivalue.str_val(args[0]))
+        if name == "walk_dir" {
+            t = walk_dir(ivalue.str_val(args[0]))
+        }
+        return b_str_to_table(t)
+    }
+    // 脚本参数读取（脚本模式下读 rn_run_script 注入的表——跳过 -f <path> 前缀；
+    // 非脚本模式回退读进程 argv）
+    if name == "arg_count" {
+        if script_args_active() {
+            return ivalue.new_int(len(script_args()))
+        }
+        return ivalue.new_int(arg_count())
+    }
+    return -1  // 本段未命中
+}
+}
