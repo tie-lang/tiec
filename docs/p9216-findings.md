@@ -70,3 +70,20 @@ tsh 侧根因（exec/list_dir/file_read/file_exists 的进程内缓存与异步�
 3. 片段组装消费（改叶子只重编该模块的前端/irgen 路径）→ 层 II 收口。
 4. D3 词法码点列号；trm loader 直读二进制（D2 收尾）。
 5. tsh REPL v1 语义修复（D4/§4）后回改 bootstrap-fp 参数处理。
+
+## 6. D1-D4 解决记录（同日闭环）/ Resolutions
+
+| 缺陷 | 状态 | 落点 |
+| --- | --- | --- |
+| D1 tieir 反序列化布局 | ✅ 已修 | tiec 3b07272：deserialize 值空间重映射（原交错序 → 重建参数前缀序），结果连续性 + 函数边界 fpo 连续性双校验；真实 4 函数单元 roundtrip READ_OK；tieir_test 多函数交错 roundtrip 用例 |
+| D2 trm loader | ✅ 已修 | trm 6c70b75（v2 版本闸）+ f6b0e20（值空间重映射 + 布局自动探测 + byte_read 直读二进制 .tir + interp alloca/load/store 原语）；run_tiec（真实 .tir）与 run2（gen2 文本遗留）双路全绿 |
+| D3 词法列号 golden | ✅ 已修（golden 过时，非列号缺陷） | tiec 3b07272：'@' 已是合法注解符（p.9.11.12）、非 ASCII 一律标识符材料（is_alpha c>127）——负例改用 '~'（符号表缺席），token 基线重录，lex_test 全绿 |
+| D4 bootstrap-fp 参数 | ✅ 已加固 | tiec 3b07272：resolve_out() 函数返回式取参（env TIEC_FP_OUT > 参数 > 默认）+ 每使用点现调（tsh 变量赋值不稳定，同轮运行不同语句见到不同值）+ 哨兵写读响亮失败；1 参数调用实测正确建编并打印与产物直核一致的哈希 |
+
+扩展名变更：tieir 产物统一 **.tir**（格式名 tieir 不变；`--tieir-out` 旗标不变）。
+
+不动点：2e238f60 → **7b7d8886**（D1/D3/改名后重录）；回归 157/8/2 每步一致。
+
+解释器/tshell 性能优化：本轮裁定不引入——tsh REPL v1 的语义缺陷（§4）是
+一切脚本层测量的前置干扰源，先修语义再加优化；trm interp 的性能调优待其
+指令覆盖（br/call 等）补齐后有真实工作负载再测。
