@@ -42,6 +42,16 @@ type tie<class>
 //
 // 调用：import 后 tieir.serialize() / tieir.write(path) / tieir.read(path) /
 // tieir.dump_text() / tieir.hash_bytes(t, from, to) / tieir.err_msg()
+//
+// # pub 方法全集（组件契约，p.9.21 G7 库资格①；增删须同步此处与 ROAD）
+//   序列化：serialize() -> table<i64>（当前模块 → 字节表，段 1 魔数 / 2 版本 /
+//     3-7 元信息与列式段）content_hash() -> i64（段 2-7 FNV-1a 32）
+//     hash_bytes(t, from, to) -> i64（任意字节区间哈希）
+//   落盘：write(path) -> bool / read(path) -> i64（0 = 成功）
+//   重建：deserialize(t) -> i64（0 = 成功；完整重建 IR + 元信息，含
+//     段号/越界/列长 roundtrip 全级校验，魔数/版本损坏拒绝）
+//   诊断：err_msg() -> string / dump_text() -> string
+//   自检：middle/tieir_test.tie（无 driver 可跑，roundtrip + 防伪造验收）。
 
 import "./ir_meta.tie"
 import "../lib/interner.tie"

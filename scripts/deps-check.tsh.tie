@@ -493,6 +493,7 @@ func init_rules() {
     rule(0, "compiler\\middle\\types_test.tie", L_TYPES)
     rule(0, "compiler\\middle\\passes.tie", L_PASSES)
     rule(0, "compiler\\middle\\tieir_ser.tie", L_TIEIR)
+    rule(0, "compiler\\middle\\tieir_test.tie", L_TIEIR)
     rule(0, "compiler\\config.tie", L_CONFIG)
     rule(0, "compiler\\driver.tie", L_DRIVER)
     rule(0, "compiler\\driver-lite.tie", L_DRIVER)
