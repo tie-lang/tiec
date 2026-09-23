@@ -334,6 +334,10 @@ func expand_one_import(imp_node: i64) -> i64 {
     // dev33 批次10 任务29：记录导入文件顶层 StmtList 根 → 文件 id（宏可见性）
     table_push(g_file_roots, new_root)
     g_file_count = g_file_count + 1
+    // p.9.21.6-1 模块边界显式化：登记本文件节点基址（append_ast_mem 已返回
+    // base；节点 id ∈ [base, base+本文件节点数)——递归展开的后续文件基址
+    // 只会更大，g_file_base 恒升序，file_id_of_node 二分正确）。
+    table_push(g_file_base, base)
     // 递归：新文件顶层中的 import 立即展开；其余进 g_extra_tops
     var saved_dir = g_cur_dir
     g_cur_dir = path_dir(full)
@@ -467,6 +471,10 @@ func expand_one_import(imp_node: i64) -> i64 {
 // import 展开总入口：主文件顶层进 g_extra_tops，import 递归展开
 func expand_imports() -> i64 {
     g_imported = table_new_string()
+    // p.9.21.6-1 模块边界显式化：每文件节点基址表复位（文件 0 = 主文件，基址 0；
+    // 导入文件经 append_ast_mem 连续追加节点，expand_one_import 推进基址表）。
+    g_file_base = table_new_i64()
+    table_push(g_file_base, 0)
     // p.9.14.2：intern id 去重索引随每次编译清零（防跨编译累积污染）。
     g_imp_idkeys = table_new_i64()
     g_imp_idvals = table_new_i64()

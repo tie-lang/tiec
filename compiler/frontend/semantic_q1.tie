@@ -159,6 +159,12 @@ pub func check_impl(ast_text: string, base_dir: string) -> string {
     gb_vals = table_new_i64()
     gb_const = table_new_i64()
     gb_telem = table_new_i64()
+    // p.9.21.6-1 模块边界显式化：来源模块列随每次编译清零
+    //（sg_mod 签名行 / gb_mod 全局行 / st_mod struct 行 / g_file_base 文件基址；
+    // g_file_base 由 expand_imports 复位并推主文件基址，此处仅清符号列）。
+    sg_mod = table_new_i64()
+    gb_mod = table_new_i64()
+    st_mod = table_new_i64()
     ext_keys = table_new_i64()
     tre_keys = table_new_i64()
     tre_vals = table_new_i64()
@@ -416,6 +422,12 @@ pub func check_ast(base_dir: string) -> string {
     gb_vals = table_new_i64()
     gb_const = table_new_i64()
     gb_telem = table_new_i64()
+    // p.9.21.6-1 模块边界显式化：来源模块列随每次编译清零
+    //（sg_mod 签名行 / gb_mod 全局行 / st_mod struct 行 / g_file_base 文件基址；
+    // g_file_base 由 expand_imports 复位并推主文件基址，此处仅清符号列）。
+    sg_mod = table_new_i64()
+    gb_mod = table_new_i64()
+    st_mod = table_new_i64()
     ext_keys = table_new_i64()
     tre_keys = table_new_i64()
     tre_vals = table_new_i64()

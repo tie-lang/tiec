@@ -444,6 +444,9 @@ func collect_struct_decl(s: i64) -> i64 {
         sm_err_col = s_cols[s]
         return -1
     }
+    // p.9.21.6-1 模块边界显式化：struct 行来源模块回填（reg_struct 默认 0；
+    // 此处持定义节点 s，反查真实文件 id）
+    st_mod[idx] = sstate.file_id_of_node(s)
     // struct 名登记（types.type_name / 泛型 mangling 片段还原用；追加式与
     // reg_struct 索引顺序一致——实例化 struct 由 sgen.instantiate_struct 同步登记）
     types.set_struct_name(idx, nm)

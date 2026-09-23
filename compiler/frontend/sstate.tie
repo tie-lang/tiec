@@ -338,6 +338,16 @@ var g_file_count: i64 = 1;       // 已分配文件 id 数（主文件 0 占位�
 // 重复 = 诊断）。别名同时经 M2.1.7 语义把被导入文件顶层 namespace 首段改名。
 var g_imp_alias_names: table<string>;   // 别名（字符串）
 var g_imp_alias_paths: table<string>;   // 对应导入路径（归一化）
+// p.9.21.6-1 模块边界显式化（p921-prompt §1 第 1 步）：来源模块维度。
+// 模块 = import 的文件（主文件 = 模块 0，导入文件按展开顺序 1..k）。
+// g_file_base：每文件 AST 节点基址（升序）——文件 k 的节点 id ∈
+// [g_file_base[k], g_file_base[k+1])（append_ast_mem 逐文件连续追加；
+// expand_imports 推进）。file_id_of_node 对基址二分定位任意节点的来源模块。
+var g_file_base: table<i64>;    // 文件 id -> 该文件首节点基址（升序；主文件 0）
+// 符号表来源模块列（与各表行对齐；登记时由 def_node 反查文件 id）：
+var sg_mod: table<i64>;         // 签名行来源模块（行号 = 签名 id，与 sg_* 对齐）
+var gb_mod: table<i64>;         // 全局变量行来源模块（与 gb_keys/vals 行对齐）
+var st_mod: table<i64>;         // struct 行来源模块（行号 = struct 索引，与 cls_* 对齐）
 
 const S_N_INT_LIT: i64 = 0;
 const S_N_FLOAT_LIT: i64 = 1;

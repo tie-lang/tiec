@@ -102,7 +102,7 @@ pub func collect_global_var(v: i64, full: string) -> i64 {
         } else {
             elem = types.named(TK_STR)
         }
-        sstate.sorted_insert_gb(gb_keys, gb_vals, gb_const, gb_telem, nid, ty, is_const + is_pub * 2, elem)
+        sstate.sorted_insert_gb(gb_keys, gb_vals, gb_const, gb_telem, gb_mod, nid, ty, is_const + is_pub * 2, elem, sstate.file_id_of_node(v))
         return 0
     }
     // 标量全局：字面量初始化 + 类型匹配
@@ -118,7 +118,7 @@ pub func collect_global_var(v: i64, full: string) -> i64 {
             return -1
         }
     }
-    sstate.sorted_insert_gb(gb_keys, gb_vals, gb_const, gb_telem, nid, ty, is_const + is_pub * 2, -1)
+    sstate.sorted_insert_gb(gb_keys, gb_vals, gb_const, gb_telem, gb_mod, nid, ty, is_const + is_pub * 2, -1, sstate.file_id_of_node(v))
     return 0
 }
 
