@@ -3,6 +3,16 @@ type tie<class>
 // ============================================================
 // 只搬函数与紧邻注释；顶层全局 var 与 import 树仍留在 sstate.tie。
 // 顶层函数保持顶层身份（跨 ns 裸调依赖），ns 内函数按上下文包 namespace。
+// 可见性梯度档位（p.9.21.4 II1，L1 选项菜单）：
+//   0 = A1a 全开放（一切符号跨 ns 可见；脚本/无 ns 项目显式降档用）
+//   1 = A1b ns 级私有（默认 = 历史行为：同 ns 或子 ns 可见，跨 ns 需 pub）
+//   2 = A1c 包级（同**顶层包**= 首个 ns 段内互见，含兄弟/父子 ns；跨包需 pub）
+//   3 = A1d 全私有+显式导出（仅精确同 ns 可见，子 ns 不豁免；发行库用）
+// 顶层函数（全名无 ::）在所有档位豁免——脚本友好约束（无 ns 场景零迁移）。
+// driver 经 set_visibility 注入（--visibility=；默认 1 = A1b = 历史行为，
+// 不传旗标的编译逐字节不变）。全局 var 必须在顶层（tie 约束，不可进 ns）。
+var g_vis_level: i64 = 1;
+
 namespace sstate {
 // ==================== 工具：协议解析 ====================
 // 读取协议行字段（空格分隔，返回第 k 个字段字符串；k 从 0）
@@ -481,13 +491,45 @@ pub func rfind_ns(s: string) -> i64 {
     return last
 }
 
+// 可见性梯度档位（p.9.21.4 II1，L1 选项菜单）：
+pub func set_visibility(level: i64) {
+    if level >= 0 && level <= 3 {
+        g_vis_level = level
+    }
+}
+
+// 首个 ns 段（A1c 包级判定用）；无段返回原串
+func first_ns_seg(s: string) -> string {
+    var p = find_ns_sep(s)
+    if p < 0 {
+        return s
+    }
+    return str.slice(s, 0, p)
+}
+
+func find_ns_sep(s: string) -> i64 {
+    var n = str_len(s)
+    var i: i64 = 0
+    while i + 1 < n {
+        if str.slice(s, i, i + 2) == "::" {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
 // 私有函数可见性校验（对齐 Rust check_visibility，M2.1.7）：
 // 返回 0 = 可见 / -1 = 私有拦截（sm_err_* 已置）。
-// 规则：显式 pub 放行；顶层函数（全名无 ::）恒放行；同命名空间或**子命名空间**
-// 放行（ns_stack 前缀匹配 prefix）；否则报私有调用错误。
+// 梯度（L1 选项菜单，档位见 g_vis_level 注释）：
+//   显式 pub 恒放行；顶层函数恒放行；其后按档位收缩可见范围——
+//   A1a 全开放 / A1b 同 ns+子 ns / A1c 同顶层包 / A1d 仅精确同 ns。
 pub func check_visibility(full_name: string, sig: i64, call_node: i64) -> i64 {
     // S1.2：sg_pub 复用为标志位（bit0=pub, bit1=unsafe）
     if (sg_pub[sig] & 1) == 1 {
+        return 0
+    }
+    if g_vis_level == 0 {
         return 0
     }
     var last = rfind_ns(full_name)
@@ -500,7 +542,15 @@ pub func check_visibility(full_name: string, sig: i64, call_node: i64) -> i64 {
         return 0
     }
     if has_prefix_str(cur, prefix + "::") {
-        return 0
+        if g_vis_level <= 2 {
+            return 0
+        }
+        // A1d：子 ns 不豁免，落到拦截
+    } else if g_vis_level == 2 {
+        // A1c 包级：同顶层包（首个 ns 段相同）即互见
+        if first_ns_seg(cur) == first_ns_seg(prefix) {
+            return 0
+        }
     }
     sm_err_line = s_lines[call_node]
     sm_err_col = s_cols[call_node]

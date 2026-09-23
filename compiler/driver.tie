@@ -85,6 +85,9 @@ var g_emit_ir: bool = false;
 var g_keep_ir: bool = false;
 var g_cli_fast_math: bool = false;    // --ffast-math：训练性能优先（编译产物启用 fast-math，默认关）
 var g_cli_check_bounds: bool = false; // --check-bounds：调试期数组越界检查（默认关）
+// --visibility=<档>：可见性梯度（p.9.21.4 II1）。0=A1a 全开放 1=A1b ns 级私有
+// （默认 = 历史行为，不传旗标的编译语义逐字节不变）2=A1c 包级 3=A1d 全私有。
+var g_cli_visibility: i64 = 1;
 var g_prep_only: bool = false;
 var g_compress_data: bool = false;  // --compress-data：td → zd 压缩数据
 var g_lsp: bool = false;            // --lsp：启动 tie 语言服务器（tsp.exe）
