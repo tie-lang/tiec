@@ -478,6 +478,7 @@ func init_rules() {
     rule(0, "compiler\\lib\\dispatch.tie", L_CORE)
     rule(0, "compiler\\lib\\dispatch_test.tie", L_CORE)
     rule(0, "compiler\\frontend\\ast.tie", L_AST)
+    rule(0, "compiler\\frontend\\ast_test.tie", L_AST)
     // 注意：frontend/stype.tie 不是 tie.types 库——它是**语义层**的 AST→类型 id
     // 映射器（s* 家族成员），归 sema；tie.types = middle/types.tie 的类型 id 编码。
     rule(0, "compiler\\frontend\\stype.tie", L_SEMA)
