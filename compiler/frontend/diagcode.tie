@@ -21,6 +21,16 @@ type tie<class>
 
 import "./diagcode_cat.gen.tie"
 
+// # pub 方法全集（组件契约，p.9.21 G7 库资格①；增删须同步此处与 ROAD）
+//   归一化与查表：normalize code_of（exact → prefix → E00000 兜底）
+//   消息拆解：name_of（首个「期望 」/全角冒号/ASCII ": " 前）tail_of
+//   渲染：render_error（error[E#####] @行:列: 名；尾段）render_err_proto
+//     render_warning（warning[W#####] @行:列: 名；建议）
+//   警告目录：warn_reg warn_count warn_code_of warn_name_of warn_tip_of
+//     warn_unreg_count warn_unreg_list warn_note_unreg warn_unreg_reset
+//   自检：frontend/diagcode_test.tie（无 driver 可跑；含 E00332 私有拦截
+//     查表实证与 E00000 兜底验证）。
+
 // ---------- 警告目录全局状态（懒构建；核心消息按字节升序） ----------
 var diag_w_keys: table<string>;   // 核心消息（发射点逐字一致，升序）
 var diag_w_codes: table<string>;
