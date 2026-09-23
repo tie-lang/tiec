@@ -172,6 +172,14 @@ def main():
         print("function %s not found" % fname)
         return
     ns = ns_of(lines, a)
+    # Reuse the dispatcher's own signature: the extracted branch functions take
+    # the same parameters (`s`, not a hardcoded `id`) and return the same type.
+    sig = re.match(r"^\s*(?:pub )?func %s\s*\(([^)]*)\)\s*(->\s*[^ ]+)?\s*\{" % re.escape(fname),
+                   lines[a])
+    params = (sig.group(1) or "").strip() if sig else "id: i64"
+    ret = (sig.group(2) or "-> i64").strip() if sig else "-> i64"
+    args = ", ".join(p.split(":")[0].strip().split("(")[-1]
+                     for p in params.split(",") if p.strip())
     ind = len(lines[a]) - len(lines[a].lstrip())
     body_ind = ind + 4
     outer_ind = " " * ind
@@ -280,13 +288,13 @@ def main():
         cond = lines[il].strip()
         slug = _slug(lines[il], prefix)
         body = lines[il + 1:e]
-        fn = ["%spub func %s(id: i64) -> i64 {" % (outer_ind, slug)]
+        fn = ["%spub func %s(%s) %s {" % (outer_ind, slug, params, ret)]
         fn.extend(prologue)
         fn.extend(body)
         fn.append("%s}" % outer_ind)
         repl[il] = e, [
             "%s    if %s {" % (outer_ind, _cond_body(cond)),
-            "%s        return %s(id)" % (outer_ind, slug),
+            "%s        return %s(%s)" % (outer_ind, slug, args),
             "%s    }" % outer_ind,
         ]
         news.append((slug, fn))

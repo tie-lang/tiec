@@ -1,0 +1,572 @@
+type tie<class>
+// compiler/frontend/scheck_ie_ie1.tie —— check_stmt 分支提子函数分片 1（p.9.21 G2 单函数 ≤300 行）
+// ============================================================
+// 只含函数与注释：import 树与顶层全局 var 仍留在原主文件；
+// 分片内函数与原调度器同 namespace，跨文件裸名互调。
+namespace scheck {
+pub func check_stmt_stmtlist(s: i64) -> i64 {
+    var tag = s_tags[s]
+        // 语句级宏（dev33 批次10 任务28）展开残留的嵌套 StmtList
+        //（`$body` 插值块后）：逐语句检查（与 check_block 语义一致）。
+        return check_block(s)
+}
+
+pub func check_stmt_code_lit(s: i64) -> i64 {
+    var tag = s_tags[s]
+        // 块形式 code 字面量（val=1）作语句：检查内部 StmtList。
+        if s_vals[s] == 1 {
+            var inner = sstate.child(s, 0)
+            if inner >= 0 {
+                return check_block(inner)
+            }
+            return 0
+        }
+        sm_err_line = s_lines[s]
+        sm_err_col = s_cols[s]
+        sm_err_msg = "code 字面量不能作为语句"
+        return -1
+}
+
+pub func check_stmt_unsafe_block(s: i64) -> i64 {
+    var tag = s_tags[s]
+        // S1.2 U3：unsafe 块 → 块内开启 unsafe 上下文（+1 深度）
+        var saved2 = g_unsafe_depth
+        g_unsafe_depth = g_unsafe_depth + 1
+        var blk2 = sstate.child(s, 0)
+        var r2: i64 = 0
+        if blk2 >= 0 {
+            warn_empty_block(blk2, s)
+            r2 = check_cf_block(blk2, s)
+        }
+        g_unsafe_depth = saved2
+        return r2
+}
+
+pub func check_stmt_guard_use(s: i64) -> i64 {
+    var tag = s_tags[s]
+        // 三期 A 组 `unsafe use g { ... }` 持证越界块（§7.1.1 + unsafe-model §13.4）：
+        // 仅 unsafe 上下文合法；g 必须是 guard<cap> 类型变量（持证才能越界）。
+        // 块内开启 unsafe 上下文（+1 深度）——凭据身份越界。
+        if g_unsafe_depth == 0 {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "unsafe use 只能在 unsafe 上下文使用（unsafe 块或 unsafe 函数内）"
+            return -1
+        }
+        var gname = s_names[s]
+        var gnid = gname   // s_names 已是 intern 池 id（N_GUARD_USE 解析时 intern）
+        var gty = sinfer.lv_find(gnid)
+        if gty < 0 {
+            gty = sinfer.gb_find(gnid)
+        }
+        if gty < 0 || !types.is_guard(gty) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "unsafe use 的 '" + sstate.name_str(s) + "' 必须是 guard<cap> 凭据变量（来自 unsafe.get(share) 等）"
+            return -1
+        }
+        var saved_u = g_unsafe_depth
+        g_unsafe_depth = g_unsafe_depth + 1
+        var body_u = sstate.child(s, 0)
+        var r_u: i64 = 0
+        if body_u >= 0 {
+            warn_empty_block(body_u, s)
+            r_u = check_cf_block(body_u, s)
+        }
+        g_unsafe_depth = saved_u
+        return r_u
+}
+
+pub func check_stmt_guard_with(s: i64) -> i64 {
+    var tag = s_tags[s]
+        // 三期 A 组 `unsafe with(share) { ... }` 临时凭据块（§7.1.1 + unsafe-model
+        // §13.4）：仅 unsafe 上下文合法；块内创建临时 guard<cap>，退块自动回收。
+        if g_unsafe_depth == 0 {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "unsafe with 只能在 unsafe 上下文使用（unsafe 块或 unsafe 函数内）"
+            return -1
+        }
+        var capn = sstate.name_str(sstate.child(s, 0))
+        if capn != "share" && capn != "mem" && capn != "ext" {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "unsafe with 的能力域必须是 share/mem/ext，实际是 '" + capn + "'"
+            return -1
+        }
+        var saved_w = g_unsafe_depth
+        g_unsafe_depth = g_unsafe_depth + 1
+        var body_w = sstate.child(s, 1)
+        var r_w: i64 = 0
+        if body_w >= 0 {
+            warn_empty_block(body_w, s)
+            r_w = check_cf_block(body_w, s)
+        }
+        g_unsafe_depth = saved_w
+        return r_w
+}
+
+pub func check_stmt_panic(s: i64) -> i64 {
+    var tag = s_tags[s]
+        // S2.3：panic("消息") —— 消息必须是 string 表达式（可配置目标行为：
+        // 桌面打印+退出 / 嵌入式 halt / wasm trap，irgen 按 target 发射）
+        var msg = sstate.child(s, 0)
+        var mt = sinfer.infer_expr(msg)
+        if mt < 0 {
+            return -1
+        }
+        if !stype.types_match(types.named(TK_STR), mt, msg) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "panic 消息必须是 string，实际是 " + types.type_name(mt)
+            return -1
+        }
+        return 0
+}
+
+pub func check_stmt_var_decl(s: i64) -> i64 {
+    var tag = s_tags[s]
+        return check_var_decl(s)
+}
+
+pub func check_stmt_expr_stmt(s: i64) -> i64 {
+    var tag = s_tags[s]
+        var e = sstate.child(s, 0)
+        // 语句级宏（dev33 批次10 任务28）：`$body` 插值块形式 code 值后子节点
+        // 可能是块形式 N_CODE_LIT（val=1）/嵌套 StmtList——按语句块检查，
+        // 而非表达式推断（否则内部字面量不推断 → irgen 默认 i8 类型错）。
+        if e >= 0 {
+            var et = s_tags[e]
+            if et == S_N_CODE_LIT && s_vals[e] == 1 {
+                var inner = sstate.child(e, 0)
+                if inner >= 0 {
+                    return check_block(inner)
+                }
+                return 0
+            }
+            if et == S_N_STMTLIST {
+                return check_block(e)
+            }
+        }
+        var t = sinfer.infer_expr(e)
+        if t < 0 {
+            return -1
+        }
+        return 0
+}
+
+pub func check_stmt_assign(s: i64) -> i64 {
+    var tag = s_tags[s]
+        var nm = sstate.name_str(s)
+        var nid = intern.intern(nm)
+        var target_ty = sinfer.lv_find(nid)
+        var is_global: bool = false
+        var gkey: i64 = -1
+        if target_ty < 0 {
+            // p.9.12.4：全局目标查带命名空间前缀补全（命名空间内 const 以
+            // ns::NAME 全名登记 gb_*，函数体内裸名重赋值须命中该键才能走
+            // const 只读拦截；命中键存 gkey 供 gb_const_of 查询）
+            gkey = sinfer.gb_find_ns_key(nid)
+            if gkey < 0 {
+                sm_err_line = s_lines[s]
+                sm_err_col = s_cols[s]
+                sm_err_msg = "赋值目标 '" + nm + "' 未声明"
+                return -1
+            }
+            target_ty = sinfer.gb_find(gkey)
+            is_global = true
+        }
+        if is_global {
+            if sinfer.gb_const_of(gkey) == 1 {
+                sm_err_line = s_lines[s]
+                sm_err_col = s_cols[s]
+                sm_err_msg = "不能给 const 变量 '" + nm + "' 赋值"
+                return -1
+            }
+            // W00016：全局可变表的（整体）重赋值写点
+            w16_record(gkey, s_lines[s], s_cols[s])
+        } else {
+            if sinfer.lv_const_of(nid) == 1 {
+                sm_err_line = s_lines[s]
+                sm_err_col = s_cols[s]
+                sm_err_msg = "不能给 const 变量 '" + nm + "' 赋值"
+                return -1
+            }
+            // p.9.11.11 immut 只读形参：直接重写（= / += 等复合）拒绝。
+            if sstate.im_is(nid) {
+                sm_err_line = s_lines[s]
+                sm_err_col = s_cols[s]
+                sm_err_msg = "不能给 immut 形参 '" + nm + "' 赋值；immut 形参只读"
+                return -1
+            }
+        }
+        var vt = sinfer.infer_expr(sstate.child(s, 0))
+        if vt < 0 {
+            // S2.3 目标类型引导：泛型 enum 构造（Result.Err("x")）类型参数推断不全
+            // 时（Err 不含 T，T 无法从实参推出），用赋值目标类型补全
+            var sv_l = sm_err_line
+            var sv_c = sm_err_col
+            var sv_m = sm_err_msg
+            var hv = sinfer.try_enum_construct_hinted(sstate.child(s, 0), target_ty)
+            if hv >= 0 {
+                sm_err_line = 0
+                sm_err_col = 0
+                sm_err_msg = ""
+                vt = hv
+            } else {
+                if sm_err_msg == sv_m {
+                    // 引导未命中（非泛型 enum 构造）：恢复原错误
+                    sm_err_line = sv_l
+                    sm_err_col = sv_c
+                    sm_err_msg = sv_m
+                }
+                return -1
+            }
+        }
+        // r.1.1.5：空表字面量赋值目标引导（与 check_var_decl 同款）——
+        // `t = []` 若目标是 table<T>/map<V>，node_types[rhs] = 目标类型；
+        // 否则 irgen 空表兜底 i64 元素宽，fn/struct 等复合元素 push 越界写崩溃
+        //（全局 table<fn() -> i64> 惰性 = [] 重赋值缺陷根因）。
+        var rhs_node = sstate.child(s, 0)
+        if vt == types.named(TK_I64) && s_tags[rhs_node] == S_N_TABLE_LIT &&
+            sstate.nchild(rhs_node) == 0 && (types.is_table(target_ty) || types.is_map(target_ty)) {
+            node_types[rhs_node] = target_ty
+        }
+        // p.6.9.15 警告 W0003：循环内字符串拼接累积（+= 或 x = x + y）。
+        // 仅限循环体内（len(lp_stack) > 0）——单次拼接无 O(n²) 风险。
+        var op = s_vals[s]
+        if op >= 0 {
+            if op == 0 && target_ty == TK_STR && len(lp_stack) > 0 {
+                sm_warn_add(s_lines[s], s_cols[s], "循环内字符串拼接累积（x = x + y 逐次整体复制，O(n²)）")
+            }
+        } else {
+            if target_ty == TK_STR && len(lp_stack) > 0 {
+                var rn = sstate.child(s, 0)
+                if s_tags[rn] == S_N_BINARY && s_vals[rn] == 0 {
+                    var c0 = sstate.child(rn, 0)
+                    var c1 = sstate.child(rn, 1)
+                    var self_ref: bool = false
+                    if s_tags[c0] == S_N_VAR && sstate.name_str(c0) == nm {
+                        self_ref = true
+                    }
+                    if s_tags[c1] == S_N_VAR && sstate.name_str(c1) == nm {
+                        self_ref = true
+                    }
+                    if self_ref {
+                        sm_warn_add(s_lines[s], s_cols[s], "循环内字符串拼接累积（x = x + y 逐次整体复制，O(n²)）")
+                    }
+                }
+            }
+        }
+        // 复合赋值校验（对齐 Rust check_compound_assign，M4）：op >= 0 为复合
+        if op >= 0 {
+            // `+=` 对 string：value 必须 string（拼接）
+            if op == 0 && target_ty == TK_STR {
+                if !stype.types_match(target_ty, vt, sstate.child(s, 0)) {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "复合赋值类型不匹配：目标类型 " + types.type_name(target_ty) + " 与表达式 " + types.type_name(vt)
+                    return -1
+                }
+                return 0
+            }
+            // `+=` `-=` `*=` `/=`：target 必须 number
+            if op >= 0 && op <= 3 {
+                if !types.is_number(target_ty) {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "复合赋值运算符不能用于 " + types.type_name(target_ty)
+                    return -1
+                }
+                if !stype.types_match(target_ty, vt, sstate.child(s, 0)) {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "复合赋值类型不匹配：目标类型 " + types.type_name(target_ty) + " 与表达式 " + types.type_name(vt)
+                    return -1
+                }
+                return 0
+            }
+            // `%=`：target 必须 int
+            if op == 4 {
+                if !types.is_int(target_ty) {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "复合赋值取模只支持整数，目标类型是 " + types.type_name(target_ty)
+                    return -1
+                }
+                if !stype.types_match(target_ty, vt, sstate.child(s, 0)) {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "复合赋值类型不匹配：目标类型 " + types.type_name(target_ty) + " 与表达式 " + types.type_name(vt)
+                    return -1
+                }
+                return 0
+            }
+            // 位运算复合 `&=` `|=` `^=` `<<=` `>>=`：target 必须 int
+            if op >= 13 && op <= 17 {
+                if !types.is_int(target_ty) {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "复合赋值位运算只支持整数，目标类型是 " + types.type_name(target_ty)
+                    return -1
+                }
+                // r.1.4.3：`<<=`/`>>=` 编译期常量移位量越界/负 → 编译错误
+                //（与 sinfer 二元移位同规则：0 ≤ 常量移位量 < 目标位宽）。
+                if op == 16 || op == 17 {
+                    var sc2 = sstate.child(s, 0)
+                    var cnt2: i64 = 0
+                    var is_const2: bool = false
+                    if s_tags[sc2] == S_N_INT_LIT {
+                        cnt2 = s_vals[sc2]
+                        is_const2 = true
+                    } else if s_tags[sc2] == S_N_UNARY && s_vals[sc2] == 0 {
+                        var oc2 = sstate.child(sc2, 0)
+                        if s_tags[oc2] == S_N_INT_LIT {
+                            cnt2 = 0 - s_vals[oc2]
+                            is_const2 = true
+                        }
+                    }
+                    if is_const2 {
+                        var w2 = stype.int_width(target_ty)
+                        if w2 > 0 && (cnt2 < 0 || cnt2 >= w2) {
+                            sm_err_line = s_lines[s]
+                            sm_err_col = s_cols[s]
+                            sm_err_msg = "移位量超出操作数位宽（" + to_string(w2) + " 位，当前 " + to_string(cnt2) + "）"
+                            return -1
+                        }
+                    }
+                }
+                if !stype.types_match(target_ty, vt, sstate.child(s, 0)) {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "复合赋值类型不匹配：目标类型 " + types.type_name(target_ty) + " 与表达式 " + types.type_name(vt)
+                    return -1
+                }
+                return 0
+            }
+        }
+        if !stype.types_compatible(target_ty, vt) && !stype.types_match(target_ty, vt, sstate.child(s, 0)) &&
+            !stype.types_narrow_int(target_ty, vt, sstate.child(s, 0)) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "赋值类型不匹配：变量 '" + nm + "' 类型为 " + types.type_name(target_ty) + "，表达式为 " + types.type_name(vt)
+            return -1
+        }
+        return 0
+}
+
+pub func check_stmt_return(s: i64) -> i64 {
+    var tag = s_tags[s]
+        var v = sstate.child(s, 0)
+        if v >= 0 {
+            // p.9.11.15 生成器函数禁止带值 return（产出走 yield；`return;`
+            // 无值提前结束）。闭包体内 return 不受此限（闭包非生成器）。
+            if g_clo_ret_top == 0 && sstate.is_gen(g_curfn) == 1 {
+                sm_err_line = s_lines[s]
+                sm_err_col = s_cols[s]
+                sm_err_msg = "生成器函数不允许带值 return（产出请用 yield；`return;` 可提前结束）"
+                return -1
+            }
+            var vt = sinfer.infer_expr(v)
+            if vt < 0 {
+// S2.3 目标类型引导：return 泛型 enum 构造时类型参数推断不全，
+            // 用函数返回类型补全（如 return Result.Err("bad") 于 Result<i64,string>）
+            // S2.2 闭包：闭包体内用闭包返回类型（g_clo_ret_stack 栈顶）替代
+            var h_ret = sg_ret[g_curfn]
+            if g_clo_ret_top > 0 {
+                h_ret = g_clo_ret_stack[g_clo_ret_top - 1]
+            }
+            var rv_l = sm_err_line
+            var rv_c = sm_err_col
+            var rv_m = sm_err_msg
+            var hv = sinfer.try_enum_construct_hinted(v, h_ret)
+                if hv >= 0 {
+                    sm_err_line = 0
+                    sm_err_col = 0
+                    sm_err_msg = ""
+                    vt = hv
+                } else {
+                    if sm_err_msg == rv_m {
+                        sm_err_line = rv_l
+                        sm_err_col = rv_c
+                        sm_err_msg = rv_m
+                    }
+                    return -1
+                }
+            }
+            var ret_ty = sg_ret[g_curfn]
+            // S2.2 闭包：闭包体内 return 类型基准用闭包返回类型（栈顶）
+            if g_clo_ret_top > 0 {
+                ret_ty = g_clo_ret_stack[g_clo_ret_top - 1]
+            }
+            if !stype.types_compatible(ret_ty, vt) && !stype.types_match(ret_ty, vt, v) {
+                sm_err_line = s_lines[s]
+                sm_err_col = s_cols[s]
+                sm_err_msg = "return 类型不匹配：函数返回 " + types.type_name(ret_ty) + "，实际返回 " + types.type_name(vt)
+                return -1
+            }
+        }
+        return 0
+}
+
+pub func check_stmt_yield(s: i64) -> i64 {
+    var tag = s_tags[s]
+        if g_clo_ret_top > 0 {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "yield 只能在生成器函数（具名函数）体内使用，闭包内不允许"
+            return -1
+        }
+        if g_curfn < 0 {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "yield 只能在生成器函数体内使用（函数体内声明 `-> 元素类型`）"
+            return -1
+        }
+        var yv = sstate.child(s, 0)
+        var yt = sinfer.infer_expr(yv)
+        if yt < 0 {
+            return -1
+        }
+        var yret = sg_ret[g_curfn]   // 生成器签名返回类型 = table<elem>
+        var yelem: i64 = types.named(TK_I64)
+        if types.is_table(yret) {
+            var ye2 = types.table_elem(yret)
+            if ye2 >= 0 {
+                yelem = ye2
+            }
+        }
+        if !stype.types_compatible(yelem, yt) && !stype.types_match(yelem, yt, yv) &&
+            !stype.types_narrow_int(yelem, yt, yv) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "yield 值类型不匹配：生成器产出元素类型 " + types.type_name(yelem) + "，实际 " + types.type_name(yt)
+            return -1
+        }
+        return 0
+}
+
+pub func check_stmt_if(s: i64) -> i64 {
+    var tag = s_tags[s]
+        var cond = sinfer.infer_expr(sstate.child(s, 0))
+        if cond < 0 {
+            return -1
+        }
+        if !types.is_bool_like(cond) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "if 条件必须是 bool"
+            return -1
+        }
+        // p.6.9.15 警告 W0006/W0007：if 条件为布尔常量（恒真/恒假）
+        var cond_node = sstate.child(s, 0)
+        if s_tags[cond_node] == S_N_BOOL_LIT {
+            if s_vals[cond_node] == 0 {
+                sm_warn_add(s_lines[s], s_cols[s], "条件恒假（if/while 条件为常量 0/false）")
+            } else {
+                sm_warn_add(s_lines[s], s_cols[s], "条件恒真（if/while 条件为常量 true/非零值）")
+            }
+        }
+        var then_blk = sstate.child(s, 1)
+        warn_empty_block(then_blk, s)
+        var r = check_cf_block(then_blk, s)
+        if r < 0 {
+            return -1
+        }
+        var els = sstate.child(s, 2)
+        // 注意：`if` 无 else 时 els 不是 -1 而是空 StmtList（nchild==0），
+        // 仅判 els >= 0 会把"没有 else"误报成空语句块。故要求 if 实际
+        // 有第三个子节点才检查。
+        if els >= 0 && sstate.nchild(s) > 2 {
+            warn_empty_block(els, s)
+            r = check_cf_block(els, s)
+            if r < 0 {
+                return -1
+            }
+        }
+        return 0
+}
+
+pub func check_stmt_guard_stmt(s: i64) -> i64 {
+    var tag = s_tags[s]
+        var gcond = sinfer.infer_expr(sstate.child(s, 0))
+        if gcond < 0 {
+            return -1
+        }
+        if !types.is_bool_like(gcond) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "guard 条件必须是 bool"
+            return -1
+        }
+        var gbody = sstate.child(s, 1)
+        warn_empty_block(gbody, s)
+        var gr = check_cf_block(gbody, s)
+        if gr < 0 {
+            return -1
+        }
+        if !guard_else_ends_in_jump(gbody) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "guard 的 else 块必须以跳转语句（return/break/continue/goto/panic）收尾，否则 guard 退化为 if"
+            return -1
+        }
+        return 0
+}
+
+pub func check_stmt_defer(s: i64) -> i64 {
+    var tag = s_tags[s]
+        // p.9.11.4 defer 资源释放语句：检查块内容 + 约束（禁 return/break/
+        // continue/goto/panic/嵌套 defer/yield，仅允许表达式与赋值/读变量）。
+        return check_defer(s)
+}
+
+pub func check_stmt_while(s: i64) -> i64 {
+    var tag = s_tags[s]
+        var cond = sinfer.infer_expr(sstate.child(s, 0))
+        if cond < 0 {
+            return -1
+        }
+        if !types.is_bool_like(cond) && !types.is_number(cond) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "while 条件必须是 bool"
+            return -1
+        }
+        // p.6.9.15 警告 W0006/W0007：while 条件为常量（布尔/整数字面量，恒真/恒假）
+        var wcond_node = sstate.child(s, 0)
+        var wval: i64 = -1
+        var wconst: bool = false
+        if s_tags[wcond_node] == S_N_BOOL_LIT {
+            wconst = true
+            wval = s_vals[wcond_node]
+        } else if s_tags[wcond_node] == S_N_INT_LIT {
+            wconst = true
+            wval = s_vals[wcond_node]
+        }
+        if wconst {
+            if wval == 0 {
+                sm_warn_add(s_lines[s], s_cols[s], "条件恒假（if/while 条件为常量 0/false）")
+            } else {
+                sm_warn_add(s_lines[s], s_cols[s], "条件恒真（if/while 条件为常量 true/非零值）")
+            }
+        }
+        var lbl = s_names[s]
+        // 逻辑压栈：复用槽位（lp_stack 表不截断，lp_top 游标定位）
+        if lp_top < len(lp_stack) {
+            lp_stack[lp_top] = lbl
+        } else {
+            table_push(lp_stack, lbl)
+        }
+        lp_top = lp_top + 1
+        var wbody = sstate.child(s, 1)
+        warn_empty_block(wbody, s)
+        var r = check_cf_block(wbody, s)
+        lp_top = lp_top - 1
+        if r < 0 {
+            return -1
+        }
+        return 0
+}
+
+}
