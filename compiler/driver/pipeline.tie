@@ -47,6 +47,7 @@ pub func kpass_irgen() -> i64 {
         var ap = modcache_assembly_paths()
         if len(ap) > 0 {
             var order = asm_build_order()
+            if len(order) > 0 {
             var arc = tieir.asm_from_slices(ap, order)
             if arc == 0 {
                 // llvmgen 置位副作用恢复（irgen 生成引用时置位；装配按片段
@@ -68,6 +69,7 @@ pub func kpass_irgen() -> i64 {
                 return 0
             }
             println("MODASM fallback（装配失败降级全量）: " + tieir.err_msg())
+            }
         }
     }
     var rc = irgen.tig_ast()
@@ -111,6 +113,17 @@ pub func kpass_irgen() -> i64 {
 // 声明不产 IR，跳过）。供 tieir.asm_from_slices 匹配片段函数。
 pub func asm_build_order() -> table<string> {
     var out: table<string> = table_new_string()
+    // p.9.21.9 护栏：单元含顶层 VarDecl（tag 100）→ 全局 var 登记族
+    //（llvmgen.global_*_reg 等）装配路径尚未恢复，强行装配会缺全局定义
+    // （llvmgen 失败）。此类单元诚实降级全量 irgen（返回空 order → 挂点
+    // 跳过装配）；driver 自举 [3/4] 即此场景。登记恢复后移除。
+    var i0: i64 = 0
+    while i0 < len(g_extra_tops) {
+        if s_tags[g_extra_tops[i0]] == 100 {
+            return out
+        }
+        i0 = i0 + 1
+    }
     var i: i64 = 0
     while i < len(g_extra_tops) {
         var s = g_extra_tops[i]

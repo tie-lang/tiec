@@ -236,3 +236,16 @@ prompt 的 ~360µs/char 数字与 interp 路径量级吻合，编译路径 O(n²
   确定性函数保证。
 * 验收命令就绪：_tiec_verify/bench_strchar1m.tie（100K 码点，基线 >120s）
   / bench_sc100.tie（100 码点冒烟）；tsh 路径 bench_tsh3.tie。
+
+### §10.1 补记：str_char 缓存回滚与自举连锁（同日）
+缓存版 irgen（工作树）触发**自举连锁失败**：bootstrap [2/4] 写 driver 片段 →
+[3/4] 全命中触发装配 → 装配器缺全局 var 登记族（已知遗留）→ llvmgen rc=2。
+同时第二层产物暴露缓存正确性 bug：**交替串/非遍历调用场景**（config 参数
+解析的 str_char 调用点）返回错值（acc 差 106 = 丢最后码点；根因 = 重建循环
+退出时 @tie_sc_n 差一——phi 退出值语义 + 交替串缓存失效组合，trace/acc/
+多字节三组对照已定位）。**裁定**：回滚 irgen_bi_num/llvmgen/llvmgen_str/
+llvmgen_inst_p1 的缓存改动（git checkout，findings §10 保留全部设计/坑/
+出路）；pipeline.tie 加**装配护栏**（含顶层 VarDecl 单元 → 空 order → 诚实
+降级全量，自举 [3/4] 即此场景——已实测修复）。不动点 f2ef82df →
+**6e836504**；regress 158/7/2 一致。下轮：交替串 bug 最小复现 → 修 phi 差一
+与单槽交替失效 → 重上缓存。
