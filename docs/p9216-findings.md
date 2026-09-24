@@ -122,3 +122,45 @@ tieir_test 扩展 + 升格）。不动点 7b7d8886 → **25b9bba9**；回归 157
 * **新登记（归 p.9.3.9）**：bootstrap-fp.tsh.tie [4/4] 打印哈希又现陈旧
   值（本轮打印 7b7d8886 旧值，而产物直核 n1=n2=n3=25b9bba9）——tsh
   exec_output 异步/缓存语义缺陷复现；**产物直哈希复核是唯一权威**。
+
+## 8. p.9.21.9 片段组装消费 —— 勘察与口径裁定（2026-09-24）
+
+实现前勘察（tig_ast 函数创建序 + 池序恢复性），结论如下。
+
+### 8.1 装配序可复现（AST 驱动方案可行）
+irgen.tig_ast 的函数创建序 = ①合成函数（actor thunk/dispatch，急切生成）
+→ ②g_extra_tops 序遍历（FnDef→tig_fn_def；Namespace→tig_ns 递归）→
+③尾部合成（--shared 时 rt_init）。合成函数经 mod_attribution_fill 归属
+模块 0（主文件片段）；用户函数可经 g_extra_tops（AST 仍在，语义层已跑）
+逐函数取名 → file_id_of_node 定位所属片段 → 片段内函数按原序子集提取。
+**装配序（全局函数序）可由「主片段合成头部 + g_extra_tops 序 + 主片段
+尾部合成」精确复现**，无需片段携带额外序信息。
+
+### 8.2 池段字节一致不可达（口径必须修正）⚠ 需拍板
+全量路径 .tir 的池段 = interner 全量 = [前端串（语义层 intern，两路径
+相同）] + [IR 串按 irgen 实际 intern 顺序]。irgen 按 g_extra_tops 交错
+处理各模块函数体，IR 串（块名/字面量/全局名/extern 符号）的 intern 序是
+**函数粒度交错序**；而片段池（p.9.21.8 压缩版）只有「模块内 intern 序」，
+**无函数级归属信息**——交错序无法从片段恢复。且 --tieir-out 时点前端串
+与 IR 串已混排。结论：**装配路径与全量路径的 .tir 池段必然不同**（池 id
+本为进程内句柄，池段差异不影响任何消费者的语义）。
+
+**建议口径**（类比 §7 的 .tir 产物层口径修正）：硬门禁从「全文件逐字节
+一致」修订为——
+1. 段 4（符号）/段 5（IR 主体）/段 6（导出）/段 7（span）逐字节一致
+   （SHA256 分段对比）；
+2. 池段串**集合相等**（无缺失/无多余，允许 id 排列差异）；
+3. 语义层结构断言（函数/块/指令/值计数与操作数语义）。
+此口径下装配正确性的保证强度与全字节一致等价（池段不承载语义）。
+
+### 8.3 实现骨架（下轮落地）
+- middle/tieir_asm.tie：asm_from_slices(paths, n)——逐片段 bytes.read →
+  自解析段 3-7（不经 tieir.deserialize，避免 ir.new_module 复位）→
+  池重映射（片段 id → str_pool 全局 id）→ 函数按 §8.1 序重建 → 值空间
+  「参数前缀 cum_params + 结果段 P_total+result_cum」分配 → ops_off/
+  params_off 自然偏移 → span 按全局指令位写。
+- driver 挂点：kpass_irgen 入口判「n 模块片段键全命中」→ 跳 irgen.tig_ast
+  + passes.run（片段已含 pass 结果，键含 t 档），走装配；否则全量路径不变
+  （mod_cache_update 照写缺片段）。TIEC_INC=1 打印 MODASM h/n assembled。
+- 跨片段常量折叠风险预案照 ROAD：片段头依赖段记被折叠常量来源模块、装配
+  时判脏（允许过度失效）。
