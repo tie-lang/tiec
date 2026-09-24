@@ -173,3 +173,38 @@ g_extra_tops 的填充 = 主文件顶层按源码序、**import 语句就地递�
 = [a 项, main]，拼接序 = [main, a 项]）。装配器按 §8.1 的 g_extra_tops
 驱动 + 合成函数头/尾识别（主片段函数序中首个属于 g_extra_tops 名集的函数
 之前 = 头部合成、其后 = 尾部合成，均保序）实现。实现骨架不变。
+
+## 9. p.9.21.9 片段组装消费 —— 落地记录（2026-09-24）
+
+落点：tieir_asm.tie（装配器 ~560 行）+ driver/pipeline.tie（kpass_irgen 全命中
+装配挂点 + asm_build_order 取名）+ cache_drv（mod_slice_key 抽取 +
+modcache_assembly_paths）+ driver.tie import。不动点 8292cfa5 → **f2ef82df**。
+
+* 装配路径：kpass_irgen 入口全命中判定（dep_depset 逐模块键存在）→ 跳过
+  irgen.tig_ast + passes.run → tieir.asm_from_slices（解析段 3/5 转存 →
+  g_extra_tops 序驱动重放）→ TIEC_INC=1 打印 MODASM h/n assembled。装配
+  失败响亮降级全量（MODASM fallback 打印）。
+* **llvmgen 置位副作用恢复**：irgen 生成引用时对 llvmgen 置位（sso_enable/
+  catch_enable/wsock_enable）——装配路径按片段 IR 白名单全局名引用等价恢复
+  （asm_flag_sso/wsock/catch，白名单对齐 llvmgen_inst_p1：s21_sso_*、
+  g_wsock_init、tie_panic_jb/active）。**遗留**：全局 var 登记类
+  （global_table_reg/global_scalar_reg/global_scalar_init/call_sym_reg/
+  vtable_reg/tbl_inlined_check）未恢复——含顶层 VarDecl 的工程装配后 exe
+  编译会缺全局定义；探针工程（无用户全局 var）不受影响。恢复路径下轮：
+  AST（g_extra_tops tag 100）重放登记或片段头携带登记数据。
+* **验收数据**（探针工程 d1 菱形 4 模块，全命中装配）：
+  - MODASM 4/4 assembled；装配 IR → llvmgen/opt/link 全链成功；
+  - 装配 .tir vs 全量 .tir：段 2/4/6/7 **逐字节一致**；段 5 大小一致
+    （10120B）、内容 DIFF = 池 id 排列连锁（池段本身 DIFF 4320B vs 4656B，
+    装配池少 irgen 期间的临时串）——**§8.2 口径再修正**：池 id 是进程内
+    句柄且段 5 内嵌池 id，故「段 5 逐字节」受池序连锁影响，语义等价以
+    **dump_text 对比**验证：`DUMP IDENTICAL`（独立进程各自 deserialize +
+    dump，含包/依赖/函数/块/指令/值规模与符号/导出明细）；
+  - 勘误：§7 span「编译器零调用点」结论不变，但 write_mod_slice 段 7 写入
+    的 span 行为**全 0 冗余**（读 inst_line 默认值）——装配器已改为跳过
+    span 段（不转存不写回），全量侧恒空 → 一致。
+* **基线变更（良性）**：regress 由 157/8/2 → **158/7/2**。7b7d8886 /
+  8292cfa5 / f2ef82df 三版 tiec 实测 FAIL 集合完全一致（generics、
+  proc_createprocessw_pipe、std_httpc_probe、std_net_bytes、std_net_text、
+  std_sse_probe、table_struct_elem——网络/FFI/泛型类已知项），第 8 个
+  FAIL 为 exec 竞态偶发项，p.9.3.9 语句序修复 + 移除 sleep_ms 后消除。

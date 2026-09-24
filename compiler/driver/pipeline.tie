@@ -40,6 +40,36 @@ pub func kpass_irgen() -> i64 {
     unsafe {
         var t2 = clock()
     }
+    // p.9.21.9 片段组装消费：全部模块片段命中 → 跳过 irgen+passes（片段已含
+    // pass 结果），按 g_extra_tops 装配序重放片段 IR。装配失败降级全量路径
+    //（响亮打印，不静默）。
+    if cache_enabled() {
+        var ap = modcache_assembly_paths()
+        if len(ap) > 0 {
+            var order = asm_build_order()
+            var arc = tieir.asm_from_slices(ap, order)
+            if arc == 0 {
+                // llvmgen 置位副作用恢复（irgen 生成引用时置位；装配按片段
+                // 引用等价恢复——白名单对齐 llvmgen_inst_p1）
+                if tieir.asm_flag_sso() {
+                    llvmgen.sso_enable()
+                }
+                if tieir.asm_flag_wsock() {
+                    llvmgen.wsock_enable()
+                }
+                if tieir.asm_flag_catch() {
+                    llvmgen.catch_enable()
+                }
+                var inc9 = get_env("TIEC_INC")
+                if inc9 == "1" {
+                    println("MODASM " + to_string(len(ap)) + "/" + to_string(len(ap)) + " assembled")
+                }
+                g_t_irgen = 0
+                return 0
+            }
+            println("MODASM fallback（装配失败降级全量）: " + tieir.err_msg())
+        }
+    }
     var rc = irgen.tig_ast()
     unsafe {
         var t2e = clock()
@@ -74,6 +104,67 @@ pub func kpass_irgen() -> i64 {
         }
     }
     return 0
+}
+
+// p.9.21.9：装配序 = g_extra_tops 序的函数全名列表（driver 复刻 tig_fn_def/
+// tig_ns 取名规则：顶层/方法 bare 即全名；命名空间 prefix::bare；泛型模板
+// 声明不产 IR，跳过）。供 tieir.asm_from_slices 匹配片段函数。
+pub func asm_build_order() -> table<string> {
+    var out: table<string> = table_new_string()
+    var i: i64 = 0
+    while i < len(g_extra_tops) {
+        var s = g_extra_tops[i]
+        if s_tags[s] == 101 {
+            asm_order_one_fn(s, "", out)
+        } else if s_tags[s] == 112 {
+            asm_order_ns(s, "", out)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+func asm_order_one_fn(fn_node: i64, prefix: string, out: table<string>) {
+    // 泛型模板声明（children[0] = N_TYPE_PARAMS）：单态化前不生成 IR——跳过
+    if sstate.nchild(fn_node) > 0 {
+        var slot0 = sstate.child(fn_node, 0)
+        if slot0 >= 0 && s_tags[slot0] == S_N_TYPE_PARAMS {
+            return
+        }
+    }
+    var bare = sstate.name_str(fn_node)
+    var full_name: string = str.clone(bare)
+    if prefix != "" {
+        full_name = prefix + "::" + bare
+    }
+    table_push(out, full_name)
+}
+
+func asm_order_ns(ns_node: i64, prefix: string, out: table<string>) {
+    var nseg = s_aux[ns_node]
+    var full_pre: string = prefix
+    var k: i64 = 0
+    while k < nseg {
+        var seg = sstate.child(ns_node, k)
+        if full_pre != "" {
+            full_pre = full_pre + "::"
+        }
+        full_pre = full_pre + sstate.name_str(seg)
+        k = k + 1
+    }
+    var body = sstate.child(ns_node, nseg)
+    var nb = sstate.nchild(body)
+    var i: i64 = 0
+    while i < nb {
+        var st = sstate.child(body, i)
+        var tag = s_tags[st]
+        if tag == 101 {
+            asm_order_one_fn(st, full_pre, out)
+        } else if tag == 112 {
+            asm_order_ns(st, full_pre, out)
+        }
+        i = i + 1
+    }
 }
 
 // 段 3 中端旁路：--tieir-out 序列化（无 g_tieir_out 直接返回 0 通过）。
