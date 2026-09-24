@@ -87,3 +87,38 @@ tsh 侧根因（exec/list_dir/file_read/file_exists 的进程内缓存与异步�
 解释器/tshell 性能优化：本轮裁定不引入——tsh REPL v1 的语义缺陷（§4）是
 一切脚本层测量的前置干扰源，先修语义再加优化；trm interp 的性能调优待其
 指令覆盖（br/call 等）补齐后有真实工作负载再测。
+
+## 7. p.9.21.8 片段池过滤 + 模块缓存默认开（2026-09-24）
+
+落点：tiec 5e93660（tieir_slice 池过滤 + tieir_ser 池重映射 + 门控摘除 +
+tieir_test 扩展 + 升格）。不动点 7b7d8886 → **25b9bba9**；回归 157/8/2 一致。
+
+* **池引用权威清单**（write_mod_slice 收集 + deserialize 重映射共用）：
+  函数名/块名；符号表/导出选中行 name+sig；操作数 kind 3（OK_GLOBAL）；
+  kind 0 池载荷**操作数①** = const_str(62)/const_f(51)/call(35)/
+  extern_call(36)/call_vararg(41)——与 llvmgen collect_strings/
+  collect_externs 消费清单对齐。prompt 原文「const_str 的 kind=2」系笔误
+  （实际 kind=0 + opcode 判定）；func_ret/param_ty 是 types.named 小整数
+  类型 id（**不是**池 id），不参与池重映射。
+* **潜伏缺陷顺手修复**：原 write_mod_slice 对 kind 0 一律做 SSA 值平移，
+  池载荷操作数①会被错平移（含字符串字面量的模块片段写入报越界/错位）。
+* **deserialize 增强**：池重建时构建「文件 id → 进程 id」映射
+  （pool_remap_id），段 4/5/6 池引用统一转换；全量池主单元恒等（D1
+  roundtrip 零影响）。压缩池片段的 read/deserialize 从此语义正确。
+* **确定性口径修正（重要）**：exe 产物**逐次编译均不同**（同 -o、同源、
+  --no-cache 重跑哈希变；旧编译器 7b7d8886 同款复现）——链接器层既有非
+  确定性，与模块缓存/本次改动无关。模块缓存确定性验收在 **.tir 产物层**
+  做：缓存开 vs --no-cache 逐字节一致 ✓。verify-modcache.tsh.tie 的
+  exe 哈希对比步须按此口径修正（本轮手动四步为准）。
+* **验收数据**（同机同时段，driver 自举基准 -l2 -t0）：
+  | 场景 | 旧版 7b7d8886 | 新版 25b9bba9 |
+  | --- | --- | --- |
+  | --no-cache 全量 | 30.5s | 30.9s（持平；首跑 36.8s 为磁盘噪声） |
+  | 全冷 HOME + 模块缓存开 | 72.9s（TIEC_MODCACHE=1） | 44.4s（默认开） |
+  | 片段写增量 | ≈+42.4s | ≈+13.5s（-68%） |
+  模块缓存四步：冷启 +4 / 重编 +0 / 叶子改动恰 +1 / .tir SHA 一致。
+  verify-modcache.tsh.tie 脚本本身仍受 tsh list_dir/哈希缺陷干扰（其
+  头注已自声明「仅作参考」），本轮以手动四步为准。
+* **新登记（归 p.9.3.9）**：bootstrap-fp.tsh.tie [4/4] 打印哈希又现陈旧
+  值（本轮打印 7b7d8886 旧值，而产物直核 n1=n2=n3=25b9bba9）——tsh
+  exec_output 异步/缓存语义缺陷复现；**产物直哈希复核是唯一权威**。
