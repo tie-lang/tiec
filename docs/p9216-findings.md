@@ -164,3 +164,12 @@ irgen.tig_ast 的函数创建序 = ①合成函数（actor thunk/dispatch，急�
   （mod_cache_update 照写缺片段）。TIEC_INC=1 打印 MODASM h/n assembled。
 - 跨片段常量折叠风险预案照 ROAD：片段头依赖段记被折叠常量来源模块、装配
   时判脏（允许过度失效）。
+
+### 8.4 补充勘察（同日）：装配必须 g_extra_tops 驱动，片段拼接序不成立
+g_extra_tops 的填充 = 主文件顶层按源码序、**import 语句就地递归展开**（被
+导入文件顶层项插在 import 位置）+ 泛型展开/方法收集追加尾部 → 源码级交错
+序（= tig_ast 处理序）。「模块 0 片段函数 + 模块 k 片段函数…」的拼接序在
+主文件函数位于 import 之后时不成立（例：`import a; func main()` 的正确序
+= [a 项, main]，拼接序 = [main, a 项]）。装配器按 §8.1 的 g_extra_tops
+驱动 + 合成函数头/尾识别（主片段函数序中首个属于 g_extra_tops 名集的函数
+之前 = 头部合成、其后 = 尾部合成，均保序）实现。实现骨架不变。
