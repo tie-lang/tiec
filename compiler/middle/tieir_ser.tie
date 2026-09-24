@@ -243,6 +243,14 @@ func str_pool(s: string) -> i64 {
 
 // ---------- 序列化（段 1-7） ----------
 
+// 池 id 文件 → 进程重映射（deserialize 池引用转换；越界透传防御）。
+func pool_remap_id(pr: table<i64>, id: i64) -> i64 {
+    if id < 0 || id >= len(pr) {
+        return id
+    }
+    return pr[id]
+}
+
 // 把当前 ir + ir_meta 状态序列化为字节表。
 pub func serialize() -> table<i64> {
     tieir_err = ""
@@ -473,13 +481,17 @@ pub func deserialize(t: table<i64>) -> i64 {
         return -1
     }
     var pi2: i64 = 0
+    // 池 id 重映射（p.9.21.8）：pool_remap[文件 id] = 进程 id。全量池单元
+    //（serialize 主路径）重建序 = 原 id → 恒等；压缩池片段（write_mod_slice）
+    // 重建经 str_pool 幂等 intern → 文件 id 与进程 id 脱钩，段 4/5/6 池引用
+    // 统一经 pool_remap_id 转换。
+    var pool_remap = table_new_i64()
     while pi2 < pool_n {
         var s = rd_str(t)
         if tieir_err != "" {
             return -1
         }
-        // 池重建：登记顺序 = 序列化顺序 = 原 id（幂等，id 一致）
-        str_pool(s)
+        table_push(pool_remap, str_pool(s))
         pi2 = pi2 + 1
     }
     tieir_pos = tieir_sec_end
@@ -506,7 +518,7 @@ pub func deserialize(t: table<i64>) -> i64 {
         if tieir_err != "" {
             return -1
         }
-        ir_meta.set_sym(nm, sg, kd, vs, ln, cl)
+        ir_meta.set_sym(pool_remap_id(pool_remap, nm), pool_remap_id(pool_remap, sg), kd, vs, ln, cl)
         si2 = si2 + 1
     }
     tieir_pos = tieir_sec_end
@@ -563,7 +575,7 @@ pub func deserialize(t: table<i64>) -> i64 {
             table_push(ptys, pt)
             pk2 = pk2 + 1
         }
-        var fid = ir.new_func(fnm, frt, ptys)
+        var fid = ir.new_func(pool_remap_id(pool_remap, fnm), frt, ptys)
         ir.func_export_set(fid, fex)
         // 入口块在块表重建后校验（此处记录期望值，用哨兵 -1 占位）
         //（ir_meta 无函数入口槽，校验放块表重建后：块表 func 列一致性）
@@ -599,7 +611,7 @@ pub func deserialize(t: table<i64>) -> i64 {
             return -1
         }
         table_push(bfunc, bfn)
-        var bid = ir.new_block(bfn, bnm)
+        var bid = ir.new_block(bfn, pool_remap_id(pool_remap, bnm))
         table_push(blk_starts, bst)
         table_push(blk_ends, ben)
         bi2 = bi2 + 1
@@ -724,17 +736,34 @@ pub func deserialize(t: table<i64>) -> i64 {
             if tieir_err != "" {
                 return -1
             }
-            // kind 0 = SSA 值（重映射）；kind 1 = 块（重建索引与文件一致，透传）
-            if okd == 0 {
-                if ov < 0 || ov >= remap_n {
-                    set_err("tieir 值操作数越界（指令 " + to_string(ii2) + " 值 " + to_string(ov) + "）")
-                    return -1
+            // 池载荷判定（p.9.21.8）：kind 3 = 全局名；kind 0 的操作数①且
+            // opcode ∈ {const_str(62), const_f(51), call(35), extern_call(36),
+            // call_vararg(41)} = 池 id 载荷（与 llvmgen collect_strings/
+            // collect_externs 清单对齐）——经池重映射，不做值重映射。
+            var pool_load: i64 = 0
+            if okd == 3 {
+                pool_load = 1
+            }
+            if okd == 0 && ok2 == 0 {
+                if iop == 62 || iop == 51 || iop == 35 || iop == 36 || iop == 41 {
+                    pool_load = 1
                 }
-                if remap[ov] < 0 {
-                    set_err("tieir 值操作数引用未定义（指令 " + to_string(ii2) + " 值 " + to_string(ov) + "）")
-                    return -1
+            }
+            if pool_load == 1 {
+                ov = pool_remap_id(pool_remap, ov)
+            } else {
+                // kind 0 = SSA 值（重映射）；kind 1 = 块（重建索引与文件一致，透传）
+                if okd == 0 {
+                    if ov < 0 || ov >= remap_n {
+                        set_err("tieir 值操作数越界（指令 " + to_string(ii2) + " 值 " + to_string(ov) + "）")
+                        return -1
+                    }
+                    if remap[ov] < 0 {
+                        set_err("tieir 值操作数引用未定义（指令 " + to_string(ii2) + " 值 " + to_string(ov) + "）")
+                        return -1
+                    }
+                    ov = remap[ov]
                 }
-                ov = remap[ov]
             }
             ir.add_operand(iid, ov, okd)
             ok2 = ok2 + 1
@@ -791,7 +820,7 @@ pub func deserialize(t: table<i64>) -> i64 {
         if tieir_err != "" {
             return -1
         }
-        ir_meta.export_add(enm, esg, eln, ecl)
+        ir_meta.export_add(pool_remap_id(pool_remap, enm), pool_remap_id(pool_remap, esg), eln, ecl)
         ei2 = ei2 + 1
     }
     tieir_pos = tieir_sec_end
