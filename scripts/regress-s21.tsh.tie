@@ -36,7 +36,6 @@ func compile_run(src: string, runIt: bool) -> string {
     if runIt {
         var outf = get_env("TEMP") + "\\tsh_s21_run_out.txt"
         var rrc = exec_code("cmd /c \"" + exe + "\" > \"" + outf + "\" 2>&1")
-        sleep_ms(100)
         var out = file_read(outf)
         if rrc != 0 { return "RUN_FAIL rc=" + to_string(rrc) + " out=" + out }
         return "OK " + out
