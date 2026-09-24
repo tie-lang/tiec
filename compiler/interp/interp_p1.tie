@@ -167,9 +167,15 @@ func flush_statement(src: string, lo: i64, hi: i64, first_word: string, have: bo
     }
 }
 
+// p.9.3.9 修复：var **不再**归定义词——顶层 var 声明（含带副作用的 init，
+// 如 exec_code/file_read）必须留在语句段（main 体）按源码序执行。此前 var
+// 进定义段 → reg_one_top 在 register_top_level（第一趟）立即求值 init，
+// 全部副作用提前到 main 体语句之前：脚本读不到先前的写、exec_code 表现
+// 为「异步」、变量值「不稳定」（D4/§4 全部玄学的单一根因）。main 体内的
+// var 经 exec_stmt_var_decl 落 globals（跨行持久），语义不回退。
 func is_def_word(w: string) -> bool {
     if w == "func" || w == "struct" || w == "enum" || w == "namespace" ||
-        w == "import" || w == "using" || w == "extern" || w == "var" {
+        w == "import" || w == "using" || w == "extern" {
         return true
     }
     return false
