@@ -208,3 +208,31 @@ modcache_assembly_paths）+ driver.tie import。不动点 8292cfa5 → **f2ef82d
   proc_createprocessw_pipe、std_httpc_probe、std_net_bytes、std_net_text、
   std_sse_probe、table_struct_elem——网络/FFI/泛型类已知项），第 8 个
   FAIL 为 exec 竞态偶发项，p.9.3.9 语句序修复 + 移除 sleep_ms 后消除。
+
+## 10. p.9.17.1 str_char 码点索引缓存 —— 实施进度与卡点（2026-09-24）
+
+基线实测（铁律 3）：str_char 编译路径 O(n²) 确认——100K 码点 char-wise 遍历
+>120s（被命令时限杀）；10K ≈ <1s；interp 路径 10K ≈ 1s（~100µs/char）。
+prompt 的 ~360µs/char 数字与 interp 路径量级吻合，编译路径 O(n²) 步进在大串
+下同样是灾难。
+
+实施（工作树未提交——IR 生成正确性调试中期）：
+* irgen_bi_num.tie：bi_str_char 重写为**单槽缓存版**——@tie_sc_addr/len/n/tab
+  四全局（[131072 x i64] 偏移表）；命中 O(1) 读表、未命中单次 O(n) 重建；
+  i >= CAP 回退 legacy 线性循环（行为兜底）。llvmgen：白名单加 tie_sc_* +
+  emit 四全局（.bss 零成本）。
+* 已修渲染坑：store 必须**三操作数** [ty IMM, 值, 地址]（llvmgen
+  gen_inst_b_22_store 约定）；kind 3 全局直引不可走 tig_p2i（硬编码 kind 0
+  → 渲染 %N）——须手写 op24 ptrtoint + kind 3 操作数；cond_br 必须
+  [cond, true, false] 全三操作数；**块创建序必须 = 控制流逻辑序**（llvmgen
+  按块表序输出，值 id 回退 → opt 报 numbering 错）。
+* **当前卡点**：s21_utf8_seq_len 内联（重建循环体内调用）的块群嵌在
+  sc.rb_body/sc.rb_cond 循环回边下，opt 报 `%277 = zext i1 %361` 编号回退
+  （seq_len 展开的块创建序与其值 id 序在循环上下文交错）。下一步：勘察
+  s21_utf8_seq_len/s21_utf8_char_at 的块结构（frontend 系 helper 是否假设
+  「调用点为线性块尾」），或改为重建循环内**不经 seq_len helper**（手写
+  seq_len 判定内联块，控制创建序），或缓存重建循环整体迁到运行期 helper。
+* 缓存正确性论证不变：串不可变 + (ptr, len) 键；行为一致性由 tab = 内容
+  确定性函数保证。
+* 验收命令就绪：_tiec_verify/bench_strchar1m.tie（100K 码点，基线 >120s）
+  / bench_sc100.tie（100 码点冒烟）；tsh 路径 bench_tsh3.tie。
