@@ -83,10 +83,8 @@ func hash_line(s: string) -> string {
 
 // ---------- 0. 输出目录（mkdir + 哨兵自检） ----------
 exec_code("cmd /c if not exist " + resolve_out("..\\_tiec_verify\\fp") + " mkdir " + resolve_out("..\\_tiec_verify\\fp"))
-sleep_ms(200)
 var sentinel = resolve_out("..\\_tiec_verify\\fp") + "\\_fp_sentinel.txt"
 file_write(sentinel, "fp")
-sleep_ms(100)
 if !file_exists(sentinel) {
     println("[fp] FATAL：输出目录哨兵写入失败（out 未生效或不可写）: " + resolve_out("..\\_tiec_verify\\fp"))
     exit(2)
