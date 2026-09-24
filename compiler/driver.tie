@@ -31,6 +31,7 @@ import "./config.tie"
 import "./middle/tieir_ser.tie"
 // p.9.21.6-2：模块级 tieir 片段（模块化缓存写侧；set_fn_mods + write_mod_slice）
 import "./middle/tieir_slice.tie"
+import "./middle/tieir_asm.tie"
 import "./middle/passes.tie"
 // p.9.20：单元头写入 t 档 / pass 管道版本（ir_meta 侧表）
 import "./middle/ir_meta.tie"

@@ -329,6 +329,32 @@ pub func cache_enabled() -> bool {
 // p.9.21.8：片段池已改引用过滤 + 保序压缩（见 tieir_slice.tie 头注），
 // 写放大消除——模块缓存**默认开**（无需 TIEC_MODCACHE）。
 
+// p.9.21.9：片段缓存键（写入与装配命中判定共用；键不含 IR，irgen 前可判）。
+pub func mod_slice_key(p: string, fp: string, topt: i64) -> string {
+    return "tm" + to_string(str_hash(p + "|" + fp + "|" + g_cache_salt + "|M" + to_string(topt) + "|TG" + g_target))
+}
+
+// p.9.21.9：全部模块片段命中 → 返回路径表（模块序 = dep_depset 序）；
+// 任一未命中 → 空表（装配路径要求全命中；部分命中走全量 irgen + 补写）。
+pub func modcache_assembly_paths() -> table<string> {
+    var out: table<string> = table_new_string()
+    var cdir = cache_dir_value() + "/mods"
+    var paths = dep_depset()
+    var topt = effective_tie_opt()
+    var i: i64 = 0
+    while i < len(paths) {
+        var p = paths[i]
+        var fp = dep_file_fp(p)
+        var frag = cdir + "/" + mod_slice_key(p, fp, topt) + ".tir"
+        if !file_exists(frag) {
+            return out
+        }
+        table_push(out, frag)
+        i = i + 1
+    }
+    return out
+}
+
 // 函数归属平行表：ir 函数 id → 来源模块 id。经 函数全名 → sstate.fn_sig →
 // sig_module 反查；编译器合成函数（无语义签名）归属模块 0（主文件）。
 pub func mod_attribution_fill() -> i64 {
@@ -377,7 +403,7 @@ pub func mod_cache_update() -> i64 {
     while i2 < n {
         var p = paths[i2]
         var fp = dep_file_fp(p)
-        var key = "tm" + to_string(str_hash(p + "|" + fp + "|" + g_cache_salt + "|M" + to_string(topt) + "|TG" + g_target))
+        var key = mod_slice_key(p, fp, topt)
         var frag = cdir + "/" + key + ".tir"
         if file_exists(frag) {
             hits = hits + 1
