@@ -66,6 +66,10 @@ pub func kpass_irgen() -> i64 {
                     if tieir.asm_flag_catch() {
                         llvmgen.catch_enable()
                     }
+                    if tieir.asm_flag_sc() {
+                        // p.9.17.1：str_char 缓存段（emit 侧隐含 SSO 段）
+                        llvmgen.sc_enable()
+                    }
                     var inc9 = get_env("TIEC_INC")
                     if inc9 == "1" {
                         println("MODASM " + to_string(len(ap)) + "/" + to_string(len(ap)) + " assembled")

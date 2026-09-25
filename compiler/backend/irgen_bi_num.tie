@@ -170,113 +170,48 @@ if nm == "char_code" {
 // 内置 `str_char`（p.9.21.2 两步制①：自 builtin_expr 提取）
 pub func bi_str_char(nm: string, id: i64) -> i64 {
 if nm == "str_char" {
-    // 去 Rust 桥：取第 i 个码点字符，irgen 内联生成——字节位置循环跳过
-    // i 个码点（s21_utf8_seq_len 步进）→ s21_utf8_char_at 解码码点 →
-    // s21_codepoint_to_str 得单字符。不链接 tie_interp.lib。
-    // p6.x 缺陷根治：字节定位循环原仅以 k < i 终止，无 pos 边界检查——
-    // 调用方以 len(s)（字节数，O(1) 读头）为上界遍历含多字节 UTF-8
-    // （中文等码点 < 字节）的串时，i 会超过实际码点数，pos 越过串尾
-    // 继续读（s21_utf8_seq_len/s21_str_byte 越界 GEP+load → 0xC0000005，
-    // jcc-pack extract 崩溃根因）。修复：cond 增补 pos < blen 终止，
-    // 定位失败（pos >= blen）返回空串而非越界读。
+    // p.9.17.1 重上（码点索引缓存版）：irgen 只发**一次 call** 到手写 helper
+    // @tie_sc_off（llvmgen_sc.tie 发射；双槽 (ptr,len) 键 + 重建循环 + CAP
+    // 兜底 legacy 线性步进，n 存循环 phi 的 k = 已写项数——旧实现 phi 差一
+    // 根因修正；双槽覆盖交替串对），返回字节偏移后复用既有 s21_utf8_char_at
+    // （解码）+ s21_codepoint_to_str（单字符串构造）。irgen 侧仅两个线性块
+    //（bad/ok/merge），零循环块——绕开旧实现「seq_len 内联嵌在重建循环回边
+    // 下 → opt numbering 回退」的坑（findings §10）。
+    // 越界语义与旧实现逐位一致：i 超出码点数 → 空串；i < 0 → helper 返回
+    // offset 0（首码点）；helper 返回 -1 即空串。
     var v = tig_expr(call_arg(id, 0))
     if v < 0 {
         return -1
     }
-    var i = tig_expr(call_arg(id, 1))
-    if i < 0 {
+    var iv = tig_expr(call_arg(id, 1))
+    if iv < 0 {
         return -1
     }
-    var blen = s21_str_head_len(v)
-    // 位置槽（字节 pos）与步进计数器槽（已跳码点数）
-    var pos_a = ir.new_inst(g_cur_block, 20, types.named(TK_I64))
-    ir.add_operand(pos_a, types.named(TK_I64), 2)
-    var pos_ptr = ir.get_value(pos_a)
-    var k_a = ir.new_inst(g_cur_block, 20, types.named(TK_I64))
-    ir.add_operand(k_a, types.named(TK_I64), 2)
-    var k_ptr = ir.get_value(k_a)
-    var zlit = tig_int_lit_ty(0, types.named(TK_I64))
-    var stp = ir.new_inst(g_cur_block, 22, -1)
-    ir.add_operand(stp, types.named(TK_I64), 2)
-    ir.add_operand(stp, zlit, 0)
-    ir.add_operand(stp, pos_ptr, 0)
-    var stk = ir.new_inst(g_cur_block, 22, -1)
-    ir.add_operand(stk, types.named(TK_I64), 2)
-    ir.add_operand(stk, zlit, 0)
-    ir.add_operand(stk, k_ptr, 0)
-    // 五块：cond / body / exit 判定（after）/ ok / bad / merge
-    // cond：k < i 且 pos < blen → body；否则 → after
-    // after：pos < blen（定位到第 i 个码点）→ ok 解码；否则 → bad 空串
-    var cond_blk = ir.new_block(g_cur_func, interner.intern("sc.cond"))
-    var body_blk = ir.new_block(g_cur_func, interner.intern("sc.body"))
-    var after_blk = ir.new_block(g_cur_func, interner.intern("sc.after"))
+    llvmgen.sc_enable()
+    var T64 = types.named(TK_I64)
+    var sym = interner.intern("tie_sc_off")
+    var ci = ir.new_inst(g_cur_block, 35, T64)
+    ir.add_operand(ci, sym, 0)
+    ir.add_operand(ci, T64, 2)
+    ir.add_operand(ci, types.named(TK_STR), 2)
+    ir.add_operand(ci, v, 0)
+    ir.add_operand(ci, T64, 2)
+    ir.add_operand(ci, iv, 0)
+    var off = ir.get_value(ci)
+    // off < 0 → bad（空串）；否则 ok（pos = off 解码单字符）。
+    // 注意 cc=2 才是 slt（4=sle——off=0 合法，不得误判越界）。
+    var neg = tig_cmp_zero(off, 2)  // slt 0
     var ok_blk = ir.new_block(g_cur_func, interner.intern("sc.ok"))
     var bad_blk = ir.new_block(g_cur_func, interner.intern("sc.bad"))
     var merge_blk = ir.new_block(g_cur_func, interner.intern("sc.merge"))
     var res_a = ir.new_inst(g_cur_block, 20, types.named(TK_STR))
     ir.add_operand(res_a, types.named(TK_STR), 2)
     var res_ptr = ir.get_value(res_a)
-    var b0 = ir.new_inst(g_cur_block, 30, -1)
-    ir.add_operand(b0, cond_blk, 1)
-    // cond：k < i 且 pos < blen → body，否则 after
-    g_cur_block = cond_blk
-    var ku = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-    ir.add_operand(ku, k_ptr, 0)
-    var ku_v = ir.get_value(ku)
-    var ok = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp
-    ir.add_operand(ok, ku_v, 0)
-    ir.add_operand(ok, i, 0)
-    ir.add_operand(ok, 2, 2)  // slt
-    var ok_v = ir.get_value(ok)
-    var pu = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-    ir.add_operand(pu, pos_ptr, 0)
-    var pu_v = ir.get_value(pu)
-    var inb = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp
-    ir.add_operand(inb, pu_v, 0)
-    ir.add_operand(inb, blen, 0)
-    ir.add_operand(inb, 6, 2)  // ult
-    var inb_v = ir.get_value(inb)
-    var both = tig_and_i1(ok_v, inb_v)
-    var cb = ir.new_inst(g_cur_block, 31, -1)
-    ir.add_operand(cb, both, 0)
-    ir.add_operand(cb, body_blk, 1)
-    ir.add_operand(cb, after_blk, 1)
-    // body：pos += utf8_seq_len(s, pos)；k += 1
-    g_cur_block = body_blk
-    var pu2 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-    ir.add_operand(pu2, pos_ptr, 0)
-    var pu2_v = ir.get_value(pu2)
-    var sl = s21_utf8_seq_len(v, pu2_v)
-    var np = s21_bin(0, pu2_v, sl)  // add
-    var stp2 = ir.new_inst(g_cur_block, 22, -1)
-    ir.add_operand(stp2, types.named(TK_I64), 2)
-    ir.add_operand(stp2, np, 0)
-    ir.add_operand(stp2, pos_ptr, 0)
-    var ku2 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-    ir.add_operand(ku2, k_ptr, 0)
-    var ku2_v = ir.get_value(ku2)
-    var nk = s21_bin(0, ku2_v, tig_int_lit(1))
-    var stk2 = ir.new_inst(g_cur_block, 22, -1)
-    ir.add_operand(stk2, types.named(TK_I64), 2)
-    ir.add_operand(stk2, nk, 0)
-    ir.add_operand(stk2, k_ptr, 0)
-    var bbr = ir.new_inst(g_cur_block, 30, -1)
-    ir.add_operand(bbr, cond_blk, 1)
-    // after：pos < blen → ok（定位成功，解码），否则 bad（空串）
-    g_cur_block = after_blk
-    var pu3 = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-    ir.add_operand(pu3, pos_ptr, 0)
-    var pu3_v = ir.get_value(pu3)
-    var inb2 = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp
-    ir.add_operand(inb2, pu3_v, 0)
-    ir.add_operand(inb2, blen, 0)
-    ir.add_operand(inb2, 6, 2)  // ult
-    var inb2_v = ir.get_value(inb2)
-    var cb2 = ir.new_inst(g_cur_block, 31, -1)
-    ir.add_operand(cb2, inb2_v, 0)
-    ir.add_operand(cb2, ok_blk, 1)
-    ir.add_operand(cb2, bad_blk, 1)
-    // bad：定位失败（pos 越过串尾仍未到第 i 个码点）→ 空串
+    var cb0 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb0, neg, 0)
+    ir.add_operand(cb0, bad_blk, 1)
+    ir.add_operand(cb0, ok_blk, 1)
+    // bad：越界 → 空串
     g_cur_block = bad_blk
     var empty = tig_str_lit(interner.intern("\"\""))
     var stb = ir.new_inst(g_cur_block, 22, -1)
@@ -285,12 +220,9 @@ if nm == "str_char" {
     ir.add_operand(stb, res_ptr, 0)
     var brb = ir.new_inst(g_cur_block, 30, -1)
     ir.add_operand(brb, merge_blk, 1)
-    // ok：解码 pos 处码点 → 单字符字符串
+    // ok：off 处解码码点 → 单字符字符串
     g_cur_block = ok_blk
-    var pz = ir.new_inst(g_cur_block, 21, types.named(TK_I64))
-    ir.add_operand(pz, pos_ptr, 0)
-    var pz_v = ir.get_value(pz)
-    var cp = s21_utf8_char_at(v, pz_v)
+    var cp = s21_utf8_char_at(v, off)
     var cps = s21_codepoint_to_str(cp)
     var sto = ir.new_inst(g_cur_block, 22, -1)
     ir.add_operand(sto, types.named(TK_STR), 2)
@@ -305,7 +237,6 @@ if nm == "str_char" {
 }
 }
 
-// S1.3 checked_* 溢出检测族
 // 内置 `str_from_code`（p.9.21.2 两步制①：自 builtin_expr 提取）
 pub func bi_str_from_code(nm: string, id: i64) -> i64 {
 if nm == "str_from_code" {
