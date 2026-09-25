@@ -83,7 +83,9 @@ var g_no_warn: bool = false;      // --no-warn：跳过警告检查（不发射/
 // -w 开启、--no-warn 关闭）。驱动 semantic.set_warn_enabled；与 g_no_warn（LLVM 工具链
 // 静默 + 角色/优化档降级行为）语义分离——默认只报错只关前端警告检查，不干扰降级逻辑。
 var g_front_warn: bool = false;
-var g_cache_salt: string = "tiec-cache-v2";  // 缓存键盐：编译器输出形态变更（如 optimizer 改动/固定点升格）时递增，强制旧缓存失效（p.9.19.8 遗留补：升格必 bump）
+// v3（p.9.21.9 收口）：装配器块操作数映射修正 + 装配路径副作用恢复——
+// 旧片段由修正前的装配器语义写出，必须整体失效（盐升格）。
+var g_cache_salt: string = "tiec-cache-v5";  // 缓存键盐：编译器输出形态变更（如 optimizer 改动/固定点升格）时递增，强制旧缓存失效（p.9.19.8 遗留补：升格必 bump）
 var g_emit_ir: bool = false;
 var g_keep_ir: bool = false;
 var g_cli_fast_math: bool = false;    // --ffast-math：训练性能优先（编译产物启用 fast-math，默认关）
@@ -445,6 +447,9 @@ var k_g_base_dir: string = "";
 var g_t_irgen: i64 = 0;   // irgen.tig_ast 耗时（ms）
 var g_t_emit: i64 = 0;    // llvmgen.emit 耗时（ms）
 var g_t_write: i64 = 0;   // file_write 耗时（ms）
+// p.9.21.9 收口：装配路径副作用恢复的失败原因（driver/pipeline.tie 的
+// asm_side_recover 写入；降级全量时打印）。全局变量按约定留在主文件。
+var asm_recover_err: string = "";
 
 // ==================== Keel 真实 pass 实现（kpass_*） ====================
 // 签名统一 fn() -> i64，0 成功 / 非 0 失败；内部即原 compile_program 各
