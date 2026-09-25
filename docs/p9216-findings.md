@@ -309,3 +309,60 @@ driver.tie（asm_recover_err + 盐 v5）。不动点 6e836504 → **19f11c25**
   **基线编译器同样 COMPILE_FAIL**（已用 6e836504 与 2e902195 两版直核复现）。
   故冷缓存真基线 = 157/8，非本轮改动回归。
 * 盐 v2 → **v5**（装配器语义 + 片段写入口径变更，旧片段必须整体失效）。
+
+## 12. p.9.17.1 str_char 码点索引缓存 —— 重上落地（2026-09-25）
+
+落点：llvmgen_sc.tie（新文件：emit_sc_globals——@tie_sc_addr/len/n/tab 四全局
+（双槽各 1MB .bss）+ @tie_sc_off / @tie_sc_inval 手写 helper）+ llvmgen.tie
+（sc_enable 旗标 + 发射挂点 + sc 启用强制 SSO 段）+ llvmgen_p1.tie
+（@tie_str_free_if_heap 加失效钩子）+ irgen_bi_num.tie（bi_str_char 重写）+
+tieir_asm.tie（asm_flag_sc）+ driver/pipeline.tie（sc 恢复）。不动点
+19f11c25 → **0cf19245**；盐 v6；回归 **157/8/2** 一致。
+
+### 12.1 架构（与 §10 已验证方案同源，坑全绕开）
+* **helper 单体**：缓存命中判定、双槽选择、重建循环、CAP 兜底 legacy 线性
+  步进全部在**手写 LLVM**（@tie_sc_off(s, i) → 字节偏移或 -1）；irgen 只发
+  一次 call + 两个线性块（bad/ok/merge，复用既有 s21_utf8_char_at 解码 +
+  s21_codepoint_to_str 构造）。**irgen 侧零循环块**——旧实现的
+  「seq_len 内联嵌在重建循环回边下 → opt numbering 回退」卡点从结构上消失。
+* **phi 差一修正**：@tie_sc_n 存循环 phi 的 %k（= 已写项数，rbd 处 phi 出口
+  值即正确），旧实现「存退出时 phi %k」的语义歧义不复存在。
+* **交替串失效修正**：双槽按 (addr>>3)&1 选槽（串指针 8 对齐，bit3 随分配
+  翻转）——交替对稳定落双槽，零 LRU 成本；3 串以上轮转退化为逐调用重建
+  （正确性不变，代价 = 旧 O(i) 步进上限）。
+* **陈旧命中防御（新）**：malloc 同址同长复用会让 (ptr,len) 键命中错表 →
+  @tie_str_free_if_heap free 前调 @tie_sc_inval(数据指针)，清匹配槽。
+* **越界语义与旧实现逐位一致**：i 超码点数 → -1 → 空串；i<0 → legacy 路径
+  返回 offset 0（首码点，与旧实现怪癖一致）。
+
+### 12.2 实测坑（本轮新增）
+1. **字符串值指针指向数据**，长度头在 **s-8**（s21_str_head_len = gep(s,-8)）
+   ——helper 初版按 {len@0,data@8} 读 → 全错位。gelp 基准一律数据指针。
+2. **icmp 比较码**：0=eq 1=ne 2=slt 3=sgt **4=sle** 5=sge 6=ult…——
+   `tig_cmp_zero(off, 4)` 是 **sle**（off=0 会被判负）；sub_bytes 处旧注释
+   「slt」系笔误（该处 clamp 语义恰好兼容）。判负必须 cc=2。
+3. **LLVM 多维数组语法**：`[2 x [131072 x i64]]`（`[2 x 131072 x i64]` 报
+   expected type——第二位必须是类型）。
+4. `sc_enable` 时 emit 侧强制 `g_sso_enabled=1`：@tie_str_free_if_heap（失效
+   钩子宿主）随 SSO 段发射，保证缓存存在则钩子必在。
+
+### 12.3 验收数据
+| 项 | 基线 6e836504 | 缓存版 0cf19245 |
+| --- | --- | --- |
+| bench_50k（50K 码点顺序遍历） | 4ms，acc=57 | **0ms**，acc=57 |
+| bench_sc_last（100K 恒取末码点，最坏 O(i)） | 38ms，acc 同 | **0ms**，acc 同 |
+| bench_mb（多字节） | acc 一致 | acc 一致 |
+| scprobe（ASCII+多字节+越界+负索引 9 例） | — | **stdout 逐字节一致** |
+| scalt（双串交替正扫+反向扫） | — | **stdout 逐字节一致** |
+| 回归 | 157/8/2（冷口径） | **157/8/2** |
+| 三阶自举 | — | FIXED-POINT OK（n2=n3，直核） |
+| 库自检 ×4 / trm 探针 | exit 0 / PASS | exit 0 / PASS |
+
+**基线数字勘误（铁律 3 再验证）**：§10 的「编译路径 O(n²)、100K>120s」基线
+已失效——现基线顺序遍历 100K 仅 19ms、恒末码点 38ms（§10 测量时的条件与
+今日基线不同；prompt/旧 findings 的性能数字动笔前必须重测）。
+
+### 12.4 装配路径联动
+asm_flag_sc：片段含 `call @tie_sc_off`（op 35 载荷白名单）→ driver 恢复
+sc_enable（emit 侧隐含 SSO 段）。gv 装配探针复测 **4/4 assembled、stdout
+逐字节一致**（不受本轮影响）。

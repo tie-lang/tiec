@@ -254,6 +254,11 @@ func emit_sso_globals() {
         line("sf.h:")
         line("  %p = inttoptr i64 %dp to ptr")
         line("  %b = getelementptr i8, ptr %p, i64 -8")
+        // p.9.17.1：str_char 缓存失效钩子——malloc 复用同址同长块会让
+        // (ptr,len) 键命中陈旧偏移表，free 前清缓存槽根治（仅 sc 启用时）。
+        if g_sc_enabled == 1 {
+            line("  call void @tie_sc_inval(ptr %p)")
+        }
         line("  call void @free(ptr %b)")
         line("  ret void")
         line("sf.d:")

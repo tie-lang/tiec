@@ -91,6 +91,10 @@ var g_vt_syms: table<i64>;    // 方法函数全名池 id（扁平段）
 // emit 主流程据此刻意输出 @s21_sso_pool / @s21_sso_off / @s21_sso_malloc_cnt。
 // 仅用到短串池的程序才带 256KB .bss，纯字面量程序不引入。
 var g_sso_enabled: i64 = 0;
+// p.9.17.1：str_char 码点索引缓存启用标记。irgen bi_str_char 首调 sc_enable()
+// 置位；emit_sc_globals 据此输出 @tie_sc_addr/len/n/tab 四全局（双槽 .bss）+
+// @tie_sc_off / @tie_sc_inval 手写 helper。
+var g_sc_enabled: i64 = 0;
 // p.6.4.5 可捕获网络：Winsock2 一次性初始化标志全局（@g_wsock_init）启用标记。
 // irgen 首次内联 net_*（tig_wsa_init）置位，emit 据此输出该 i64 全局。
 var g_wsock_enabled: i64 = 0;
@@ -334,6 +338,11 @@ pub func sso_enable() {
     g_sso_enabled = 1
 }
 
+// p.9.17.1：str_char 码点索引缓存启用（irgen bi_str_char 首调置位；幂等）。
+pub func sc_enable() {
+    g_sc_enabled = 1
+}
+
 // p.6.4.5 Winsock2 标志全局启用（irgen 内联 net_* 时置位；幂等）。
 pub func wsock_enable() {
     g_wsock_enabled = 1
@@ -509,7 +518,15 @@ pub func emit() -> string {
     emit_strings()
     // SSO 短串池全局段 + @tie_sso_alloc helper：**必须在函数遍历之后**输出——
     // op56（str_cat）在 gen_func 时才调 sso_enable()，提前输出会漏 helper。
+    // p.9.17.1：str_char 缓存启用时强制 SSO 段（@tie_str_free_if_heap 的缓存
+    // 失效钩子依赖 SSO 段先发射；池 bump 也保证缓存键的地址不复用）。
+    if g_sc_enabled == 1 {
+        g_sso_enabled = 1
+    }
     emit_sso_globals()
+    // p.9.17.1：str_char 码点索引缓存段（@tie_sc_* 全局 + @tie_sc_off/
+    // @tie_sc_inval 手写 helper；仅 g_sc_enabled 时输出）
+    emit_sc_globals()
     // --shared 缺陷修复：库无 main，全局表初始化经 tie$rt_init 模块构造器在
     // DLL 加载时执行（DLL CRT 的 global_ctors 装载即运行）。仅当存在 tie$rt_init
     //（即模块有表全局）时发射，纯标量库不发射、导出面逐字不变。**必须放在所有
@@ -553,5 +570,6 @@ pub func emit() -> string {
 
 
 import "./llvmgen_p1.tie"
+import "./llvmgen_sc.tie"
 import "./llvmgen_p2.tie"
 import "./llvmgen_inst_gen.tie"
