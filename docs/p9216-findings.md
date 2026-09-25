@@ -249,3 +249,63 @@ llvmgen_inst_p1 的缓存改动（git checkout，findings §10 保留全部设�
 降级全量，自举 [3/4] 即此场景——已实测修复）。不动点 f2ef82df →
 **6e836504**；regress 158/7/2 一致。下轮：交替串 bug 最小复现 → 修 phi 差一
 与单槽交替失效 → 重上缓存。
+
+## 11. p.9.21.9 收口：装配路径副作用恢复 + 装配器四处缺陷（2026-09-25）
+
+落点：tieir_asm.tie（装配器）/ tieir_slice.tie（片段写护栏）/ llvmgen.tie
+（has_global + reset_global_regs）/ irgen.tie（asm_reg_globals/asm_reg_msg/
+asm_reg_rng/asm_is_libc）/ driver/pipeline.tie（护栏摘除 + asm_side_recover）/
+driver.tie（asm_recover_err + 盐 v5）。不动点 6e836504 → **19f11c25**
+（n1=n2=n3，certutil 直核一致）。
+
+### 11.1 全局 var 登记族恢复（原遗留，已摘护栏）
+装配路径跳过 irgen → llvmgen 全局段/vtable 段无人登记。按「AST（g_extra_tops）
++ 语义层仍在，片段 IR 是唯一事实」两条腿恢复：
+* `irgen.asm_reg_globals()`：reg_all_vtables（impl 记录）+ 顶层 VarDecl
+  （tag 100）+ 命名空间 const（tag 112 内 tag 100，全名 prefix::NAME）——与
+  tig_ast/tig_ns 同序遍历重放（只登记，不生成 IR）。
+* `asm_side_recover()`（driver）：按片段引用的全局名恢复惰性登记族
+  （msg_* 四槽 / @__rng_state / Linux 入口 @__tig_argc,argv）与
+  p.6.10.4 循环哨兵（@tl_loopf_*：i64 零值，名字含函数名+序号，前缀识别）、
+  链接判据（g_used_wsock / trmlite），并做**登记完备校验**：引用的全局既未
+  登记又不属于 llvmgen 旗标段 → 返回 -1 降级全量（不静默产缺全局的单元）。
+* 全局名在 IR 里带/不带 `@` 两种写法并存（实测 s21_sso_off 为裸名）→ 置位
+  白名单与校验一律按裸名比对。
+* 降级前 `llvmgen.reset_global_regs()`（否则全量路径二次登记同名全局 → .ll
+  重复定义）+ 链接判据复位。
+
+### 11.2 装配器四处缺陷（本轮实测修正）
+1. **块操作数域错**：kind 1 载荷 = 片段内块 lid（write_mod_slice 写
+   blk_new[ov]，跨片段全部选中函数连续编号），旧实现按「函数内序号」解 →
+   多函数片段必然越界/错位（探针 gv 首跑报 `块操作数越界 fn 1 lid=121`）。
+2. **块/指令按函数分组假设不成立**：块表内同函数的块可能交错（闭包/嵌套生成）
+   → 改显式分组（asm_fb_idx 前缀和段 + asm_bi_base/cnt 逐块区间）。
+3. **值基址口径偏大**：旧「观测最小值」在参数未被引用时 ≠ f_vbase → 值偏移
+   整体错位。改为按 vsize = 参数数 + 结果数 累计复现（与 write 的 vcum 同式）。
+4. **值映射改显式表**：asm_vmap（片段值 id → 重放值），取代 per-fn 结果表 +
+   偏移运算（与值域是否交错无关）。
+
+### 11.3 新缺陷 D5：块指令区间交错（未根治，已加护栏）⚠ 立 p.9.21.10
+`ir.new_block` 的 [start,end) 区间在 irgen **交错建块**（A 未闭即建 B 再回 A）
+时互相跨越：driver 全量 .tir 实测 **22515/74631 块非单调**（例：块 13 =
+[244,250)、块 14 = [231,234)）。write_mod_slice 按 [start,end) 逐块写会
+**重复/错序**指令 → 装配单元必然错（离线核查 driver 片段共 **910 处前向值
+引用**，即重复指令的表象）。
+* 单趟不可改两趟：`ir.add_operand` 断言操作数段紧接段尾（ops_off 在 new_inst
+  时定），延迟补操作数必撞「操作数段交错」panic（已实测）。
+* 本轮护栏（诚实降级）：write_mod_slice 拒绝写入「选中块区间重叠/乱序」的模块
+  片段（driver：217 模块仅 48 可写 → 装配路径不命中 → 全量 irgen）。
+* 根治方向（p.9.21.10）：片段改**按指令 id 序**写 + 逐指令显式块归属（段 5
+  指令表增块 lid 列 / 块表改记首指令 id），或让 irgen 单调建块（大改，风险高）。
+
+### 11.4 验收与基线口径
+* VarDecl 探针（tests/_modcache_probe/gv1..gv4：标量全局 + 表全局（含非空表
+  字面量初值）+ 命名空间 const + 菱形导入）：**MODASM 4/4 assembled**，装配
+  路径 exe 与全量路径 exe **stdout 逐字节一致**。
+* driver 树：护栏生效（48/217 可写）→ 装配不触发，全量编译通过（39s）。
+* 回归：**157 PASS / 8 FAIL / 2 SKIP**。第 8 个 FAIL = `extern_s10_ptr`——
+  **陈旧缓存假象**：该测试需 tie_interp.lib（本机已无，0-Rust 后环境缺），
+  基线 158/7 里的 PASS 来自旧缓存产物（含该 exe 的编译期产物副本）；冷键下
+  **基线编译器同样 COMPILE_FAIL**（已用 6e836504 与 2e902195 两版直核复现）。
+  故冷缓存真基线 = 157/8，非本轮改动回归。
+* 盐 v2 → **v5**（装配器语义 + 片段写入口径变更，旧片段必须整体失效）。
