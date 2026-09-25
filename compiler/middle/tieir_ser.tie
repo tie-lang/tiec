@@ -339,19 +339,32 @@ pub func serialize() -> table<i64> {
         bi = bi + 1
     }
     // 指令表（操作数段交织：每操作数 = 值 + kind；每条指令前写所属块 id——
-    // 反序列化时块区间尚未重建，归属须显式携带）
+    // 反序列化时块区间尚未重建，归属须显式携带）。
+    // p.9.21.10：块归属改**归属表**（每块回填自己的区间 → O(ni)）——原单向
+    // 游标在「块表序 ≠ 指令 id 序」（irgen 乱序建块，区间不交叠但乱序）时
+    // 会越过目标块再也回不来，其后所有指令的 own 全部写成越界值
+    //（driver 实测 663730/663974 条 own==block_count）。
+    var blk_of: table<i64> = table_new_i64()
+    var zi: i64 = 0
+    while zi < ir.inst_count() {
+        table_push(blk_of, -1)
+        zi = zi + 1
+    }
+    bi = 0
+    while bi < ir.block_count() {
+        var bs2 = ir.block_start(bi)
+        var be2 = ir.block_end(bi)
+        var t2 = bs2
+        while t2 < be2 {
+            blk_of[t2] = bi
+            t2 = t2 + 1
+        }
+        bi = bi + 1
+    }
     wr_i64(tieir_out, ir.inst_count())
-    var bcur: i64 = 0   // 块游标（指令按块连续存储，区间覆盖 [0, inst_count)）
     var ii: i64 = 0
     while ii < ir.inst_count() {
-        // 推进游标到含 ii 的块（块区间由 block_start/end 给出）
-        while bcur < ir.block_count() {
-            if ii >= ir.block_start(bcur) && ii < ir.block_end(bcur) {
-                break
-            }
-            bcur = bcur + 1
-        }
-        wr_i64(tieir_out, bcur)
+        wr_i64(tieir_out, blk_of[ii])
         wr_i64(tieir_out, ir.ins_op(ii))
         wr_i64(tieir_out, ir.ins_ty(ii))
         wr_i64(tieir_out, ir.ins_val(ii))

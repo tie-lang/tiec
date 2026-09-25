@@ -128,26 +128,27 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
         table_push(inst_new, -1)
         ii = ii + 1
     }
-    // 每选中函数：v_start（值起点）/ 值数 / 操作数总数
+    // 每选中函数：v_start（值起点=最小值 id）/ v_max（最大值 id）/ 值数 / 操作数总数
+    // p.9.21.10：值域跨度（max-min+1）替代值数（count）作压缩基数——irgen 交错
+    // 生成时他函数的值会插进本函数值域内部（span > count），按 count 累计的
+    // f_vbase 会让相邻函数的片段值域**交叠**（值 id 碰撞 → 装配错值）。
     var f_vstart: table<i64> = table_new_i64()
+    var f_vmax: table<i64> = table_new_i64()
     var f_vsize: table<i64> = table_new_i64()
     var f_opcnt: table<i64> = table_new_i64()
     var f_vset: table<i64> = table_new_i64()    // v_start 是否已定（0/1）
     i = 0
     while i < n_sel {
         table_push(f_vstart, -1)
+        table_push(f_vmax, -1)
         table_push(f_vsize, 0)
         table_push(f_opcnt, 0)
         table_push(f_vset, 0)
         i = i + 1
     }
-    // 块预扫（原序）：选中块分配新 id + 指令重映射 + 每函数统计。
-    // 块表按函数创建序分组，选中函数的块在原序下相对有序 → 直接单遍。
+    // 块预扫（表序）：选中块分配新 id。
     var sel_blk_cnt: i64 = 0
     var sel_inst_cnt: i64 = 0
-    // p.9.21.9 收口：上一选中块的区间尾（区间重叠检测用，初值 0）
-    var sel_prev_end: i64 = 0
-    // 选中块的新指令区间（与块遍历序平行）
     var blk_nstart: table<i64> = table_new_i64()
     var blk_nend: table<i64> = table_new_i64()
     bi = 0
@@ -158,45 +159,78 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
             si = fn_new[bf]
         }
         if si >= 0 {
-            // p.9.21.9 收口护栏：选中块的指令区间必须在**选中子序列**内单调
-            // 不交错（start == 已选指令计数）。irgen 交错建块（A 未闭即建 B，
-            // 再回 A）会让块区间互相跨越（driver 树实测 22515/74631 块非
-            // 单调），按 [start,end) 写片段会**重复/错序**指令 → 装配出的单元
-            // 必然错（前向引用、值未登记）。此类单元拒写片段（装配路径因此
-            // 不命中 → 诚实降级全量 irgen）。根治见 findings §11（改按指令
-            // id 序写 + 显式块归属）。
-            // 判据 = **本模块选中块区间互不重叠且有序**（start >= 上一选中块
-            // end）：跨模块的块可以交错（模块函数本就交错生成，区间留空隙是
-            // 正常），但同一模块的块区间重叠意味着 irgen 交错建块（A 未闭即
-            // 建 B 再回 A），按区间写会重复指令 → 必须拒写。
-            if ir.block_start(bi) < sel_prev_end {
-                set_err("片段块区间交错（块 " + to_string(bi) + " start=" +
-                    to_string(ir.block_start(bi)) + " 上一选中块 end=" + to_string(sel_prev_end) + "）")
+            blk_new[bi] = sel_blk_cnt
+            sel_blk_cnt = sel_blk_cnt + 1
+        }
+        bi = bi + 1
+    }
+    // p.9.21.10（D5 根治，方案 A）：指令流改**按指令 id 序（= 创建序）**写，
+    // 块归属由「选中块区间回填」唯一确定（勘察：区间互不交叠，每指令恰属
+    // 一块；irgen 乱序建块只造成块表序 ≠ id 序，不再需要拒写护栏）。
+    // 归属表（inst_total 大小，-1 = 非本模块指令）：同指令被两个选中块同时
+    // 认领（= 区间交叠，irgen 缺陷，C' 断言正常应拦截）→ 拒写。
+    var sel_of: table<i64> = table_new_i64()
+    var zi: i64 = 0
+    var n_inst = ir.inst_count()
+    while zi < n_inst {
+        table_push(sel_of, -1)
+        zi = zi + 1
+    }
+    bi = 0
+    while bi < nb {
+        if blk_new[bi] >= 0 {
+            var t3 = ir.block_start(bi)
+            if t3 < 0 || ir.block_end(bi) > n_inst {
+                set_err("片段块区间越界（块 " + to_string(bi) + "）")
                 return false
             }
-            sel_prev_end = ir.block_end(bi)
-            blk_new[bi] = sel_blk_cnt
-            table_push(blk_nstart, sel_inst_cnt)
-            var bs = ir.block_start(bi)
-            var be = ir.block_end(bi)
-            var ii2 = bs
-            while ii2 < be {
-                inst_new[ii2] = sel_inst_cnt
-                sel_inst_cnt = sel_inst_cnt + 1
-                // 函数统计：结果值 / 操作数 / v_start
-                var iv = ir.ins_val(ii2)
-                if iv >= 0 {
-                    if f_vset[si] == 0 {
-                        f_vstart[si] = iv
-                        f_vset[si] = 1
-                    }
-                    f_vsize[si] = f_vsize[si] + 1
+            while t3 < ir.block_end(bi) {
+                if sel_of[t3] != -1 {
+                    set_err("片段块区间交叠（指令 " + to_string(t3) + " 双重归属）")
+                    return false
                 }
-                f_opcnt[si] = f_opcnt[si] + ir.ins_ops_cnt(ii2)
-                ii2 = ii2 + 1
+                sel_of[t3] = bi
+                t3 = t3 + 1
             }
-            table_push(blk_nend, sel_inst_cnt)
-            sel_blk_cnt = sel_blk_cnt + 1
+        }
+        bi = bi + 1
+    }
+    // id 序单遍：新流序号 + 每函数统计（v_start 取最小值——不再依赖遍历序）
+    var ii4: i64 = 0
+    while ii4 < n_inst {
+        var ba = sel_of[ii4]
+        if ba >= 0 {
+            var sfi2 = fn_new[ir.block_func(ba)]
+            inst_new[ii4] = sel_inst_cnt
+            sel_inst_cnt = sel_inst_cnt + 1
+            var iv2 = ir.ins_val(ii4)
+            if iv2 >= 0 {
+                if f_vset[sfi2] == 0 || iv2 < f_vstart[sfi2] {
+                    f_vstart[sfi2] = iv2
+                    f_vset[sfi2] = 1
+                }
+                if f_vmax[sfi2] < 0 || iv2 > f_vmax[sfi2] {
+                    f_vmax[sfi2] = iv2
+                }
+                f_vsize[sfi2] = f_vsize[sfi2] + 1
+            }
+            f_opcnt[sfi2] = f_opcnt[sfi2] + ir.ins_ops_cnt(ii4)
+        }
+        ii4 = ii4 + 1
+    }
+    // 选中块的新指令区间（新流中各块指令连续；空块记 -1）
+    bi = 0
+    while bi < nb {
+        if blk_new[bi] >= 0 {
+            var bs3 = ir.block_start(bi)
+            var be3 = ir.block_end(bi)
+            if bs3 == be3 {
+                table_push(blk_nstart, -1)
+                table_push(blk_nend, -1)
+            } else {
+                table_push(blk_nstart, inst_new[bs3])
+                table_push(blk_nend, inst_new[be3 - 1] + 1)
+            }
         }
         bi = bi + 1
     }
@@ -209,6 +243,9 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
             // 参数在 new_func 时先于本函数任何结果值领号 → v_start 恒为参数段首值
             f_vstart[i] = ir.param_val(f, 0)
             f_vset[i] = 1
+            if f_vmax[i] < f_vstart[i] + pc - 1 {
+                f_vmax[i] = f_vstart[i] + pc - 1
+            }
             f_vsize[i] = f_vsize[i] + pc
             f_opcnt[i] = f_opcnt[i] + pc
         } else {
@@ -220,7 +257,7 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
         }
         i = i + 1
     }
-    // 每函数值基址/操作数基址累计
+    // 每函数值基址/操作数基址累计（p.9.21.10：值基址按**跨度**累计）
     var f_vbase: table<i64> = table_new_i64()
     var f_obase: table<i64> = table_new_i64()
     var vcum: i64 = 0
@@ -229,7 +266,10 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
     while i < n_sel {
         table_push(f_vbase, vcum)
         table_push(f_obase, ocum)
-        vcum = vcum + f_vsize[i]
+        // 跨度 = v_max - v_start + 1（无值 = 0）；各函数片段值域因此互不交叠
+        if f_vstart[i] >= 0 && f_vmax[i] >= f_vstart[i] {
+            vcum = vcum + (f_vmax[i] - f_vstart[i] + 1)
+        }
         ocum = ocum + f_opcnt[i]
         i = i + 1
     }
@@ -481,7 +521,8 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
         }
         bi = bi + 1
     }
-    // 指令表（选中子集按原序；操作数重映射）
+    // 指令表（p.9.21.10：按指令 id 序 = 创建序单遍；own = 真归属块新 id——
+    // 与全量 serialize 的规范形态一致，装配重放无前向引用）
     wr_i64(tieir_out, sel_inst_cnt)
     // 每函数操作数游标（重算：走选中函数序，逐步累加）
     var f_ocur: table<i64> = table_new_i64()
@@ -490,79 +531,73 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
         table_push(f_ocur, f_obase[i] + ir.func_params_cnt(sel_fn[i]))
         i = i + 1
     }
-    bi = 0
-    while bi < nb {
-        if blk_new[bi] >= 0 {
-            var bf = ir.block_func(bi)
-            var sfi = fn_new[bf]
-            var bs = ir.block_start(bi)
-            var be = ir.block_end(bi)
-            var ii3 = bs
-            while ii3 < be {
-                wr_i64(tieir_out, blk_new[bi])
-                wr_i64(tieir_out, ir.ins_op(ii3))
-                wr_i64(tieir_out, ir.ins_ty(ii3))
-                // 结果值平移（-1 = 无结果，原样）
-                var vv = ir.ins_val(ii3)
-                if vv >= 0 {
-                    if f_vstart[sfi] < 0 || vv < f_vstart[sfi] {
-                        set_err("片段值引用越界（指令 " + to_string(ii3) + " 值 " + to_string(vv) + "）")
-                        return false
-                    }
-                    vv = f_vbase[sfi] + (vv - f_vstart[sfi])
+    var ii5: i64 = 0
+    while ii5 < n_inst {
+        var ba2 = sel_of[ii5]
+        if ba2 >= 0 {
+            var sfi = fn_new[ir.block_func(ba2)]
+            wr_i64(tieir_out, blk_new[ba2])
+            wr_i64(tieir_out, ir.ins_op(ii5))
+            wr_i64(tieir_out, ir.ins_ty(ii5))
+            // 结果值平移（-1 = 无结果，原样）
+            var vv = ir.ins_val(ii5)
+            if vv >= 0 {
+                if f_vstart[sfi] < 0 || vv < f_vstart[sfi] || vv > f_vmax[sfi] {
+                    set_err("片段值引用越界（指令 " + to_string(ii5) + " 值 " + to_string(vv) + "）")
+                    return false
                 }
-                wr_i64(tieir_out, vv)
-                // 操作数偏移：函数内顺序累计（与重建自然偏移一致）
-                wr_i64(tieir_out, f_ocur[sfi])
-                f_ocur[sfi] = f_ocur[sfi] + ir.ins_ops_cnt(ii3)
-                wr_i64(tieir_out, ir.ins_ops_cnt(ii3))
-                var iop3 = ir.ins_op(ii3)
-                var ok: i64 = 0
-                while ok < ir.ins_ops_cnt(ii3) {
-                    var ov = ir.ins_opnd(ii3, ok)
-                    var kd = ir.ins_opnd_kind(ii3, ok)
-                    // kind 0 = SSA 值（函数内平移）；但池载荷操作数①
-                    //（const_str(62)/const_f(51)/call(35)/extern_call(36)/
-                    // call_vararg(41)）走池重映射；1 = 块（查表）；
-                    // 2 = 立即数（原样）；3 = 全局名（池重映射）
-                    var is_pool = 0
-                    if kd == 3 {
+                vv = f_vbase[sfi] + (vv - f_vstart[sfi])
+            }
+            wr_i64(tieir_out, vv)
+            // 操作数偏移：函数内顺序累计（与重建自然偏移一致）
+            wr_i64(tieir_out, f_ocur[sfi])
+            f_ocur[sfi] = f_ocur[sfi] + ir.ins_ops_cnt(ii5)
+            wr_i64(tieir_out, ir.ins_ops_cnt(ii5))
+            var iop3 = ir.ins_op(ii5)
+            var ok: i64 = 0
+            while ok < ir.ins_ops_cnt(ii5) {
+                var ov = ir.ins_opnd(ii5, ok)
+                var kd = ir.ins_opnd_kind(ii5, ok)
+                // kind 0 = SSA 值（函数内平移）；但池载荷操作数①
+                //（const_str(62)/const_f(51)/call(35)/extern_call(36)/
+                // call_vararg(41)）走池重映射；1 = 块（查表）；
+                // 2 = 立即数（原样）；3 = 全局名（池重映射）
+                var is_pool = 0
+                if kd == 3 {
+                    is_pool = 1
+                }
+                if kd == 0 && ok == 0 {
+                    if iop3 == 62 || iop3 == 51 || iop3 == 35 || iop3 == 36 || iop3 == 41 {
                         is_pool = 1
                     }
-                    if kd == 0 && ok == 0 {
-                        if iop3 == 62 || iop3 == 51 || iop3 == 35 || iop3 == 36 || iop3 == 41 {
-                            is_pool = 1
-                        }
+                }
+                if is_pool == 1 {
+                    if wr_pool_mapped(tieir_out, pool_map, ov) == 0 {
+                        return false
                     }
-                    if is_pool == 1 {
-                        if wr_pool_mapped(tieir_out, pool_map, ov) == 0 {
+                } else {
+                    if kd == 0 {
+                        if ov < f_vstart[sfi] || ov > f_vmax[sfi] {
+                            set_err("片段值操作数越界（指令 " + to_string(ii5) + " 值 " + to_string(ov) + "）")
                             return false
                         }
+                        ov = f_vbase[sfi] + (ov - f_vstart[sfi])
                     } else {
-                        if kd == 0 {
-                            if ov < f_vstart[sfi] {
-                                set_err("片段值操作数越界（指令 " + to_string(ii3) + " 值 " + to_string(ov) + "）")
+                        if kd == 1 {
+                            if ov < 0 || ov >= nb || blk_new[ov] < 0 {
+                                set_err("片段块操作数越界（指令 " + to_string(ii5) + " 块 " + to_string(ov) + "）")
                                 return false
                             }
-                            ov = f_vbase[sfi] + (ov - f_vstart[sfi])
-                        } else {
-                            if kd == 1 {
-                                if ov < 0 || ov >= nb || blk_new[ov] < 0 {
-                                    set_err("片段块操作数越界（指令 " + to_string(ii3) + " 块 " + to_string(ov) + "）")
-                                    return false
-                                }
-                                ov = blk_new[ov]
-                            }
+                            ov = blk_new[ov]
                         }
-                        wr_i64(tieir_out, ov)
                     }
-                    wr_i64(tieir_out, kd)
-                    ok = ok + 1
+                    wr_i64(tieir_out, ov)
                 }
-                ii3 = ii3 + 1
+                wr_i64(tieir_out, kd)
+                ok = ok + 1
             }
         }
-        bi = bi + 1
+        ii5 = ii5 + 1
     }
     wr_sec_end(tieir_out, ip, is_)
     // 段 6：导出表（选中函数同名行子集）

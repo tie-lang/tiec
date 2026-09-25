@@ -366,3 +366,62 @@ tieir_asm.tie（asm_flag_sc）+ driver/pipeline.tie（sc 恢复）。不动点
 asm_flag_sc：片段含 `call @tie_sc_off`（op 35 载荷白名单）→ driver 恢复
 sc_enable（emit 侧隐含 SSO 段）。gv 装配探针复测 **4/4 assembled、stdout
 逐字节一致**（不受本轮影响）。
+
+## 13. p.9.21.10 落地：写侧块归属统一 + 三个潜伏缺陷修正（2026-09-25）
+
+落点：tieir_ser.tie（serialize 游标修正）+ tieir_slice.tie（write_mod_slice
+按指令 id 序写 + 值域跨度压缩）+ tieir_asm.tie（重放单趟化 + 片段值全局基址
++ pty_base 哨兵移除）+ driver/cache_drv.tie（部分列表修正 + 写失败诊断）+
+ir.tie/irgen.tie（C' 断言实验与回退）。不动点 0cf19245 → **825f97fd**（盐
+v8）；回归 **157/8/2**；三阶自举 FIXED-POINT OK；库自检 ×4 / trm 探针 / gv
+装配探针全绿。
+
+### 13.1 方案落地（对齐讨论定稿：A + 写侧统一归属）
+* **serialize 游标修正**：原单向游标在「块表序 ≠ 指令 id 序」时越过目标块
+  再不回头——driver 全量 .tir 实测 **663730/663974 条指令 own == block_count
+  （越界值）**，块归属几乎全错（此前无人发现：消费者浅、且乱序单元从未
+  roundtrip 过）。改为归属表：每块回填自己的区间（O(ni)），own 恒正确。
+* **write_mod_slice 改按指令 id 序（= 创建序）单遍写**：own = 真归属块新
+  id；块表 start/end = 新流中位置（各块指令在 id 序下连续）。值域压缩基数
+  从「计数」改「**跨度**」（v_max - v_start + 1）——交错生成时他函数值会插
+  进本函数值域内部（span > count），按 count 累计使相邻函数片段值域交叠
+  （vmap 键碰撞 → 装配错值，driver 实测 putil::slice_str 参数全部错位）。
+* **装配器重放单趟化**：片段指令流已是创建序 → 按**全局指令流单趟**重放
+  （建指令即补操作数），替代按函数两趟；`asm_i_blk` 回归（挂块用）。
+* **片段值空间全局基址（asm_frag_vbase / asm_frag_vtotal）**：各片段值 id
+  独立从 0 压缩，而 vmap 是全局键空间——必须加片段基址才唯一。旧两趟重放
+  按「片段顺序登记→使用→下一片段覆盖」的时序侥幸成立；单趟重放（全片段
+  注册先于使用）立即引爆（实测 @ast$tag 参数存引用错值）。
+* **modcache_assembly_paths 部分列表修正（关键安全修复）**：任一片段缺失
+  时原 `return out` 会把**已累积的部分列表**带回 → 装配器拿残缺片段集静默
+  装配 → 缺失模块的函数全部未定义符号（driver 实测 218 模块缺 21 个、
+  regress 138/27）。改为返回空表（与头注文档语义对齐）→ 诚实降级全量。
+* **写失败诊断**：mod_cache_update 写失败不再静默（TIEC_INC=1 打印模块与
+  err_msg）。
+
+### 13.2 C' 断言实验：前提证伪，回退
+曾实现「块区间连续断言」（块未闭只许段尾追加，违例 panic），driver 通过但
+闭包探针当场炸出：**irgen 回填（块 A 未闭 → 闭包块领号 → 回填 A）是合法
+模式**，且 llvmgen 的 `build_inst_blk`（区间回填、表序后者覆盖）+ 按指令
+id 序发射早已正确处理交叠。断言使闭包程序无法编译（regress 138/27）→
+**回退**。教训：不变式先在消费者全集上验证再上升为断言。
+
+### 13.3 附加发现：asm_f_pty_base 尾哨兵越界（2f0e14 潜伏缺陷）
+`asm_f_pty_base[n] = len(asm_f_pty)`（n = 片段数）写在**函数记录索引**的
+表上——片段数 ≥ 函数记录数时越界改写该记录的类型基址 → 其参数类型全部读
+零（driver 实测 putil::slice_str (ptr,i64,i64) → (i8,i8,i8)）。小探针
+（记录数 < 片段数）永不触发。哨兵无消费者，移除。`asm_f_base[n]` 保留
+（该表确为片段索引，len = n+1）。
+
+### 13.4 验收数据（driver 树，全部片段装配 218/218）
+| 项 | 全量路径 | 装配路径 |
+| --- | --- | --- |
+| 编译 driver.tie | ~35-40s | **~20s**（跳过 irgen+passes） |
+| 装配版编译器跑 regress | 157/8/2 | **157/8/2（完全一致）** |
+| gv 探针装配 | — | 4/4 assembled、stdout 逐字节一致 |
+| trm 探针 / 库自检 ×4 | — | PASS / exit 0 |
+| 三阶自举 | — | FIXED-POINT OK（0cf19245 → **825f97fd**，盐 v8） |
+
+**遗留**：片段池段仍按写侧口径允许排列差异（dump_text 口径不变）；
+`build_inst_blk` 的覆盖式归属与序列化/片段写侧的三处独立实现可在后续统一
+为单一归属工具（性能中性，纯去重，未列入本期）。

@@ -85,7 +85,7 @@ var g_no_warn: bool = false;      // --no-warn：跳过警告检查（不发射/
 var g_front_warn: bool = false;
 // v3（p.9.21.9 收口）：装配器块操作数映射修正 + 装配路径副作用恢复——
 // 旧片段由修正前的装配器语义写出，必须整体失效（盐升格）。
-var g_cache_salt: string = "tiec-cache-v6";  // 缓存键盐：编译器输出形态变更（如 optimizer 改动/固定点升格）时递增，强制旧缓存失效（p.9.19.8 遗留补：升格必 bump）
+var g_cache_salt: string = "tiec-cache-v8";  // 缓存键盐：编译器输出形态变更（如 optimizer 改动/固定点升格）时递增，强制旧缓存失效（p.9.19.8 遗留补：升格必 bump）
 var g_emit_ir: bool = false;
 var g_keep_ir: bool = false;
 var g_cli_fast_math: bool = false;    // --ffast-math：训练性能优先（编译产物启用 fast-math，默认关）
