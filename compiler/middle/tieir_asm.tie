@@ -478,44 +478,61 @@ func asm_build_seq(order: table<string>) -> i64 {
     var f0 = asm_f_base[0]
     var f0_end = asm_f_base[1]
     var seen_match: bool = false
-    var fi = f0
-    while fi < f0_end {
-        var nm = interner.name_str(asm_f_gname[fi])
-        var is_m: bool = false
-        var oi: i64 = 0
-        while oi < len(order) {
-            if order[oi] == nm {
-                is_m = true
-            }
-            oi = oi + 1
+    // p.9.21.10 性能：名字匹配从 O(order×records) 字符串扫描（driver 实测
+    // ~1100 万次比较）改为 interner id 直接索引（O(1) 查，索引表 ~interner 容量）。
+    var cap = interner.len()
+    var order_flag: table<i64> = table_new_i64()
+    var name_rec: table<i64> = table_new_i64()
+    var t: i64 = 0
+    while t < cap {
+        table_push(order_flag, 0)
+        table_push(name_rec, -1)
+        t = t + 1
+    }
+    var oi0: i64 = 0
+    while oi0 < len(order) {
+        var oid0 = interner.intern(order[oi0])
+        if oid0 >= 0 && oid0 < cap {
+            order_flag[oid0] = 1
         }
-        if is_m {
+        oi0 = oi0 + 1
+    }
+    var fi0: i64 = f0
+    while fi0 < f0_end {
+        var nid0 = asm_f_gname[fi0]
+        if nid0 >= 0 && nid0 < cap && order_flag[nid0] == 1 {
             seen_match = true
         } else {
             if seen_match {
-                table_push(tail, fi)
+                table_push(tail, fi0)
             } else {
-                table_push(head, fi)
+                table_push(head, fi0)
             }
         }
-        fi = fi + 1
+        fi0 = fi0 + 1
     }
-    // order 序：每名找未用记录（全局线性查——native 下可接受）
+    // 全部函数记录按名登记（全名唯一，后写覆盖防御）
+    var fr: i64 = f0
+    var frend = asm_f_base[len(asm_frag_fn)]
+    while fr < frend {
+        var nidr = asm_f_gname[fr]
+        if nidr >= 0 && nidr < cap {
+            name_rec[nidr] = fr
+        }
+        fr = fr + 1
+    }
+    // order 序：每名 O(1) 查未用记录
     var oi2: i64 = 0
     while oi2 < len(order) {
         var found = -1
-        var fi2 = asm_f_base[0]
-        var fend = asm_f_base[len(asm_frag_fn)]
-        while fi2 < fend {
-            if asm_f_used[fi2] == 0 && interner.name_str(asm_f_gname[fi2]) == order[oi2] {
-                found = fi2
-                fi2 = fend
-            }
-            fi2 = fi2 + 1
+        var oid2 = interner.intern(order[oi2])
+        if oid2 >= 0 && oid2 < cap {
+            found = name_rec[oid2]
         }
-        if found >= 0 {
+        if found >= 0 && asm_f_used[found] == 0 {
             asm_f_used[found] = 1
             table_push(matched, found)
+            name_rec[oid2] = -1
         }
         // 未找到 = 模板声明等不产 IR 的项——跳过
         oi2 = oi2 + 1
@@ -535,31 +552,28 @@ func asm_build_seq(order: table<string>) -> i64 {
         table_push(asm_seq, tail[ti])
         ti = ti + 1
     }
-    // 全覆盖校验：全部函数记录必须进入装配序（head/tail/used 三者之一）
-    var fi3 = asm_f_base[0]
-    var fend3 = asm_f_base[len(asm_frag_fn)]
-    while fi3 < fend3 {
-        if asm_f_used[fi3] == 0 {
-            var in_head: bool = false
-            var in_tail: bool = false
-            var s1: i64 = 0
-            while s1 < len(head) {
-                if head[s1] == fi3 {
-                    in_head = true
-                }
-                s1 = s1 + 1
-            }
-            var s2: i64 = 0
-            while s2 < len(tail) {
-                if tail[s2] == fi3 {
-                    in_tail = true
-                }
-                s2 = s2 + 1
-            }
-            if !in_head && !in_tail {
-                set_err("asm: 函数未被装配序覆盖（" + interner.name_str(asm_f_gname[fi3]) + "）")
-                return -1
-            }
+    // 全覆盖校验（p.9.21.10：covered 标志 O(1) 查，替代 head/tail 线性扫）
+    var covered: table<i64> = table_new_i64()
+    var fc: i64 = f0
+    while fc < frend {
+        table_push(covered, 0)
+        fc = fc + 1
+    }
+    var hi: i64 = 0
+    while hi < len(head) {
+        covered[head[hi] - f0] = 1
+        hi = hi + 1
+    }
+    var ti: i64 = 0
+    while ti < len(tail) {
+        covered[tail[ti] - f0] = 1
+        ti = ti + 1
+    }
+    var fi3 = f0
+    while fi3 < frend {
+        if asm_f_used[fi3] == 0 && covered[fi3 - f0] == 0 {
+            set_err("asm: 函数未被装配序覆盖（" + interner.name_str(asm_f_gname[fi3]) + "）")
+            return -1
         }
         fi3 = fi3 + 1
     }
@@ -723,17 +737,25 @@ pub func asm_from_slices(paths: table<string>, order: table<string>) -> i64 {
     asm_flag_catch = false
     asm_flag_sc = false
     var m: i64 = 0
+    var dbg_t0: i64 = 0
+    unsafe { dbg_t0 = GetTickCount() }
+    var dbg_bytes: i64 = 0
     while m < n {
         var t = bytes.read(paths[m])
         if len(t) == 0 {
             set_err("asm: 片段读取失败: " + paths[m])
             return -1
         }
+        dbg_bytes = dbg_bytes + len(t)
         if asm_parse_slice(t, m) != 0 {
             return -1
         }
         m = m + 1
     }
+    var dbg_t1: i64 = 0
+    unsafe { dbg_t1 = GetTickCount() }
+    var dbg_t2: i64 = 0
+    unsafe { dbg_t2 = GetTickCount() }
     // 尾哨兵（per-片段基址表统一长度 n+1）
     asm_f_base[n] = len(asm_f_gname)
     // 注意：asm_f_pty_base 是**函数记录**索引（push 式），此处绝不能写 [n]
@@ -745,6 +767,12 @@ pub func asm_from_slices(paths: table<string>, order: table<string>) -> i64 {
     }
     if asm_replay() != 0 {
         return -1
+    }
+    var dbg_t3: i64 = 0
+    unsafe { dbg_t3 = GetTickCount() }
+    if get_env("TIEC_ASMDBG") == "1" {
+        println("ASMDIAG parse=" + to_string(dbg_t1 - dbg_t0) + "ms bytes=" + to_string(dbg_bytes) +
+            " seq+replay=" + to_string(dbg_t3 - dbg_t2) + "ms")
     }
     // 全覆盖：重放函数数 == 全部片段函数数
     var total: i64 = 0

@@ -436,3 +436,21 @@ link(22-29s)（两路径相同）与产物级命中（cache_try_hit_dep 直接�
 **遗留**：片段池段仍按写侧口径允许排列差异（dump_text 口径不变）；
 `build_inst_blk` 的覆盖式归属与序列化/片段写侧的三处独立实现可在后续统一
 为单一归属工具（性能中性，纯去重，未列入本期）。
+
+### 13.5 性能转正尝试（同日）：分账与结论
+GetTickCount 分段实测（PHASE/ASMDIAG 计时已进管线，TIEC_INC/TIEC_ASMDBG 门控）：
+* **parse 4.8s**（73.7MB 片段字节；rd_i64 逐字段 8B + rd_str 逐字符 8B +
+  str_from_code 逐字符 SSO 分配 + O(n²) 拼接）+ **seq+replay 9.4s**
+  （build_seq 两处 O(order×records) 字符串扫描已改 interner id 直接索引
+  O(1)，实测仅省 ~0.3s——字符串比较不是大头；主体 = 664K new_inst +
+  3M add_operand 的 ir API 调用）。
+* **三趟批量重放实验**（建指令 → 原地 remap → ir.ops_append 整表接续 +
+  set_inst_ops_meta 回填）引入 ast 片段 fm2 归属错位（残缺 vmap 键 → 错值），
+  未能在本批定位，**回退到逐条 add_operand 版**（byte-identical 已验证）。
+  留下的响亮诊断（remap 未登记即报错）是下批的现成起点。
+* **结论**：装配路径端到端 ~57s vs 全量 ~55s，driver 规模下暂为净负
+  （重放 9.4s > 跳过的 irgen 3.4s）；**大头是 emit 14s + link 22-29s
+  （占 ~75%，两路径相同）**。转正路径 = 片段格式二进制紧凑化（u32 字段 +
+  UTF-8 字符串，字节量 ~4-8×↓）+ ir 批量 API 完成化，目标 parse+replay
+  ≤ 3.4s；另 emit/link 的缓存化是更大的独立命题。正确性基础设施（218/218
+  装配 + 装配版编译器 regress 完全一致）本批已闭环。
