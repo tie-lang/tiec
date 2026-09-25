@@ -550,7 +550,15 @@ pub func keel_run_pipeline(pid: i64, max_steps: i64) -> i64 {
         // 仅对「真实管线」生效；trm 路线 B（独立分派）与 --emit-ir 前的
         // 提前返回路径不受影响（g_trm_mode 单独拦截于 compile_program）。
         if iname == "kpass_front" {
+            var tf0 = 0
+            unsafe { tf0 = GetTickCount() }
             var frc = keel_dispatch(iname)
+            var tf1 = 0
+            unsafe { tf1 = GetTickCount() }
+            var incf = get_env("TIEC_INC")
+            if incf == "1" {
+                println("PHASE " + iname + " " + to_string(tf1 - tf0) + "ms")
+            }
             if frc != 0 {
                 return frc
             }
@@ -564,7 +572,15 @@ pub func keel_run_pipeline(pid: i64, max_steps: i64) -> i64 {
                 }
             }
         } else {
+            var t0p = 0
+            unsafe { t0p = GetTickCount() }
             var rc = keel_dispatch(iname)
+            var t1p = 0
+            unsafe { t1p = GetTickCount() }
+            var incp = get_env("TIEC_INC")
+            if incp == "1" {
+                println("PHASE " + iname + " " + to_string(t1p - t0p) + "ms")
+            }
             if rc != 0 {
                 return rc
             }
