@@ -356,6 +356,89 @@ pub func tig_ast() -> i64 {
     return 0
 }
 
+// p.9.21.9 收口：装配路径（driver 全命中跳过 irgen+passes）的**登记副作用
+// 重放**入口——只登记、不生成 IR。
+// 背景：llvmgen 的全局段（g_global_*）与 vtable 段（g_vt_*）此前只在 tig_ast
+// 内由 irgen 登记；装配路径不走 irgen → 含顶层 VarDecl / impl 的单元会缺全局
+// 定义（llvmgen 报未定义符号）。AST（g_extra_tops）与语义层状态在装配路径
+// 同样可用（driver 已跑前端），故按 tig_ast 的同序遍历重放登记：
+//   ① reg_all_vtables（impl 记录）→ ② 顶层 VarDecl（tag 100）→
+//   ③ 命名空间 const（tag 112 内 tag 100，全名 prefix::NAME）。
+// 返回 0 / -1（sm_err_msg 已置；行池 table<R> 全局等边界由 tig_global_var 报出）。
+pub func asm_reg_globals() -> i64 {
+    reg_all_vtables()
+    var n = len(g_extra_tops)
+    var i: i64 = 0
+    while i < n {
+        var s = g_extra_tops[i]
+        if s_tags[s] == 100 {
+            if tig_global_var(s, sstate.name_str(s)) < 0 {
+                return -1
+            }
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < n {
+        var s = g_extra_tops[i]
+        if s_tags[s] == 112 {
+            if asm_reg_ns_globals(s, "") < 0 {
+                return -1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+// 命名空间内 const（tag 100）登记（与 tig_ns 同款前缀拼接：段以 :: 连接）。
+func asm_reg_ns_globals(ns_node: i64, prefix: string) -> i64 {
+    var nseg = s_aux[ns_node]
+    var full_pre: string = prefix
+    var k: i64 = 0
+    while k < nseg {
+        var seg = sstate.child(ns_node, k)
+        if full_pre != "" {
+            full_pre = full_pre + "::"
+        }
+        full_pre = full_pre + sstate.name_str(seg)
+        k = k + 1
+    }
+    var body = sstate.child(ns_node, nseg)
+    var nb = sstate.nchild(body)
+    var i: i64 = 0
+    while i < nb {
+        var st = sstate.child(body, i)
+        var tag = s_tags[st]
+        if tag == 100 {
+            if tig_global_var(st, full_pre + "::" + sstate.name_str(st)) < 0 {
+                return -1
+            }
+        } else if tag == 112 {
+            if asm_reg_ns_globals(st, full_pre) < 0 {
+                return -1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+// 装配路径的惰性登记族（msg_* 全局槽 / rand_range 状态槽）：irgen 在生成
+// 函数体时惰性登记，装配路径按「片段是否引用对应全局」由 driver 调此入口恢复。
+pub func asm_reg_msg() {
+    tig_msg_reg_globals()
+}
+pub func asm_reg_rng() {
+    tig_rng_reg()
+}
+
+// 装配路径的链接判据恢复助手：extern 符号是否 libc（非 libc 的 tie_* 桥符号
+// 才需要链 tie_interp.lib；trm-lite tl_* 走 trm_lite.a）。
+pub func asm_is_libc(sym: string) -> bool {
+    return is_libc_sym(sym)
+}
+
 // 生成 tie-IR（完整版）：内部调 semantic.check_src（parse + 语义 + import）
 // 填充 AST + 类型表，然后遍历顶层 FnDef。driver-lite.tie 与 backend/
 // _driver_test.tie 仍在使用；driver.tie 主路径改用 tig_ast() 避免重复前端。

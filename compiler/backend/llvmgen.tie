@@ -293,6 +293,42 @@ pub func global_folded_of(nid: i64) -> (i64, i64, i64) {
 }
 
 
+// p.9.21.9 收口：装配路径登记副作用回滚（装配恢复失败 → driver 降级全量
+// irgen 前调用；不清空则全量路径 tig_global_var 会**二次登记**同名全局 →
+// .ll 重复定义）。只复位「登记类」状态（全局段/vtable/调用符号/Linux 入口
+// 捕获标记），置位旗标（sso/wsock/catch）由全量路径自行幂等置位，不清。
+pub func reset_global_regs() {
+    g_global_names = table_new_i64()
+    g_global_is_table = table_new_i64()
+    g_global_tys = table_new_i64()
+    g_global_inits = table_new_i64()
+    g_global_inits_ok = table_new_i64()
+    g_global_fps = table_new_i64()
+    g_global_strs = table_new_i64()
+    g_vt_names = table_new_i64()
+    g_vt_tys = table_new_i64()
+    g_vt_n = table_new_i64()
+    g_vt_off = table_new_i64()
+    g_vt_syms = table_new_i64()
+    call_syms = table_new_i64()
+    g_linux_args = 0
+}
+
+// p.9.21.9 收口：全局名是否已登记（装配路径校验「片段引用的全局均已登记」
+// 用——未登记即装配副作用恢复不全，driver 据此诚实降级全量路径）。
+// 登记名不含 '@' 前缀（emit 时补），入参按登记名比对。
+pub func has_global(nm: string) -> bool {
+    var nid = interner.intern(nm)
+    var i: i64 = 0
+    while i < len(g_global_names) {
+        if g_global_names[i] == nid {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
 // SSO 短串池启用标记（irgen s21_sso_alloc 首次调用置位；幂等）。
 pub func sso_enable() {
     g_sso_enabled = 1
