@@ -53,6 +53,7 @@ var asm_f_blk_cnt: table<i64>;
 var asm_fb_idx: table<i64>;      // 扁平：函数段 → 块记录下标（块表序）
 var asm_bi_base: table<i64>;     // 块记录 → 指令记录基址
 var asm_bi_cnt: table<i64>;      // 块记录 → 指令数
+var asm_i_blk: table<i64>;       // 指令记录 → 全局块记录下标（重放单趟挂块用）
 var asm_f_used: table<i64>;      // 装配序命中标记（0/1）
 var asm_b_base: table<i64>;      // 片段 → 块记录基址
 var asm_b_fid: table<i64>;       // 块记录 → 全局函数记录下标
@@ -77,6 +78,10 @@ var asm_frag_fn: table<i64>;     // 片段 → 函数数
 // str::trim_start 报「值操作数引用未登记结果」）。显式按值 id 建表则与交错
 // 无关：片段值 id 是唯一键，登记即查。
 var asm_vmap: table<i64>;
+// p.9.21.10：每片段值空间的全局基址——各片段值 id 独立从 0 压缩，vmap 是
+// 全局键空间，必须加片段基址才唯一（否则跨片段键碰撞 → 装配错值）。
+var asm_frag_vbase: table<i64>;
+var asm_frag_vtotal: i64 = 0;    // 此前各片段值空间大小的全局累计
 // p.9.21.9 收口：指令 gid 回执表（下标 = 指令记录；重放两趟法的中间态）。
 // 两趟法动因：真实 IR 存在**前向值引用**（phi/合并类指令 op33、load op21 等
 // 的操作数指向创建序更靠后的值——irgen 先建指令、后补操作数，离线核查 driver
@@ -332,6 +337,7 @@ func asm_parse_slice(t: table<i64>, m: i64) -> i64 {
             asm_bi_base[brec] = len(asm_i_op)
         }
         asm_bi_cnt[brec] = asm_bi_cnt[brec] + 1
+        table_push(asm_i_blk, brec)
         table_push(asm_i_op, iop)
         table_push(asm_i_ty, ity)
         table_push(asm_i_val, ivl)
@@ -404,27 +410,39 @@ func asm_parse_slice(t: table<i64>, m: i64) -> i64 {
     // 结果引用时会偏大 → 值偏移整体错位（装配报「值操作数引用未登记结果」或
     // 把结果误当参数）。按 vsize = 参数数 + 结果数 逐函数累计精确复现
     //（与 write_mod_slice 的 vcum 同式；每片段从 0 起算）。
+    // p.9.21.10：值基址按**跨度**累计（与 write_mod_slice 的 span 口径对齐）——
+    // irgen 交错生成时他函数的值插进本函数值域内部（span > count），按 count
+    // 累计会让相邻函数的片段值域交叠（vmap 键碰撞 → 装配错值）。
     var cum: i64 = 0
     var ri = f_base
     while ri < f_base + fn_n {
         asm_f_vbase[ri] = cum
-        var nres: i64 = 0
+        var maxv: i64 = -1
+        if asm_f_pcnt[ri] > 0 {
+            maxv = cum + asm_f_pcnt[ri] - 1
+        }
         var kb: i64 = 0
         while kb < asm_f_blk_cnt[ri] {
             var brec2 = asm_fb_idx[asm_f_blk_base[ri] + kb]
             var ib2 = asm_bi_base[brec2]
             var ic: i64 = 0
             while ic < asm_bi_cnt[brec2] {
-                if asm_i_val[ib2 + ic] >= 0 {
-                    nres = nres + 1
+                var vv2 = asm_i_val[ib2 + ic]
+                if vv2 >= 0 && vv2 > maxv {
+                    maxv = vv2
                 }
                 ic = ic + 1
             }
             kb = kb + 1
         }
-        cum = cum + asm_f_pcnt[ri] + nres
+        if maxv >= cum {
+            cum = maxv + 1
+        }
         ri = ri + 1
     }
+    // 本片段的全局基址 = 此前各片段值空间大小之和；累计后供下一段续接
+    table_push(asm_frag_vbase, asm_frag_vtotal)
+    asm_frag_vtotal = asm_frag_vtotal + cum
     tieir_pos = tieir_sec_end
     // 段 6：导出表（真实产物恒空；非 0 拒绝）
     if !rd_sec_head(t, SEC_EXPORT) { return -1 }
@@ -574,9 +592,10 @@ func asm_replay() -> i64 {
         ir.func_export_set(fid, asm_f_ex[r])
         // 参数值登记（片段值域：f_vbase[r] + j；与 write_mod_slice 的 f_vbase
         // 同式——参数在 new_func 时连续领号，必落在 [vbase, vbase+pc)）
+        var fm_r = asm_rec_frag(r)
         var pj: i64 = 0
         while pj < pc {
-            asm_vmap_set(asm_f_vbase[r] + pj, ir.param_val(fid, pj))
+            asm_vmap_set(asm_frag_vbase[fm_r] + asm_f_vbase[r] + pj, ir.param_val(fid, pj))
             pj = pj + 1
         }
         // 块重放（按函数分组段；段内即块表相对序 = 原创建序）
@@ -587,59 +606,54 @@ func asm_replay() -> i64 {
             asm_b_gid[brec] = ir.new_block(fid, asm_b_gname[brec])
             b = b + 1
         }
-        // 指令重放（逐块：块段序 → 块内指令序；建指令即补操作数）。
-        // 单趟不可改两趟：ir.add_operand 断言操作数段紧接段尾（ops_off 在
-        // new_inst 时定），延迟补会撞「操作数段交错」panic。前向引用无解
-        // 的单元由 write_mod_slice 的区间单调护栏拒写片段（见 tieir_slice）。
-        b = 0
-        while b < asm_f_blk_cnt[r] {
-            var brec3 = asm_fb_idx[bb + b]
-            var ib = asm_bi_base[brec3]
-            var i: i64 = 0
-            while i < asm_bi_cnt[brec3] {
-                var gid = ir.new_inst(asm_b_gid[brec3], asm_i_op[ib + i], asm_i_ty[ib + i])
-                asm_i_gid[ib + i] = gid
-                var vv = asm_i_val[ib + i]
-                if vv >= 0 {
-                    asm_vmap_set(vv, ir.get_value(gid))
-                }
-                var ok: i64 = 0
-                while ok < asm_i_cnt[ib + i] {
-                    var idx = asm_i_obase[ib + i] + ok
-                    var ov = asm_o_v[idx]
-                    var okd = asm_o_k[idx]
-                    if asm_o_pool[idx] == 1 {
-                        ir.add_operand(gid, ov, okd)
-                    } else {
-                        if okd == 0 {
-                            // 值操作数：片段值 id 直查映射表（与值域是否交错无关）
-                            if ov < 0 || ov >= len(asm_vmap) || asm_vmap[ov] < 0 {
-                                set_err("asm: 值操作数未登记（fn " + interner.name_str(asm_f_gname[r]) + " v=" + to_string(ov) + "）")
-                                return -1
-                            }
-                            ov = asm_vmap[ov]
-                        } else {
-                            if okd == 1 {
-                                // 块操作数载荷 = **片段内块 lid**（write_mod_slice
-                                // 写 blk_new[ov]，跨本片段全部选中函数连续编号），
-                                // 与指令属块同域——按片段块表基址定位。
-                                var fm = asm_rec_frag(r)
-                                if ov < 0 || asm_b_base[fm] + ov >= asm_b_base[fm + 1] {
-                                    set_err("asm: 块操作数越界（fn " + interner.name_str(asm_f_gname[r]) + " lid=" + to_string(ov) + "）")
-                                    return -1
-                                }
-                                ov = asm_b_gid[asm_b_base[fm] + ov]
-                            }
-                        }
-                        ir.add_operand(gid, ov, okd)
-                    }
-                    ok = ok + 1
-                }
-                i = i + 1
-            }
-            b = b + 1
-        }
+        // 指令重放见下方全局单趟（p.9.21.10：片段指令流已按 id 序 = 创建序
+        // 写出，跨函数单趟重放即创建序；建指令即补操作数，无前向引用）
         k = k + 1
+    }
+    // 指令全局单趟重放：片段指令流 = id 序（write_mod_slice p.9.21.10 改造），
+    // 建指令即补操作数（ir.add_operand 段连续断言满足）；每块指令在流中连续
+    // → 重建后块区间仍连续。vmap 直查（值域是否交错无关）。
+    var gi: i64 = 0
+    while gi < len(asm_i_op) {
+        var blkrec = asm_i_blk[gi]
+        var fm_i = asm_rec_frag(asm_b_fid[blkrec])
+        var gid = ir.new_inst(asm_b_gid[blkrec], asm_i_op[gi], asm_i_ty[gi])
+        var vv = asm_i_val[gi]
+        if vv >= 0 {
+            asm_vmap_set(asm_frag_vbase[fm_i] + vv, ir.get_value(gid))
+        }
+        var ok: i64 = 0
+        while ok < asm_i_cnt[gi] {
+            var idx = asm_i_obase[gi] + ok
+            var ov = asm_o_v[idx]
+            var okd = asm_o_k[idx]
+            if asm_o_pool[idx] == 1 {
+                ir.add_operand(gid, ov, okd)
+            } else {
+                if okd == 0 {
+                    // 值操作数：片段值 id + 片段基址 → 全局 vmap 键
+                    var key = asm_frag_vbase[fm_i] + ov
+                    if ov < 0 || key >= len(asm_vmap) || asm_vmap[key] < 0 {
+                        set_err("asm: 值操作数未登记（v=" + to_string(ov) + "）")
+                        return -1
+                    }
+                    ov = asm_vmap[key]
+                } else {
+                    if okd == 1 {
+                        // 块操作数载荷 = 片段内块 lid，按片段块表基址定位
+                        var fm = asm_rec_frag(asm_b_fid[blkrec])
+                        if ov < 0 || asm_b_base[fm] + ov >= asm_b_base[fm + 1] {
+                            set_err("asm: 块操作数越界（lid=" + to_string(ov) + "）")
+                            return -1
+                        }
+                        ov = asm_b_gid[asm_b_base[fm] + ov]
+                    }
+                }
+                ir.add_operand(gid, ov, okd)
+            }
+            ok = ok + 1
+        }
+        gi = gi + 1
     }
     return 0
 }
@@ -679,6 +693,7 @@ pub func asm_from_slices(paths: table<string>, order: table<string>) -> i64 {
     asm_fb_idx = table_new_i64()
     asm_bi_base = table_new_i64()
     asm_bi_cnt = table_new_i64()
+    asm_i_blk = table_new_i64()
     asm_f_used = table_new_i64()
     asm_b_base = table_new_i64()
     asm_b_fid = table_new_i64()
@@ -697,6 +712,8 @@ pub func asm_from_slices(paths: table<string>, order: table<string>) -> i64 {
     asm_pr = table_new_i64()
     asm_frag_fn = table_new_i64()
     asm_vmap = table_new_i64()
+    asm_frag_vbase = table_new_i64()
+    asm_frag_vtotal = 0
     asm_i_gid = table_new_i64()
     asm_seq = table_new_i64()
     asm_grefs = table_new_i64()
@@ -719,7 +736,10 @@ pub func asm_from_slices(paths: table<string>, order: table<string>) -> i64 {
     }
     // 尾哨兵（per-片段基址表统一长度 n+1）
     asm_f_base[n] = len(asm_f_gname)
-    asm_f_pty_base[n] = len(asm_f_pty)
+    // 注意：asm_f_pty_base 是**函数记录**索引（push 式），此处绝不能写 [n]
+    //（n = 片段数）——曾越界改写第 n 号函数记录的类型基址，其参数类型全变
+    // 零值（driver 实测 putil::slice_str 签名 (ptr,i64,i64) → (i8,i8,i8)）。
+    // 该哨兵无消费者（重放只按函数记录读），直接移除。
     if asm_build_seq(order) != 0 {
         return -1
     }

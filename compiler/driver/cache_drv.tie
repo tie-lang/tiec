@@ -347,7 +347,10 @@ pub func modcache_assembly_paths() -> table<string> {
         var fp = dep_file_fp(p)
         var frag = cdir + "/" + mod_slice_key(p, fp, topt) + ".tir"
         if !file_exists(frag) {
-            return out
+            // p.9.21.10 修正：任一未命中必须返回**空表**（此前 return out 会把
+            // 已累积的部分列表带回 → 装配器拿残缺片段集静默装配，缺失模块的
+            // 函数全部变成未定义符号——driver 实测 218 模块缺 21 个）。
+            return table_new_string()
         }
         table_push(out, frag)
         i = i + 1
@@ -410,6 +413,12 @@ pub func mod_cache_update() -> i64 {
         } else {
             if tieir.write_mod_slice(frag, i2, p, fp) {
                 written = written + 1
+            } else {
+                // p.9.21.10：写失败不再静默（TIEC_INC=1 打印模块与原因）
+                var inc2 = get_env("TIEC_INC")
+                if inc2 == "1" {
+                    println("MODWRITE-FAIL " + p + " : " + tieir.err_msg())
+                }
             }
         }
         i2 = i2 + 1
