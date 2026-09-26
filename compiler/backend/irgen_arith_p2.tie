@@ -288,6 +288,15 @@ func tig_check_bin(op: i64, lv: i64, rv: i64, lt: i64, rt: i64) -> i64 {
 // 浮点二元运算（f64/f32）：算术 → fadd/fsub/fmul/fdiv/frem；比较 → fcmp（ordered）。
 // 对齐 Rust gen_binary_on_regs 的 is_float 分支；比较结果 i1，算术结果 f64。
 func tig_binary_float(op: i64, lv: i64, rv: i64) -> i64 {
+    // p.9.13.3 整除 `\`（f64 走 floor-div）：floor(a / b) —— 这是 `\` 相对 `/` 的
+    // 唯一浮点语义增量（int 族两者同为截断除）。fdiv 后调 libm floor
+    //（llvmgen 已无条件 declare `double @floor(double)`）。
+    if op == B_IDIV {
+        var q = ir.new_inst(g_cur_block, 16, types.named(TK_F64))  // fdiv
+        ir.add_operand(q, lv, 0)
+        ir.add_operand(q, rv, 0)
+        return tig_ext_call1("floor", ir.get_value(q), types.named(TK_F64), types.named(TK_F64))
+    }
     var iop: i64 = -1
     if op == 0 {
         iop = 13  // fadd
