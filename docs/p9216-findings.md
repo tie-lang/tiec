@@ -550,3 +550,26 @@ stdout 一致；三阶自举 FIXED-POINT OK（certutil 直核）。
   /超时交替），本地无法稳定归因——按铁律 4 整体回退到 v3i 已验证形态；
   ir.ops_append（此前已提交）保留，ops_meta_bulk 随实验撤除。批量方向留
   专项勘察：嫌疑 = 大表按值传参整表拷贝（铁律 11 #7）与缓存翻摆交互。
+
+### 14.6 批量重放勘察补充（同日第二轮，仍回退；为下一轮留下硬数据）
+* 二次实验（bulk 恢复 + 分段 file_append 标记——**标记必须带 tick 且写文件
+  而非 stdout**：stdout 全缓冲，被杀进程的 PHASE/ASMDIAG 输出全部丢失；
+  另 TIEC_ASMDBG env 三次忘设——测量脚本必须固化 env（run_asmdbg.sh 范式））：
+  * **干净实测（v7，markers 完整）**：parse 219 片段 2.3s；bulk 重放循环
+    4.9s（inst 级耗时 3.5→12µs 随 bulk_v 增长劣化）；ops_append 157ms；
+    ops_meta_bulk 62ms；**asm_from_slices 完整返回（count-ok）**——
+    bulk 重放本体不慢、不挂。
+  * **~100s 消耗在 count-ok 之后、emit 完成之前**（26MB .ll 最终产出，
+    进程 ~110s 未退出）——未插桩区段 = asm_side_recover / 旗标 / llvmgen
+    emit-on-assembled-IR，下一轮先在此三分段插桩。
+  * **「翻摆」机制勘破**：重编译改 middle/driver 源码 → fp 变 → 该模块片段
+    键失效 → ap 空 → 全量路径（16-21s，exit=0）→ 顺带写齐片段 → 次跑
+    ap 命中 → 装配路径 → 慢。所谓成功/超时交替 = fp 失效循环，非缓存
+    非确定性问题；每轮测量前必须确认片段集与当前源 fp 一致。
+  * **局部表陷阱（新，敌人 #7 实证）**：tie 表值语义下，`table_push(局部表,
+    x)` = 整表拷贝再绑定 → O(n)/次；1.3M 槽局部表 push 实测 O(n²)。
+    全局表原地推 O(1) 均摊（parse 侧 asm_o_v 同规模 3M 推仅 2.3s 实证）。
+    bulk 表必须为全局（本已改全局，仍劣化 → 劣化源另有其人，见上条）。
+  * 决定：**维持回退**。转正判据（parse+replay ≤4s）保持未达诚实记录；
+    下一轮入口 = 在 asm_side_recover / emit 两个未插桩段先分账，再决定
+    bulk 是否恢复（bulk 本体已证可行）。
