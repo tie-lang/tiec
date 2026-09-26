@@ -72,6 +72,9 @@ func join_path_segs(segs: table<i64>) -> i64 {
 //       表达式上下文（元素表达式/实参），互不冲突。
 //   D6) 箭头不与 lambda 参数箭头歧义：tie 闭包唯一语法 func(...){...} 无裸
 //       lambda 形参箭头，`->`/`<-` 恒为数据流箭头，解析无歧义（token 唯一）。
+// 说明（p.9.13.4 拆分）：箭头一段的目标解析与折叠逻辑已迁至分片 4
+// （pexpr_p4.tie：arrow_step / arrow_fold / pipe_read_form / arrow_with_chain），
+// 本函数只保留「取 lhs + 循环消费箭头」的骨架，以满足 0 大函数纪律。
 func parse_arrow() -> i64 {
     var lhs = parse_ternary()
     if lhs < 0 {
@@ -89,72 +92,13 @@ func parse_arrow() -> i64 {
             d = true
         } else {
             putil.advance()
-            var rhs = parse_ternary()
-            if rhs < 0 {
+            lhs = arrow_step(op, lhs)
+            if lhs < 0 {
                 return -1
             }
-            var data_n = lhs
-            var tgt_n = rhs
-            if op == B_ARROW_REV {
-                data_n = rhs
-                tgt_n = lhs
-            }
-            var ttag = ast.tag(tgt_n)
-            if ttag == N_CALL || ttag == N_METHOD_CALL || ttag == N_CALL_EXPR {
-                // 传参脱糖：附加 data 为调用末参（改写目标调用节点）
-                var kids: table<i64> = table_new_i64()
-                var kk: i64 = 0
-                while kk < ast.child_count(tgt_n) {
-                    table_push(kids, ast.child_at(tgt_n, kk))
-                    kk = kk + 1
-                }
-                table_push(kids, data_n)
-                ast.set_children(tgt_n, kids)
-                lhs = tgt_n
-            } else if ttag == N_INDEX {
-                // 下标赋值脱糖：`arr[i] <- a` / `a -> arr[i]` → N_INDEX_ASSIGN
-                var ia = ast.new_node(N_INDEX_ASSIGN, -1, -1, -1, ast.line(tgt_n), ast.col(tgt_n))
-                var ik: table<i64> = table_new_i64()
-                table_push(ik, tgt_n)
-                table_push(ik, data_n)
-                ast.set_children(ia, ik)
-                lhs = ia
-            } else if ttag == N_FIELD_ACCESS {
-                // 字段赋值脱糖：`obj.f <- a` / `a -> obj.f` → N_FIELD_ASSIGN
-                var fa = ast.new_node(N_FIELD_ASSIGN, ast.name(tgt_n), -1, -1, ast.line(tgt_n), ast.col(tgt_n))
-                var fk: table<i64> = table_new_i64()
-                table_push(fk, ast.child_at(tgt_n, 0))  // base
-                table_push(fk, data_n)
-                ast.set_children(fa, fk)
-                lhs = fa
-            } else {
-                // 保留箭头节点（裸 Var 目标：fn → 传参 / 变量 → 赋值，语义层分派）
-                lhs = mk_binary(op, lhs, rhs)
-            }
         }
     }
-    // p.9.11.6 表不可变更新 `with`：二元运算符（保留字 lex_with），优先级低于
-    // 数据流箭头——置于箭头链之后。`t with {k: v}`：左 = 基表/记录表达式，右 =
-    // 更新 map 字面量（`{键: 值}`）→ N_WITH。链式左结合（`t with {a} with {b}`）。
-    // 右操作数用 parse_ternary（刻意不进入箭头层，避免 with 链右结合歧义；链由
-    // 本 while 循环左结合迭代处理）。裁决：with 走「表达式位二元 token」路径，
-    // 参照单箭头 `->` 的 token 手法，不做语句位语境。
-    while putil.peek_tag() == lex_with {
-        putil.advance()   // 'with'
-        var wline = ast.line(lhs)
-        var wcol = ast.col(lhs)
-        var upd = parse_ternary()
-        if upd < 0 {
-            return -1
-        }
-        var w = ast.new_node(N_WITH, -1, -1, -1, wline, wcol)
-        var wet: table<i64> = table_new_i64()
-        table_push(wet, lhs)
-        table_push(wet, upd)
-        ast.set_children(w, wet)
-        lhs = w
-    }
-    return lhs
+    return arrow_with_chain(lhs)
 }
 
 // 逻辑或 ||
