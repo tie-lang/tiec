@@ -53,6 +53,11 @@ pub func kpass_irgen() -> i64 {
                 // p.9.21.9 收口：irgen 副作用恢复（登记族 + 链接判据）。
                 // 装配路径跳过 irgen → 全局/vtable 登记、链接置位须按片段 IR
                 // 引用等价恢复；任一项无法归类 → 回滚登记并降级全量（诚实）。
+        if get_env("TIEC_INC") == "1" {
+            var tk: i64 = 0
+            unsafe { tk = GetTickCount() }
+            file_append("phase.log", "pipe asm-ok t=" + to_string(tk) + "\n")
+        }
                 var rcv = asm_side_recover()
                 if rcv == 0 {
                     // llvmgen 置位副作用恢复（irgen 生成引用时置位；装配按片段
@@ -136,10 +141,12 @@ pub func kpass_irgen() -> i64 {
 // 全量路径（不静默产出缺全局定义的单元）。
 func asm_side_recover() -> i64 {
     asm_recover_err = ""
+    file_append("phase.log", "recover enter\n")
     if irgen.asm_reg_globals() < 0 {
         asm_recover_err = "全局 var 登记重放失败: " + sm_err_msg
         return -1
     }
+    file_append("phase.log", "recover regglobals ok\n")
     var i: i64 = 0
     while i < tieir.asm_gref_count() {
         var nm = asm_bare(interner.name_str(tieir.asm_gref_id(i)))
@@ -169,6 +176,7 @@ func asm_side_recover() -> i64 {
         }
         i = i + 1
     }
+    file_append("phase.log", "recover grefs ok\n")
     // 链接判据恢复（irgen 生成期置位；装配按片段引用等价恢复）
     var k: i64 = 0
     while k < tieir.asm_ext_count() {
@@ -187,6 +195,7 @@ func asm_side_recover() -> i64 {
         }
         k = k + 1
     }
+    file_append("phase.log", "recover exts ok\n")
     if tieir.asm_flag_wsock() {
         g_used_wsock = true
     }
@@ -608,6 +617,7 @@ pub func keel_run_pipeline(pid: i64, max_steps: i64) -> i64 {
             var incp = get_env("TIEC_INC")
             if incp == "1" {
                 println("PHASE " + iname + " " + to_string(t1p - t0p) + "ms")
+                file_append("phase.log", "PHASE " + iname + " end " + to_string(t1p) + "\n")
             }
             if rc != 0 {
                 return rc
