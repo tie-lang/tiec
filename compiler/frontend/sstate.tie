@@ -440,6 +440,10 @@ const S_N_TRY_BLOCK: i64 = 157;     // p.9.11.3 try 错误聚合块（与 ast.ti
 const S_N_DEFER: i64 = 158;         // p.9.11.4 defer 资源释放（与 ast.tie N_DEFER 同号）
 const S_N_TYPE_ALIAS: i64 = 160;    // p.9.11.32 类型别名（与 ast.tie N_TYPE_ALIAS 同号）
 const S_N_YIELD: i64 = 161;         // p.9.11.15 yield 产出语句（与 ast.tie N_YIELD 同号）
+// p.9.13.4 块管道 `x -> { v -> expr }`（与 ast.tie N_BLOCK_PIPE 同号）。
+// tag 162：YIELD(161) 之后的首个空闲号（注意 ast.tie 里 160 被 N_TYPE_ALIAS 与
+// N_SLICE 重复占用，属既有重号，勿再复用该值）。
+const S_N_BLOCK_PIPE: i64 = 162;
 // 三期 A 组 guard<cap> 凭据（与 ast.tie N_GUARD_GET/N_GUARD_USE/N_GUARD_WITH 同号）
 const S_N_GUARD_GET: i64 = 145;     // `unsafe.get(share)` 取得凭据（表达式）
 const S_N_GUARD_USE: i64 = 146;     // `unsafe use g { ... }` 持证越界块
