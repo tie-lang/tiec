@@ -221,8 +221,34 @@ pub func infer_expr_var(id: i64) -> i64 {
         return -1
 }
 
-pub func infer_expr_range(id: i64) -> i64 {
-    var tag = s_tags[id]
+// p.9.13.4 块管道 `x -> { v -> expr }`：内联绑定。
+// 绑定名 v 的类型 = 数据表达式 x 的推断类型；整体类型 = 体表达式的类型。
+// 绑定登记进扁平局部表 lv_*（tie 语义层的块不弹栈，与既有 if/while 块一致），
+// 故后续同名块管道会覆盖登记——在各自体内推断时刻类型均正确。
+pub func infer_expr_block_pipe(id: i64) -> i64 {
+    var data = sstate.child(id, 0)
+    var body = sstate.child(id, 1)
+    if data < 0 || body < 0 {
+        return -1
+    }
+    var dt = infer_expr(data)
+    if dt < 0 {
+        return -1
+    }
+    lv_insert(s_names[id], dt, 0, -1, 0)
+    var bt = infer_expr(body)
+    if bt < 0 {
+        return -1
+    }
+    // 必须自写 node_types[id]（各 infer_expr_* 函数各自登记，分发层不代写）：
+    // 否则外层 `var f = x -> { v -> … }` 在 var-decl 的无标注分支读到 -1 →
+    // 槽型落默认 i64，而体的值可能是 ptr（字符串/表）→ LLVM 校验
+    // `store i64 %N, ptr %M`（'%N' defined with type 'ptr' but expected 'i64'）。
+    node_types[id] = bt
+    return bt
+}
+
+pub func infer_expr_range(id: i64) -> i64 {    var tag = s_tags[id]
         var st = infer_expr(sstate.child(id, 0))
         if st < 0 {
             return -1
