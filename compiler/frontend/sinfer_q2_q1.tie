@@ -54,6 +54,10 @@ pub func infer_expr(id: i64) -> i64 {
     if tag == S_N_VAR {
         return infer_expr_var(id)
     }
+    // p.9.13.4 块管道 `x -> { v -> expr }`：内联绑定（非闭包）
+    if tag == S_N_BLOCK_PIPE {
+        return infer_expr_block_pipe(id)
+    }
     // Range
     if tag == S_N_RANGE {
         return infer_expr_range(id)

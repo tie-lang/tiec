@@ -6,6 +6,10 @@ type tie<class>
 namespace irgen {
 func tig_expr_seg1(id: i64) -> i64 {
     var tag = s_tags[id]
+    // p.9.13.4 块管道（tag 162）：内联绑定槽 + 体求值
+    if tag == 162 {
+        return tig_block_pipe(id)
+    }
     if tag == 0 {
         // IntLit：按推断类型生成常量（后缀字面量 i128/u128/窄整数 → 对应
         // 类型；默认 i64）。曾固定 tig_int_lit(i64)——`1i128 << 64` 左操作数
