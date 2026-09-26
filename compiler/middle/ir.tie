@@ -317,6 +317,23 @@ pub func new_inst(block_id: i64, opcode: i64, ty: i64) -> i64 {
     return iid
 }
 
+// p.9.21.10 性能：装配器批量操作数接口——整表接续 + 逐指令元数据回填，
+// 替代 3M 次 add_operand 逐条调用（跨命名空间调用 + 段连续断言的开销）。
+// 仅限装配器使用：调用方必须保证 off/cnt 覆盖 [0, ops 总量) 且互不重叠。
+pub func ops_append(ops: table<i64>, kinds: table<i64>) {
+    var k: i64 = 0
+    while k < len(ops) {
+        table_push(ir_ops, ops[k])
+        table_push(ir_ops_kind, kinds[k])
+        k = k + 1
+    }
+}
+
+pub func set_inst_ops_meta(inst_id: i64, off: i64, cnt: i64) {
+    ir_insts_ops_off[inst_id] = off
+    ir_insts_ops_cnt[inst_id] = cnt
+}
+
 // 登记当前生成函数名（irgen.tig_fn_def 调用；p.6.1.4 交错诊断定位用）
 pub func set_cur_fn(full: string) {
     ir_cur_fn = full
