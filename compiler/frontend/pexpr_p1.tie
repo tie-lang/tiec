@@ -365,6 +365,9 @@ func parse_factor() -> i64 {
             op = B_DIV
         } else if putil.peek_tag() == lex_percent {
             op = B_MOD
+        } else if putil.peek_tag() == lex_backslash {
+            // p.9.13.3 整除 `\`（与 * / % 同级；设计稿原定 `//`，因与行注释冲突改符号）
+            op = B_IDIV
         } else if putil.peek_tag() == lex_starq {
             // p.9.11.9 checked 乘 `*?`（同 * 优先级）
             op = B_CHECK_MUL

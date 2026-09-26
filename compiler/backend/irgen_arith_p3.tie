@@ -24,6 +24,8 @@ func tig_compound_assign(op: i64, lv: i64, rv: i64, ty: i64) -> i64 {
         iop = 2  // *=
     } else if op == 3 {
         iop = 3  // /=
+    } else if op == 24 {
+        iop = 3  // \=（整数：与 /= 同为 sdiv 截断除）
     } else if op == 4 {
         iop = 4  // %=
     } else if op == 13 {
@@ -48,6 +50,8 @@ func tig_compound_assign(op: i64, lv: i64, rv: i64, ty: i64) -> i64 {
             iop = 16  // fdiv
         } else if op == 4 {
             iop = 17  // fmod
+        } else if op == 24 {
+            iop = 16  // \= 浮点：先 fdiv，随后套 floor（见下）
         }
     }
     if iop < 0 {
@@ -56,7 +60,12 @@ func tig_compound_assign(op: i64, lv: i64, rv: i64, ty: i64) -> i64 {
     var inst = ir.new_inst(g_cur_block, iop, ty)
     ir.add_operand(inst, lv, 0)
     ir.add_operand(inst, rv, 0)
-    return ir.get_value(inst)
+    var res = ir.get_value(inst)
+    // p.9.13.3 `\=`（浮点）：fdiv 结果再取 floor，保持与二元 `\` 的 floor-div 语义一致。
+    if op == 24 && is_f {
+        return tig_ext_call1("floor", res, ty, ty)
+    }
+    return res
 }
 
 // 字符串二元运算：拼接（+）→ tie 运行时 str_cat 桥（tie_str_cat 无——用

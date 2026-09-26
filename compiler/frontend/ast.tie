@@ -347,6 +347,10 @@ const B_ELVIS: i64 = 20;
 const B_CHECK_ADD: i64 = 21;
 const B_CHECK_SUB: i64 = 22;
 const B_CHECK_MUL: i64 = 23;
+// p.9.13.3 整除运算符 `\`：24=整数截断除（int 走 sdiv；f64 走 floor-div）。
+// 符号改用 `\` 而非设计稿的 `//`——`//` 在 tie 中**已是行注释**（§16.3 符号表），
+// 改注释规则属破坏性改动；`\` 在符号表中完全空闲（0x5C），且有 VB 系先例。
+const B_IDIV: i64 = 24;
 
 // 一元：0=Neg 1=Not 2=PreInc 3=PreDec 4=PostInc 5=PostDec
 const U_NEG: i64 = 0;
