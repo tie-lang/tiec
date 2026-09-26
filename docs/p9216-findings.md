@@ -592,3 +592,22 @@ stdout 一致；三阶自举 FIXED-POINT OK（certutil 直核）。
   replay 侧 664K new_inst + 3M 表推送的本征成本（调用账已消，剩余为
   ir 状态机逐条维护），需 ir 批量构造 API 完成化后另批再攻。
 * 不动点 02990dd8 → **4acda07b**。
+
+## 15. §5.1 归属逻辑三处统一 + §5.0 tieir_asm 拆解（2026-09-26）
+* **ir_blkattr.tie（新，79 行，namespace ir）**：`blk_attr_fill(n_inst, sel)`
+  —— 区间回填、表序后者覆盖（D5 规范语义），交叠/越界计数 + 首个位置经
+  访问器读取；sel 空表 = 全部块参与。三处调用点统一：
+  llvmgen.build_inst_blk / tieir_ser.serialize 段 5 / tieir_slice sel_of——
+  slice 的 D5 拒写语义经访问器逐位保留（错误文案一致）。
+* **tieir_asm.tie 拆解（977 → 318/386/307，铁律 11 达标）**：tieir_asm
+  （入口 + 全局状态表 + helpers）/ tieir_asm_parse（片段解析）/
+  tieir_asm_replay（build_seq + replay）——同 namespace 跨文件。
+* **语法发现**：①`type tie<class>` 必须是文件**第一行**（unit 标记），
+  注释垫前即解析错；②namespace 体内只允许函数/类/嵌套命名空间，全局
+  变量必须在 namespace 外；③跨文件同 namespace 函数/全局需 `pub` +
+  显式 import（含 deps-check 方向矩阵）。
+* 不动点 4acda07b → **71523177**；回归 157/8/2、tieir_test、gv 4/4 stdout
+  一致、三阶自举 FIXED-POINT OK。
+* 推送注：隧道对含大二进制的 push 间歇 502/schannel——真因 = 默认
+  http.postBuffer(1MB) < 仓库内 6MB tiec.exe；`git config http.postBuffer
+  157286400` 后成功（41fff66 实证），后续 502 为隧道自身抖动，重试即可。
