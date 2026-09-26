@@ -54,6 +54,7 @@ type tie<class>
 //   自检：middle/tieir_test.tie（无 driver 可跑，roundtrip + 防伪造验收）。
 
 import "./ir_meta.tie"
+import "./ir_blkattr.tie"
 import "../lib/interner.tie"
 import "/std/bytes.tie"
 
@@ -344,23 +345,9 @@ pub func serialize() -> table<i64> {
     // 游标在「块表序 ≠ 指令 id 序」（irgen 乱序建块，区间不交叠但乱序）时
     // 会越过目标块再也回不来，其后所有指令的 own 全部写成越界值
     //（driver 实测 663730/663974 条 own==block_count）。
-    var blk_of: table<i64> = table_new_i64()
-    var zi: i64 = 0
-    while zi < ir.inst_count() {
-        table_push(blk_of, -1)
-        zi = zi + 1
-    }
-    bi = 0
-    while bi < ir.block_count() {
-        var bs2 = ir.block_start(bi)
-        var be2 = ir.block_end(bi)
-        var t2 = bs2
-        while t2 < be2 {
-            blk_of[t2] = bi
-            t2 = t2 + 1
-        }
-        bi = bi + 1
-    }
+    // p.9.21.11 §5.1：归属逻辑统一到 ir.blk_attr_fill（区间回填、表序后者
+    // 覆盖——与原内联回填逐位一致；空 sel 表 = 全部块参与）。
+    var blk_of: table<i64> = ir.blk_attr_fill(ir.inst_count(), table_new_i64())
     wr_i64(tieir_out, ir.inst_count())
     var ii: i64 = 0
     while ii < ir.inst_count() {
