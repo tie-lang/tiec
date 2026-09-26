@@ -212,8 +212,11 @@ func parse_bit_and() -> i64 {
 }
 
 // 相等 == !=
+// 注：内侧调用 parse_in_expr（而非 parse_comparison），使 `in` 比 `==` 更紧——
+// 于是 `x in xs == false` 解析为 `(x in xs) == false`（自然写法），
+// 且 `a == b in xs` 解析为 `a == (b in xs)`（确定性）。
 func parse_equality() -> i64 {
-    var lhs = parse_comparison()
+    var lhs = parse_in_expr()
     if lhs < 0 {
         return -1
     }
@@ -229,7 +232,7 @@ func parse_equality() -> i64 {
         }
         if !d {
             putil.advance()
-            var rhs = parse_comparison()
+            var rhs = parse_in_expr()
             if rhs < 0 {
                 return -1
             }
