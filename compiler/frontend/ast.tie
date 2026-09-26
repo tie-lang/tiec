@@ -301,6 +301,12 @@ const N_YIELD: i64 = 161;
 // 下标"越界报错"不同，切片默认收敛/钳制，字符串借 str_sub_bytes 内建 clamp）——
 // 见 sinfer/irgen 注释裁决。负端 → clamp 至 0/len。
 const N_SLICE: i64 = 160;
+// p.9.13.4 块管道 `x -> { v -> expr }`（161）：把管道数据绑定到局部名后求值体，
+// 整体是**表达式**（结果 = 体的值）。name = 绑定名池 id；children=[数据表达式, 体]。
+// 语义：绑定 v 的类型 = 数据的推断类型（内联绑定，非闭包——因 tie 闭包形参与返回
+// 类型均不可省略，E00484/E00204，故无法脱糖为闭包）。它是 p.9.13.5 图「节点 =
+// 匿名单参块」形态的前置。
+const N_BLOCK_PIPE: i64 = 162;
 // 类型段（val=TyKw 索引，name=类型关键字文本池 id）
 //   StructType[name=结构名, children=[类型实参槽]]——`Box<i64>` 引用含 N_TYPE_ARGS
 //   子节点；`Box` 裸引用 children[0] = -1（兼容现有）。

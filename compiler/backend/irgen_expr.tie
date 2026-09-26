@@ -44,6 +44,74 @@ func tig_expr(id: i64) -> i64 {
     return -1
 }
 
+// 块管道绑定槽的类型规范化：把**语义类型**映射为**IR 槽类型**，规则与
+// tig_stmt_b_100_VarDecl 的无标注推断分支一致（不可省——否则 `"x" -> { s -> … }`
+// 会生成 alloca <字符串类型> 而 store 值是 ptr，LLVM 校验报
+// `'%N' defined with type 'ptr' but expected 'i64'`）。
+// 关键映射：表/映射/字符串 → TK_STR（统一 ptr 槽，与 llvmgen store 的 to_ptr 配套）；
+// trit → i8 槽；bool → i1 槽；数字/不安全类型/聚合（元组·struct·enum·fn·port·数组）
+// → 保留语义类型；其余（宽类型 num/text/misc 等）→ i64。
+func pipe_slot_ty(it: i64) -> i64 {
+    if it < 0 {
+        return types.named(TK_I64)
+    }
+    if it == types.named(TK_STR) || types.is_table(it) || types.is_map(it) {
+        return types.named(TK_STR)
+    }
+    if it == types.named(TK_TRIT) {
+        return types.named(TK_TRIT)
+    }
+    if it == types.named(TK_ANY) {
+        return it
+    }
+    if types.is_bool_like(it) {
+        return types.named(TK_BOOL)
+    }
+    if types.is_float(it) || types.is_int(it) {
+        return it
+    }
+    if types.is_unsafe_ty(it) {
+        return it
+    }
+    var k = types.kind(it)
+    if k == K_TUPLE || k == K_STRUCT || k == K_ENUM || k == K_FN || k == K_PORT ||
+        k == K_ARRAY || k == K_ACTOR || k == K_GUARD {
+        return it
+    }
+    return types.named(TK_I64)
+}
+
+// p.9.13.4 块管道 `x -> { v -> expr }` 的 IR 生成（tag 162）。
+// 手法＝内联绑定：为绑定名开槽（alloca + store 数据值），把槽登记进当前作用域帧，
+// 在帧内求值体，再弹帧。不生成函数、不涉及调用——故无闭包捕获/环境副本问题。
+// 槽不登记进 g_tblcand_allocas：绑定值是**已存在的值**（数据表达式所拥有），
+// 登记会造成函数出口对同一表二次 release；其生命周期仍由数据值的原有归属管理
+//（与 for 循环变量槽同性质——绑定槽只是读取入口，不取得所有权）。
+func tig_block_pipe(id: i64) -> i64 {
+    var data = sstate.child(id, 0)
+    var body = sstate.child(id, 1)
+    if data < 0 || body < 0 {
+        return -1
+    }
+    var dv = tig_expr(data)
+    if dv < 0 {
+        return -1
+    }
+    var ty = pipe_slot_ty(node_types[data])
+    var alc = ir.new_inst(g_cur_block, 20, ty)  // alloca
+    ir.add_operand(alc, ty, 2)
+    var av = ir.get_value(alc)
+    var st = ir.new_inst(g_cur_block, 22, -1)  // store
+    ir.add_operand(st, ty, 2)
+    ir.add_operand(st, dv, 0)
+    ir.add_operand(st, av, 0)
+    scope_push()
+    scope_put(s_names[id], av, ty)
+    var bv = tig_expr(body)
+    scope_pop()
+    return bv
+}
+
 // 内置原语名判定（builtin_expr 支持集；与 sbuitin 语义层原语表对齐）。
 // 命中即内置——调用失败传播错误，不降级为用户函数路径。
 func is_builtin_name(nm: string) -> bool {

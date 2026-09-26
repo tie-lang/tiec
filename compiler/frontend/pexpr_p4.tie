@@ -23,6 +23,41 @@ func p4_field(base: i64, fld: i64) -> i64 {
     return fa
 }
 
+// 块管道形态（p.9.13.4）：箭头后是 `{ 绑定名 -> 体 }` 时构造 N_BLOCK_PIPE。
+// 形态判定＝三 token 前瞻：`{` + 标识符 + `->`。不匹配返回 -1（调用方回退常规解析）。
+// 注意与尾随闭包的区别：`x -> f() { … }` 的 `{ }` 已在后缀层被 f() 吃为末参
+//（p.8.2.8 裁决 D4），到达本层时 `{` 只可能是块管道开头。
+func pipe_block_form(lhs: i64) -> i64 {
+    if putil.peek_tag() != lex_lbrace {
+        return -1
+    }
+    if putil.peek_n(1) != lex_ident {
+        return -1
+    }
+    if putil.peek_n(2) != lex_arrow {
+        return -1
+    }
+    putil.advance()   // '{'
+    var bind = putil.expect_ident()
+    if bind < 0 {
+        return -1
+    }
+    putil.advance()   // '->'
+    var body = parse_expr()
+    if body < 0 {
+        return -1
+    }
+    if !putil.expect(lex_rbrace, "'}'") {
+        return -1
+    }
+    var n = ast.new_node(N_BLOCK_PIPE, bind, -1, -1, ast.line(lhs), ast.col(lhs))
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, lhs)
+    table_push(kids, body)
+    ast.set_children(n, kids)
+    return n
+}
+
 // 管道读取式目标（p.9.13.4）：箭头后紧跟 `[` / `.` 时按读取脱糖。
 // 返回脱糖节点 id；形态不符返回 -1（调用方退回常规目标解析）。
 func pipe_read_form(base: i64) -> i64 {
@@ -57,6 +92,10 @@ func p4_try_index_read(base: i64) -> i64 {
 //   * 条件管道 `x -> (cond ? f : g)`
 func arrow_step(op: i64, lhs: i64) -> i64 {
     if op == B_ARROW_FWD {
+        var bt = pipe_block_form(lhs)
+        if bt >= 0 {
+            return bt
+        }
         var pt = pipe_read_form(lhs)
         if pt >= 0 {
             return pt
