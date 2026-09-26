@@ -2,8 +2,9 @@ type tie<class>
 // compiler/middle/tieir_slice.tie —— p.9.21.6-2 模块级 tieir 片段（模块化缓存写侧）
 // ============================================================
 // 把当前单元的 IR 按「来源模块」切分序列化：单模块的函数 + 其块/指令/操作数/
-// span/关联符号与导出行，写成**标准格式 .tir 单元**（段 1-7 布局与 tieir_ser
-// 完全一致，tieir.read 可 roundtrip 重建）。
+// 关联符号与导出行。p.9.21.11 起片段为 **v3 紧凑二进制**（u32 小端 + UTF-8
+// 字符串，见 tieir_fmt_v3.tie 头注）——与全量 v2 .tir 格式分轨，读侧只有
+// 装配器 asm_parse_slice（v3 片段不可经 tieir.read 反序列化）。
 //
 // # 片段重建原理（重映射表；函数表按模块**不**连续——菱形导入使展开顺序
 //   main→a→shared→b 的函数表序为 [main, shared, a, b]，模块 id 序与表序
@@ -43,6 +44,7 @@ type tie<class>
 // 写模块 1 片段 → 反序列化 → 结构断言）。
 
 import "./tieir_ser.tie"
+import "./tieir_fmt_v3.tie"
 
 // 函数归属平行表（下标 = ir 函数 id，值 = 来源模块 id；空表 = 未注入）。
 var frag_fn_mods: table<i64>;
@@ -66,7 +68,7 @@ func pool_mark(used: ref table<i64>, id: i64) -> i64 {
     return 1
 }
 
-// 池 id 重映射写入（写入阶段）：id 经 pool_map 映射后写 i64；越界/未标记
+// 池 id 重映射写入（写入阶段）：id 经 pool_map 映射后写 u32 v3；越界/未标记
 // 记错误返回 0（调用方立即中止写入——不允许静默错位）。
 func wr_pool_mapped(t: ref table<i64>, pm: table<i64>, id: i64) -> i64 {
     if id < 0 || id >= len(pm) {
@@ -77,7 +79,7 @@ func wr_pool_mapped(t: ref table<i64>, pm: table<i64>, id: i64) -> i64 {
         set_err("片段池引用未标记（池 id " + to_string(id) + "）")
         return 0
     }
-    wr_i64(t, pm[id])
+    wr_u32(t, pm[id])
     return 1
 }
 
@@ -396,40 +398,40 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
         pc_i = pc_i + 1
     }
     var pool_new_n = len(pool_new_old)
-    // ---- 序列化（布局同 tieir_ser.serialize，值域换成选中子集） ----
+    // ---- 序列化（v3 紧凑二进制：u32 小端 + UTF-8 字符串；布局见 tieir_fmt_v3 头注） ----
     tieir_out = table_new_i64()
-    // 段 1：魔数 + 版本
+    // 段 1：魔数 + v3 版本（u32 LE = 3；与全量 v2 的 8B 大端版本天然可区分）
     table_push(tieir_out, TIEIR_MAGIC0)
     table_push(tieir_out, TIEIR_MAGIC1)
     table_push(tieir_out, TIEIR_MAGIC2)
     table_push(tieir_out, TIEIR_MAGIC3)
     table_push(tieir_out, TIEIR_MAGIC4)
-    wr_i64(tieir_out, TIEIR_VERSION)
+    wr_u32(tieir_out, SLICE_VERSION)
     // 段 2：模块头（包名标片段；依赖段 = 来源路径 + 指纹，片段自述）
-    var hp = wr_sec_head(tieir_out, SEC_HEAD)
+    var hp = wr_sec3_head(tieir_out, SEC_HEAD)
     var hs = len(tieir_out)
-    wr_str(tieir_out, "tiec-modslice")
-    wr_str(tieir_out, "mod:" + to_string(mod_id))
-    wr_i64(tieir_out, ir_meta.get_ir_version())
-    wr_str(tieir_out, pool_str(ir_meta.get_compiler_version()))
-    wr_i64(tieir_out, ir_meta.get_tie_opt())
-    wr_i64(tieir_out, ir_meta.get_pass_ver())
-    wr_i64(tieir_out, 1)
-    wr_str(tieir_out, src_path)
-    wr_str(tieir_out, src_fp)
-    wr_sec_end(tieir_out, hp, hs)
+    wr_str3(tieir_out, "tiec-modslice")
+    wr_str3(tieir_out, "mod:" + to_string(mod_id))
+    wr_u32(tieir_out, ir_meta.get_ir_version())
+    wr_str3(tieir_out, pool_str(ir_meta.get_compiler_version()))
+    wr_u32(tieir_out, ir_meta.get_tie_opt())
+    wr_u32(tieir_out, ir_meta.get_pass_ver())
+    wr_u32(tieir_out, 1)
+    wr_str3(tieir_out, src_path)
+    wr_str3(tieir_out, src_fp)
+    wr_sec3_end(tieir_out, hp, hs)
     // 段 3：字符串池（引用过滤 + 保序压缩；新 id = 片段内下标）
-    var sp = wr_sec_head(tieir_out, SEC_STRPOOL)
+    var sp = wr_sec3_head(tieir_out, SEC_STRPOOL)
     var ss = len(tieir_out)
-    wr_i64(tieir_out, pool_new_n)
+    wr_u32(tieir_out, pool_new_n)
     var pi: i64 = 0
     while pi < pool_new_n {
-        wr_str(tieir_out, interner.name_str(pool_new_old[pi]))
+        wr_str3(tieir_out, interner.name_str(pool_new_old[pi]))
         pi = pi + 1
     }
-    wr_sec_end(tieir_out, sp, ss)
+    wr_sec3_end(tieir_out, sp, ss)
     // 段 4：符号表（选中函数同名行子集）
-    var yp = wr_sec_head(tieir_out, SEC_SYMTAB)
+    var yp = wr_sec3_head(tieir_out, SEC_SYMTAB)
     var ys = len(tieir_out)
     var sym_sel: i64 = 0
     var si: i64 = 0
@@ -449,7 +451,7 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
         }
         si = si + 1
     }
-    wr_i64(tieir_out, sym_sel)
+    wr_u32(tieir_out, sym_sel)
     si = 0
     while si < ir_meta.sym_count() {
         var matched2: bool = false
@@ -469,61 +471,62 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
             if wr_pool_mapped(tieir_out, pool_map, ir_meta.sym_sig(si)) == 0 {
                 return false
             }
-            wr_i64(tieir_out, ir_meta.sym_kind(si))
-            wr_i64(tieir_out, ir_meta.sym_vis(si))
-            wr_i64(tieir_out, ir_meta.sym_line(si))
-            wr_i64(tieir_out, ir_meta.sym_col(si))
+            wr_u32(tieir_out, ir_meta.sym_kind(si))
+            wr_u32(tieir_out, ir_meta.sym_vis(si))
+            wr_u32p1(tieir_out, ir_meta.sym_line(si))
+            wr_u32p1(tieir_out, ir_meta.sym_col(si))
         }
         si = si + 1
     }
-    wr_sec_end(tieir_out, yp, ys)
+    wr_sec3_end(tieir_out, yp, ys)
     // 段 5：IR 主体（选中子集 + 重映射）
-    var ip = wr_sec_head(tieir_out, SEC_IRBODY)
+    var ip = wr_sec3_head(tieir_out, SEC_IRBODY)
     var is_ = len(tieir_out)
     // 函数表
-    wr_i64(tieir_out, n_sel)
+    wr_u32(tieir_out, n_sel)
     i = 0
     while i < n_sel {
         var f = sel_fn[i]
         if wr_pool_mapped(tieir_out, pool_map, ir.func_name(f)) == 0 {
             return false
         }
-        wr_i64(tieir_out, ir.func_ret(f))
+        // ret/参数类型：+1 偏置（类型 id 域 -1 起防御）
+        wr_u32p1(tieir_out, ir.func_ret(f))
         // params_off 新值 = 前序选中函数的参数+操作数累计（与重建自然偏移一致）
-        wr_i64(tieir_out, f_obase[i])
-        wr_i64(tieir_out, ir.func_params_cnt(f))
-        // 入口块重映射（-1 = 无块）
+        wr_u32(tieir_out, f_obase[i])
+        wr_u32(tieir_out, ir.func_params_cnt(f))
+        // 入口块重映射（-1 = 无块 → +1 偏置）
         var en = ir.func_entry(f)
         if en >= 0 {
             en = blk_new[en]
         }
-        wr_i64(tieir_out, en)
-        wr_i64(tieir_out, ir.func_inst_total(f))
-        wr_i64(tieir_out, ir.func_exported(f))
+        wr_u32p1(tieir_out, en)
+        wr_u32(tieir_out, ir.func_inst_total(f))
+        wr_u32(tieir_out, ir.func_exported(f))
         var pk: i64 = 0
         while pk < ir.func_params_cnt(f) {
-            wr_i64(tieir_out, ir.func_param_ty(f, pk))
+            wr_u32p1(tieir_out, ir.func_param_ty(f, pk))
             pk = pk + 1
         }
         i = i + 1
     }
     // 块表
-    wr_i64(tieir_out, sel_blk_cnt)
+    wr_u32(tieir_out, sel_blk_cnt)
     bi = 0
     while bi < nb {
         if blk_new[bi] >= 0 {
-            wr_i64(tieir_out, fn_new[ir.block_func(bi)])
+            wr_u32(tieir_out, fn_new[ir.block_func(bi)])
             if wr_pool_mapped(tieir_out, pool_map, ir.block_name(bi)) == 0 {
                 return false
             }
-            wr_i64(tieir_out, blk_nstart[blk_new[bi]])
-            wr_i64(tieir_out, blk_nend[blk_new[bi]])
+            wr_u32p1(tieir_out, blk_nstart[blk_new[bi]])
+            wr_u32p1(tieir_out, blk_nend[blk_new[bi]])
         }
         bi = bi + 1
     }
     // 指令表（p.9.21.10：按指令 id 序 = 创建序单遍；own = 真归属块新 id——
     // 与全量 serialize 的规范形态一致，装配重放无前向引用）
-    wr_i64(tieir_out, sel_inst_cnt)
+    wr_u32(tieir_out, sel_inst_cnt)
     // 每函数操作数游标（重算：走选中函数序，逐步累加）
     var f_ocur: table<i64> = table_new_i64()
     i = 0
@@ -536,10 +539,10 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
         var ba2 = sel_of[ii5]
         if ba2 >= 0 {
             var sfi = fn_new[ir.block_func(ba2)]
-            wr_i64(tieir_out, blk_new[ba2])
-            wr_i64(tieir_out, ir.ins_op(ii5))
-            wr_i64(tieir_out, ir.ins_ty(ii5))
-            // 结果值平移（-1 = 无结果，原样）
+            wr_u32(tieir_out, blk_new[ba2])
+            wr_u32(tieir_out, ir.ins_op(ii5))
+            wr_u32p1(tieir_out, ir.ins_ty(ii5))
+            // 结果值平移（-1 = 无结果，+1 偏置）
             var vv = ir.ins_val(ii5)
             if vv >= 0 {
                 if f_vstart[sfi] < 0 || vv < f_vstart[sfi] || vv > f_vmax[sfi] {
@@ -548,11 +551,11 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
                 }
                 vv = f_vbase[sfi] + (vv - f_vstart[sfi])
             }
-            wr_i64(tieir_out, vv)
+            wr_u32p1(tieir_out, vv)
             // 操作数偏移：函数内顺序累计（与重建自然偏移一致）
-            wr_i64(tieir_out, f_ocur[sfi])
+            wr_u32(tieir_out, f_ocur[sfi])
             f_ocur[sfi] = f_ocur[sfi] + ir.ins_ops_cnt(ii5)
-            wr_i64(tieir_out, ir.ins_ops_cnt(ii5))
+            wr_u32(tieir_out, ir.ins_ops_cnt(ii5))
             var iop3 = ir.ins_op(ii5)
             var ok: i64 = 0
             while ok < ir.ins_ops_cnt(ii5) {
@@ -561,7 +564,7 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
                 // kind 0 = SSA 值（函数内平移）；但池载荷操作数①
                 //（const_str(62)/const_f(51)/call(35)/extern_call(36)/
                 // call_vararg(41)）走池重映射；1 = 块（查表）；
-                // 2 = 立即数（原样）；3 = 全局名（池重映射）
+                // 2 = 立即数（全值域 i64 LE）；3 = 全局名（池重映射）
                 var is_pool = 0
                 if kd == 3 {
                     is_pool = 1
@@ -571,6 +574,8 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
                         is_pool = 1
                     }
                 }
+                // v3 操作数序 = [kind, payload]（payload 宽度依赖 kind）
+                wr_u32(tieir_out, kd)
                 if is_pool == 1 {
                     if wr_pool_mapped(tieir_out, pool_map, ov) == 0 {
                         return false
@@ -582,26 +587,34 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
                             return false
                         }
                         ov = f_vbase[sfi] + (ov - f_vstart[sfi])
+                        wr_u32(tieir_out, ov)
                     } else {
                         if kd == 1 {
                             if ov < 0 || ov >= nb || blk_new[ov] < 0 {
                                 set_err("片段块操作数越界（指令 " + to_string(ii5) + " 块 " + to_string(ov) + "）")
                                 return false
                             }
-                            ov = blk_new[ov]
+                            wr_u32(tieir_out, blk_new[ov])
+                        } else {
+                            // 立即数及其他未知 kind：全值域 i64 小端
+                            wr_i64_le(tieir_out, ov)
                         }
                     }
-                    wr_i64(tieir_out, ov)
                 }
-                wr_i64(tieir_out, kd)
                 ok = ok + 1
+            }
+            // v3 写侧响亮中断：任一 wr_* 越界（set_err）后立即中止——绝不允许
+            // 错位字节流继续写（首版缺陷：ty 野值越界后仍线性推进，产物损坏
+            // 且写入"成功"，装配端 deserialize 到远处才炸，定位极难）。
+            if tieir_err != "" {
+                return false
             }
         }
         ii5 = ii5 + 1
     }
-    wr_sec_end(tieir_out, ip, is_)
+    wr_sec3_end(tieir_out, ip, is_)
     // 段 6：导出表（选中函数同名行子集）
-    var ep = wr_sec_head(tieir_out, SEC_EXPORT)
+    var ep = wr_sec3_head(tieir_out, SEC_EXPORT)
     var es = len(tieir_out)
     var exp_sel: i64 = 0
     var ei: i64 = 0
@@ -621,7 +634,7 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
         }
         ei = ei + 1
     }
-    wr_i64(tieir_out, exp_sel)
+    wr_u32(tieir_out, exp_sel)
     ei = 0
     while ei < ir_meta.export_count() {
         var m4: bool = false
@@ -641,32 +654,17 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
             if wr_pool_mapped(tieir_out, pool_map, ir_meta.exp_sig(ei)) == 0 {
                 return false
             }
-            wr_i64(tieir_out, ir_meta.exp_line(ei))
-            wr_i64(tieir_out, ir_meta.exp_col(ei))
+            wr_u32p1(tieir_out, ir_meta.exp_line(ei))
+            wr_u32p1(tieir_out, ir_meta.exp_col(ei))
         }
         ei = ei + 1
     }
-    wr_sec_end(tieir_out, ep, es)
-    // 段 7：span 段（选中指令的行子集，与片段指令同序）
-    var pp = wr_sec_head(tieir_out, SEC_SPAN)
-    var ps = len(tieir_out)
-    wr_i64(tieir_out, sel_inst_cnt)
-    bi = 0
-    while bi < nb {
-        if blk_new[bi] >= 0 {
-            var bs2 = ir.block_start(bi)
-            var be2 = ir.block_end(bi)
-            var ii4 = bs2
-            while ii4 < be2 {
-                wr_i64(tieir_out, ir_meta.inst_file(ii4))
-                wr_i64(tieir_out, ir_meta.inst_line(ii4))
-                wr_i64(tieir_out, ir_meta.inst_col(ii4))
-                ii4 = ii4 + 1
-            }
-        }
-        bi = bi + 1
+    wr_sec3_end(tieir_out, ep, es)
+    // 段 7（span）：v3 整体移除——片段 span 恒为全 0 冗余、装配器从不消费
+    //（findings §9 勘误；全量路径 span 段亦恒空，语义无损）。
+    if tieir_err != "" {
+        return false
     }
-    wr_sec_end(tieir_out, pp, ps)
     return bytes.write(path, tieir_out)
 }
 
