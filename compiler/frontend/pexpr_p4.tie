@@ -52,11 +52,18 @@ func p4_try_index_read(base: i64) -> i64 {
 }
 
 // 箭头一段：优先尝试读取式目标（p.9.13.4），否则常规目标 + 折叠。
+// 另有两种前缀形态（在常规目标之前判定，见下）：
+//   * 管道接运算符 `t -> + [x]` / `t -> in xs` → 脱糖为 `t + [x]` / `t in xs`
+//   * 条件管道 `x -> (cond ? f : g)`
 func arrow_step(op: i64, lhs: i64) -> i64 {
     if op == B_ARROW_FWD {
         var pt = pipe_read_form(lhs)
         if pt >= 0 {
             return pt
+        }
+        var ot = pipe_operator_form(lhs)
+        if ot >= 0 {
+            return ot
         }
     }
     var tgt = parse_ternary()
@@ -67,6 +74,93 @@ func arrow_step(op: i64, lhs: i64) -> i64 {
         return arrow_cond(op, lhs, tgt)
     }
     return arrow_fold(op, lhs, tgt)
+}
+
+// 管道接运算符（p.9.13.4 第 3 项）：箭头后直接跟二元运算符时，脱糖为以 lhs 作
+// 左操作数的二元表达式 —— `t -> + [x]` ≡ `t + [x]`，`t -> in xs` ≡ `t in xs`。
+// 覆盖全部二元运算符 token（算术/比较/逻辑/位/移位/`in`）；右操作数用
+// parse_ternary（不再进箭头层，避免链式歧义）。形态不符返回 -1（调用方回退）。
+func pipe_operator_form(lhs: i64) -> i64 {
+    var op = pipe_op_code(putil.peek_tag())
+    if op < 0 {
+        return -1
+    }
+    putil.advance()
+    var rhs = parse_ternary()
+    if rhs < 0 {
+        return -1
+    }
+    if op == PIPE_OP_IN {
+        // `t -> in xs`：复用 `in` 的脱糖（lang::seq_has(xs, t)）
+        return mk_in_call(lhs, rhs)
+    }
+    return mk_binary(op, lhs, rhs)
+}
+
+// 管道运算符专用码：`in` 用哨兵值（非 B_* 码，且须为正——负值与 `pipe_op_code`
+// 的「非运算符返回 -1」判定冲突）。B_* 码域为 0..20，故 1000 安全。
+const PIPE_OP_IN: i64 = 1000
+
+// token → 二元运算符码；非运算符返回 -1。
+func pipe_op_code(tag: i64) -> i64 {
+    if tag == lex_plus {
+        return B_ADD
+    }
+    if tag == lex_minus {
+        return B_SUB
+    }
+    if tag == lex_star {
+        return B_MUL
+    }
+    if tag == lex_slash {
+        return B_DIV
+    }
+    if tag == lex_percent {
+        return B_MOD
+    }
+    if tag == lex_eqeq {
+        return B_EQ
+    }
+    if tag == lex_noteq {
+        return B_NOTEQ
+    }
+    if tag == lex_lt {
+        return B_LT
+    }
+    if tag == lex_gt {
+        return B_GT
+    }
+    if tag == lex_le {
+        return B_LE
+    }
+    if tag == lex_ge {
+        return B_GE
+    }
+    if tag == lex_oror {
+        return B_OR
+    }
+    if tag == lex_andand {
+        return B_AND
+    }
+    if tag == lex_amp {
+        return B_BITAND
+    }
+    if tag == lex_pipe {
+        return B_BITOR
+    }
+    if tag == lex_caret {
+        return B_BITXOR
+    }
+    if tag == lex_shl {
+        return B_SHL
+    }
+    if tag == lex_shr {
+        return B_SHR
+    }
+    if tag == lex_in {
+        return PIPE_OP_IN
+    }
+    return -1
 }
 
 // 条件管道（p.9.13.4）：`x -> (cond ? f : g)` 脱糖为 `cond ? (x -> f) : (x -> g)`。
