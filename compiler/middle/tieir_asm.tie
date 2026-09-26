@@ -455,7 +455,7 @@ func asm_parse_slice(t: table<i64>, m: i64) -> i64 {
                 }
                 // p.9.17.1：str_char 缓存 helper 调用（op 35 载荷）→ sc 段恢复
                 //（sc_enable 同时隐含 sso 段——llvmgen emit 侧强制置位）
-                if iop == 35 && gnm == "tie_sc_off" {
+                if iop == 35 && (gnm == "tie_sc_off" || gnm == "tie_sl_len") {
                     asm_flag_sc = true
                 }
                 // p.9.21.9 收口：登记族恢复素材收集（去重）
@@ -754,6 +754,9 @@ func asm_replay() -> i64 {
         table_push(asm_i_gid, -1)
         gi0 = gi0 + 1
     }
+    // p.9.21.11 批量化（撤）：vmap 预填与块记录片段号预计算随 bulk 实验一并
+    // 回退（铁律 4）——v3i 逐条 add_operand 版实测 7.0s 全绿，为唯一已验证
+    // 形态；批量方向留待专项勘察（嫌疑 = 大表按值传参整表拷贝，铁律 11 #7）。
     var k: i64 = 0
     while k < len(asm_seq) {
         var r = asm_seq[k]
@@ -789,6 +792,12 @@ func asm_replay() -> i64 {
     // 指令全局单趟重放：片段指令流 = id 序（write_mod_slice p.9.21.10 改造），
     // 建指令即补操作数（ir.add_operand 段连续断言满足）；每块指令在流中连续
     // → 重建后块区间仍连续。vmap 直查（值域是否交错无关）。
+    // p.9.21.11 批量化实验回退（铁律 4）：bulk 表 + ops_append + ops_meta_bulk
+    // 版在 driver 规模出现 >110s 异常（且与产物缓存命中状态翻摆纠缠，本地
+    // 无法稳定归因）；v3i 逐条 add_operand 版实测 7.0s 全绿，回退到已验证
+    // 形态。批量方向（消灭 3M 跨命名空间调用）留待专项勘察：嫌疑 = 大表按值
+    // 传参整表拷贝（铁律 11 敌人 #7）与缓存命中翻摆的交互，须在可测环境下
+    // 先分账再动手。
     var gi: i64 = 0
     while gi < len(asm_i_op) {
         var blkrec = asm_i_blk[gi]
@@ -817,12 +826,11 @@ func asm_replay() -> i64 {
                 } else {
                     if okd == 1 {
                         // 块操作数载荷 = 片段内块 lid，按片段块表基址定位
-                        var fm = asm_rec_frag(asm_b_fid[blkrec])
-                        if ov < 0 || asm_b_base[fm] + ov >= asm_b_base[fm + 1] {
+                        if ov < 0 || asm_b_base[fm_i] + ov >= asm_b_base[fm_i + 1] {
                             set_err("asm: 块操作数越界（lid=" + to_string(ov) + "）")
                             return -1
                         }
-                        ov = asm_b_gid[asm_b_base[fm] + ov]
+                        ov = asm_b_gid[asm_b_base[fm_i] + ov]
                     }
                 }
                 ir.add_operand(gid, ov, okd)
