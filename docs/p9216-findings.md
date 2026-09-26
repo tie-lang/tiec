@@ -454,3 +454,71 @@ GetTickCount 分段实测（PHASE/ASMDIAG 计时已进管线，TIEC_INC/TIEC_ASM
   UTF-8 字符串，字节量 ~4-8×↓）+ ir 批量 API 完成化，目标 parse+replay
   ≤ 3.4s；另 emit/link 的缓存化是更大的独立命题。正确性基础设施（218/218
   装配 + 装配版编译器 regress 完全一致）本批已闭环。
+
+## 14. p.9.21.11 片段格式 v3 + 装配覆盖三缺陷（2026-09-26）
+
+落点：tieir_fmt_v3.tie（新文件）+ tieir_slice/tieir_asm（v3 读写对）+ tieir_test
+（roundtrip 改走装配路径）+ pipeline（asm_order_one_fn）+ cache_drv（键加单元根）
++ driver.tie（盐 v9）。不动点 825f97fd → d31ddb74（中间升格）→ **4a04bb9a**；
+回归 **157/8/2**（全量 + 装配版一致）；库自检 ×4 / trm 探针 / gv 探针 4/4
+stdout 一致；三阶自举 FIXED-POINT OK（certutil 直核）。
+
+### 14.1 v3 格式（只动片段读写对；全量 v2 不动）
+* 字段 **u32 小端**；kind 2（立即数）操作数载荷 **i64 LE 8B**（全值域）；可能
+  取 -1 的字段（fn ret/entry、inst ty/val、blk start/end、sym/exp 行列）+1
+  偏置，哨兵 0x7FFFFFFF → i64 LE 逃逸；字符串 = u32 字节长 + UTF-8
+  （string_builder 逐字节累积 + 一次 sb_build——消灭 rd_str O(n²) 拼接与
+  逐字符 SSO，敌人 #5/#6）；操作数序改 **[kind, payload]**（payload 宽度
+  依赖 kind）；段 7（span）移除（恒全 0 冗余，findings §9 勘误）。
+* **D6（新，写入侧）**：op36 extern_call 的 ins_ty 槽在活体 IR 中带
+  7696581394432 量级野值（v2 8B 容得下无人发现）。首版 wr_u32p1 越界仅
+  set_err 不中断 → 字节流错位且 bytes.write 仍"成功" → 装配端在远处炸
+  （"池载荷越界 46"），定位极难。修 = 逃逸编码 + 写侧任一错误立即中止。
+  教训：**写侧错误检查必须内联在写入循环里，"set_err 后继续写"等于埋雷**。
+* **D7（新，读取侧）**：asm_bare_name 逐字符拼接 O(n²) → str_sub_bytes
+  单次拷贝（池载荷热路径）。
+
+### 14.2 装配覆盖三缺陷（driver 219/219 的拦路虎）
+* **D8 同名记录单槽**：a7d4211 的 build_seq O(1) 改写用 name_rec 后写覆盖，
+  同名 ≥2 条记录（跨模块泛型展开）时后者永不匹配 → 改 head/tail 链表
+  （FIFO 对齐旧线性扫描语义）。
+* **D9 展开不在装配序**：asm_order_one_fn 见 TYPE_PARAMS 首槽即跳过，而
+  sgen_inst 的展开 clone（clone_subst 深克隆）保留该槽 → 展开永远不进序。
+  但展开经 fn_sig 归属到来源模块片段 → 覆盖校验必炸。进一步勘察发现
+  **irgen 期兜底实例化**（instantiate_fn 在 irgen 遍历中追加 clone）发生在
+  装配序构建之后——**装配序快照原理上不可能含 irgen 期展开名**（注册表
+  补名方案同样无效：登记也发生在序构建后）。终修 = build_seq 加 **extra
+  段**：未匹配非主片段记录按记录序插到 matched 后、tail 前——与 tig_ast
+  创建序一致（原始顶层 → 遍历中追加并由同一遍历取用的克隆 → 尾部合成）；
+  重放函数表序不影响语义（值/块/指令空间 per-function + per-fragment 基址，
+  与重放序无关）。基线二进制 d31ddb74"219/219"系**陈旧 v8 片段假象**
+  （旧归属形态的遗留片段），不可作为对照。
+* **D10 片段键跨上下文污染**：模块 IR 含上下文相关泛型展开（任一调用方的
+  实例化归属到模板来源模块），而 mod_slice_key = path|fp|salt|t|target
+  **不含单元根**——regress 测试工程写的 std/string.tie 片段（含 expect_eq
+  展开 + 对 test::expect 的调用）被 driver 装配命中（键同、命中不覆写），
+  test::expect 在 driver 单元无定义 → opt 报 use of undefined value
+  @test$expect。修 = 键加 "|R" + k_g_src（单元根主源路径；compile_program
+  入口赋值，读写两侧均在赋值后）。键格式变更即整体失效，无需另 bump 盐。
+
+### 14.3 验收数据（driver 树 219 模块，R 键隔离后）
+| 项 | v2（基线） | v3（本次） |
+| --- | --- | --- |
+| 片段字节总量 | 73.7MB | **30.2MB（2.4×↓）** |
+| ASMDIAG parse | 4.8s | **1.8s** |
+| ASMDIAG seq+replay | 9.4s | **5.2s** |
+| kpass_irgen（装配路径） | 13.6s | **7.2s** |
+| driver 装配 | 218/218（陈旧片段口径） | **219/219（R 键隔离、新鲜片段）** |
+| 装配版编译器 regress | 157/8/2 | **157/8/2** |
+| 三阶自举 | FIXED-POINT OK | **OK（4a04bb9a）** |
+
+**转正判据（§3）未过，诚实记录**：parse+replay = 7.0s > 目标 4s（跳过的
+全量 irgen 仅 3.4s）；装配路径端到端仍略负。剩余成本大头 = replay 侧
+664K ir.new_inst + 3M ir.add_operand 跨命名空间逐条调用（三趟批量实验
+曾引入 fm2 错位已回退，需 ir 批量 API 完成化后再攻，另立批次）。片段
+字节已 2.4×↓，parse 侧转正已达（1.8s < 3.4s 全量 irgen）。
+
+### 14.4 工具备注
+* `_tiec_verify/slicedbg_v3.py`：v3 片段离线解剖器（段级边界校验）。
+* 铁律 11 扫描（§0.5 清单口径）：新增 tieir_fmt_v3.tie 315 行 ✓ ≤500；
+  tieir_asm.tie 891 行 ⚠ 超 500（存量 +本轮 +130，拆解随 §5.0 批次）。
