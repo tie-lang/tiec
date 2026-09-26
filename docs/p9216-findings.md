@@ -522,3 +522,31 @@ stdout 一致；三阶自举 FIXED-POINT OK（certutil 直核）。
 * `_tiec_verify/slicedbg_v3.py`：v3 片段离线解剖器（段级边界校验）。
 * 铁律 11 扫描（§0.5 清单口径）：新增 tieir_fmt_v3.tie 315 行 ✓ ≤500；
   tieir_asm.tie 891 行 ⚠ 超 500（存量 +本轮 +130，拆解随 §5.0 批次）。
+
+### 14.5 §2.5 str_len 双槽缓存（同日补完，用户钦定项）
+* 落点：llvmgen_sc.tie（@tie_sl_addr/blen/val 三全局 + @tie_sl_len 手写
+  helper——(ptr, blen) 双槽键 + O(blen) 步进计数 + 命中 O(1)；无 CAP——
+  len 缓存无 per-string 大表；@tie_sc_inval 扩为同时清 sl 槽）+
+  irgen_bi_num.tie bi_str_len 重写（内联 4 块循环 → 一次 call @tie_sl_len，
+  每调用点码量 3253→926 字节）+ tieir_asm asm_flag_sc 白名单加 tie_sl_len。
+* 语义：与旧内联循环逐位一致（返回码点数，空串 = 0）；双槽 (addr>>3)&1
+  选槽覆盖交替串对；free 钩子失效防 malloc 同址复用陈旧命中（与 str_char
+  同机制，findings §12）。
+* 验收（bench_strlen.tie / bench_strlen_alt.tie，新旧编译器输出逐字节对照）：
+  | 场景 | 旧（内联循环） | 新（缓存） |
+  | --- | --- | --- |
+  | 50K 码点串 str_len × 100K | 20ms（opt LICM 已外提） | **0ms** |
+  | while i < str_len(s) 遍历 | 10ms（同上） | **0ms** |
+  | 双串交替 50K 次（ASCII+多字节） | — | 与旧版逐字节一致 |
+  | 多字节/空串边界（9 码点/0/200） | true | **true** |
+  诚实记录：本 bench 场景 opt LICM 已把循环不变 str_len 外提，旧版基线偏弱
+  （20ms 而非理论秒级）——缓存的真实收益在 opt 提升不了的场合（跨调用、
+  字符串非循环不变）；正确性由新旧输出逐字节一致背书。
+* 不动点 4a04bb9a → **02990dd8**；回归 157/8/2 一次过；库自检 ×4 / trm /
+  gv 4/4 stdout 一致；driver 装配复验 219/219（parse=2.2s / replay=5.5s，
+  与 4a04bb9a 持平，无回归）。
+* **批量重放实验（同日，回退）**：bulk 表 + ops_append + ops_meta_bulk 版在
+  driver 规模 >110s（v3i 逐条版 7.0s），且与产物缓存命中状态翻摆纠缠（成功
+  /超时交替），本地无法稳定归因——按铁律 4 整体回退到 v3i 已验证形态；
+  ir.ops_append（此前已提交）保留，ops_meta_bulk 随实验撤除。批量方向留
+  专项勘察：嫌疑 = 大表按值传参整表拷贝（铁律 11 #7）与缓存翻摆交互。
