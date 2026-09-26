@@ -169,6 +169,9 @@ func tig_binary(op: i64, lhs: i64, rhs: i64) -> i64 {
         iop = 2
     } else if op == 3 {
         iop = 3
+    } else if op == 24 {
+        // p.9.13.3 整除 `\`：int 族与 `/` 同走 sdiv（截断语义，对齐设计「int 族截断」）
+        iop = 3
     } else if op == 4 {
         iop = 4
     } else if op == 5 {
