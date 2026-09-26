@@ -1,0 +1,67 @@
+type tie<class>
+// compiler/frontend/pexpr_p5.tie —— 分片 5：运算符批（p.9.13.3）
+// ============================================================
+// 依据 docs/designs/tie-primitive-op-design.md §3。
+//
+// 本分片落地 `in` 中缀运算符：`elem in container` → `lang::seq_has(container, elem)`。
+// 手法：**解析期脱糖为 prelude 泛型函数调用** —— 循环/比较逻辑留在 tie 库里
+// （prelude 的 `seq_has<T>(t: table<T>, v: T) -> bool`，泛型单态化覆盖所有元素
+// 类型），避免在 irgen 里手写循环与逐类型分支。
+//
+// 为什么脱糖而非新二元 op：
+//   * tie **不支持按类型重载函数**（实测 `E00340 函数重复定义`），故无法用一个
+//     名字同时服务 table 与 string；用泛型函数则一个名字通吃 table<T>。
+//   * 脱糖后语义/IR 走既有调用通道，零新增诊断与代码生成分支。
+//
+// 优先级（设计：介于比较与逻辑之间；实测后定在 **比 `==` 更紧**）：
+//   `x in xs == false` → `(x in xs) == false`（自然写法，故 `in` 比 `==` 紧）
+//   `x in xs && flag`  → `(x in xs) && flag`（&& 远松于 in，天然成立）
+//   `a == b in xs`     → `a == (b in xs)`（确定性，不歧义）
+// 由 `parse_equality` 的内侧调用接通（`parse_equality → parse_in_expr →
+// parse_comparison`）。
+//
+// 与 `for x in xs` 的关系：for 的绑定名由 `putil.expect_ident()` 直读（非表达式
+// 解析），`in` 由 for 语句自己消费，故表达式层的 `in` **不会**干扰 for 循环
+// （实测：全量回归无变化）。
+//
+// 边界：容器须为表（`table<T>`）。字符串包含请用 `str.contains`，键值表请用
+// `map_contains`（`not in` 亦暂无——tie 无 `not` 关键字，`!` 为逻辑非，若新增
+// `not` 保留字属破坏性改动，留待设计决策；当前可写 `!(x in xs)`）。
+namespace pexpr {
+
+// 构造 `lang::seq_has(container, elem)` 调用节点。
+// N_CALL 布局：children = [泛型槽, 实参...]（与既有调用节点一致）。
+func mk_in_call(elem: i64, cont: i64) -> i64 {
+    var name = interner.intern("lang::seq_has")
+    var n = ast.new_node(N_CALL, name, -1, -1, ast.line(elem), ast.col(elem))
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, -1)      // 泛型实参槽
+    table_push(kids, cont)    // 容器
+    table_push(kids, elem)    // 待查元素
+    ast.set_children(n, kids)
+    return n
+}
+
+// `in` 中缀层（左结合）：`elem in container` → `lang::seq_has(container, elem)`。
+func parse_in_expr() -> i64 {
+    var lhs = parse_comparison()
+    if lhs < 0 {
+        return -1
+    }
+    var d = false
+    while !d {
+        if putil.peek_tag() != lex_in {
+            d = true
+        } else {
+            putil.advance()   // 'in'
+            var rhs = parse_comparison()
+            if rhs < 0 {
+                return -1
+            }
+            lhs = mk_in_call(lhs, rhs)
+        }
+    }
+    return lhs
+}
+
+}
