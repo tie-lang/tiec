@@ -1,0 +1,141 @@
+type tie<class>
+// compiler/frontend/pexpr_p4.tie —— 分片 4：箭头续扩（p.9.13.4）
+// ============================================================
+// 依据 docs/designs/tie-primitive-op-design.md §4：
+//   * 管道进容器/字段：`t -> [i]` → `t[i]`；`p -> .field` → `p.field`
+// 手法：**纯解析脱糖**，复用既有 N_INDEX / N_FIELD_ACCESS，无新 AST 节点、
+// 无语义层与 IR 改动——既有数据流箭头语义与 p.8.2.8 的 D1–D6 裁决原样保留。
+//
+// 与既有裁决的边界（务必保持）：
+//   D2) `a -> obj.f`（有基址 obj）仍为**字段赋值**；新形态是 `p -> .f`（箭头后
+//       紧跟 `.`，无基址）→ 读取。二者按「箭头后首个 token」区分，不冲突。
+//   D3) `arr[i] <- x` / `a -> arr[i]`（有基址）仍为 N_INDEX_ASSIGN；新形态是
+//       `t -> [i]`（箭头后紧跟 `[`）→ 读取。
+//   探测失败必须完整回退 token 流（save_pos/restore_pos），不留副作用。
+namespace pexpr {
+
+// 字段访问节点（base.field）。
+func p4_field(base: i64, fld: i64) -> i64 {
+    var fa = ast.new_node(N_FIELD_ACCESS, fld, -1, -1, ast.line(base), ast.col(base))
+    var fk: table<i64> = table_new_i64()
+    table_push(fk, base)
+    ast.set_children(fa, fk)
+    return fa
+}
+
+// 管道读取式目标（p.9.13.4）：箭头后紧跟 `[` / `.` 时按读取脱糖。
+// 返回脱糖节点 id；形态不符返回 -1（调用方退回常规目标解析）。
+func pipe_read_form(base: i64) -> i64 {
+    var t = putil.peek_tag()
+    if t == lex_lbracket {
+        return p4_try_index_read(base)
+    }
+    if t == lex_dot && putil.peek_n(1) == lex_ident {
+        putil.advance()
+        var fld = interner.intern(putil.peek_lexeme())
+        putil.advance()
+        return p4_field(base, fld)
+    }
+    return -1
+}
+
+// `t -> [i]` 探测：下标表达式 + `]` 齐备才成立，否则整段回退。
+func p4_try_index_read(base: i64) -> i64 {
+    putil.save_pos()
+    putil.advance()
+    var idx = parse_expr()
+    if idx >= 0 && putil.eat(lex_rbracket) {
+        return mk_index(base, idx)
+    }
+    putil.restore_pos()
+    return -1
+}
+
+// 箭头一段：优先尝试读取式目标（p.9.13.4），否则常规目标 + 折叠。
+func arrow_step(op: i64, lhs: i64) -> i64 {
+    if op == B_ARROW_FWD {
+        var pt = pipe_read_form(lhs)
+        if pt >= 0 {
+            return pt
+        }
+    }
+    var tgt = parse_ternary()
+    if tgt < 0 {
+        return -1
+    }
+    return arrow_fold(op, lhs, tgt)
+}
+
+// 箭头折叠（自 pexpr_p1 原样迁入，语义不变）：按目标形态脱糖——调用末参追加 /
+// 下标赋值 / 字段赋值 / 保留箭头节点（交语义层按目标类型分派）。
+func arrow_fold(op: i64, lhs: i64, rhs: i64) -> i64 {
+    var data_n = lhs
+    var tgt_n = rhs
+    if op == B_ARROW_REV {
+        data_n = rhs
+        tgt_n = lhs
+    }
+    var ttag = ast.tag(tgt_n)
+    if ttag == N_CALL || ttag == N_METHOD_CALL || ttag == N_CALL_EXPR {
+        var kids: table<i64> = table_new_i64()
+        var kk: i64 = 0
+        while kk < ast.child_count(tgt_n) {
+            table_push(kids, ast.child_at(tgt_n, kk))
+            kk = kk + 1
+        }
+        table_push(kids, data_n)
+        ast.set_children(tgt_n, kids)
+        return tgt_n
+    }
+    if ttag == N_INDEX {
+        return p4_index_assign(tgt_n, data_n)
+    }
+    if ttag == N_FIELD_ACCESS {
+        return p4_field_assign(tgt_n, data_n)
+    }
+    return mk_binary(op, lhs, rhs)
+}
+
+// 下标赋值脱糖：`arr[i] <- a` / `a -> arr[i]` → N_INDEX_ASSIGN。
+func p4_index_assign(tgt_n: i64, data_n: i64) -> i64 {
+    var ia = ast.new_node(N_INDEX_ASSIGN, -1, -1, -1, ast.line(tgt_n), ast.col(tgt_n))
+    var ik: table<i64> = table_new_i64()
+    table_push(ik, tgt_n)
+    table_push(ik, data_n)
+    ast.set_children(ia, ik)
+    return ia
+}
+
+// 字段赋值脱糖：`obj.f <- a` / `a -> obj.f` → N_FIELD_ASSIGN。
+func p4_field_assign(tgt_n: i64, data_n: i64) -> i64 {
+    var fa = ast.new_node(N_FIELD_ASSIGN, ast.name(tgt_n), -1, -1, ast.line(tgt_n), ast.col(tgt_n))
+    var fk: table<i64> = table_new_i64()
+    table_push(fk, ast.child_at(tgt_n, 0))
+    table_push(fk, data_n)
+    ast.set_children(fa, fk)
+    return fa
+}
+
+// p.9.11.6 表不可变更新 `with` 链（自 pexpr_p1 原样迁入，优先级低于箭头）：
+// `t with {k: v}` 左结合链式；右操作数用 parse_ternary（刻意不进箭头层）。
+func arrow_with_chain(lhs: i64) -> i64 {
+    var cur = lhs
+    while putil.peek_tag() == lex_with {
+        putil.advance()
+        var wline = ast.line(cur)
+        var wcol = ast.col(cur)
+        var upd = parse_ternary()
+        if upd < 0 {
+            return -1
+        }
+        var w = ast.new_node(N_WITH, -1, -1, -1, wline, wcol)
+        var wet: table<i64> = table_new_i64()
+        table_push(wet, cur)
+        table_push(wet, upd)
+        ast.set_children(w, wet)
+        cur = w
+    }
+    return cur
+}
+
+}
