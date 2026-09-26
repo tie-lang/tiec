@@ -643,22 +643,9 @@ func join_lines() -> string {
 }
 
 func build_inst_blk() {
-    g_inst_blk = table_new_i64()
-    var nb = ir.block_count()
-    var bi: i64 = 0
-    while bi < nb {
-        var st = ir.block_start(bi)
-        var en = ir.block_end(bi)
-        var k: i64 = st
-        while k < en {
-            while len(g_inst_blk) <= k {
-                table_push(g_inst_blk, -1)
-            }
-            g_inst_blk[k] = bi
-            k = k + 1
-        }
-        bi = bi + 1
-    }
+    // p.9.21.11 §5.1：归属逻辑统一到 ir.blk_attr_fill（区间回填、表序后者
+    // 覆盖——与原内联回填逐位一致；空 sel 表 = 全部块参与）。
+    g_inst_blk = ir.blk_attr_fill(ir.inst_count(), table_new_i64())
     build_fn_inst_ranges()
     g_inst_blk_ready = 1
 }
