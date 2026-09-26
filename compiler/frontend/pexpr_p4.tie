@@ -63,7 +63,38 @@ func arrow_step(op: i64, lhs: i64) -> i64 {
     if tgt < 0 {
         return -1
     }
+    if ast.tag(tgt) == N_TERNARY {
+        return arrow_cond(op, lhs, tgt)
+    }
     return arrow_fold(op, lhs, tgt)
+}
+
+// 条件管道（p.9.13.4）：`x -> (cond ? f : g)` 脱糖为 `cond ? (x -> f) : (x -> g)`。
+// 两个分支各接箭头（调用分支走末参追加，裸 fn 分支保留箭头节点交语义层分派）。
+// 三元的 children 布局 = [cond, then, else]。
+func arrow_cond(op: i64, lhs: i64, tern: i64) -> i64 {
+    if ast.child_count(tern) < 3 {
+        return mk_binary(op, lhs, tern)
+    }
+    var c = ast.child_at(tern, 0)
+    var a = arrow_branch(op, lhs, ast.child_at(tern, 1))
+    var b = arrow_branch(op, lhs, ast.child_at(tern, 2))
+    var nt = ast.new_node(N_TERNARY, -1, -1, -1, ast.line(tern), ast.col(tern))
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, c)
+    table_push(kids, a)
+    table_push(kids, b)
+    ast.set_children(nt, kids)
+    return nt
+}
+
+// 条件分支接箭头：调用形态走末参追加，其它保留箭头节点（语义层按目标类型分派）。
+func arrow_branch(op: i64, lhs: i64, br: i64) -> i64 {
+    var t = ast.tag(br)
+    if t == N_CALL || t == N_METHOD_CALL || t == N_CALL_EXPR {
+        return arrow_fold(op, lhs, br)
+    }
+    return mk_binary(op, lhs, br)
 }
 
 // 箭头折叠（自 pexpr_p1 原样迁入，语义不变）：按目标形态脱糖——调用末参追加 /
