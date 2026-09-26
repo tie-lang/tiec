@@ -573,3 +573,22 @@ stdout 一致；三阶自举 FIXED-POINT OK（certutil 直核）。
   * 决定：**维持回退**。转正判据（parse+replay ≤4s）保持未达诚实记录；
     下一轮入口 = 在 asm_side_recover / emit 两个未插桩段先分账，再决定
     bulk 是否恢复（bulk 本体已证可行）。
+
+### 14.7 批量重放终局（14.6 修订，同日第三轮）
+* **14.6 两处结论修正**：①「局部表 O(n²) 陷阱」——v7（局部表）与 v8（全局
+  表）实测**劣化曲线逐毫秒一致**（704/1359/2078ms per 200K），局部/全局
+  并非劣化变量，该结论撤回（table_push 本体均摊 O(1) 有 parse 反证）；变
+  慢因子是**环境级非确定性**——v9 全量暖跑（不含 bulk！）、v7/vB 装配跑
+  均随机出现 ~5× 放大（111s vs 25s），且被杀进程的 .ll/片段最终完整产出
+  （是慢非挂），时间线与 tiec-cache 目录 219 新文件写入后的外部扫描类
+  开销最吻合，无法在本地归因到代码。②「翻摆 = fp 失效循环」结论维持。
+* **终局**：bulk 重放（全局表版 + ops_append + ops_meta_bulk）实测稳定
+  **快于逐条 add_operand**（ASMDIAG seq+replay 7.1s → 5.1s，kpass_irgen
+  7.2s），门禁全绿（回归 157/8/2 一次过、tieir_test、gv 4/4 stdout 一致、
+  三阶自举 FIXED-POINT OK），**恢复落地**。插桩标记保留（TIEC_ASMDBG=1
+  时 file_append 到 phase.log/asmdbg.log，带 tick，进程被杀仍可读——
+  本轮定位全靠它）。
+* 转正判据：parse+replay = **7.1s（2.0+5.1）**，≤4s 未达，差额 3.1s 在
+  replay 侧 664K new_inst + 3M 表推送的本征成本（调用账已消，剩余为
+  ir 状态机逐条维护），需 ir 批量构造 API 完成化后另批再攻。
+* 不动点 02990dd8 → **4acda07b**。
