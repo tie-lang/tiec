@@ -45,6 +45,7 @@ type tie<class>
 
 import "./tieir_ser.tie"
 import "./tieir_fmt_v3.tie"
+import "./ir_blkattr.tie"
 
 // 函数归属平行表（下标 = ir 函数 id，值 = 来源模块 id；空表 = 未注入）。
 var frag_fn_mods: table<i64>;
@@ -171,31 +172,28 @@ pub func write_mod_slice(path: string, mod_id: i64, src_path: string, src_fp: st
     // 一块；irgen 乱序建块只造成块表序 ≠ id 序，不再需要拒写护栏）。
     // 归属表（inst_total 大小，-1 = 非本模块指令）：同指令被两个选中块同时
     // 认领（= 区间交叠，irgen 缺陷，C' 断言正常应拦截）→ 拒写。
-    var sel_of: table<i64> = table_new_i64()
-    var zi: i64 = 0
+    // p.9.21.11 §5.1：归属逻辑统一到 ir.blk_attr_fill（区间回填、表序后者
+    // 覆盖）；交叠/越界经访问器读取——片段写要求唯一归属（D5 检测器语义
+    // 逐位保留：越界/交叠均拒写，错误定位信息一致）。
     var n_inst = ir.inst_count()
-    while zi < n_inst {
-        table_push(sel_of, -1)
-        zi = zi + 1
-    }
+    var sel_flag: table<i64> = table_new_i64()
     bi = 0
     while bi < nb {
         if blk_new[bi] >= 0 {
-            var t3 = ir.block_start(bi)
-            if t3 < 0 || ir.block_end(bi) > n_inst {
-                set_err("片段块区间越界（块 " + to_string(bi) + "）")
-                return false
-            }
-            while t3 < ir.block_end(bi) {
-                if sel_of[t3] != -1 {
-                    set_err("片段块区间交叠（指令 " + to_string(t3) + " 双重归属）")
-                    return false
-                }
-                sel_of[t3] = bi
-                t3 = t3 + 1
-            }
+            table_push(sel_flag, 1)
+        } else {
+            table_push(sel_flag, 0)
         }
         bi = bi + 1
+    }
+    var sel_of: table<i64> = ir.blk_attr_fill(n_inst, sel_flag)
+    if ir.blk_attr_badrange_cnt() > 0 {
+        set_err("片段块区间越界（块 " + to_string(ir.blk_attr_badrange_blk()) + "）")
+        return false
+    }
+    if ir.blk_attr_overlap_cnt() > 0 {
+        set_err("片段块区间交叠（指令 " + to_string(ir.blk_attr_overlap_inst()) + " 双重归属）")
+        return false
     }
     // id 序单遍：新流序号 + 每函数统计（v_start 取最小值——不再依赖遍历序）
     var ii4: i64 = 0
