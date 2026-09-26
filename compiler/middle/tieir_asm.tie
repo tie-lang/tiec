@@ -34,6 +34,21 @@ type tie<class>
 // 自检：探针工程装配 vs 全量 --tieir-out 分段 SHA 对比（操作台验收）。
 
 import "./tieir_ser.tie"
+import "./tieir_fmt_v3.tie"
+
+// ---------- 元数据转存（v3：片段头/sym/exp 不再拒收，重放回 ir_meta） ----------
+var asm_m_pkg: table<i64>;       // 片段 → 包名池 id（set_pkg_name）
+var asm_m_ver: table<i64>;       // 片段 → 版本串池 id（set_pkg_version）
+var asm_m_irver: table<i64>;     // 片段 → ir 版本
+var asm_m_topt: table<i64>;      // 片段 → t 档
+var asm_m_pver: table<i64>;      // 片段 → pass 版本
+var asm_m_cver: table<i64>;      // 片段 → 编译器版本串池 id
+var asm_m_dep_base: table<i64>;  // 片段 → 依赖对基址（len = n+1）
+var asm_m_dep: table<i64>;       // 扁平依赖对 [name_pid, ver_pid, ...]
+var asm_sym_base: table<i64>;    // 片段 → sym 行基址（len = n+1）
+var asm_sym: table<i64>;         // 扁平 sym 行 [name_pid, sig_pid, kind, vis, line, col]
+var asm_exp_base: table<i64>;    // 片段 → exp 行基址（len = n+1）
+var asm_exp: table<i64>;         // 扁平 exp 行 [name_pid, sig_pid, line, col]
 
 // ---------- 转存表（per-片段基址索引；tie 无二维表，扁平 + 基址） ----------
 var asm_f_base: table<i64>;      // 片段 → 函数记录基址（len = n+1）
@@ -106,15 +121,11 @@ namespace tieir {
 
 // 全局名归一化（去 '@' 前缀）：IR 里全局名带/不带前缀两种写法并存，
 // 白名单比对（置位恢复/登记完备校验）一律按裸名。
+// p.9.21.11：单字符循环拼接 O(n²) → str_sub_bytes 单次拷贝（池载荷操作数
+// 热路径，每池引用一次；'@' 后必为 ASCII 标识符，码点数 = 字节数）。
 func asm_bare_name(s: string) -> string {
-    if str_len(s) > 1 && str_char(s, 0) == "@" {
-        var out: string = ""
-        var i: i64 = 1
-        while i < str_len(s) {
-            out = out + str_char(s, i)
-            i = i + 1
-        }
-        return out
+    if str_len(s) > 1 && str_byte(s, 0) == 64 {   // '@'
+        return str_sub_bytes(s, 1, str_len(s))
     }
     return s
 }
@@ -168,68 +179,125 @@ func asm_rec_frag(r: i64) -> i64 {
     return 0
 }
 
-// ---------- 解析：片段 m 的字节表 → 转存 ----------
+// ---------- 解析：片段 m 的字节表 → 转存（v3 格式，见 tieir_fmt_v3 头注） ----------
 // 返回 0 成功；失败 set_err 返回 -1。
 func asm_parse_slice(t: table<i64>, m: i64) -> i64 {
     tieir_pos = 5
-    var ver = rd_i64(t)
+    var ver = rd_u32(t)
     if tieir_err != "" { return -1 }
-    if ver != TIEIR_VERSION {
-        set_err("asm: 片段版本不兼容（" + to_string(ver) + "）")
+    if ver != SLICE_VERSION {
+        set_err("asm: 片段版本不兼容（" + to_string(ver) + "，须 " + to_string(SLICE_VERSION) + "；盐 bump 前的旧片段应已整体失效）")
         return -1
     }
-    // 段 2：模块头（片段自述；装配不消费——跳过）
-    if !rd_sec_head(t, SEC_HEAD) { return -1 }
+    // 段 2：模块头（片段自述；转存供重放回 ir_meta）
+    if !rd_sec3_head(t, SEC_HEAD) { return -1 }
+    var h_pkg = rd_str3(t)
+    if tieir_err != "" { return -1 }
+    var h_ver = rd_str3(t)
+    if tieir_err != "" { return -1 }
+    var h_irver = rd_u32(t)
+    if tieir_err != "" { return -1 }
+    var h_cver = rd_str3(t)
+    if tieir_err != "" { return -1 }
+    var h_topt = rd_u32(t)
+    if tieir_err != "" { return -1 }
+    var h_pver = rd_u32(t)
+    if tieir_err != "" { return -1 }
+    var h_depc = rd_u32(t)
+    if tieir_err != "" { return -1 }
+    if h_depc > 100000 {
+        set_err("asm: 片段依赖数非法（" + to_string(h_depc) + "）")
+        return -1
+    }
+    asm_m_pkg[m] = str_pool(h_pkg)
+    asm_m_ver[m] = str_pool(h_ver)
+    asm_m_irver[m] = h_irver
+    asm_m_topt[m] = h_topt
+    asm_m_pver[m] = h_pver
+    asm_m_cver[m] = str_pool(h_cver)
+    asm_m_dep_base[m] = len(asm_m_dep)
+    var hd: i64 = 0
+    while hd < h_depc {
+        var dn = rd_str3(t)
+        if tieir_err != "" { return -1 }
+        var dv = rd_str3(t)
+        if tieir_err != "" { return -1 }
+        table_push(asm_m_dep, str_pool(dn))
+        table_push(asm_m_dep, str_pool(dv))
+        hd = hd + 1
+    }
     tieir_pos = tieir_sec_end
     // 段 3：池 → str_pool 全局 intern，记 remap
-    if !rd_sec_head(t, SEC_STRPOOL) { return -1 }
-    var pn = rd_i64(t)
+    if !rd_sec3_head(t, SEC_STRPOOL) { return -1 }
+    var pn = rd_u32(t)
     if tieir_err != "" { return -1 }
-    if pn < 0 || pn > 1000000 {
+    if pn > 1000000 {
         set_err("asm: 片段池大小非法（" + to_string(pn) + "）")
         return -1
     }
     asm_pr_base[m] = len(asm_pr)
     var q: i64 = 0
     while q < pn {
-        var s = rd_str(t)
+        var s = rd_str3(t)
         if tieir_err != "" { return -1 }
         table_push(asm_pr, str_pool(s))
         q = q + 1
     }
     asm_pr_base[m + 1] = len(asm_pr)
     tieir_pos = tieir_sec_end
-    // 段 4：符号表（真实产物恒空；非 0 拒绝）
-    if !rd_sec_head(t, SEC_SYMTAB) { return -1 }
-    var sn = rd_i64(t)
+    // 段 4：符号表（转存重放；池 id 就地映射为全局 id）
+    if !rd_sec3_head(t, SEC_SYMTAB) { return -1 }
+    var sn = rd_u32(t)
     if tieir_err != "" { return -1 }
-    if sn != 0 {
-        set_err("asm: 片段符号表非空（" + to_string(sn) + "）——超出装配支持的产物形态")
+    if sn > 100000 {
+        set_err("asm: 片段符号表非法（" + to_string(sn) + "）")
         return -1
+    }
+    asm_sym_base[m] = len(asm_sym)
+    var sy: i64 = 0
+    while sy < sn {
+        var snm = rd_u32(t)
+        var ssg = rd_u32(t)
+        var skd = rd_u32(t)
+        var svs = rd_u32(t)
+        var sln = rd_u32p1(t)
+        var scl = rd_u32p1(t)
+        if tieir_err != "" { return -1 }
+        if snm >= pn || ssg >= pn {
+            set_err("asm: 片段符号池 id 越界（" + to_string(snm) + "/" + to_string(ssg) + "）")
+            return -1
+        }
+        table_push(asm_sym, asm_pr[asm_pr_base[m] + snm])
+        table_push(asm_sym, asm_pr[asm_pr_base[m] + ssg])
+        table_push(asm_sym, skd)
+        table_push(asm_sym, svs)
+        table_push(asm_sym, sln)
+        table_push(asm_sym, scl)
+        sy = sy + 1
     }
     tieir_pos = tieir_sec_end
     // 段 5：IR 主体转存
-    if !rd_sec_head(t, SEC_IRBODY) { return -1 }
+    if !rd_sec3_head(t, SEC_IRBODY) { return -1 }
     var f_base = len(asm_f_gname)
     asm_f_base[m] = f_base
-    var fn_n = rd_i64(t)
+    var fn_n = rd_u32(t)
     if tieir_err != "" { return -1 }
-    if fn_n < 0 || fn_n > 100000 {
+    if fn_n > 100000 {
         set_err("asm: 片段函数数非法（" + to_string(fn_n) + "）")
         return -1
     }
     asm_frag_fn[m] = fn_n
     var fi: i64 = 0
     while fi < fn_n {
-        var fnm = rd_i64(t)
-        var frt = rd_i64(t)
-        var fpo = rd_i64(t)   // 片段布局值——重放自然复现，忽略
-        var fpc = rd_i64(t)
-        var fen = rd_i64(t)   // 入口块——重放自然复现，忽略
-        var fit = rd_i64(t)   // inst_total——重放决定，忽略
-        var fex = rd_i64(t)
+        var fnm = rd_u32(t)
+        var frt = rd_u32p1(t)
+        var fpo = rd_u32(t)   // 片段布局值——重放自然复现，忽略
+        var fpc = rd_u32(t)
+        var fen = rd_u32p1(t) // 入口块——重放自然复现，忽略
+        var fit = rd_u32(t)   // inst_total——重放决定，忽略
+        var fex = rd_u32(t)
         if tieir_err != "" { return -1 }
-        if fnm < 0 || fnm >= pn {
+        if fnm >= pn {
             set_err("asm: 片段函数名池 id 越界（" + to_string(fnm) + "）")
             return -1
         }
@@ -244,7 +312,7 @@ func asm_parse_slice(t: table<i64>, m: i64) -> i64 {
         table_push(asm_f_blk_cnt, 0)
         var pk: i64 = 0
         while pk < fpc {
-            var pt = rd_i64(t)
+            var pt = rd_u32p1(t)
             if tieir_err != "" { return -1 }
             table_push(asm_f_pty, pt)
             pk = pk + 1
@@ -254,20 +322,20 @@ func asm_parse_slice(t: table<i64>, m: i64) -> i64 {
     // 块表（块表序 = 函数分组连续 → per-fn base 首现即起点，cnt 累计）
     var b_base = len(asm_b_fid)
     asm_b_base[m] = b_base
-    var blk_n = rd_i64(t)
+    var blk_n = rd_u32(t)
     if tieir_err != "" { return -1 }
-    if blk_n < 0 || blk_n > 1000000 {
+    if blk_n > 1000000 {
         set_err("asm: 片段块数非法（" + to_string(blk_n) + "）")
         return -1
     }
     var bi: i64 = 0
     while bi < blk_n {
-        var bfn = rd_i64(t)   // 片段内函数 lid
-        var bnm = rd_i64(t)
-        var bst = rd_i64(t)   // start——重放自然复现，忽略
-        var ben = rd_i64(t)   // end——重放自然复现，忽略
+        var bfn = rd_u32(t)   // 片段内函数 lid
+        var bnm = rd_u32(t)
+        var bst = rd_u32p1(t) // start——重放自然复现，忽略
+        var ben = rd_u32p1(t) // end——重放自然复现，忽略
         if tieir_err != "" { return -1 }
-        if bfn < 0 || bfn >= fn_n || bnm < 0 || bnm >= pn {
+        if bfn >= fn_n || bnm >= pn {
             set_err("asm: 片段块记录越界（fn=" + to_string(bfn) + " nm=" + to_string(bnm) + "）")
             return -1
         }
@@ -313,22 +381,22 @@ func asm_parse_slice(t: table<i64>, m: i64) -> i64 {
     // 指令表（指令序 = 块序 → 函数分组连续；per-fn base 首现 + cnt 累计）
     var i_base = len(asm_i_op)
     asm_i_base[m] = i_base
-    var ins_n = rd_i64(t)
+    var ins_n = rd_u32(t)
     if tieir_err != "" { return -1 }
-    if ins_n < 0 || ins_n > 10000000 {
+    if ins_n > 10000000 {
         set_err("asm: 片段指令数非法（" + to_string(ins_n) + "）")
         return -1
     }
     var ii: i64 = 0
     while ii < ins_n {
-        var own = rd_i64(t)   // 片段内块 lid
-        var iop = rd_i64(t)
-        var ity = rd_i64(t)
-        var ivl = rd_i64(t)
-        var iof = rd_i64(t)   // ops_off——重放自然复现，忽略
-        var icn = rd_i64(t)
+        var own = rd_u32(t)   // 片段内块 lid
+        var iop = rd_u32(t)
+        var ity = rd_u32p1(t)
+        var ivl = rd_u32p1(t)
+        var iof = rd_u32(t)   // ops_off——重放自然复现，忽略
+        var icn = rd_u32(t)
         if tieir_err != "" { return -1 }
-        if own < 0 || own >= blk_n || icn < 0 || icn > 100000 {
+        if own >= blk_n || icn > 100000 {
             set_err("asm: 片段指令记录越界（blk=" + to_string(own) + "）")
             return -1
         }
@@ -345,8 +413,15 @@ func asm_parse_slice(t: table<i64>, m: i64) -> i64 {
         table_push(asm_i_obase, len(asm_o_v))
         var okk: i64 = 0
         while okk < icn {
-            var ov = rd_i64(t)
-            var okd = rd_i64(t)
+            // v3 操作数序 = [kind, payload]；kind 2（立即数）载荷全值域 i64 LE
+            var okd = rd_u32(t)
+            if tieir_err != "" { return -1 }
+            var ov: i64 = 0
+            if okd == 2 || okd > 3 {
+                ov = rd_i64_le(t)
+            } else {
+                ov = rd_u32(t)
+            }
             if tieir_err != "" { return -1 }
             // 池载荷判定（与 write_mod_slice/deserialize 对齐）
             var is_pool = 0
@@ -444,26 +519,34 @@ func asm_parse_slice(t: table<i64>, m: i64) -> i64 {
     table_push(asm_frag_vbase, asm_frag_vtotal)
     asm_frag_vtotal = asm_frag_vtotal + cum
     tieir_pos = tieir_sec_end
-    // 段 6：导出表（真实产物恒空；非 0 拒绝）
-    if !rd_sec_head(t, SEC_EXPORT) { return -1 }
-    var en = rd_i64(t)
+    // 段 6：导出表（转存重放；池 id 就地映射为全局 id）
+    if !rd_sec3_head(t, SEC_EXPORT) { return -1 }
+    var en = rd_u32(t)
     if tieir_err != "" { return -1 }
-    if en != 0 {
-        set_err("asm: 片段导出表非空（" + to_string(en) + "）")
+    if en > 100000 {
+        set_err("asm: 片段导出表非法（" + to_string(en) + "）")
         return -1
     }
-    tieir_pos = tieir_sec_end
-    // 段 7：span 段（行序 = 片段指令序；重放按全局指令位写回）
-    if !rd_sec_head(t, SEC_SPAN) { return -1 }
-    var spn = rd_i64(t)
-    if tieir_err != "" { return -1 }
-    if spn != ins_n {
-        set_err("asm: 片段 span 行数与指令数不符（" + to_string(spn) + "/" + to_string(ins_n) + "）")
-        return -1
+    asm_exp_base[m] = len(asm_exp)
+    var ex: i64 = 0
+    while ex < en {
+        var enm = rd_u32(t)
+        var esg = rd_u32(t)
+        var eln = rd_u32p1(t)
+        var ecl = rd_u32p1(t)
+        if tieir_err != "" { return -1 }
+        if enm >= pn || esg >= pn {
+            set_err("asm: 片段导出池 id 越界（" + to_string(enm) + "/" + to_string(esg) + "）")
+            return -1
+        }
+        table_push(asm_exp, asm_pr[asm_pr_base[m] + enm])
+        table_push(asm_exp, asm_pr[asm_pr_base[m] + esg])
+        table_push(asm_exp, eln)
+        table_push(asm_exp, ecl)
+        ex = ex + 1
     }
-    // 片段 span = write_mod_slice 写入的全 0 冗余（真实编译产物 span 段恒空
-    // ——ir_meta.set_inst_span 在编译器无调用点）；装配不转存、不写回。
     tieir_pos = tieir_sec_end
+    // 段 7（span）：v3 已移除（写侧不再产出；全量路径 span 恒空，语义无损）
     return 0
 }
 
@@ -482,16 +565,20 @@ func asm_build_seq(order: table<string>) -> i64 {
     // ~1100 万次比较）改为 interner id 直接索引（O(1) 查，索引表 ~interner 容量）。
     var cap = interner.len()
     var order_flag: table<i64> = table_new_i64()
-    var name_rec: table<i64> = table_new_i64()
     var t: i64 = 0
     while t < cap {
         table_push(order_flag, 0)
-        table_push(name_rec, -1)
         t = t + 1
     }
     var oi0: i64 = 0
+    if get_env("TIEC_ASMDBG") == "2" {
+        println("ASMDBG order_len=" + to_string(len(order)) + " cap=" + to_string(cap))
+    }
     while oi0 < len(order) {
         var oid0 = interner.intern(order[oi0])
+        if get_env("TIEC_ASMDBG") == "2" {
+            println("ASMDBG order[" + to_string(oi0) + "]=" + order[oi0])
+        }
         if oid0 >= 0 && oid0 < cap {
             order_flag[oid0] = 1
         }
@@ -511,28 +598,52 @@ func asm_build_seq(order: table<string>) -> i64 {
         }
         fi0 = fi0 + 1
     }
-    // 全部函数记录按名登记（全名唯一，后写覆盖防御）
+    // 全部函数记录按名登记（**同名链表**：泛型展开可在多/同模块产生同名函数
+    // ——p.9.21.11 修复：a7d4211 的「name_rec 后写覆盖」单槽表在同名 ≥2 条记录
+    // 时第二条永远无法被装配序匹配（driver 实测 assert::assert_eq$i64 未覆盖
+    // 降级全量）。改 head/tail 链表（FIFO = 记录升序），每名匹配取链首未用
+    // 记录，语义与旧 O(order×records) 线性扫描一致，查名仍 O(1)。
+    var name_head: table<i64> = table_new_i64()
+    var name_tail: table<i64> = table_new_i64()
+    var t: i64 = 0
+    while t < cap {
+        table_push(name_head, -1)
+        table_push(name_tail, -1)
+        t = t + 1
+    }
+    var rec_next: table<i64> = table_new_i64()   // 记录（相对 f0）→ 下一同名记录
     var fr: i64 = f0
     var frend = asm_f_base[len(asm_frag_fn)]
     while fr < frend {
         var nidr = asm_f_gname[fr]
+        table_push(rec_next, -1)
         if nidr >= 0 && nidr < cap {
-            name_rec[nidr] = fr
+            if name_head[nidr] < 0 {
+                name_head[nidr] = fr
+            } else {
+                rec_next[name_tail[nidr] - f0] = fr
+            }
+            name_tail[nidr] = fr
         }
         fr = fr + 1
     }
-    // order 序：每名 O(1) 查未用记录
+    // order 序：每名取链首未用记录
     var oi2: i64 = 0
     while oi2 < len(order) {
         var found = -1
         var oid2 = interner.intern(order[oi2])
         if oid2 >= 0 && oid2 < cap {
-            found = name_rec[oid2]
+            var w = name_head[oid2]
+            while w >= 0 && found < 0 {
+                if asm_f_used[w] == 0 {
+                    found = w
+                }
+                w = rec_next[w - f0]
+            }
         }
         if found >= 0 && asm_f_used[found] == 0 {
             asm_f_used[found] = 1
             table_push(matched, found)
-            name_rec[oid2] = -1
         }
         // 未找到 = 模板声明等不产 IR 的项——跳过
         oi2 = oi2 + 1
@@ -547,36 +658,59 @@ func asm_build_seq(order: table<string>) -> i64 {
         table_push(asm_seq, matched[mi])
         mi = mi + 1
     }
-    var ti: i64 = 0
-    while ti < len(tail) {
-        table_push(asm_seq, tail[ti])
-        ti = ti + 1
-    }
-    // 全覆盖校验（p.9.21.10：covered 标志 O(1) 查，替代 head/tail 线性扫）
+    // p.9.21.11：irgen 期展开的泛型函数 → extra 段。机制：调用点兜底实例化
+    //（instantiate_fn）发生在 irgen 遍历中，clone 追加 g_extra_tops 与注册表
+    // 登记都在装配序构建**之后**——装配序快照必然缺名（driver 实测
+    // assert::assert_eq$i64 反复覆盖失败）。未匹配的非主片段记录即此类展开：
+    // 按记录序插到 matched 之后、tail 之前——与 tig_ast 创建序一致（原始
+    // 顶层 → 克隆（追加在遍历中、由同一遍历取用）→ 尾部合成）；重放函数表
+    // 序不影响语义正确性（值/块/指令空间 per-function + per-fragment 基址，
+    // 与重放序无关）。ASMDBG=1 打印 extra 明细备查。
     var covered: table<i64> = table_new_i64()
     var fc: i64 = f0
     while fc < frend {
         table_push(covered, 0)
         fc = fc + 1
     }
-    var hi: i64 = 0
-    while hi < len(head) {
-        covered[head[hi] - f0] = 1
-        hi = hi + 1
+    var hc: i64 = 0
+    while hc < len(head) {
+        covered[head[hc] - f0] = 1
+        hc = hc + 1
+    }
+    var tc: i64 = 0
+    while tc < len(tail) {
+        covered[tail[tc] - f0] = 1
+        tc = tc + 1
+    }
+    var extra: table<i64> = table_new_i64()
+    var fx: i64 = f0
+    while fx < frend {
+        if asm_f_used[fx] == 0 && covered[fx - f0] == 0 {
+            table_push(extra, fx)
+        }
+        fx = fx + 1
+    }
+    if get_env("TIEC_ASMDBG") == "1" {
+        var ei0: i64 = 0
+        while ei0 < len(extra) {
+            println("ASMDBG extra[" + to_string(ei0) + "] frag=" + to_string(asm_rec_frag(extra[ei0])) +
+                " name=" + interner.name_str(asm_f_gname[extra[ei0]]))
+            ei0 = ei0 + 1
+        }
+    }
+    var xi: i64 = 0
+    while xi < len(extra) {
+        table_push(asm_seq, extra[xi])
+        xi = xi + 1
     }
     var ti: i64 = 0
     while ti < len(tail) {
-        covered[tail[ti] - f0] = 1
+        table_push(asm_seq, tail[ti])
         ti = ti + 1
     }
-    var fi3 = f0
-    while fi3 < frend {
-        if asm_f_used[fi3] == 0 && covered[fi3 - f0] == 0 {
-            set_err("asm: 函数未被装配序覆盖（" + interner.name_str(asm_f_gname[fi3]) + "）")
-            return -1
-        }
-        fi3 = fi3 + 1
-    }
+    // 覆盖校验（p.9.21.11 重构）：全部记录必经 head/matched/extra/tail 四段
+    // 之一（extra 段吸收 irgen 期泛型展开）——不再有「未覆盖」失败路径；
+    // 片段记录全集 == 重放函数全集由 asm_from_slices 末尾的函数数校验兜底。
     return 0
 }
 
@@ -585,6 +719,34 @@ func asm_build_seq(order: table<string>) -> i64 {
 func asm_replay() -> i64 {
     ir.new_module()
     ir_meta.reset_meta()
+    // 元数据重放（v3：片段头/sym/exp 转存 → ir_meta；多片段后写覆盖——
+    // 真实产物各片段头部一致，sym/exp 按片段子集并集恢复）
+    var mm: i64 = 0
+    while mm < len(asm_frag_fn) {
+        ir_meta.set_pkg_name(asm_m_pkg[mm])
+        ir_meta.set_pkg_version(asm_m_ver[mm])
+        ir_meta.set_ir_version(asm_m_irver[mm])
+        ir_meta.set_compiler_version(asm_m_cver[mm])
+        ir_meta.set_tie_opt(asm_m_topt[mm])
+        ir_meta.set_pass_ver(asm_m_pver[mm])
+        var db = asm_m_dep_base[mm]
+        while db < asm_m_dep_base[mm + 1] {
+            ir_meta.set_dep(asm_m_dep[db], asm_m_dep[db + 1])
+            db = db + 2
+        }
+        var sb2 = asm_sym_base[mm]
+        while sb2 < asm_sym_base[mm + 1] {
+            ir_meta.set_sym(asm_sym[sb2], asm_sym[sb2 + 1], asm_sym[sb2 + 2],
+                            asm_sym[sb2 + 3], asm_sym[sb2 + 4], asm_sym[sb2 + 5])
+            sb2 = sb2 + 6
+        }
+        var eb = asm_exp_base[mm]
+        while eb < asm_exp_base[mm + 1] {
+            ir_meta.export_add(asm_exp[eb], asm_exp[eb + 1], asm_exp[eb + 2], asm_exp[eb + 3])
+            eb = eb + 4
+        }
+        mm = mm + 1
+    }
     // 指令 gid 回执表（先占位，第一趟填）
     asm_i_gid = table_new_i64()
     var gi0: i64 = 0
@@ -732,6 +894,18 @@ pub func asm_from_slices(paths: table<string>, order: table<string>) -> i64 {
     asm_seq = table_new_i64()
     asm_grefs = table_new_i64()
     asm_exts = table_new_i64()
+    asm_m_pkg = table_new_i64()
+    asm_m_ver = table_new_i64()
+    asm_m_irver = table_new_i64()
+    asm_m_topt = table_new_i64()
+    asm_m_pver = table_new_i64()
+    asm_m_cver = table_new_i64()
+    asm_m_dep_base = table_new_i64()
+    asm_m_dep = table_new_i64()
+    asm_sym_base = table_new_i64()
+    asm_sym = table_new_i64()
+    asm_exp_base = table_new_i64()
+    asm_exp = table_new_i64()
     asm_flag_sso = false
     asm_flag_wsock = false
     asm_flag_catch = false
@@ -752,6 +926,10 @@ pub func asm_from_slices(paths: table<string>, order: table<string>) -> i64 {
         }
         m = m + 1
     }
+    // 元数据转存表尾哨兵（replay 的 [mm, mm+1) 区间扫描需要）
+    asm_m_dep_base[n] = len(asm_m_dep)
+    asm_sym_base[n] = len(asm_sym)
+    asm_exp_base[n] = len(asm_exp)
     var dbg_t1: i64 = 0
     unsafe { dbg_t1 = GetTickCount() }
     var dbg_t2: i64 = 0

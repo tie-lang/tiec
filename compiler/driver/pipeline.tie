@@ -242,6 +242,35 @@ func asm_bare(s: string) -> string {
 // 声明不产 IR，跳过）。供 tieir.asm_from_slices 匹配片段函数。
 pub func asm_build_order() -> table<string> {
     var out: table<string> = table_new_string()
+    if get_env("TIEC_ASMDBG") == "3" {
+        var di: i64 = 0
+        var nm_dollar: i64 = 0
+        var tag_other: i64 = 0
+        while di < len(g_extra_tops) {
+            var s3 = g_extra_tops[di]
+            var tg = s_tags[s3]
+            var nm3 = sstate.name_str(s3)
+            var is_d = str_sub_bytes(nm3, 0, str_len(nm3))
+            var has_dollar = false
+            var ci: i64 = 0
+            while ci < str_len(nm3) {
+                if str_byte(nm3, ci) == 36 { has_dollar = true }
+                ci = ci + 1
+            }
+            if has_dollar {
+                println("ASMDBG gext_dollar[" + to_string(di) + "] tag=" + to_string(tg) + " name=" + nm3)
+                nm_dollar = nm_dollar + 1
+            }
+            if tg != 100 && tg != 101 && tg != 112 {
+                tag_other = tag_other + 1
+                if tag_other <= 10 {
+                    println("ASMDBG gext_othertag[" + to_string(di) + "] tag=" + to_string(tg) + " name=" + nm3)
+                }
+            }
+            di = di + 1
+        }
+        println("ASMDBG gext_total=" + to_string(len(g_extra_tops)) + " dollar=" + to_string(nm_dollar) + " othertag=" + to_string(tag_other))
+    }
     // p.9.21.9 收口：原「含顶层 VarDecl → 空 order 降级」护栏已摘除——
     // 全局 var 登记族（含命名空间 const）与 vtable 登记由 irgen.asm_reg_globals
     // 在装配路径重放，链接判据与惰性登记族由 asm_side_recover 恢复。
@@ -259,13 +288,12 @@ pub func asm_build_order() -> table<string> {
 }
 
 func asm_order_one_fn(fn_node: i64, prefix: string, out: table<string>) {
-    // 泛型模板声明（children[0] = N_TYPE_PARAMS）：单态化前不生成 IR——跳过
-    if sstate.nchild(fn_node) > 0 {
-        var slot0 = sstate.child(fn_node, 0)
-        if slot0 >= 0 && s_tags[slot0] == S_N_TYPE_PARAMS {
-            return
-        }
-    }
+    // p.9.21.11：移除「TYPE_PARAMS 首槽 → 模板跳过」——泛型**展开节点**
+    //（sgen_inst 的 clone_subst 产物）同样保留 TYPE_PARAMS 首槽但名字已
+    // mangled 且**必须进装配序**（展开函数经 fn_sig 归属到来源模块片段，
+    // 装配序缺名 → 覆盖校验失败降级全量；driver 实测 assert::assert_eq$i64）。
+    // 模板项进序后匹配不到任何记录，build_seq 按「未找到 = 不产 IR 的项」
+    // 自然跳过——原跳过逻辑对模板是冗余、对展开是致命。
     var bare = sstate.name_str(fn_node)
     var full_name: string = str.clone(bare)
     if prefix != "" {

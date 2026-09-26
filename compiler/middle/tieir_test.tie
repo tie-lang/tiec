@@ -32,7 +32,11 @@ type tie<logic>
 // 会造出 tieir → types 越界边（tieir 库的合法依赖只有 ir）。
 import "./tieir_ser.tie"
 import "./tieir_slice.tie"
+import "./tieir_asm.tie"
 import "./ir_meta.tie"
+
+// ASMDIAG 计时（tieir_asm 内 unsafe GetTickCount）在本单元的 extern 声明
+unsafe extern fn GetTickCount() -> i64;
 
 func check(ok: bool, what: string) -> bool {
     if !ok {
@@ -269,10 +273,15 @@ func main() {
         ok = false
     }
     if wok {
+        // p.9.21.11：v3 片段不再可经 tieir.read（v2 全量反序列化）读回——
+        // roundtrip 改走装配路径（asm_from_slices 单片段全命中装配）。
         ir.new_module()
         ir_meta.reset_meta()
-        var rrc = tieir.read(slice_path)
-        if !check(rrc == 0, "片段 roundtrip 读回成功") {
+        var spaths: table<string> = table_new_string()
+        table_push(spaths, slice_path)
+        var sorder: table<string> = table_new_string()
+        var rrc = tieir.asm_from_slices(spaths, sorder)
+        if !check(rrc == 0, "片段 v3 装配回读成功（asm 路径）") {
             ok = false
         }
         if rrc == 0 {
@@ -322,7 +331,8 @@ func main() {
             if !check(ir_meta.sym_count() == 1 && ir_meta.export_count() == 1, "片段符号/导出子集") {
                 ok = false
             }
-            if !check(ir_meta.span_count() == 6 && ir_meta.inst_line(0) == 20, "片段 span 子集") {
+            // p.9.21.11：v3 片段 span 段整体移除（恒为全 0 冗余）→ 装配后恒空
+            if !check(ir_meta.span_count() == 0, "片段 v3 span 已移除（恒空）") {
                 ok = false
             }
             if !check(ir_meta.get_pkg_name() == interner.intern("tiec-modslice"), "片段包名标记") {

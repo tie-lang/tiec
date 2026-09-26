@@ -330,8 +330,13 @@ pub func cache_enabled() -> bool {
 // 写放大消除——模块缓存**默认开**（无需 TIEC_MODCACHE）。
 
 // p.9.21.9：片段缓存键（写入与装配命中判定共用；键不含 IR，irgen 前可判）。
+// p.9.21.11：键加入**单元根**（主源路径 k_g_src）——模块 IR 含上下文相关的
+// 泛型展开（任一调用方模块实例化的展开归属到模板来源模块），同一模块在不同
+// 根单元下的片段字节不同；键不含根会跨上下文污染（实测：regress 测试工程写
+// 的 std/string.tie 片段被 driver 装配命中，其 test::expect_eq 展开引用的
+// test::expect 在 driver 单元无定义 → opt 报 use of undefined value）。
 pub func mod_slice_key(p: string, fp: string, topt: i64) -> string {
-    return "tm" + to_string(str_hash(p + "|" + fp + "|" + g_cache_salt + "|M" + to_string(topt) + "|TG" + g_target))
+    return "tm" + to_string(str_hash(p + "|" + fp + "|" + g_cache_salt + "|M" + to_string(topt) + "|TG" + g_target + "|R" + k_g_src))
 }
 
 // p.9.21.9：全部模块片段命中 → 返回路径表（模块序 = dep_depset 序）；
