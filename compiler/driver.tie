@@ -56,6 +56,7 @@ import "./keel/keel_executor.tie"
 import "./driver/util.tie"
 import "./driver/cli_args.tie"
 import "./driver/role_reg.tie"
+import "./driver/prelude.tie"
 import "./driver/front_end.tie"
 import "./driver/keelcli.tie"
 import "./driver/pipeline.tie"
@@ -309,6 +310,9 @@ func main() -> i64 {
     // 剥离头部声明行（`type tie` / `type tie<X>` 是真语法行，须从正文移除；
     // 旧 `// tie:` 是注释由 lexer 跳过，无需处理）
     var clean = strip_type_header(src)
+    // p.9.13.2 语言前置注入：应用代码（logic/script）自动获得 str/math 域基元的
+    // 裸名（免 import、免前缀）。同名用户定义优先遮蔽（using 语义已保证）。
+    clean = prelude_inject(clean, g_role, src)
     // S1.4 R3 文件名-头部一致性检查（F1）：`xxx.<基础>[-<参数>][-<修饰>...].tie`
     // 与头部声明不一致 = 编译错误（单一真相，升级自现状警告）。
     var fname = file_name_of(str.clone(g_input))
