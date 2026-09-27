@@ -230,8 +230,8 @@ func arrow_branch(op: i64, lhs: i64, br: i64) -> i64 {
     return mk_binary(op, lhs, br)
 }
 
-// 箭头折叠（自 pexpr_p1 原样迁入，语义不变）：按目标形态脱糖——调用末参追加 /
-// 下标赋值 / 字段赋值 / 保留箭头节点（交语义层按目标类型分派）。
+// 箭头折叠（自 pexpr_p1 原样迁入，语义不变）：按目标形态脱糖——元组解构 /
+// 调用末参追加 / 下标赋值 / 字段赋值 / 保留箭头节点（交语义层按目标类型分派）。
 func arrow_fold(op: i64, lhs: i64, rhs: i64) -> i64 {
     var data_n = lhs
     var tgt_n = rhs
@@ -240,6 +240,9 @@ func arrow_fold(op: i64, lhs: i64, rhs: i64) -> i64 {
         tgt_n = lhs
     }
     var ttag = ast.tag(tgt_n)
+    if ttag == N_TUPLE_LIT {
+        return arrow_destructure(data_n, tgt_n)
+    }
     if ttag == N_CALL || ttag == N_METHOD_CALL || ttag == N_CALL_EXPR {
         var kids: table<i64> = table_new_i64()
         var kk: i64 = 0
@@ -258,6 +261,64 @@ func arrow_fold(op: i64, lhs: i64, rhs: i64) -> i64 {
         return p4_field_assign(tgt_n, data_n)
     }
     return mk_binary(op, lhs, rhs)
+}
+
+// 反/正向解构（p.9.13.4 第 6 项）：`(a, b) <- t` 与 `t -> (a, b)` 等价，均脱糖为
+// 语句序列（N_STMTLIST，语义层按语句块检查、irgen 的 ExprStmt 分支按语句序列生成）：
+//     var _rd<行>_<列> = <数据表达式>
+//     var a = _rd<行>_<列>.Item1
+//     var b = _rd<行>_<列>.Item2
+// 手法照抄 for 循环的解构脱糖（pstmt_flow_p1.parse_for 的 dest_names 分支），
+// 故复用完全相同的 `.ItemK` 字段访问通道，无语义/IR 新增。
+// 临时名以**位置**而非计数器生成：位置在同一文件内天然唯一，避免为计数器另设全局
+//（本仓拆分约定要求全局 var 留在主文件 pexpr.tie）。
+// 约束：元组元素必须是裸标识符（`(a, 1) <- t` 无意义，报错）。
+func arrow_destructure(data: i64, tup: i64) -> i64 {
+    var line = ast.line(tup)
+    var col = ast.col(tup)
+    var n = ast.child_count(tup)
+    if n == 0 {
+        putil.set_err(line, col, "解构目标不能是空元组")
+        return -1
+    }
+    var tmp_id = interner.intern("_rd" + to_string(line) + "_" + to_string(col))
+    var stmts: table<i64> = table_new_i64()
+    // var _rd = <数据>
+    var td = ast.new_node(N_VAR_DECL, tmp_id, 0, -1, line, col)
+    var tk: table<i64> = table_new_i64()
+    table_push(tk, -1)
+    table_push(tk, data)
+    ast.set_children(td, tk)
+    table_push(stmts, td)
+    // 逐名绑定
+    var i: i64 = 0
+    while i < n {
+        var el = ast.child_at(tup, i)
+        // 元组字面量的 children 是 N_TUPLE_FIELD（21）包装节点，真实元素在
+        // 其 children[0]——必须解包，否则会误判为「元素不是标识符」（实测）。
+        if ast.tag(el) == N_TUPLE_FIELD {
+            el = ast.child_at(el, 0)
+        }
+        if ast.tag(el) != N_VAR {
+            putil.set_err(ast.line(el), ast.col(el), "解构元组的元素必须是标识符（形如 `(a, b) <- t`）")
+            return -1
+        }
+        var tv = ast.new_node(N_VAR, tmp_id, -1, -1, line, col)
+        var fa = ast.new_node(N_FIELD_ACCESS, interner.intern("Item" + to_string(i + 1)), -1, -1, line, col)
+        var fk: table<i64> = table_new_i64()
+        table_push(fk, tv)
+        ast.set_children(fa, fk)
+        var vd = ast.new_node(N_VAR_DECL, ast.name(el), 0, -1, ast.line(el), ast.col(el))
+        var vk: table<i64> = table_new_i64()
+        table_push(vk, -1)
+        table_push(vk, fa)
+        ast.set_children(vd, vk)
+        table_push(stmts, vd)
+        i = i + 1
+    }
+    var sl = ast.new_node(N_STMTLIST, -1, -1, -1, line, col)
+    ast.set_children(sl, stmts)
+    return sl
 }
 
 // 下标赋值脱糖：`arr[i] <- a` / `a -> arr[i]` → N_INDEX_ASSIGN。
