@@ -75,12 +75,30 @@ func parse_fn_def() -> i64 {
     if !putil.eat(lex_rparen) {
         var d = false
         while !d {
-            // p.9.11.11 immut 只读形参：`fn f(immut t: i64)`——immut 前缀置于
-            // 参数名之前。immut 存 N_PARAM val bit1（val = by_ref | immut*2；
-            // 既有按 s_vals[p] 读 by_ref 的站点须掩码 & 1）。
+            // p.9.11.26 参数传递约定矩阵：四种约定统一为**参数位唯一声明面**——
+            //   `x: T`        值拷贝（默认）
+            //   `ref x: T`    可写借用
+            //   `immut x: T`  只读借用
+            //   `move x: T`   所有权转移
+            // 三者都是**参数名前缀修饰符**，可任意顺序、可重复出现（重复报「重复修饰」
+            // 由语义层诊断，以便给出统一消息）；`immut` 与 `ref` 同槽互斥、`move` 与
+            // 两者亦互斥（同为语义层诊断）。
+            // 兼容：`x: ref table<T>`（ref 在**类型位**，历史拼写，全仓 218 处）继续
+            // 支持——下方 `:` 之后再吃一次 lex_ref 即此路；两处都写按已置位处理。
             var is_immut: i64 = 0
-            if putil.eat(lex_immut) {
-                is_immut = 1
+            var is_move: i64 = 0
+            var by_ref_pre: i64 = 0
+            var mod_more: bool = true
+            while mod_more {
+                if putil.eat(lex_immut) {
+                    is_immut = is_immut + 1
+                } else if putil.eat(lex_move) {
+                    is_move = is_move + 1
+                } else if putil.eat(lex_ref) {
+                    by_ref_pre = by_ref_pre + 1
+                } else {
+                    mod_more = false
+                }
             }
             var pname = putil.expect_ident_quasi()
             if pname < 0 {
@@ -106,12 +124,16 @@ func parse_fn_def() -> i64 {
             if putil.eat(lex_ellipsis) {
                 is_var = 1   // 变参：`name: ...T`（必须是最后一个参数）
             }
-            var by_ref: i64 = 0
+            var by_ref: i64 = by_ref_pre
             if putil.eat(lex_ref) {
-                by_ref = 1
+                by_ref = by_ref + 1   // 历史拼写 `x: ref T`（类型位）
             }
-            if is_var == 1 && by_ref == 1 {
+            if is_var == 1 && by_ref > 0 {
                 putil.set_err(putil.peek_line(), putil.peek_col(), "变参参数不能同时使用 ref 修饰")
+                return -1
+            }
+            if is_var == 1 && is_move > 0 {
+                putil.set_err(putil.peek_line(), putil.peek_col(), "变参参数不能同时使用 move 修饰")
                 return -1
             }
             if pty < 0 {
@@ -135,7 +157,26 @@ func parse_fn_def() -> i64 {
                 putil.set_err(putil.peek_line(), putil.peek_col(), "变参参数必须是最后一个参数")
                 return -1
             }
-            var p = ast.new_node(N_PARAM, pname, by_ref + is_immut * 2, is_var, putil.peek_line(), putil.peek_col())
+            // 参数约定位域（p.9.11.26）：bit0=ref 可写借用 · bit1=immut 只读借用 ·
+            // bit2=move 所有权转移 · bit3=「同一修饰重复出现」标志（供语义层诊断）。
+            var dup: i64 = 0
+            if is_immut > 1 || is_move > 1 || by_ref_pre > 1 || by_ref > 1 {
+                dup = 1
+            }
+            var pval: i64 = 0
+            if by_ref > 0 {
+                pval = pval + 1
+            }
+            if is_immut > 0 {
+                pval = pval + 2
+            }
+            if is_move > 0 {
+                pval = pval + 4
+            }
+            if dup > 0 {
+                pval = pval + 8
+            }
+            var p = ast.new_node(N_PARAM, pname, pval, is_var, putil.peek_line(), putil.peek_col())
             var pkids: table<i64> = table_new_i64()
             table_push(pkids, pty)
             table_push(pkids, pdef)
