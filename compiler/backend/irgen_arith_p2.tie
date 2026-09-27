@@ -297,6 +297,25 @@ func tig_binary_float(op: i64, lv: i64, rv: i64) -> i64 {
         ir.add_operand(q, rv, 0)
         return tig_ext_call1("floor", ir.get_value(q), types.named(TK_F64), types.named(TK_F64))
     }
+    // p.9.13.3 `%%`（f64 floor 取余，与 `\` 成对）：`a - floor(a/b)*b`。
+    // 与 `/` 的 frem 不同——本例向 -inf 取整，故 -7.0 % 3.0 == -1.0 而
+    // -7.0 %% 3.0 == 2.0（数学取余，符号跟随除数）。
+    if op == B_FLOORMOD {
+        var q2 = ir.new_inst(g_cur_block, 16, types.named(TK_F64))  // fdiv a/b
+        ir.add_operand(q2, lv, 0)
+        ir.add_operand(q2, rv, 0)
+        var fl = tig_ext_call1("floor", ir.get_value(q2), types.named(TK_F64), types.named(TK_F64))
+        if fl < 0 {
+            return -1
+        }
+        var pr = ir.new_inst(g_cur_block, 15, types.named(TK_F64))  // fmul floor(a/b)*b
+        ir.add_operand(pr, fl, 0)
+        ir.add_operand(pr, rv, 0)
+        var sub = ir.new_inst(g_cur_block, 14, types.named(TK_F64))  // fsub a - q*b
+        ir.add_operand(sub, lv, 0)
+        ir.add_operand(sub, ir.get_value(pr), 0)
+        return ir.get_value(sub)
+    }
     var iop: i64 = -1
     if op == 0 {
         iop = 13  // fadd
