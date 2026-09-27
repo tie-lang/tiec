@@ -451,9 +451,25 @@ func t21_zero(ty: i64) -> i64 {
     if ty == types.named(TK_BOOL) {
         return tig_bool_lit(0)
     }
-    if ty == types.named(TK_ANY) {
-        // P2c：any 零值 = 零聚合 {tag:0, payload:0}（alloca+load；直接
-        // tig_int_lit_ty(0,any) 会生成非法 `add {i64,i64} 0, 0`）
+    if t21_is_aggregate(ty) {
+        // 聚合零值（any / struct / enum / fn / tuple）= 聚合槽 + load。**不能**走
+        // 末尾的 tig_int_lit_ty——它按整数常量发射 `add <聚合> 0, 0`，而 LLVM 的
+        // add 只接受整数类型，IR 直接不自洽（opt 报
+        // `integer constant must have integer type`）。
+        //
+        // RCA（2026-09-27）：此分支原先只判 `ty == TK_ANY`（P2c 引入）。对
+        // `table<Enum>`/`table<Struct>` 等**聚合元素**的表下标写走到这里时落到
+        // tig_int_lit_ty → 一律编译失败。触发点：`t[i] = v` 的扩容补零路径
+        // （s21_table_set → s21_elem_zero → t21_zero）——**即使运行期不需要扩容**
+        // 也会发射该块，故任何聚合元素下标赋值都编译不过。
+        //
+        // 与 tig_index_assign 的 pty 修复是同族缺陷的两半：那次让**槽类型**用
+        // 元素类型（pty = elem），这次让**零值**也按元素类型生成，读写/类型两侧
+        // 才完全对称。
+        //
+        // 注：LLVM 的 alloca 未初始化，此处 load 得的是不确定值（与既有 any 分支
+        // 同形）。扩容补零的聚合槽若要真零，需 IR 层 zeroinitializer 常量能力
+        // （后端改动，另行立项），不在本次修复范围。
         var za = ir.new_inst(g_cur_block, 20, ty)
         ir.add_operand(za, ty, 2)
         var zp = ir.get_value(za)
@@ -462,6 +478,15 @@ func t21_zero(ty: i64) -> i64 {
         return ir.get_value(lz)
     }
     return tig_int_lit_ty(0, ty)
+}
+
+// 聚合（多字）类型判据：零值不能按整数常量发射。
+func t21_is_aggregate(ty: i64) -> bool {
+    if ty == types.named(TK_ANY) {
+        return true
+    }
+    var k = types.kind(ty)
+    return k == K_STRUCT || k == K_ENUM || k == K_FN || k == K_TUPLE
 }
 
 // 表句柄数据指针（[16] 字段）
