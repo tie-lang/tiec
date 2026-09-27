@@ -66,6 +66,11 @@ func tig_expr_seg1(id: i64) -> i64 {
     }
     if tag == 9 {
         // Binary
+        // p.9.13.3 幂 `**`：按操作数类型分派（需 node id 才能走按名调用，
+        // 故在本层处理而非 tig_binary 内部）。
+        if s_vals[id] == B_POW {
+            return tig_pow(id)
+        }
         return tig_binary(s_vals[id], sstate.child(id, 0), sstate.child(id, 1))
     }
     if tag == 10 {
