@@ -489,7 +489,8 @@ func exec_stmt(id: i64) {
 // VarDecl：children=[ty 或 -1, init]；name=变量名。
 // 顶层（作用域栈空）声明 → globals；嵌套块/函数体 → 当前作用域。
 func exec_stmt_var_decl(id: i64) {
-    var nm = isess.nname_str(id)
+    // p.9.17.3：变量名以 interned id 参与查找（整数键）；错误文本延迟到冷分支才还原
+    var nid = isess.nname(id)
     var ty_node = isess.nchild_at(id, 0)
     var init = isess.nchild_at(id, 1)
     var val: i64 = -1
@@ -522,22 +523,22 @@ func exec_stmt_var_decl(id: i64) {
     var last_dup: bool = false
     if isess.scope_top() < 0 {
         // REPL/脚本顶层：重复声明判全（含 globals）
-        last_dup = isess.var_declared(nm)
+        last_dup = isess.var_declared_nid(nid)
     } else {
         // 函数/块体内：只判当前块（允许遮蔽顶层同名，命名冲突缓解 E）
-        last_dup = isess.scope_local_declared(nm)
+        last_dup = isess.scope_local_declared_nid(nid)
     }
     if last_dup {
-        g_err = "变量 '" + nm + "' 重复声明"
+        g_err = "变量 '" + isess.nname_str(id) + "' 重复声明"
         g_flow = FL_NORMAL
         g_lastval = -1
         return
     }
     if isess.scope_top() < 0 {
         // REPL 顶层：声明落入 globals（跨行持久）
-        isess.g_declare(nm, val)
+        isess.g_declare_nid(nid, val)
     } else {
-        isess.var_declare(nm, val)
+        isess.var_declare_nid(nid, val)
     }
     g_flow = FL_NORMAL
     g_lastval = -1
@@ -545,7 +546,7 @@ func exec_stmt_var_decl(id: i64) {
 
 // Assign：name=目标名，val=op 码（-1=普通），children=[值]。
 func exec_stmt_assign(id: i64) {
-    var nm = isess.nname_str(id)
+    var nid = isess.nname(id)
     var op = isess.nval(id)
     var rhs = isess.nchild_at(id, 0)
     if op < 0 {
@@ -556,16 +557,16 @@ func exec_stmt_assign(id: i64) {
             g_lastval = -1
             return
         }
-        if isess.assign(nm, val) < 0 {
+        if isess.assign_nid(nid, val) < 0 {
             g_flow = FL_NORMAL
             g_lastval = -1
             return
         }
     } else {
         // 复合赋值（+= -= *= /= %= &= |= ^= <<= >>=）：目标必须已声明
-        var cur = isess.lookup(nm)
+        var cur = isess.lookup_nid(nid)
         if cur < 0 {
-            g_err = "变量 '" + nm + "' 未声明"
+            g_err = "变量 '" + isess.nname_str(id) + "' 未声明"
             g_flow = FL_NORMAL
             g_lastval = -1
             return
@@ -582,7 +583,7 @@ func exec_stmt_assign(id: i64) {
             g_lastval = -1
             return
         }
-        if isess.assign(nm, nv) < 0 {
+        if isess.assign_nid(nid, nv) < 0 {
             g_flow = FL_NORMAL
             g_lastval = -1
             return
