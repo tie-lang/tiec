@@ -221,15 +221,17 @@ pub func infer_expr_var(id: i64) -> i64 {
         return -1
 }
 
-// p.9.13.3 `+` 扩展：`table<T> + table<T>` → `lang::tbl_cat`（值语义新表）。
+// p.9.13.3 `+` 扩展：容器拼接/合并。
+//   `table<T> + table<T>` → `lang::tbl_cat`（值语义新表）
+//   `map<V> + map<V>`     → `lang::map_cat`（值语义新映射，键冲突右覆盖左）
 // 返回 1 表示已改写（调用方应转 `infer_expr(id)` 重走调用通道），0 表示不适用。
 //
 // 关键手法：**保留原来的两个 children 不动**，只把 tag 换成 S_N_CALL、名字换成
 // 目标函数。之所以可行——`sstate.slot_off` 对「首子节点非 -1 泛型哨兵」的节点
 // 返回 **0**（不是 1），于是调用通道把 children[0..1] 当作两个实参，正好是
 // (a, b)。这样无需为本节点新增子节点（语义层没有加子节点的接口），又能走
-// **正常调用通道**——后者不可省：`tbl_cat<T>` 是泛型，没有具体 fn_sig，
-// 直接按名发射会 sig=-1 失败。
+// **正常调用通道**——后者不可省：`tbl_cat<T>`/`map_cat<V>` 是泛型，没有具体
+// fn_sig，直接按名发射会 sig=-1 失败。
 func infer_table_cat_rewrite(id: i64) -> i64 {
     var a = sstate.child(id, 0)
     var b = sstate.child(id, 1)
@@ -241,11 +243,19 @@ func infer_table_cat_rewrite(id: i64) -> i64 {
     if at < 0 || bt < 0 {
         return 0
     }
-    if !types.is_table(at) || !types.is_table(bt) {
+    var target: string = ""
+    // **is_map 必须先判**：实测 `types.is_table` 对 map 也返回 true（map 建在表
+    // 基座上），若先判 is_table 会把 map 误路由到 `tbl_cat`，进而报
+    // 「无法推断类型参数 T」——是路由错，不是泛型能力问题（实测踩过）。
+    if types.is_map(at) && types.is_map(bt) {
+        target = "lang::map_cat"
+    } else if types.is_table(at) && types.is_table(bt) {
+        target = "lang::tbl_cat"
+    } else {
         return 0
     }
     s_tags[id] = S_N_CALL
-    s_names[id] = intern.intern("lang::tbl_cat")
+    s_names[id] = intern.intern(target)
     s_vals[id] = -1
     return 1
 }
