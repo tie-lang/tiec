@@ -221,6 +221,35 @@ pub func infer_expr_var(id: i64) -> i64 {
         return -1
 }
 
+// p.9.13.3 `+` 扩展：`table<T> + table<T>` → `lang::tbl_cat`（值语义新表）。
+// 返回 1 表示已改写（调用方应转 `infer_expr(id)` 重走调用通道），0 表示不适用。
+//
+// 关键手法：**保留原来的两个 children 不动**，只把 tag 换成 S_N_CALL、名字换成
+// 目标函数。之所以可行——`sstate.slot_off` 对「首子节点非 -1 泛型哨兵」的节点
+// 返回 **0**（不是 1），于是调用通道把 children[0..1] 当作两个实参，正好是
+// (a, b)。这样无需为本节点新增子节点（语义层没有加子节点的接口），又能走
+// **正常调用通道**——后者不可省：`tbl_cat<T>` 是泛型，没有具体 fn_sig，
+// 直接按名发射会 sig=-1 失败。
+func infer_table_cat_rewrite(id: i64) -> i64 {
+    var a = sstate.child(id, 0)
+    var b = sstate.child(id, 1)
+    if a < 0 || b < 0 {
+        return 0
+    }
+    var at = node_types[a]
+    var bt = node_types[b]
+    if at < 0 || bt < 0 {
+        return 0
+    }
+    if !types.is_table(at) || !types.is_table(bt) {
+        return 0
+    }
+    s_tags[id] = S_N_CALL
+    s_names[id] = intern.intern("lang::tbl_cat")
+    s_vals[id] = -1
+    return 1
+}
+
 // p.9.13.3 `in` 中缀（语义期分派 + 改写为调用）。
 // 解析期产出 `N_BINARY(B_IN)`，children = **[泛型槽, 容器, 键/元素]**（与调用同形）。
 // 此处按容器类型选目标库函数，把节点**改写为 `S_N_CALL`**（仅换 tag/name/val，
@@ -405,6 +434,11 @@ pub func infer_expr_binary(id: i64) -> i64 {
         }
         if ores < 0 && ores != -2 {
             return -1
+        }
+        // p.9.13.3 `+` 扩展（table+table → 值语义新表）：需在两侧类型已知后判定，
+        // 故置于此（op-overload 之后、类型一致性检查之前）。
+        if op == 0 && infer_table_cat_rewrite(id) == 1 {
+            return infer_expr(id)
         }
         // 枚举 ==/!= 比较拦截（一期）：枚举按 tag 比较语义未定义，报错
         if op == 5 || op == 6 {
