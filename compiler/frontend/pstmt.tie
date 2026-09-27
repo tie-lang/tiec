@@ -12,6 +12,63 @@ import "./pexpr.tie"
 
 namespace pstmt {
 
+// p.9.11.34 短闭包 `t -> expr`（临时单参函数）：**在 fn 类型标注的声明位**把
+// `ident -> expr` 直接构造为闭包字面量。
+//
+// 为何可以在解析期消歧：本函数**只在** `var f: fn(A) -> R = …` 的初始化位被调用
+// （调用点已确认标注是 FN_TYPE）。该位置**明确要一个函数值**，故 `ident -> expr`
+// 的意图无歧义——而管道语义 `x -> f` 要求 x 是**已声明的值**，在「期望函数值」的
+// 位置写管道属罕见且易混的用法。规则据此定义：
+//
+//   * 有 fn 类型标注 + 初始化形如 `ident -> expr`  ⇒ **闭包**（形参 ident，体 expr）
+//   * 其余情形                                   ⇒ 维持既有管道语义（一字不变）
+//
+// 形参类型/返回类型取自标注（FN_TYPE children = [返回类型, 形参类型...]），故
+// 无需"未声明"判定（解析期本也做不到）——判据是**上下文**而非符号表。
+// 产出的是**完整闭包节点**（含体），不复用 parse_fn_lit 的延迟回填：回填机制只是
+// pexpr 层无法解析语句块的变通（模块依赖成环），此处自建等效形态即可。
+pub func build_short_lambda(fnty: i64, line: i64, col: i64) -> i64 {
+    var pname = putil.expect_ident()
+    if pname < 0 {
+        return -1
+    }
+    putil.advance()   // '->'
+    var body_expr = pexpr.parse_expr()
+    if body_expr < 0 {
+        return -1
+    }
+    var ret_ty = ast.child_at(fnty, 0)
+    var pty = ast.child_at(fnty, 1)
+    if ret_ty < 0 || pty < 0 {
+        putil.set_err(line, col, "短闭包 'x -> expr' 需要上下文的函数类型带至少 1 个形参（如 fn(A) -> R）")
+        return -1
+    }
+    // 形参：children = [类型, 默认值或 -1]
+    var p = ast.new_node(N_PARAM, pname, 0, 0, line, col)
+    var pk: table<i64> = table_new_i64()
+    table_push(pk, pty)
+    table_push(pk, -1)
+    ast.set_children(p, pk)
+    // 体：StmtList[Return(expr)]——与延迟回填后的闭包体形态一致
+    var ret = ast.new_node(N_RETURN, -1, -1, -1, line, col)
+    var rk: table<i64> = table_new_i64()
+    table_push(rk, body_expr)
+    ast.set_children(ret, rk)
+    var sl = ast.new_node(N_STMTLIST, -1, -1, -1, line, col)
+    var sk: table<i64> = table_new_i64()
+    table_push(sk, ret)
+    ast.set_children(sl, sk)
+    // 闭包：children = [泛型槽, 返回类型, 参数..., 体]；aux = 形参数
+    var f = ast.new_node(N_FN_LIT, -1, -1, 1, line, col)
+    var fk: table<i64> = table_new_i64()
+    table_push(fk, -1)
+    table_push(fk, ret_ty)
+    table_push(fk, p)
+    table_push(fk, sl)
+    ast.set_children(f, fk)
+    return f
+}
+
 pub func parse_var_decl(is_const: i64) -> i64 {
     var line = putil.peek_line()
     var col = putil.peek_col()
@@ -42,7 +99,15 @@ pub func parse_var_decl(is_const: i64) -> i64 {
         if ty >= 0 && ast.tag(ty) == N_FN_TYPE {
             g_expect_fn_ty = ty
         }
-        init = pexpr.parse_expr()
+        // p.9.11.34 短闭包形态：fn 标注位 + 形如 `ident -> expr` ⇒ 短闭包
+        //（判据是**上下文**而非符号表，详见 build_short_lambda 头注）。
+        // 该分支外的所有情形都走原路径，管道语义一字不变。
+        if ty >= 0 && ast.tag(ty) == N_FN_TYPE &&
+            putil.peek_tag() == lex_ident && putil.peek_n(1) == lex_arrow {
+            init = build_short_lambda(ty, putil.peek_line(), putil.peek_col())
+        } else {
+            init = pexpr.parse_expr()
+        }
         g_expect_fn_ty = saved_fn_ty
         if init < 0 {
             return -1
