@@ -511,10 +511,10 @@ func gen_expr(id: i64) -> i64 {
         return ivalue.new_trit(isess.nval(id))
     }
     if t == N_VAR {
-        var nm = isess.nname_str(id)
-        var v = isess.lookup(nm)
+        // p.9.17.3：直接用 interned id 查找（整数键），错误文本延迟到冷分支才还原
+        var v = isess.lookup_nid(isess.nname(id))
         if v < 0 {
-            g_err = "变量 '" + nm + "' 未声明"
+            g_err = "变量 '" + isess.nname_str(id) + "' 未声明"
             return -1
         }
         return v
@@ -568,10 +568,9 @@ func gen_expr(id: i64) -> i64 {
     }
     if t == N_CODE_INTERP {
         // S3.3：插值表达式求值（准引用外的 `$x` = 读取变量 x 的 code/字符串值）
-        var nm = isess.nname_str(id)
-        var v = isess.lookup(nm)
+        var v = isess.lookup_nid(isess.nname(id))
         if v < 0 {
-            g_err = "变量 '" + nm + "' 未声明"
+            g_err = "变量 '" + isess.nname_str(id) + "' 未声明"
             return -1
         }
         return v
