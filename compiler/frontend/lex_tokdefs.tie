@@ -98,13 +98,26 @@ const lex_immut: i64 = 103;   // `fn f(immut t)` 只读形参修饰
 // p.9.11.12 @注解起始符（tag 104）：`@name` / `@name(args)` 声明前置注解。
 // 映射值登记于 lex_symtab.build_sym（'@' = 0x40，介于 '?' 与 '[' 之间）。
 const lex_at: i64 = 104;      // @ 注解符（声明前置元数据）
-// p.9.13.3 整除运算符 `\`（tag 105）与复合赋值 `\=`（tag 106）：符号表新增。
+// p.9.13.3 整除运算符 `\`（tag 108）与复合赋值 `\=`（tag 109）：符号表新增。
 // 为何不用 `//`（设计稿原定）：`//` 已是行注释（scan_slash 分派），改注释规则是
 // 破坏性改动。`\`（0x5C）在符号表中完全空闲——介于 "["（0x5B）与 "]"（0x5D）
 // 之间；`\=` 与 `\` 同首字符，按最短优先排在 `\` 之后。字符串内的 `\` 是转义符，
-// 走 scan_string 独立路径，与本符号无冲突。tag 97 为已废弃保留段，故取 105/106。
-const lex_backslash: i64 = 105;    // `\` 整除（int 截断除 / f64 floor-div）
-const lex_backslasheq: i64 = 106;  // `\=` 整除复合赋值
+// 走 scan_string 独立路径，与本符号无冲突。
+// **为何是 108/109 而非 105/106（RCA，2026-09-27）**：本文件的关键字 tag 已用到
+// 107（yield=105 / interface=106 / alias=107），而分配 tag 时只查了符号表一侧的
+// 最大值（104）就取号，造成 `lex_backslash` 与 `lex_yield`、`lex_backslasheq` 与
+// `lex_interface` **重号**。解析器按 tag 值比较，故关键字与符号会互相误判
+//（未爆发仅因 `yield` 不会出现在乘法层，属侥幸）。**纪律：分配 lex tag 前，
+// 必须对整个 lex_tokdefs.tie 做一次「值重复」扫描**：
+//   grep -o ": i64 = [0-9]*" lex_tokdefs.tie | sed 's/: i64 = //' | sort -n | uniq -d
+const lex_backslash: i64 = 108;    // `\` 整除（int 截断除 / f64 floor-div）
+const lex_backslasheq: i64 = 109;  // `\=` 整除复合赋值
+// p.9.13.3 幂 `**`（tag 110）与 floor 取余 `%%`（tag 111）：符号表新增。
+// 排序（严格升序，最短优先）：`*`(0x2A) < `**`(0x2A 0x2A) < `*=`(0x2A 0x3D) < `*?`(0x2A 0x3F)；
+// `%`(0x25) < `%%`(0x25 0x25) < `%=`(0x25 0x3D)。
+// 分配依据：本文件最大值此前为 109（上一行），故取 110/111（见上方 RCA 纪律：先做重号扫描）。
+const lex_starstar: i64 = 110;        // `**` 幂（右结合，高于 `*`）
+const lex_percentpercent: i64 = 111;  // `%%` floor 取余（与 `\` 成对）
 // p.9.11.15 yield 生成器关键字（tag 105）：`func gen() { yield v; ... }`——
 // 含 yield 的函数 = 生成器函数（产出序列，调用返回迭代序列对象/表）。
 const lex_yield: i64 = 105;   // yield 关键字（生成器产出语句）
