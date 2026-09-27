@@ -189,6 +189,35 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
             return -1
         }
         var is_ref = s_vals[p] & 1   // by_ref（p.9.11.11 immut 存 bit1，掩码 & 1）
+        // p.9.11.26 四约定矩阵：统一声明面 + 互斥诊断。
+        //   bit0=ref（可写借用）· bit1=immut（只读借用）· bit2=move（所有权转移）
+        //   · bit3=重复修饰
+        // 互斥裁决（同槽双约 = 语义矛盾，编译诊断）：
+        //   * immut × ref：只读借用与可写借用不可共存
+        //   * move × (ref | immut)：所有权已移交，无从「借用」
+        //   * 同类修饰重复（`ref ref x`）也属笔误，一并诊断
+        // 诊断先行（同槽首个问题即报），避免叠加多条互相掩盖。
+        var is_immut_p = (s_vals[p] / 2) % 2
+        var is_move_p = (s_vals[p] / 4) % 2
+        var is_dup_p = (s_vals[p] / 8) % 2
+        if is_dup_p == 1 {
+            sm_err_line = s_lines[p]
+            sm_err_col = s_cols[p]
+            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的传递约定修饰重复出现（ref/immut/move 各至多一次）"
+            return -1
+        }
+        if is_immut_p == 1 && is_ref == 1 {
+            sm_err_line = s_lines[p]
+            sm_err_col = s_cols[p]
+            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 不能同时标注 immut 与 ref（只读借用与可写借用互斥）"
+            return -1
+        }
+        if is_move_p == 1 && (is_ref == 1 || is_immut_p == 1) {
+            sm_err_line = s_lines[p]
+            sm_err_col = s_cols[p]
+            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 不能同时标注 move 与 ref/immut（所有权已移交，无从借用）"
+            return -1
+        }
         var is_var = s_aux[p]   // 变参标志（`name: ...T`，parser 写入 aux）
         var has_def: i64 = 0
         var def_node: i64 = -1
