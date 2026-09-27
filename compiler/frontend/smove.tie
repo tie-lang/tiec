@@ -316,6 +316,29 @@ func check_expr_read(e: i64) -> i64 {
 //      库内部 `find(lower, c)` 按值传参**不**消耗调用方的 c，
 //      之后 `out = out + c` 才合法。
 // 裸名顶层函数（如用户代码 take_owned(s)）保持移动语义（full 不含 ::）。
+// p.9.11.26 `move x: T` 形参判定：读**声明处**该形参 Param 节点 val 的 bit2
+//（位域见 pstmt_top_p3 参数解析：bit0=ref · bit1=immut · bit2=move）。
+// 本函数供调用点判定「该实参的所有权被显式移交」，与既有的 is_move_src
+//（按值类型/属性推断移动源）互补：前者是**声明侧显式约定**，后者是隐式判定。
+func param_is_move(full: string, idx: i64) -> bool {
+    if idx < 0 || str_len(full) == 0 {
+        return false
+    }
+    var fnode = sstate.fn_def_node(full)
+    if fnode < 0 {
+        return false
+    }
+    var poff = sstate.slot_off(fnode) + 1 + idx
+    if poff >= sstate.nchild(fnode) {
+        return false
+    }
+    var pnode = sstate.child(fnode, poff)
+    if pnode < 0 {
+        return false
+    }
+    return (s_vals[pnode] / 4) % 2 == 1
+}
+
 func check_call(e: i64) -> i64 {
     var fnm = sstate.name_str(e)
     var full = resolve_call(fnm)
@@ -347,12 +370,13 @@ func check_call(e: i64) -> i64 {
             return -1
         }
         // 用户函数 + 直接变量实参 + 堆类型 + 形参非 ref → 移动
+        // p.9.11.26：形参声明为 `move x: T` 时**无条件**移交（不看类型/属性推断）
         if sig >= 0 {
             var nid = var_nid(arg)
             if nid >= 0 {
                 var off = sg_off[sig]
                 if off + i < len(sp_refs) && sp_refs[off + i] == 0 {
-                    if var_is_const(nid) == 0 && is_move_src(arg) {
+                    if var_is_const(nid) == 0 && (is_move_src(arg) || param_is_move(full, i)) {
                         sstate.lv_moved_mark(nid)
                     }
                 }
@@ -500,7 +524,8 @@ func check_method_call(e: i64) -> i64 {
             if nid >= 0 {
                 var off = sg_off[sig]
                 if off + i < len(sp_refs) && sp_refs[off + i] == 0 {
-                    if var_is_const(nid) == 0 && is_move_src(arg) {
+                    // p.9.11.26：方法形参下标 0 是接收者，故实参 i 对应形参 i+1
+                    if var_is_const(nid) == 0 && (is_move_src(arg) || param_is_move(full, i + 1)) {
                         sstate.lv_moved_mark(nid)
                     }
                 }
