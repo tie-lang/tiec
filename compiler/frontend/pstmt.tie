@@ -34,7 +34,16 @@ pub func parse_var_decl(is_const: i64) -> i64 {
     }
     var init = -1
     if putil.eat(lex_eq) {
+        // p.9.11.34「临时单参函数」：声明位有 fn 类型标注时，把该类型放入
+        // pexpr 的期望槽，使初始化表达式中的闭包**可省略形参类型**
+        // （`var f: fn(i64) -> i64 = func(t) -> i64 { return t + 1 }`）。
+        // 保存-设置-恢复：只覆盖本次初始化表达式的解析，嵌套/后续不受影响。
+        var saved_fn_ty = g_expect_fn_ty
+        if ty >= 0 && ast.tag(ty) == N_FN_TYPE {
+            g_expect_fn_ty = ty
+        }
         init = pexpr.parse_expr()
+        g_expect_fn_ty = saved_fn_ty
         if init < 0 {
             return -1
         }
