@@ -93,6 +93,7 @@ func tig_pow(id: i64) -> i64 {
     if lhs < 0 || rhs < 0 {
         return -1
     }
+    var checked = s_vals[id] == B_CHECK_POW
     var lt = node_types[lhs]
     var rt = node_types[rhs]
     var is_f = lt == types.named(TK_F64) || lt == types.named(TK_F32) ||
@@ -107,6 +108,11 @@ func tig_pow(id: i64) -> i64 {
             return -1
         }
         return tig_ext_call2("pow", lv, types.named(TK_F64), rv, types.named(TK_F64), types.named(TK_F64))
+    }
+    // p.9.13.3 `**?`（checked）：int 族走前置的逐步检查版（`*?` 每步验溢出，
+    // 故中间结果溢出也能捕获——先算完再验结果做不到这点）。
+    if checked {
+        return tig_user_call_from("lang::pow_i_checked", id, 0)
     }
     return tig_user_call_from("lang::pow_i", id, 0)
 }
