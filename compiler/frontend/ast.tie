@@ -307,6 +307,13 @@ const N_SLICE: i64 = 160;
 // 类型均不可省略，E00484/E00204，故无法脱糖为闭包）。它是 p.9.13.5 图「节点 =
 // 匿名单参块」形态的前置。
 const N_BLOCK_PIPE: i64 = 162;
+// p.9.11.34 语义期**类型引用**节点（163）：`val` = 语义类型 id。
+// 为何需要：语义期消糖造节点时（如赋值位 `f = t -> expr` 展开为闭包），新节点的
+// 类型位（N_PARAM/N_FN_LIT 的 children[0]）本该放**类型 AST 节点**，但语义期手上的
+// 是**类型 id**——而复杂类型（fn/表/聚合）无法逆向构造出等价 AST 节点。
+// 故新增本"引用节点"：只存类型 id，由 sgen.parse_generic_type_node 直接返回该 id
+//（见其 N_SEM_TYPE 分支），任何类型都能表达，无需递归构造。
+const N_SEM_TYPE: i64 = 163;
 // 类型段（val=TyKw 索引，name=类型关键字文本池 id）
 //   StructType[name=结构名, children=[类型实参槽]]——`Box<i64>` 引用含 N_TYPE_ARGS
 //   子节点；`Box` 裸引用 children[0] = -1（兼容现有）。

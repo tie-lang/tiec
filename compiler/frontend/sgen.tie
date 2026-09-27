@@ -185,6 +185,11 @@ pub func resolve_int_len_node(id: i64) -> i64 {
 // 调用点显式类型实参、模板体内嵌套 struct 引用实例化共用。
 pub func parse_generic_type_node(tid: i64) -> i64 {
     var tag = s_tags[tid]
+    // p.9.11.34 语义期类型引用：val 直接就是语义类型 id（语义期消糖造节点时用，
+    // 因为复杂类型无法逆向构造出等价 AST 节点）。
+    if tag == S_N_SEM_TYPE {
+        return s_vals[tid]
+    }
     if tag == S_N_NAMED_TYPE {
         return types.named(s_vals[tid])
     }
