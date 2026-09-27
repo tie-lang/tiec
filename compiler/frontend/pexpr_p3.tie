@@ -165,35 +165,50 @@ func parse_fn_lit(line: i64, col: i64) -> i64 {
             if pname < 0 {
                 return -1
             }
-            if !putil.expect(lex_colon, "':'") {
-                return -1
-            }
-            var is_var: i64 = 0
-            if putil.eat(lex_ellipsis) {
-                is_var = 1   // 变参：`name: ...T`（必须是最后一个参数）
-            }
             var by_ref: i64 = 0
-            if putil.eat(lex_ref) {
-                by_ref = 1
-            }
-            if is_var == 1 && by_ref == 1 {
-                putil.set_err(putil.peek_line(), putil.peek_col(), "变参参数不能同时使用 ref 修饰")
-                return -1
-            }
-            var pty = pexpr_type.parse_type()
-            if pty < 0 {
-                return -1
-            }
-            var pdef = -1
-            if putil.eat(lex_eq) {
-                if is_var == 1 {
-                    putil.set_err(putil.peek_line(), putil.peek_col(), "变参参数不能有默认值")
+            var is_var: i64 = 0
+            var pty: i64 = -1
+            var pdef: i64 = -1
+            if putil.peek_tag() == lex_colon {
+                // 常规：形参带类型标注
+                putil.advance()   // ':'
+                if putil.eat(lex_ellipsis) {
+                    is_var = 1   // 变参：`name: ...T`（必须是最后一个参数）
+                }
+                if putil.eat(lex_ref) {
+                    by_ref = 1
+                }
+                if is_var == 1 && by_ref == 1 {
+                    putil.set_err(putil.peek_line(), putil.peek_col(), "变参参数不能同时使用 ref 修饰")
                     return -1
                 }
-                pdef = parse_expr()
-                if pdef < 0 {
+                pty = pexpr_type.parse_type()
+                if pty < 0 {
                     return -1
                 }
+                if putil.eat(lex_eq) {
+                    if is_var == 1 {
+                        putil.set_err(putil.peek_line(), putil.peek_col(), "变参参数不能有默认值")
+                        return -1
+                    }
+                    pdef = parse_expr()
+                    if pdef < 0 {
+                        return -1
+                    }
+                }
+            } else if g_expect_fn_ty >= 0 && ast.tag(g_expect_fn_ty) == N_FN_TYPE {
+                // p.9.11.34「临时单参函数」：形参类型省略，从**上下文 fn 类型**补全。
+                // FnType children = [返回类型, 形参类型...]，故第 idx 个形参 = children[1+idx]。
+                // 越界（fn 类型形参数不足）→ 报错，不静默补错类型。
+                var pt = ast.child_at(g_expect_fn_ty, 1 + len(params))
+                if pt < 0 {
+                    putil.set_err(putil.peek_line(), putil.peek_col(), "闭包形参 '" + interner.lookup(pname) + "' 无法从上下文的函数类型推定类型（上下文的形参数不足）")
+                    return -1
+                }
+                pty = pt
+            } else {
+                putil.set_err(putil.peek_line(), putil.peek_col(), "闭包形参 '" + interner.lookup(pname) + "' 必须标注类型（此处无函数类型上下文可供推定）")
+                return -1
             }
             if is_var == 1 && putil.peek_tag() == lex_comma {
                 putil.set_err(putil.peek_line(), putil.peek_col(), "变参参数必须是最后一个参数")
