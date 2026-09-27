@@ -158,15 +158,19 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
     var p_refs: table<i64> = table_new_i64()
     var p_defs: table<i64> = table_new_i64()
     var p_vars: table<i64> = table_new_i64()
-    var required: i64 = nparams
-    // 变参函数：必选数初值扣掉变参本身（调用方可传 0 个额外实参；
-    // 下方循环对变参跳过时保留该初值——如 `sum(rest: ...i64)` 需 0）
-    if nparams > 0 {
-        var lastp = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + (nparams - 1))
-        if s_aux[lastp] == 1 {
-            required = nparams - 1
-        }
-    }
+    // 必选参数数（默认值前）：**初值 0**，由下方循环按「最后一个无默认值且非变参
+    // 的参数位置 +1」覆盖。
+    // RCA（p.9.11.23，2026-09-27）：此处原为 `var required: i64 = nparams`
+    //（意图「默认全部必选」）+ 变参时扣 1，导致**全部参数都带默认值**的函数
+    // 必选数停在 nparams（而非 0）——于是 `d0(c: 9)` 这类调用被个数检查
+    // （nc < req）误拒，报「期望 3 个参数，实际 1 个」。同理变参函数
+    //（`f(a: i64 = 1, b: ...T)`）也会停在 nparams-1。改为 0 初值后：
+    //   * 无默认值参数逐个覆盖（语义不变）
+    //   * 全部带默认值 → 0（正确）
+    //   * 纯变参 `sum(rest: ...i64)` → 0（变参在循环中被跳过，不加计）
+    //   * `f(a: i64, b: ...T)` → 1（a 覆盖）
+    // 该改动只**放宽**（required 变小或不变），故既有可通过的调用不受影响。
+    var required: i64 = 0
     // 默认值校验：ref 不能带默认值 + 可选参数必须连续 + 默认值必须字面量 + 类型匹配
     var seen_default: bool = false
     var k: i64 = 0
