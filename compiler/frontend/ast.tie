@@ -367,6 +367,11 @@ const B_FLOORMOD: i64 = 26;
 // p.9.13.3 checked 幂 `**?`（27）：与 `**` 同级；int 族任一步乘法溢出即运行期
 // 报错（对齐 p.9.11.9 的 `+?`/`-?`/`*?`）。f64 无 checked 语义（溢出即 inf）。
 const B_CHECK_POW: i64 = 27;
+// p.9.13.3 `in` 中缀（28）：**语义期中间形态**——解析器只记 `elem in cont`，
+// 由语义层按右操作数类型分派并**重写**为目标库调用（string→str_has 子串 /
+// table→seq_has 元素 / map→map_has 键）。理由：容器类型在解析期不可知，
+// 而在语义期已知（node_types）。重写后本码不再出现于 irgen。
+const B_IN: i64 = 28;
 
 // 一元：0=Neg 1=Not 2=PreInc 3=PreDec 4=PostInc 5=PostDec
 const U_NEG: i64 = 0;

@@ -66,6 +66,8 @@ func tig_expr_seg1(id: i64) -> i64 {
     }
     if tag == 9 {
         // Binary
+        // 注：p.9.13.3 的 `in` 中缀**不达此处**——语义层已把该节点改写为 S_N_CALL
+        // （泛型目标需走正常调用通道，见 sinfer.infer_in_op）。
         // p.9.13.3 幂 `**` 与 checked 幂 `**?`：按操作数类型分派（需 node id 才能
         // 走按名调用，故在本层处理而非 tig_binary 内部）。
         if s_vals[id] == B_POW || s_vals[id] == B_CHECK_POW {
