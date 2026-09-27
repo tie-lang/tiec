@@ -385,6 +385,30 @@ pub func is_ref_param_of(sig: i64, nm: string) -> i64 {
     return 0
 }
 
+// 语义期**新建节点**（p.9.11.34 赋值位短闭包引入的通用能力）。
+//
+// 为何需要：语义层此前只能**就地改写**已有节点（如把 BINARY 的 tag 换成 CALL），
+// 无法新增节点——语义表 s_* 是「解析后 AST 的列式镜像」，解析期之外没有把新节点
+// 登记进镜像的路径。凡「语义期才知道要不要展开、且展开需要更多子节点」的消糖
+//（如赋值位 `f = t -> expr` 需从 2 子节点的箭头节点变成 4 子节点的闭包），都必须
+// 有本能力。
+//
+// 实现：向 8 张并行表各追加一项（下标对齐 = 新节点 id），s_coff 先置 0 再由
+// set_children 重设；s_n 递增。**调用方须保证**新节点在语义期已加载完 AST 之后
+// 才创建（否则下标与解析期不一致——实际上 s_* 只在 load_ast 时增长，故安全）。
+pub func new_node_sem(tag: i64, name: i64, val: i64, aux: i64, line: i64, col: i64) -> i64 {
+    table_push(s_tags, tag)
+    table_push(s_names, name)
+    table_push(s_vals, val)
+    table_push(s_aux, aux)
+    table_push(s_coff, 0)
+    table_push(s_nchild, 0)
+    table_push(s_lines, line)
+    table_push(s_cols, col)
+    s_n = s_n + 1
+    return s_n - 1
+}
+
 // 重设节点的 children 段（p.9.11.23 新增）。
 //
 // 为何需要：children 用**扁平段**表示（s_coff 段起点 + s_nchild 段长度），节点创建
