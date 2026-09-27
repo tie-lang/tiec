@@ -122,12 +122,13 @@ func lit_in_range(v: i64, ty: i64) -> bool {
     return true
 }
 
-// p.8.2.2 命名实参重排：`f(x: 1, y: 2)`（N_NAMED_ARG）→ 按形参名映射位置，
-// 就地改写调用节点 children 段与 args 表（irgen 按位置发射，后续检查零改动）。
-// 规则：位置实参在前、命名实参在后（乱序可）；命名实参调用须提供**全部**实参
-// （不省略——省略参数请用位置调用 + 默认值）；变参函数不支持；未知/重复/
-// 与位置实参冲突的参数名报错。
-func reorder_named_args(call_id: i64, args: ref table<i64>, full_name: string, sig: i64) -> i64 {
+// p.8.2.2 命名实参重排 + p.9.11.23 默认值补齐 + p.9.11.25 方法支持。
+// 入参 `recv_skip`：0 = 普通函数；1 = 方法（children = [泛型槽, 接收者, 实参...]，
+// 形参下标 0 是接收者）——**接收者不参与命名重排与默认值补齐**（p.9.11.25 定案），
+// 故它被预填为已定槽，位置实参从下标 recv_skip 起排、命名匹配也跳过它。
+// 规则：位置实参在前、命名实参在后（乱序可）；命名实参可省略**有默认值**的形参
+//（值从声明处默认值表达式取，见下方补齐段）；变参函数不支持；未知/重复/冲突报错。
+func reorder_named_args(call_id: i64, args: ref table<i64>, full_name: string, sig: i64, recv_skip: i64) -> i64 {
     var has_named: bool = false
     var i0: i64 = 0
     while i0 < len(args) {
@@ -165,10 +166,19 @@ func reorder_named_args(call_id: i64, args: ref table<i64>, full_name: string, s
     var k: i64 = 0
     while k < nparams {
         table_push(new_order, -1)
-        table_push(filled, 0)
+        // 接收者槽（下标 < recv_skip）视为已定：不参与位置排序与默认值补齐。
+        if k < recv_skip {
+            table_push(filled, 1)
+        } else {
+            table_push(filled, 0)
+        }
         k = k + 1
     }
-    var pos: i64 = 0
+    // 接收者预填（方法：形参下标 0 = 接收者，实参节点在 children[slot_off]）。
+    if recv_skip > 0 {
+        new_order[0] = sstate.child(call_id, sstate.slot_off(call_id))
+    }
+    var pos: i64 = recv_skip
     var seen_named: bool = false
     var i2: i64 = 0
     while i2 < len(args) {
@@ -177,7 +187,7 @@ func reorder_named_args(call_id: i64, args: ref table<i64>, full_name: string, s
             seen_named = true
             var nm = s_names[a]
             var pi: i64 = -1
-            var j: i64 = 0
+            var j: i64 = recv_skip
             while j < nparams {
                 if pnames[j] == nm {
                     pi = j
@@ -188,6 +198,14 @@ func reorder_named_args(call_id: i64, args: ref table<i64>, full_name: string, s
             if pi < 0 {
                 sm_err_line = s_lines[a]
                 sm_err_col = s_cols[a]
+                if recv_skip > 0 && sstate.nchild(sstate.fn_def_node(full_name)) > 0 {
+                    // 方法：形参名表含接收者，若用户误用接收者名则明确提示
+                    var pn0 = sstate.child(sstate.fn_def_node(full_name), sstate.slot_off(sstate.fn_def_node(full_name)) + 1)
+                    if s_names[pn0] == nm {
+                        sm_err_msg = "命名实参 '" + intern.lookup(nm) + "' 是接收者形参，不能作为命名实参（接收者由调用对象给定）"
+                        return -1
+                    }
+                }
                 sm_err_msg = "命名实参 '" + intern.lookup(nm) + "' 不是函数 '" + full_name + "' 的形参"
                 return -1
             }
@@ -237,7 +255,7 @@ func reorder_named_args(call_id: i64, args: ref table<i64>, full_name: string, s
     //
     // 默认值节点来自声明处（会被多个调用点共享引用）：安全，因为默认值受
     // const 白名单约束（字面量/常量算术/const 引用），求值无副作用、无作用域依赖。
-    var f2: i64 = 0
+    var f2: i64 = recv_skip
     while f2 < nparams {
         if filled[f2] == 0 {
             if sp_defs[sg_off[sig] + f2] == 0 {
@@ -260,39 +278,44 @@ func reorder_named_args(call_id: i64, args: ref table<i64>, full_name: string, s
         f2 = f2 + 1
     }
     // 改写调用节点 children 段。
-    // 段长必须容纳 nparams 个实参：用户只写了 nc 个实参时段长不足（children 段
-    // 在节点创建时固定），此时**就地写入会越界**——必须用 set_children 重建段
-    //（追加新段 + 更新 coff/nchild）。首元素保留原泛型槽，slot_off 语义不变。
-    var f4: i64 = 0
-    if len(args) == nparams {
-        // 段长已足够（用户提供了全部实参）→ 就地改写，无额外分配
-        var off0 = s_coff[call_id] + sstate.slot_off(call_id)
+    // 段长必须容纳 recv_skip + (nparams - recv_skip) 个实参；用户少写时段长不足，
+    // 此时**就地写入会越界**——必须用 set_children 重建段（追加新段 + 更新
+    // coff/nchild）。头部（泛型槽 [+ 接收者]）原样保留，slot_off 语义不变。
+    var head = sstate.slot_off(call_id) + recv_skip
+    var need = head + (nparams - recv_skip)
+    if sstate.nchild(call_id) >= need {
+        // 段长已足够 → 就地改写，无额外分配
+        var off0 = s_coff[call_id] + head
+        var f4: i64 = recv_skip
         while f4 < nparams {
-            s_children[off0 + f4] = new_order[f4]
+            s_children[off0 + (f4 - recv_skip)] = new_order[f4]
             f4 = f4 + 1
         }
     } else {
-        // 段长不足（命名实参跳过了默认值参数）→ 重建段
+        // 段长不足 → 重建段
         var kids: table<i64> = table_new_i64()
-        var s0 = sstate.slot_off(call_id)
-        var g: i64 = 0
-        while g < s0 {
-            table_push(kids, sstate.child(call_id, g))
-            g = g + 1
+        var h: i64 = 0
+        while h < head {
+            table_push(kids, sstate.child(call_id, h))
+            h = h + 1
         }
-        while f4 < nparams {
-            table_push(kids, new_order[f4])
-            f4 = f4 + 1
+        var f5: i64 = recv_skip
+        while f5 < nparams {
+            table_push(kids, new_order[f5])
+            f5 = f5 + 1
         }
         sstate.set_children(call_id, kids)
     }
-    var q: i64 = 0
+    // 同步实参表（args 不含接收者，故下标从 0 对应形参 recv_skip）
+    var q: i64 = recv_skip
+    var ai: i64 = 0
     while q < nparams {
-        if q < len(args) {
-            args[q] = new_order[q]
+        if ai < len(args) {
+            args[ai] = new_order[q]
         } else {
             table_push(args, new_order[q])
         }
+        ai = ai + 1
         q = q + 1
     }
     return 0
