@@ -171,6 +171,24 @@ pub func infer_expr_var(id: i64) -> i64 {
                 if is_param == 0 {
                     var is_local = sstate.seg_has(cl_locals, cl_locloff[ci], len(cl_locals) - cl_locloff[ci], nid)
                     if is_local == 0 {
+                        // p.9.11.22 安全区捕获面白名单 · 规则一：**禁止捕获 ref 形参**。
+                        // 依据（实测 2026-09-27）：捕获 ref 形参走的是**借用**而非副本
+                        // ——闭包内对被捕获表的写会回写到调用方（实测闭包内 push 后
+                        // 调用方 len 同步变化）。故一旦该闭包**逃逸**出声明它的函数，
+                        // 借用所指向的栈帧已销毁 ⇒ 悬垂引用。安全区必须拒绝；
+                        // unsafe 区（开发者担责）放宽。
+                        // 判定用 cl_owner_sig[ci]（闭包登记时记下的**外层函数**签名）：
+                        // 捕获分析是后置批量的，全局 g_curfn 此刻已不代表该闭包的外层
+                        // 函数（实测会停留在无关函数上）。
+                        // 注：本规则只针对 ref（可写借用）。immut 为只读借用，其外部
+                        // 可观察风险等级不同，暂随 unsafe 一并放宽，细则留设计稿。
+                        if ci < len(cl_owner_unsafe) && cl_owner_unsafe[ci] == 0 && ci < len(cl_owner_sig) &&
+                            sstate.is_ref_param_of(cl_owner_sig[ci], sstate.name_str(id)) == 1 {
+                            sm_err_line = s_lines[id]
+                            sm_err_col = s_cols[id]
+                            sm_err_msg = "安全区禁止闭包捕获 ref 形参 '" + sstate.name_str(id) + "'（捕获 ref 是借用而非副本，闭包逃逸会导致悬垂引用；需在 unsafe 块内或改用值/immut 形参）"
+                            return -1
+                        }
                         var is_cap = sstate.seg_has(cl_capkeys, cl_capoff[ci], len(cl_capkeys) - cl_capoff[ci], nid)
                         if is_cap == 0 {
                             table_push(cl_capkeys, nid)

@@ -70,6 +70,7 @@ pub func reg_fn(full_name: string, is_pub: i64, nparams: i64, required: i64, ret
     table_push(sg_ret, ret_ty)
     table_push(sg_pub, is_pub)
     table_push(sg_off, off)
+    table_push(sg_defnode, def_node)   // p.9.11.22：签名 → 声明节点
     // p.9.11.15：生成器标记列（与 sg_* 下标对齐；0=普通函数 1=生成器）。
     // scollect.collect_fn 检测函数体含 N_YIELD 后置 1；scheck/irgen 据此
     // 校验与生成（签名返回类型已登记为 table<elem>）。

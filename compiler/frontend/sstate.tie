@@ -37,6 +37,10 @@ var sg_required: table<i64>;  // 必选参数数（默认值前）
 var sg_ret: table<i64>;       // 返回类型 id
 var sg_pub: table<i64>;       // 0/1
 var sg_off: table<i64>;       // 参数段偏移（sp_tys/sp_refs/sp_defs）
+// p.9.11.22：签名 → 函数定义 AST 节点（与 sg_* 下标对齐）。供「按签名查形参名」
+// 用（形参名只存于声明节点，sg_* 表只有类型/修饰标志）。首个消费者：捕获面
+// 白名单的「禁止捕获 ref 形参」判定（需按当前函数签名反查形参名与 ref 标志）。
+var sg_defnode: table<i64>;
 var sp_tys: table<i64>;       // 参数类型 id（扁平段）
 var sp_refs: table<i64>;      // 参数 by_ref 标志（扁平段）
 var sp_defs: table<i64>;      // 参数有默认值（扁平段）
@@ -219,6 +223,16 @@ var g_inst_depth: i64 = 0;
 // lv 且非闭包参数/局部 → 登记 cl_capkeys/cl_capvals）。所有表在
 // semantic.check_impl / check_ast 状态重置时清零。
 var g_clo_pending: table<i64>;  // 待检查闭包 N_FN_LIT 节点 id（FIFO 登记顺序）
+// p.9.11.22：闭包索引 -> **外层函数签名**（登记时的 g_curfn）。
+// 必要性：捕获分析是**批量后置**的（所有函数查完后 FIFO 处理 g_clo_pending），
+// 那时全局 g_curfn 已停留在他处（实测指向前置注入的 str_has），无法代表该闭包
+// 的外层函数。故在**登记时**（外层函数上下文内）把签名存下来备查。
+var cl_owner_sig: table<i64>;
+// p.9.11.22：闭包索引 -> 登记时是否处于 **unsafe 上下文**（1/0）。
+// 同为「后置批量分析丢失上下文」的补救：g_unsafe_depth 在批量阶段已复位，
+// 故在登记时把「当时是否 unsafe」定下来。判据 = 深度 >0 **或** 外层函数本身
+// 是 unsafe func（两者都属开发者担责区，捕获面白名单在此放宽）。
+var cl_owner_unsafe: table<i64>;
 var cl_ret: table<i64>;         // 闭包索引 -> 返回类型 id
 var cl_nparams: table<i64>;     // 闭包索引 -> 参数个数
 var cl_paroff: table<i64>;      // 闭包索引 -> 参数类型段偏移（cl_ptys）

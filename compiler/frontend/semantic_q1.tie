@@ -125,6 +125,7 @@ pub func check_impl(ast_text: string, base_dir: string) -> string {
     fn_def_nodes = table_new_i64()
     sg_nparams = table_new_i64()
     sg_required = table_new_i64()
+    sg_defnode = table_new_i64()
     sg_ret = table_new_i64()
     sg_pub = table_new_i64()
     sg_off = table_new_i64()
@@ -234,6 +235,8 @@ pub func check_impl(ast_text: string, base_dir: string) -> string {
     // S2.2 闭包语义全局重置（每次编译清零）
     g_clo_pending = table_new_i64()
     cl_ret = table_new_i64()
+    cl_owner_sig = table_new_i64()
+    cl_owner_unsafe = table_new_i64()
     cl_nparams = table_new_i64()
     cl_paroff = table_new_i64()
     cl_ptys = table_new_i64()
@@ -388,6 +391,7 @@ pub func check_ast(base_dir: string) -> string {
     fn_def_nodes = table_new_i64()
     sg_nparams = table_new_i64()
     sg_required = table_new_i64()
+    sg_defnode = table_new_i64()
     sg_ret = table_new_i64()
     sg_pub = table_new_i64()
     sg_off = table_new_i64()
@@ -497,6 +501,8 @@ pub func check_ast(base_dir: string) -> string {
     // S2.2 闭包语义全局重置（每次编译清零）
     g_clo_pending = table_new_i64()
     cl_ret = table_new_i64()
+    cl_owner_sig = table_new_i64()
+    cl_owner_unsafe = table_new_i64()
     cl_nparams = table_new_i64()
     cl_paroff = table_new_i64()
     cl_ptys = table_new_i64()
