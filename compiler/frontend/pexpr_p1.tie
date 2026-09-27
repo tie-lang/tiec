@@ -350,9 +350,29 @@ func parse_term() -> i64 {
     return lhs
 }
 
-// 乘除模 * / %
+// 幂 `**`（p.9.13.3）：右结合，优先级高于 `* / % \`（故 parse_factor 的操作数
+// 走本层而非直接 parse_unary）。右操作数递归本层 → `2 ** 3 ** 2` = `2 ** (3 ** 2)`。
+// 一元负号在本层**之下**（parse_unary 更紧）→ `-2 ** 2` = `(-2) ** 2` = 4
+//（与 Python 的 `-(2**2)` 不同，采用「一元最紧」惯例，与 tie 既有 `-a * b` 一致）。
+func parse_power() -> i64 {
+    var base = parse_unary()
+    if base < 0 {
+        return -1
+    }
+    if putil.peek_tag() == lex_starstar {
+        putil.advance()
+        var exp = parse_power()   // 右结合
+        if exp < 0 {
+            return -1
+        }
+        return mk_binary(B_POW, base, exp)
+    }
+    return base
+}
+
+// 乘除模 * / % \ **（** 经 parse_power 占更高优先级）
 func parse_factor() -> i64 {
-    var lhs = parse_unary()
+    var lhs = parse_power()
     if lhs < 0 {
         return -1
     }
@@ -365,6 +385,9 @@ func parse_factor() -> i64 {
             op = B_DIV
         } else if putil.peek_tag() == lex_percent {
             op = B_MOD
+        } else if putil.peek_tag() == lex_percentpercent {
+            // p.9.13.3 floor 取余 `%%`（与 % 同级）
+            op = B_FLOORMOD
         } else if putil.peek_tag() == lex_backslash {
             // p.9.13.3 整除 `\`（与 * / % 同级；设计稿原定 `//`，因与行注释冲突改符号）
             op = B_IDIV
@@ -376,7 +399,7 @@ func parse_factor() -> i64 {
         }
         if !d {
             putil.advance()
-            var rhs = parse_unary()
+            var rhs = parse_power()
             if rhs < 0 {
                 return -1
             }

@@ -357,6 +357,13 @@ const B_CHECK_MUL: i64 = 23;
 // 符号改用 `\` 而非设计稿的 `//`——`//` 在 tie 中**已是行注释**（§16.3 符号表），
 // 改注释规则属破坏性改动；`\` 在符号表中完全空闲（0x5C），且有 VB 系先例。
 const B_IDIV: i64 = 24;
+// p.9.13.3 幂 `**`（25）与 floor 取余 `%%`（26）。
+// `**`：右结合、优先级高于 `*`（见 pexpr.parse_power）；int 走前置快速幂
+//（`lang::pow_i`），f64 走 libm `pow`——由 irgen 按操作数类型分派。
+// `%%`：与 `\` 成对的 floor 取余——f64 为 `a - floor(a/b)*b`（向 -inf 取整，
+// 与 `/` 的 frem 不同）；int 与 `%` 同（因 int 的 `\` 本身即截断除）。
+const B_POW: i64 = 25;
+const B_FLOORMOD: i64 = 26;
 
 // 一元：0=Neg 1=Not 2=PreInc 3=PreDec 4=PostInc 5=PostDec
 const U_NEG: i64 = 0;

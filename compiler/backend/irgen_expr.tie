@@ -81,6 +81,36 @@ func pipe_slot_ty(it: i64) -> i64 {
     return types.named(TK_I64)
 }
 
+// p.9.13.3 幂 `**` 的 IR 生成（B_POW，二元节点 children=[base, exp]）。
+// 按操作数类型分派：
+//   * f64/f32 → libm `pow`（llvmgen 已无条件 declare `double @pow(double,double)`）；
+//   * int 族 → 前置快速幂 `lang::pow_i(base, exp)`（O(log n) 平方求幂，tie 库实现）。
+// 走 `tig_user_call_from(full, id, 0)` 按名调用：arg_start=0 使实参取节点的
+// children（即 base/exp 原序），无需另造 AST 节点，也不用手写 IR 循环。
+func tig_pow(id: i64) -> i64 {
+    var lhs = sstate.child(id, 0)
+    var rhs = sstate.child(id, 1)
+    if lhs < 0 || rhs < 0 {
+        return -1
+    }
+    var lt = node_types[lhs]
+    var rt = node_types[rhs]
+    var is_f = lt == types.named(TK_F64) || lt == types.named(TK_F32) ||
+        rt == types.named(TK_F64) || rt == types.named(TK_F32)
+    if is_f {
+        var lv = tig_expr(lhs)
+        if lv < 0 {
+            return -1
+        }
+        var rv = tig_expr(rhs)
+        if rv < 0 {
+            return -1
+        }
+        return tig_ext_call2("pow", lv, types.named(TK_F64), rv, types.named(TK_F64), types.named(TK_F64))
+    }
+    return tig_user_call_from("lang::pow_i", id, 0)
+}
+
 // p.9.13.4 块管道 `x -> { v -> expr }` 的 IR 生成（tag 162）。
 // 手法＝内联绑定：为绑定名开槽（alloca + store 数据值），把槽登记进当前作用域帧，
 // 在帧内求值体，再弹帧。不生成函数、不涉及调用——故无闭包捕获/环境副本问题。
