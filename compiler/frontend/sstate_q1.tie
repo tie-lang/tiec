@@ -349,6 +349,28 @@ pub func child(id: i64, k: i64) -> i64 {
     return s_children[s_coff[id] + k]
 }
 
+// 重设节点的 children 段（p.9.11.23 新增）。
+//
+// 为何需要：children 用**扁平段**表示（s_coff 段起点 + s_nchild 段长度），节点创建
+// 时段长即固定。若某处改写需要**更多**子节点（或长度变化），直接 `s_children[coff+k] = x`
+// 会**写到段外**、破坏相邻节点的子节点段——实测症状是极难定位的错值（命名实参
+// 跳默认值时，重排后的槽内容打印全对，但运行时结果无意义）。
+//
+// 手法：把新段**追加**到 s_children 尾部，更新 coff/nchild 指向它；旧段成为垃圾
+//（不回收——编译器一次性构建，且仅对确实需要改长度的调用点发生，量小）。
+// 注意：**调用方须保证新段的首元素语义与旧段一致**（如调用节点的 children[0] 仍需
+// 是泛型槽 -1），因为 sstate.slot_off 依赖首元素判定偏移。
+pub func set_children(node: i64, kids: table<i64>) {
+    var off = len(s_children)
+    var i: i64 = 0
+    while i < len(kids) {
+        table_push(s_children, kids[i])
+        i = i + 1
+    }
+    s_coff[node] = off
+    s_nchild[node] = len(kids)
+}
+
 pub func name_str(id: i64) -> string {
     var nid = s_names[id]
     if nid < 0 {
