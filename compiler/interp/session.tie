@@ -49,7 +49,11 @@ var a_n: i64 = 0;      // 归档节点总数（下一批拷贝的 id 基数）
 var a_root: i64 = 0;   // 最近一次归档的根 StmtList 节点 id（reset 置 -1）
 
 // ==================== globals（顶层 var，REPL 持久） ====================
-var g_keys: table<string>;
+// p.9.17.3：键用 **interned id**（整数）替代字符串——变量读写是解释器最热的路径，
+// 旧实现每次查找都要与候选名做字符串内容比较（实测 ~143ns/次，且成本随条目数线性
+// 增长）。AST 节点名本就以 interner id 存放（a_names），热路径天然持有 id，无需
+// 文本往返；字符串版 API 仅作兼容薄包装（内部 intern 一次，冷路径用）。
+var g_nids: table<i64>;
 var g_vals: table<i64>;
 
 // ==================== funcs（已注册函数：全名 → 归档 FnDef 节点 id） ====================
@@ -65,7 +69,7 @@ var m_keys: table<string>;
 var e_keys: table<string>;
 
 // ==================== 环境：作用域栈（扁平表 + 段 + 墓碑） ====================
-var env_keys: table<string>;
+var env_nids: table<i64>;   // 变量名 interned id（p.9.17.3：整数键替代字符串键）
 var env_vals: table<i64>;
 var env_alive: table<i64>;
 var env_seg: table<i64>;    // 每条目所属的活动段索引（扁平表并非连续段：内层作用域
@@ -78,9 +82,9 @@ var env_base: i64 = 0;      // 当前函数作用域起点（跨函数隔离；�
 var env_ns: table<string>;  // 当前执行函数的命名空间前缀段（裸调用补全用）
 
 // ==================== by_ref 引用槽栈（T0.3：形参名 → 调用方变量名） ====================
-var r_keys: table<string>;   // 当前函数各 ref 形参名
-var r_vals: table<string>;   // 对应调用方变量名（lookup/assign 穿透目标）
-var r_soff: table<i64>;      // 每层引用槽段起点（对齐作用域段方案）
+var r_nids: table<i64>;    // 当前函数各 ref 形参名（interned id）
+var r_cnids: table<i64>;   // 对应调用方变量名（interned id；lookup/assign 穿透目标）
+var r_soff: table<i64>;    // 每层引用槽段起点（对齐作用域段方案）
 
 // ==================== 流程槽（exec_stmt/exec_block 结果通道） ====================
 var g_flow: i64 = 0;       // 0=正常 1=return 2=break 3=continue
@@ -110,13 +114,13 @@ pub func reset() {
     a_cols = table_new_i64()
     a_n = 0
     a_root = -1
-    g_keys = table_new_string()
+    g_nids = table_new_i64()
     g_vals = table_new_i64()
     f_keys = table_new_string()
     f_nodes = table_new_i64()
     m_keys = table_new_string()
     e_keys = table_new_string()
-    env_keys = table_new_string()
+    env_nids = table_new_i64()
     env_vals = table_new_i64()
     env_alive = table_new_i64()
     env_seg = table_new_i64()
@@ -125,8 +129,8 @@ pub func reset() {
     env_depth = 0
     env_base = 0
     env_ns = table_new_string()
-    r_keys = table_new_string()
-    r_vals = table_new_string()
+    r_nids = table_new_i64()
+    r_cnids = table_new_i64()
     r_soff = table_new_i64()
     g_flow = 0
     g_flow_val = -1
@@ -224,11 +228,11 @@ pub func naux_label(id: i64) -> string {
 
 // ==================== globals ====================
 
-// globals 线性查找：命中返回下标，未命中 -1。
-func g_find(name: string) -> i64 {
+// globals 线性查找（interned id 键）：命中返回下标，未命中 -1。
+func g_find_nid(nid: i64) -> i64 {
     var i: i64 = 0
-    while i < len(g_keys) {
-        if g_keys[i] == name {
+    while i < len(g_nids) {
+        if g_nids[i] == nid {
             return i
         }
         i = i + 1
@@ -237,30 +241,41 @@ func g_find(name: string) -> i64 {
 }
 
 // 顶层全局声明（顶层 var 初始化后登记；重复声明由调用方校验）。
-pub func g_declare(name: string, vid: i64) {
-    table_push(g_keys, name)
+pub func g_declare_nid(nid: i64, vid: i64) {
+    table_push(g_nids, nid)
     table_push(g_vals, vid)
 }
 
 // 顶层全局读取：未命中置 g_err 返回 -1（文本对齐 Rust 变量未声明）。
-pub func g_lookup(name: string) -> i64 {
-    var i = g_find(name)
+pub func g_lookup_nid(nid: i64) -> i64 {
+    var i = g_find_nid(nid)
     if i < 0 {
-        g_err = "变量 '" + name + "' 未声明"
+        g_err = "变量 '" + interner.lookup(nid) + "' 未声明"
         return -1
     }
     return g_vals[i]
 }
 
 // 顶层全局写回：未声明置 g_err 返回 -1（对齐 Rust assign 兜底错误）。
-pub func g_assign(name: string, vid: i64) -> i64 {
-    var i = g_find(name)
+pub func g_assign_nid(nid: i64, vid: i64) -> i64 {
+    var i = g_find_nid(nid)
     if i < 0 {
-        g_err = "变量 '" + name + "' 未声明"
+        g_err = "变量 '" + interner.lookup(nid) + "' 未声明"
         return -1
     }
     g_vals[i] = vid
     return 0
+}
+
+// 字符串兼容薄包装（冷路径：REPL 绑定 / 脚本参数注入等文本入口）。
+pub func g_declare(name: string, vid: i64) {
+    g_declare_nid(interner.intern(name), vid)
+}
+pub func g_lookup(name: string) -> i64 {
+    return g_lookup_nid(interner.intern(name))
+}
+pub func g_assign(name: string, vid: i64) -> i64 {
+    return g_assign_nid(interner.intern(name), vid)
 }
 
 // ==================== funcs / externs ====================
@@ -359,10 +374,10 @@ pub func e_has(name: string) -> bool {
 pub func scope_push() {
     var seg = env_depth
     if seg == len(env_soff) {
-        table_push(env_soff, len(env_keys))
+        table_push(env_soff, len(env_nids))
         table_push(env_scnt, 0)
     } else {
-        env_soff[seg] = len(env_keys)
+        env_soff[seg] = len(env_nids)
         env_scnt[seg] = 0
     }
     env_depth = env_depth + 1
@@ -383,8 +398,8 @@ pub func scope_top() -> i64 {
 }
 
 // 当前作用域声明变量（重复声明由调用方经 var_declared 校验）。
-pub func var_declare(name: string, vid: i64) {
-    table_push(env_keys, name)
+pub func var_declare_nid(nid: i64, vid: i64) {
+    table_push(env_nids, nid)
     table_push(env_vals, vid)
     table_push(env_alive, 1)
     var top = env_depth - 1
@@ -395,18 +410,23 @@ pub func var_declare(name: string, vid: i64) {
     env_scnt[top] = env_scnt[top] + 1
 }
 
+// 字符串兼容薄包装（冷路径：REPL 绑定 / 脚本参数注入等文本入口）。
+pub func var_declare(name: string, vid: i64) {
+    var_declare_nid(interner.intern(name), vid)
+}
+
 // 段内变量查找：从扁平表尾部回溯到该段起点，只匹配归属该段（env_seg）的存活条目。
 // 旧实现假设段内条目在 env_keys 中**连续**（[soff..soff+scnt) 区间）——但内层作用域
 // （嵌套块/循环/递归调用）追加的条目会穿插在外层段条目之间，破坏连续性，使「段内的
 // 后续外层 var」落到区间外而查不到（变量未声明）。改为按逐条归属标记定位，天然免疫
 // 穿插：内层段条目 env_seg 更大而被跳过，本段条目无论穿插到哪里都被命中。
-func seg_find_rev(seg: i64, name: string) -> i64 {
+func seg_find_rev_nid(seg: i64, nid: i64) -> i64 {
     var off = env_soff[seg]
-    var i = len(env_keys) - 1
+    var i = len(env_nids) - 1
     while i >= off {
         if env_alive[i] != 0 {
             if env_seg[i] == seg {
-                if env_keys[i] == name {
+                if env_nids[i] == nid {
                     return i
                 }
             }
@@ -416,147 +436,172 @@ func seg_find_rev(seg: i64, name: string) -> i64 {
     return -1
 }
 
-// 引用槽段内查找（当前函数 ref 形参名 → 调用方变量名）。
-func ref_find(name: string) -> string {
+// 引用槽段内查找（当前函数 ref 形参名 id → 调用方变量名 id；未命中 -1）。
+func ref_find_nid(nid: i64) -> i64 {
     var n = len(r_soff)
     if n == 0 {
-        return ""
+        return -1
     }
     var off = r_soff[n - 1]
-    var i = len(r_keys) - 1
+    var i = len(r_nids) - 1
     while i >= off {
-        if r_keys[i] == name {
-            return r_vals[i]
+        if r_nids[i] == nid {
+            return r_cnids[i]
         }
         i = i - 1
     }
-    return ""
+    return -1
 }
 
-// 变量查找：ref 槽穿透调用方 → 作用域栈 [env_base..顶部] 逆序 → globals。
+// 变量查找（interned id 键）：ref 槽穿透调用方 → 作用域栈 [env_base..顶部] 逆序 → globals。
 // 未命中返回 -1 且**不置错误**（调用方决定错误文本）。
-pub func lookup(name: string) -> i64 {
+pub func lookup_nid(nid: i64) -> i64 {
     // T0.3 by_ref：引用槽优先——ref 形参从调用方槽取当前值
-    var refname = ref_find(name)
-    if refname != "" {
-        return lookup_caller(refname)
+    var cnid = ref_find_nid(nid)
+    if cnid >= 0 {
+        return lookup_caller_nid(cnid)
     }
     // 函数作用域栈（env_base..顶部）逆序（只遍历活动段）
     var s = env_depth - 1
     while s >= env_base {
-        var idx = seg_find_rev(s, name)
+        var idx = seg_find_rev_nid(s, nid)
         if idx >= 0 {
             return env_vals[idx]
         }
         s = s - 1
     }
     // 顶层 globals
-    var i = g_find(name)
+    var i = g_find_nid(nid)
     if i >= 0 {
         return g_vals[i]
     }
     return -1
 }
 
-// ref 穿透目标查找：调用方变量槽 = 调用方作用域（env_base 之下）逆序 →
+// 字符串兼容薄包装（文本入口：REPL / 脚本参数注入）。
+pub func lookup(name: string) -> i64 {
+    return lookup_nid(interner.intern(name))
+}
+
+// ref 穿透目标查找（interned id）：调用方变量槽 = 调用方作用域（env_base 之下）逆序 →
 // 顶层 globals（对齐 Rust RefTarget 解析：调用方作用域或 globals）。
-func lookup_caller(name: string) -> i64 {
+func lookup_caller_nid(cnid: i64) -> i64 {
     var s = env_base - 1
     while s >= 0 {
-        var idx = seg_find_rev(s, name)
+        var idx = seg_find_rev_nid(s, cnid)
         if idx >= 0 {
             return env_vals[idx]
         }
         s = s - 1
     }
-    var i = g_find(name)
+    var i = g_find_nid(cnid)
     if i >= 0 {
         return g_vals[i]
     }
     return -1
 }
 
-// 变量赋值：ref 槽穿透 → 作用域栈 [env_base..顶部] 逆序 → globals。
+// 变量赋值（interned id 键）：ref 槽穿透 → 作用域栈 [env_base..顶部] 逆序 → globals。
 // 未声明置 g_err 返回 -1（文本对齐 Rust assign 兜底）。
-pub func assign(name: string, vid: i64) -> i64 {
-    var refname = ref_find(name)
-    if refname != "" {
-        return assign_caller(refname, vid)
+pub func assign_nid(nid: i64, vid: i64) -> i64 {
+    var cnid = ref_find_nid(nid)
+    if cnid >= 0 {
+        return assign_caller_nid(cnid, vid)
     }
     var s = env_depth - 1
     while s >= env_base {
-        var idx = seg_find_rev(s, name)
+        var idx = seg_find_rev_nid(s, nid)
         if idx >= 0 {
             env_vals[idx] = vid
             return 0
         }
         s = s - 1
     }
-    var i = g_find(name)
+    var i = g_find_nid(nid)
     if i >= 0 {
         g_vals[i] = vid
         return 0
     }
-    g_err = "变量 '" + name + "' 未声明"
+    g_err = "变量 '" + interner.lookup(nid) + "' 未声明"
     return -1
 }
 
-func assign_caller(name: string, vid: i64) -> i64 {
+// 字符串兼容薄包装（文本入口）。
+pub func assign(name: string, vid: i64) -> i64 {
+    return assign_nid(interner.intern(name), vid)
+}
+
+func assign_caller_nid(cnid: i64, vid: i64) -> i64 {
     var s = env_base - 1
     while s >= 0 {
-        var idx = seg_find_rev(s, name)
+        var idx = seg_find_rev_nid(s, cnid)
         if idx >= 0 {
             env_vals[idx] = vid
             return 0
         }
         s = s - 1
     }
-    var i = g_find(name)
+    var i = g_find_nid(cnid)
     if i >= 0 {
         g_vals[i] = vid
         return 0
     }
-    g_err = "变量 '" + name + "' 未声明"
+    g_err = "变量 '" + interner.lookup(cnid) + "' 未声明"
     return -1
 }
 
 // 变量是否已声明（当前函数 ref 槽 / 作用域栈 / 顶层；VarDecl 重复声明校验用）。
-pub func var_declared(name: string) -> bool {
-    if ref_find(name) != "" {
+pub func var_declared_nid(nid: i64) -> bool {
+    if ref_find_nid(nid) >= 0 {
         return true
     }
     var s = env_depth - 1
     while s >= env_base {
-        if seg_find_rev(s, name) >= 0 {
+        if seg_find_rev_nid(s, nid) >= 0 {
             return true
         }
         s = s - 1
     }
-    return g_find(name) >= 0
+    return g_find_nid(nid) >= 0
+}
+
+// 字符串兼容薄包装（文本入口）。
+pub func var_declared(name: string) -> bool {
+    return var_declared_nid(interner.intern(name))
 }
 
 // 仅检查最顶层作用域段（当前块）是否已声明同名变量——函数/块体内 `var` 允许
 // 遮蔽顶层全局（对齐词法作用域惯例），重复声明判据只限当前块。
 // 无作用域（REPL/脚本顶层）回退到 globals 判据。
-pub func scope_local_declared(name: string) -> bool {
+pub func scope_local_declared_nid(nid: i64) -> bool {
     var top = env_depth - 1
     if top < 0 {
-        return g_find(name) >= 0
+        return g_find_nid(nid) >= 0
     }
-    return seg_find_rev(top, name) >= 0
+    return seg_find_rev_nid(top, nid) >= 0
+}
+
+// 字符串兼容薄包装（文本入口）。
+pub func scope_local_declared(name: string) -> bool {
+    return scope_local_declared_nid(interner.intern(name))
 }
 
 // ==================== by_ref 引用槽层 ====================
 
 // 压一层引用槽（进入被调函数时；记录段起点）。
 pub func ref_push() {
-    table_push(r_soff, len(r_keys))
+    table_push(r_soff, len(r_nids))
 }
 
-// 登记当前层一个 ref 形参：形参名 → 调用方变量名。
+// 登记当前层一个 ref 形参：形参名 id → 调用方变量名 id（热路径直接传 id）。
+pub func ref_add_nid(pnid: i64, cnid: i64) {
+    table_push(r_nids, pnid)
+    table_push(r_cnids, cnid)
+}
+
+// 字符串兼容薄包装（文本入口：形参名/调用方变量名由调用方持文本时用）。
 pub func ref_add(pname: string, cname: string) {
-    table_push(r_keys, pname)
-    table_push(r_vals, cname)
+    ref_add_nid(interner.intern(pname), interner.intern(cname))
 }
 
 // 弹一层引用槽（标记本层条目死亡；不缩表）。
@@ -565,7 +610,7 @@ pub func ref_pop() {
     if n == 0 {
         return
     }
-    table_push(r_soff, len(r_keys))  // 不可缩表：哨兵占位
+    table_push(r_soff, len(r_nids))  // 不可缩表：哨兵占位
 }
 
 // ==================== 命名空间前缀（裸调用补全） ====================
