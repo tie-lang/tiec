@@ -804,3 +804,84 @@ A = 仅尾复用（§16 状态），B = 尾复用 + interned id：
   字符串包装（功能正确，未优化）。
 * **`new_node` 7 张平行表 push** = 每值固定成本，仍是最主靶（p.9.17.2 拆箱）。
 * `tests/interp/*.tie` 等 12 处失效 import（见 §16.7）待修。
+
+## 18. p.9.17.2 第一步（拆箱值模型）—— 两个编译器缺陷 + 一个卡点（2026-09-27）
+
+### 18.1 已修：聚合元素表下标赋值发射非法 `add`（tiec 4be6977）
+
+`t[i] = v`（t 为 table<Enum>/table<Struct>/table<fn>/table<tuple>）编译失败：
+
+    opt: integer constant must have integer type
+    %405 = add %enum.Value 0, 0
+
+**根因**：`s21_table_set` 为**每次**元素赋值都发射「扩到 i+1 并补零」的块
+（p.9.12.2 自动扩容路径），补零值来自 `t21_zero`；该函数只对 `TK_ANY` 特判，
+其余聚合类型落到 `tig_int_lit_ty(0, ty)`——它用 `add <ty> 0, <imm>` 物化整数常量，
+对聚合类型非法。块无条件发射，故 `t[0] = ...`（无需扩容）也编译不过。
+
+**修法**：新增 `t21_is_aggregate`（any/struct/enum/fn/tuple），聚合走
+「聚合槽 + load」，与既有 `TK_ANY` 分支同形。这是 4c3c0e3 的另一半：那次让
+**槽类型**跟随元素类型（pty = elem），本次让**零值**也跟随。
+
+**门禁**：不动点 2a32fd57 → **2fc7e125**（tiec.exe 已升格）；regress 158/8/2，
+FAIL 集合同修复前基线；触发件一行差异隔离 + 运行期语义探针（逐槽赋值读回/
+计算下标/越界扩容/无 payload 变体/多槽连续/相邻槽保持）全对。
+
+**遗留（未夹带）**：扩容补零的聚合槽是**不确定值**（LLVM alloca 未初始化），
+与既有 any 分支同形。真零需 IR 层 `zeroinitializer` 常量能力，另立小项。
+
+### 18.2 卡点：enum case 载荷绑定在**被导入的文件**里一律失效
+
+最小复现（15 行）：
+
+    # lib.tie  (tie<class>)
+    enum Value { Nil
+        Int(i64) }
+    pub func ff(v: Value) -> i64 {
+        switch v {
+            case Value.Int(x):
+                return x        # ← error[E00488] 未声明的变量 'x'
+            default:
+                return -1
+        }
+    }
+    # main.tie (tie<logic>)：import ./lib.tie + 调用 ff(Value.Int(5))
+
+**已排除**（都实测过）：
+
+* 与 namespace 无关——同文件内的 namespace 正常（`a=5`）；被导入文件里的
+  **顶层**函数同样失败。
+* 与文件角色无关——被导入文件用 `tie<logic>` 或 `tie<class>` 都失败。
+* 枚举模式检查器**确实跑到了**该函数：把解构写成绑定数不符（`case Value.Int(x, y)`）
+  在被导入文件里能正确报 E00226。
+* 与用法无关——`return x` / `println(to_string(x))` / `var q = x` 全失败；
+  枚举作形参与函数内本地构造也全失败。
+
+**触发条件**：只要该 switch 位于**被导入的文件**中。主文件内的同一段代码正常。
+
+**登记/查找键两侧**（供接手直接切入）：
+
+* 登记：`scheck.check_arm_patterns_enum` → `sinfer.lv_insert(sstate.child(p, 1+b), …)`
+  （原始子节点值，注释称其为「变量名池 id」）。
+* 查找：`sinfer_ie_ie1.infer_expr_var` → `nid = intern.intern(sstate.name_str(id))`。
+* 两侧**应当**相等（`s_names` 存全局 interner id，`name_str` 即 `interner.lookup`），
+  且语句位 switch 的登记发生在 scheck（`scheck_ie_ie2` → `check_switch_case`），
+  表达式位在 sinfer（`infer_expr_switch_expr` 已先调 `check_arm_patterns`）。
+* 未验完的假设：`lv_keys` 依赖「按名 id 有序 + 二分查找」，若有序不变式在
+  导入展开后被破坏（`lv_keys = s_keys` 别名 / 非有序追加），查找会静默落空。
+  下一步建议：加临时诊断打印 `lv_keys` 是否仍有序，以及登记时写入的键与查找
+  时的键是否逐值相等（本次会话最后一轮按名字排序位置的试探因生成脚本转义
+  故障作废，未取得数据）。
+
+**影响**：本卡点**直接阻塞 p.9.17.2 第一步**——拆箱值模型（enum 标签联合）必须
+放在被导入的库里，而载荷提取只能靠 case 绑定。设计 §4.2.1 的选型因此暂时无法
+落地；`vval.tie`（690 行，已写好并可单独编译为库）与 parity 探针归档在仓外
+`_tiec_verify/p917_wip/`，等本缺陷修复后即接上。
+
+### 18.3 顺带发现（与本轮无关的既有缺陷）
+
+* `tests/language/table_struct_elem.tie` 仍 FAIL，症状
+  `irgen 未支持的表达式（tag=7，函数 main）`——struct 元素表的**字段写**
+  （`t[0].y = v`）路径，与 18.1 不同族，属既有基线 FAIL，未动。
+* `table<Struct>` 作**全局**变量报「行池 table<R> 全局变量 v1 暂不支持」
+  （p.9.12.6 既有边界，改局部即可绕开）。
