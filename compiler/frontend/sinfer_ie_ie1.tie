@@ -278,6 +278,76 @@ func infer_table_cat_rewrite(id: i64) -> i64 {
     return 1
 }
 
+// p.9.11.34 短闭包 `t -> expr` 的**语义期**展开（供赋值位 `f = t -> expr`）。
+//
+// 与声明位（`var f: fn(A) -> R = t -> expr`，在解析期展开）互补：赋值位的目标类型
+// 只在语义期可知（`f` 的类型来自 `var f: fn(A) -> R` 的登记），故此处展开。
+//
+// 判据（两条同时成立）：
+//   1. 右值是 `N_BINARY(B_ARROW_FWD)`——`ident -> expr` 的语法形态；
+//   2. **赋值目标的类型是 fn 类型**——上下文要求一个函数值。
+// 不满足则返回 -1，赋值位按原样走既有路径（管道语义一字不变）。
+//
+// 展开产物为**完整闭包节点**（语义期新建，见 sstate.new_node_sem）：
+//   FnLit[泛型槽(-1), 返回类型(N_SEM_TYPE), Param[name=箭头左侧, children=[形参类型(N_SEM_TYPE), -1]], StmtList[Return(体)]]
+// 类型位用 N_SEM_TYPE 引用节点承载**类型 id**（语义期手上是 id 而非 AST 节点；
+// 复杂类型无法逆向构造），由 sgen.parse_generic_type_node 直接取回。
+// 展开后按闭包形态重新推断（infer_expr_fn_lit 会登记签名并入队延迟检查）。
+pub func try_lambda_form(arrow: i64, target_ty: i64) -> i64 {
+    if arrow < 0 || target_ty < 0 {
+        return -1
+    }
+    if s_tags[arrow] != S_N_BINARY || s_vals[arrow] != B_ARROW_FWD {
+        return -1
+    }
+    if !types.is_fn(target_ty) {
+        return -1
+    }
+    var base = sstate.child(arrow, 0)
+    var body = sstate.child(arrow, 1)
+    if base < 0 || body < 0 {
+        return -1
+    }
+    // 形态要求：箭头左侧是**裸标识符**（形参名），否则不是短闭包形态
+    if s_tags[base] != S_N_VAR {
+        return -1
+    }
+    var ret_ty = types.fn_ret_ty(target_ty)
+    var pty = types.fn_param_of(target_ty, 0)
+    if ret_ty < 0 || pty < 0 {
+        return -1
+    }
+    var line = s_lines[arrow]
+    var col = s_cols[arrow]
+    // 类型引用节点（val = 类型 id）
+    var pty_ref = sstate.new_node_sem(S_N_SEM_TYPE, -1, pty, -1, line, col)
+    var ret_ref = sstate.new_node_sem(S_N_SEM_TYPE, -1, ret_ty, -1, line, col)
+    // 形参：name = 箭头左侧标识符；children = [形参类型, 默认值或 -1]
+    var param = sstate.new_node_sem(S_N_PARAM, s_names[base], 0, 0, line, col)
+    var pk: table<i64> = table_new_i64()
+    table_push(pk, pty_ref)
+    table_push(pk, -1)
+    sstate.set_children(param, pk)
+    // 体：StmtList[Return(体表达式)]
+    var ret_n = sstate.new_node_sem(S_N_RETURN, -1, -1, -1, line, col)
+    var rk: table<i64> = table_new_i64()
+    table_push(rk, body)
+    sstate.set_children(ret_n, rk)
+    var sl = sstate.new_node_sem(S_N_STMTLIST, -1, -1, -1, line, col)
+    var sk: table<i64> = table_new_i64()
+    table_push(sk, ret_n)
+    sstate.set_children(sl, sk)
+    // 闭包：children = [泛型槽, 返回类型, 参数..., 体]；aux = 形参数
+    var f = sstate.new_node_sem(S_N_FN_LIT, -1, -1, 1, line, col)
+    var fk: table<i64> = table_new_i64()
+    table_push(fk, -1)
+    table_push(fk, ret_ref)
+    table_push(fk, param)
+    table_push(fk, sl)
+    sstate.set_children(f, fk)
+    return f
+}
+
 // p.9.13.3 `in` 中缀（语义期分派 + 改写为调用）。
 // 解析期产出 `N_BINARY(B_IN)`，children = **[泛型槽, 容器, 键/元素]**（与调用同形）。
 // 此处按容器类型选目标库函数，把节点**改写为 `S_N_CALL`**（仅换 tag/name/val，
