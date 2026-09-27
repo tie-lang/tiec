@@ -118,6 +118,9 @@ const lex_backslasheq: i64 = 109;  // `\=` 整除复合赋值
 // 分配依据：本文件最大值此前为 109（上一行），故取 110/111（见上方 RCA 纪律：先做重号扫描）。
 const lex_starstar: i64 = 110;        // `**` 幂（右结合，高于 `*`）
 const lex_percentpercent: i64 = 111;  // `%%` floor 取余（与 `\` 成对）
+// p.9.13.3 checked 幂 `**?`（tag 112）：与 `**` 同级；int 族溢出即运行期报错
+//（对齐 p.9.11.9 的 `+?`/`-?`/`*?` 族）。符号表排序 `**` < `**?` < `*=`。
+const lex_starstarq: i64 = 112;       // `**?` checked 幂
 // p.9.11.15 yield 生成器关键字（tag 105）：`func gen() { yield v; ... }`——
 // 含 yield 的函数 = 生成器函数（产出序列，调用返回迭代序列对象/表）。
 const lex_yield: i64 = 105;   // yield 关键字（生成器产出语句）
