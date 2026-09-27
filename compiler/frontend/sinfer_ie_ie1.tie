@@ -436,6 +436,14 @@ pub func infer_expr_binary(id: i64) -> i64 {
             type_ok = true
         } else if types.is_float(lhs) && types.is_int(rhs) {
             type_ok = true
+        } else if op == 0 && lhs == TK_STR &&
+            (types.is_int(rhs) || types.is_float(rhs) || types.is_bool_like(rhs)) {
+            // p.9.13.3 `+` 扩展：string + 标量 → 自动 to_string 后拼接
+            type_ok = true
+        } else if op == 0 && rhs == TK_STR &&
+            (types.is_int(lhs) || types.is_float(lhs) || types.is_bool_like(lhs)) {
+            // 镜像：标量 + string（结果仍按「标量在前」拼接）
+            type_ok = true
         } else if op == 0 && lhs == TK_STR && rhs == TK_STR {
             // 字符串拼接
             type_ok = true
@@ -592,6 +600,11 @@ pub func infer_expr_binary(id: i64) -> i64 {
             }
         }
         var rt = lhs
+        // p.9.13.3 `+` 扩展：任一侧为 string 且另一侧为标量 → 结果为 string
+        //（两侧皆 string 时 lhs 已是 string，此判同样正确）
+        if op == 0 && (lhs == TK_STR || rhs == TK_STR) {
+            rt = types.named(TK_STR)
+        }
         if types.is_int(lhs) && types.is_float(rhs) {
             rt = rhs
         }
