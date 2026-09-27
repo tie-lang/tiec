@@ -364,6 +364,9 @@ const B_IDIV: i64 = 24;
 // 与 `/` 的 frem 不同）；int 与 `%` 同（因 int 的 `\` 本身即截断除）。
 const B_POW: i64 = 25;
 const B_FLOORMOD: i64 = 26;
+// p.9.13.3 checked 幂 `**?`（27）：与 `**` 同级；int 族任一步乘法溢出即运行期
+// 报错（对齐 p.9.11.9 的 `+?`/`-?`/`*?`）。f64 无 checked 语义（溢出即 inf）。
+const B_CHECK_POW: i64 = 27;
 
 // 一元：0=Neg 1=Not 2=PreInc 3=PreDec 4=PostInc 5=PostDec
 const U_NEG: i64 = 0;
