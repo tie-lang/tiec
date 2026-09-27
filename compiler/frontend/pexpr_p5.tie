@@ -44,7 +44,11 @@ func mk_in_call(elem: i64, cont: i64) -> i64 {
     return n
 }
 
-// `in` 中缀层（左结合）：`elem in container` → `lang::seq_has(container, elem)`。
+// `in` 中缀层（左结合）：`elem in container` → 中间形态（语义层再定目标函数）。
+// 同时支持 `not in`（p.9.13.3）：识别为**一词法组合**——当前 token 是标识符
+// `not` 且紧随 `in` 时，等价于 `!(elem in container)`。
+// 实现取解析层前瞻（不改词法表、**不把 `not` 升为全局保留字**），故既满足设计
+// 「`not in` 为一词法组合」的意图，又不破坏把 `not` 用作普通标识符的既有代码。
 func parse_in_expr() -> i64 {
     var lhs = parse_comparison()
     if lhs < 0 {
@@ -52,15 +56,28 @@ func parse_in_expr() -> i64 {
     }
     var d = false
     while !d {
-        if putil.peek_tag() != lex_in {
+        var negate: bool = false
+        if putil.peek_tag() == lex_ident && putil.peek_n(1) == lex_in {
+            // `not in` 组合：仅当标识符文本恰为 "not" 且下一 token 是 `in`
+            if putil.peek_lexeme() == "not" {
+                negate = true
+                putil.advance()   // 'not'
+            } else {
+                d = true
+            }
+        } else if putil.peek_tag() != lex_in {
             d = true
-        } else {
+        }
+        if !d {
             putil.advance()   // 'in'
             var rhs = parse_comparison()
             if rhs < 0 {
                 return -1
             }
             lhs = mk_in_call(lhs, rhs)
+            if negate {
+                lhs = mk_unary(U_NOT, lhs, ast.line(lhs), ast.col(lhs))
+            }
         }
     }
     return lhs
