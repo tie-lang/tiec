@@ -142,6 +142,30 @@ func tig_binary(op: i64, lhs: i64, rhs: i64) -> i64 {
     // 字符串判定（node_types 语义类型；driver 树比较/拼接两侧为 string）
     var lhs_str = lhs_t == types.named(TK_STR)
     var rhs_str = rhs_t == types.named(TK_STR)
+    // p.9.13.3 `+` 扩展：一侧 string、另一侧标量（int/float/bool）→ 把标量侧
+    // 转成字符串再拼接。**顺序严格按左右操作数**（`5 + "x"` 得 "5x"，不是 "x5"）——
+    // 两侧各自转字符串，字符串侧原样透传，再 str_cat(lhs_s, rhs_s)。
+    // 转换用值级 helper（`tig_scalar_to_str`）直接做，不造调用节点。
+    if op == 0 && lhs_str != rhs_str {
+        var ls = lv
+        if !lhs_str {
+            ls = tig_scalar_to_str(lv, lhs_t)
+            if ls < 0 {
+                return -1
+            }
+        }
+        var rs = rv
+        if !rhs_str {
+            rs = tig_scalar_to_str(rv, rhs_t)
+            if rs < 0 {
+                return -1
+            }
+        }
+        var cat = ir.new_inst(g_cur_block, 56, types.named(TK_STR))  // str_cat
+        ir.add_operand(cat, ls, 0)
+        ir.add_operand(cat, rs, 0)
+        return ir.get_value(cat)
+    }
     if lhs_str || rhs_str {
         return tig_binary_str(op, lv, rv)
     }
