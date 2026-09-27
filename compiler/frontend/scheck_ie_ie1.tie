@@ -200,7 +200,25 @@ pub func check_stmt_assign(s: i64) -> i64 {
                 return -1
             }
         }
-        var vt = sinfer.infer_expr(sstate.child(s, 0))
+        // p.9.11.34 短闭包 `f = t -> expr`（赋值位）：目标是 fn 类型 + 右值是
+        // `ident -> expr` 形态 ⇒ 语义期展开为闭包（判据见 sinfer.try_lambda_form）。
+        // 必须在推断**之前**替换 RHS：展开后按闭包形态走常规路径（登记签名 + 延迟检查）。
+        // 不满足判据时返回 -1，RHS 原样保留（管道语义一字不变）。
+        var rhs0 = sstate.child(s, 0)
+        var lam = sinfer.try_lambda_form(rhs0, target_ty)
+        if lam >= 0 {
+            // 替换 child[0] 为新闭包节点，其余子节点（若有）原样保留
+            var nk: table<i64> = table_new_i64()
+            table_push(nk, lam)
+            var ci: i64 = 1
+            while ci < sstate.nchild(s) {
+                table_push(nk, sstate.child(s, ci))
+                ci = ci + 1
+            }
+            sstate.set_children(s, nk)
+            rhs0 = lam
+        }
+        var vt = sinfer.infer_expr(rhs0)
         if vt < 0 {
             // S2.3 目标类型引导：泛型 enum 构造（Result.Err("x")）类型参数推断不全
             // 时（Err 不含 T，T 无法从实参推出），用赋值目标类型补全
