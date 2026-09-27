@@ -533,8 +533,19 @@ func tig_index_assign(id: i64) -> i64 {
     var elem_k2 = types.kind(elem)
     if elem_k2 == K_STRUCT || elem_k2 == K_ENUM || elem_k2 == K_FN || elem_k2 == K_TUPLE || elem == types.named(TK_ANY) {
         pty = elem
-    } else if types.kind(elem) == K_PORT {
-        // S2.4：port 对象元素（table<Drawable>）存 ptr → set_string 桥
+    } else if types.is_table(elem) || types.is_map(elem) || types.kind(elem) == K_PORT {
+        // 堆句柄元素（嵌套容器 table<table<T>> / table<map<T>> / port 对象）：
+        // 运行期就是 ptr，必须走 ptr 参数形态的 set 桥。
+        //
+        // RCA（2026-09-28）：此前写入路径只把 K_PORT 归入 ptr 分支，table/map 落到
+        // `suffix = bridge_suffix(elem)`——而 bridge_suffix 只识别 string/bool/f64，
+        // 表类型一律返回 "i64"，pty 因此停在 i64，发射出
+        // `store i64 <表句柄ptr>, ptr <i64槽>`：IR 类型不自洽，LLVM opt 报
+        // `defined with type 'ptr' but expected 'i64'`。
+        // 触发条件是**对嵌套容器元素赋值**（`outer[i] = inner`）；构造用
+        // table_push 走另一条路径，故此前未暴露。
+        // 判据与**读取**路径（tig_index_read）保持完全一致——读能正确取回句柄、
+        // 写却按 i64 存，这个不对称本身就是缺陷所在。
         suffix = "string"
         pty = types.named(TK_STR)
     } else if suffix == "string" {
