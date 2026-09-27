@@ -359,11 +359,16 @@ func parse_power() -> i64 {
     if base < 0 {
         return -1
     }
-    if putil.peek_tag() == lex_starstar {
+    if putil.peek_tag() == lex_starstar || putil.peek_tag() == lex_starstarq {
+        var is_checked = putil.peek_tag() == lex_starstarq
         putil.advance()
         var exp = parse_power()   // 右结合
         if exp < 0 {
             return -1
+        }
+        // p.9.13.3 `**?` checked 幂（与 `**` 同级；int 族溢出即报错）
+        if is_checked {
+            return mk_binary(B_CHECK_POW, base, exp)
         }
         return mk_binary(B_POW, base, exp)
     }
