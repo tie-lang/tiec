@@ -213,6 +213,13 @@ pub func infer_expr_fn_lit(id: i64) -> i64 {
         var ci = len(g_clo_pending)
         table_push(g_clo_pending, id)
         table_push(cl_parent, g_clo_cur)   // 父闭包索引（嵌套闭包捕获传播用）
+        table_push(cl_owner_sig, g_curfn)   // p.9.11.22：外层函数签名（捕获面判定用）
+        // 登记时定下 unsafe 上下文（后置批量分析时 g_unsafe_depth 已复位）
+        var own_unsafe: i64 = 0
+        if g_unsafe_depth > 0 || sstate.sig_unsafe(g_curfn) == 1 {
+            own_unsafe = 1
+        }
+        table_push(cl_owner_unsafe, own_unsafe)
         table_push(cl_ret, ret_ty)
         table_push(cl_nparams, nparams)
         table_push(cl_paroff, len(cl_ptys))
