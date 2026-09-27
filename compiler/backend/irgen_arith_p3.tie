@@ -68,6 +68,58 @@ func tig_compound_assign(op: i64, lv: i64, rv: i64, ty: i64) -> i64 {
     return res
 }
 
+// p.9.13.3 `+` 扩展的辅助：把标量值转成字符串（供 string+标量 拼接）。
+// 复用语料库里的**值级**转换 helper（它们直接吃 SSA 值，不需要调用节点）：
+//   * 整数（含窄整数/无符号）→ 先拓宽到 i64 再 tig_i64_to_str
+//   * f64/f32 → tig_f64_to_str
+//   * bool → cond_br + phi 在 "true"/"false" 两常量间选（与内置 to_string 同语义）
+// 其它类型（表/聚合/指针等）返回 -1——本扩展只面向标量。
+func tig_scalar_to_str(v: i64, t: i64) -> i64 {
+    if types.is_int(t) {
+        var w = stype.int_width(t)
+        var iv = v
+        if w > 0 && w < 64 {
+            iv = tig_widen(v, t, types.named(TK_I64))
+            if iv < 0 {
+                return -1
+            }
+        }
+        return tig_i64_to_str(iv, stype.is_signed(t))
+    }
+    if types.is_float(t) {
+        return tig_f64_to_str(v)
+    }
+    if types.is_bool_like(t) {
+        var t_str = tig_str_lit(interner.intern("\"true\""))
+        var f_str = tig_str_lit(interner.intern("\"false\""))
+        var bcond = tig_cond_to_bool(v, t)
+        var t_blk = ir.new_block(g_cur_func, interner.intern("cat.t"))
+        var f_blk = ir.new_block(g_cur_func, interner.intern("cat.f"))
+        var m_blk = ir.new_block(g_cur_func, interner.intern("cat.m"))
+        var cbr = ir.new_inst(g_cur_block, 31, -1)  // cond_br
+        ir.add_operand(cbr, bcond, 0)
+        ir.add_operand(cbr, t_blk, 1)
+        ir.add_operand(cbr, f_blk, 1)
+        g_cur_block = t_blk
+        var br1 = ir.new_inst(g_cur_block, 30, -1)  // br merge
+        ir.add_operand(br1, m_blk, 1)
+        g_cur_block = f_blk
+        var br2 = ir.new_inst(g_cur_block, 30, -1)
+        ir.add_operand(br2, m_blk, 1)
+        g_cur_block = m_blk
+        // φ 汇合：opcode **33** 是 phi（32 不是——用错会生成 label 类型导致
+        // LLVM 校验报「defined with type 'label' but expected 'ptr'」，实测）。
+        var ph = ir.new_inst(g_cur_block, 33, types.named(TK_STR))  // phi
+        ir.add_operand(ph, t_str, 0)
+        ir.add_operand(ph, t_blk, 1)
+        ir.add_operand(ph, f_str, 0)
+        ir.add_operand(ph, f_blk, 1)
+        return ir.get_value(ph)
+    }
+    sm_err_msg = "'+' 的字符串拼接只支持标量（整数/浮点/bool），不支持 " + types.type_name(t)
+    return -1
+}
+
 // 字符串二元运算：拼接（+）→ tie 运行时 str_cat 桥（tie_str_cat 无——用
 // llvmgen 的 str_cat(56) 指令，llvmgen 内联 malloc+memcpy）；比较 → strcmp。
 // 复用 ir opcode：str_cat(56) 拼接；比较走 icmp(12) + 桥 strcmp。
