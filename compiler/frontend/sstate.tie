@@ -458,6 +458,8 @@ const S_N_YIELD: i64 = 161;         // p.9.11.15 yield 产出语句（与 ast.ti
 // tag 162：YIELD(161) 之后的首个空闲号（注意 ast.tie 里 160 被 N_TYPE_ALIAS 与
 // N_SLICE 重复占用，属既有重号，勿再复用该值）。
 const S_N_BLOCK_PIPE: i64 = 162;
+// p.9.11.34 语义期类型引用（与 ast.tie N_SEM_TYPE 同号）：val = 语义类型 id。
+const S_N_SEM_TYPE: i64 = 163;
 // 三期 A 组 guard<cap> 凭据（与 ast.tie N_GUARD_GET/N_GUARD_USE/N_GUARD_WITH 同号）
 const S_N_GUARD_GET: i64 = 145;     // `unsafe.get(share)` 取得凭据（表达式）
 const S_N_GUARD_USE: i64 = 146;     // `unsafe use g { ... }` 持证越界块
