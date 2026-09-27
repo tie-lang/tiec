@@ -494,7 +494,7 @@ pub func infer_call(id: i64) -> i64 {
     var sig = sstate.fn_sig(full_name)
     // p.8.2.2 命名实参：`f(x: 1, y: 2)` → 按形参名重排并改写调用节点 children
     if sig >= 0 {
-        var rn = reorder_named_args(id, args, full_name, sig)
+        var rn = reorder_named_args(id, args, full_name, sig, 0)
         if rn < 0 {
             return -1
         }

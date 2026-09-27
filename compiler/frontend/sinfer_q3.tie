@@ -593,6 +593,14 @@ pub func infer_struct_method(recv: i64, recv_ty: i64, mname: string, args: table
         sm_err_msg = "调用 unsafe 方法 '" + full + "' 必须在 unsafe 块或 unsafe 函数中（安全代码禁止触底）"
         return -1
     }
+    // p.9.11.25 方法命名实参 + 默认值（定案三）：与普通函数同一套重排/补齐，
+    // 唯一差别是**接收者不参与**（recv_skip=1）——它已由调用对象给定，既不能
+    // 被命名指定，也不参与默认值补齐。必须在参数个数检查**之前**做：重排会把
+    // 跳过的默认值参数补齐，n_args 随之变为完整，个数检查即自然通过。
+    // 无命名实参时不触发（位置调用省略默认值仍走 irgen 的末尾补齐路径）。
+    if reorder_named_args(id, args, full, sig, 1) < 0 {
+        return -1
+    }
     // 方法：首参 = 接收者（按引用）。参数个数（含接收者对象，对齐 Rust）：
     // required = sg_required（含接收者必选数），total = 形参数，n_args = args+1
     var req_m = sg_required[sig]
