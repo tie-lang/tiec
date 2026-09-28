@@ -146,6 +146,12 @@ func cb_is_seg2_nid(nid: i64) -> bool {
         table_push(cb_s2_nids, interner.intern("list_dir"))
         table_push(cb_s2_nids, interner.intern("walk_dir"))
         table_push(cb_s2_nids, interner.intern("arg_count"))
+        // 动态加载原语（p.9.17.4 第一步：编译端 p.6.6.20 四件套移植）
+        table_push(cb_s2_nids, interner.intern("load_library"))
+        table_push(cb_s2_nids, interner.intern("get_proc"))
+        table_push(cb_s2_nids, interner.intern("dyn_call"))
+        table_push(cb_s2_nids, interner.intern("dyn_call_p"))
+        table_push(cb_s2_nids, interner.intern("cstr_to_string"))
         cb_s2_ready = true
         // 构建后插入排序（一次性；查询走二分，对齐 is_builtin_nid）
         var a: i64 = 1
