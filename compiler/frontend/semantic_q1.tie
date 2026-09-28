@@ -224,6 +224,9 @@ pub func check_impl(ast_text: string, base_dir: string) -> string {
     im_n = table_new_i64()
     im_mnames = table_new_i64()
     g_impl_pending = table_new_i64()
+    gd_nodes = table_new_i64()
+    gd_tys = table_new_i64()
+    gd_nms = table_new_string()
     // 实例化记录表重置（gin_*，T3b 单态化展开器；每次编译清零）
     gin_keys = table_new_i64()
     gin_vals = table_new_i64()
@@ -306,6 +309,12 @@ pub func check_impl(ast_text: string, base_dir: string) -> string {
     // enum 变体收集（须在 struct 字段拍平之后——payload 类型可能引用 struct）
     var r5 = scollect.collect_all_enums()
     if r5 < 0 {
+        return "ERR:" + to_string(sm_err_line) + " " + to_string(sm_err_col) + " " + sm_err_msg
+    }
+    // p.9.17.2 缺陷 #4a：延迟的全局标量初始化类型检查（须在 enum 变体收集后——
+    // enum 变体常量初始化器依赖 en_vnames 变体表）
+    var r6 = scollect.check_deferred_global_inits()
+    if r6 < 0 {
         return "ERR:" + to_string(sm_err_line) + " " + to_string(sm_err_col) + " " + sm_err_msg
     }
     // 返回表元素预扫描（先于逐函数 check）
@@ -490,6 +499,9 @@ pub func check_ast(base_dir: string) -> string {
     im_n = table_new_i64()
     im_mnames = table_new_i64()
     g_impl_pending = table_new_i64()
+    gd_nodes = table_new_i64()
+    gd_tys = table_new_i64()
+    gd_nms = table_new_string()
     // 实例化记录表重置（gin_*，T3b 单态化展开器；每次编译清零）
     gin_keys = table_new_i64()
     gin_vals = table_new_i64()
@@ -609,6 +621,12 @@ pub func check_ast(base_dir: string) -> string {
     // enum 变体收集（须在 struct 字段拍平之后——payload 类型可能引用 struct）
     var r5 = scollect.collect_all_enums()
     if r5 < 0 {
+        return "ERR:" + to_string(sm_err_line) + " " + to_string(sm_err_col) + " " + sm_err_msg
+    }
+    // p.9.17.2 缺陷 #4a：延迟的全局标量初始化类型检查（须在 enum 变体收集后——
+    // enum 变体常量初始化器依赖 en_vnames 变体表）
+    var r6 = scollect.check_deferred_global_inits()
+    if r6 < 0 {
         return "ERR:" + to_string(sm_err_line) + " " + to_string(sm_err_col) + " " + sm_err_msg
     }
     // 返回表元素预扫描（先于逐函数 check）
