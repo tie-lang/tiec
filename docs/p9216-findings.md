@@ -1189,3 +1189,51 @@ nid 函数体内（字符串版转薄包装，单一数据源零漂移）。
 * 解释器 11 套件 A/B：**9 IDENTICAL + 2 良性 DIFF**（同 §19/§20 基线）。
 * 冒烟：内置调用 / 用户函数 / 命名空间互调 / table_push 特判 / 字符串内建
   全通过（tsh 宿主脚本）。
+
+## 22. p.9.17.4 第一步：interp 动态加载内建（2026-09-28）
+
+> 承接设计增补（tie-main docs/designs/interp-performance.md §4.3，已获批）。
+> 分期第一步：interp 侧动态加载原语四件套移植。
+
+### 22.1 关键勘察：语言内置原语的双通道可用性
+
+`load_library/get_proc/dyn_call/dyn_call_p/cstr_to_string` 是**语言内置原语**
+（编译端 builtin_expr_seg1 展开，std/sqlite.tie、std/rng_adv.tie 先例在案）
+——**interp.tie 自身被 AOT 编译时同样可用**（llvmgen 直接发射
+LoadLibraryW/GetProcAddress/call-ptr IR）。因此 interp 侧实现 = call_builtin
+seg2 加 case **直调语言原语**（零桥接、零宿主改动），语义对齐编译端
+builtin_expr_seg1 的 p.6.6.20 契约（失败 0、dyn_call int 返回 / dyn_call_p
+64 位返回、cstr NUL 结尾 UTF-8）。
+
+### 22.2 改动账目
+
+* `call_builtin_seg2.tie`：5 个 case（Value 化签名 + 参数类型校验）；
+  **第一版 dyn_call 实参限整数**（JIT 标量子集，字符串/复合值跨边界的
+  堆所有权勘察后放开——设计 §4.3.3）；dyn_call/dyn_call_p 共用分支
+  （addr + 至多 5 实参缺位补 0，对齐编译端 op73）。
+* 名单同步：`cb_seg2_names`（+5）与 `bi_nids`（+5）——排序二分结构不变，
+  插入排序自动重排。
+
+### 22.3 冒烟（tsh 宿主，5 项全绿）
+
+load kernel32 OK / get Sleep OK / bad load rejected OK（失败 0 契约）/
+bad proc rejected OK / **dyn_call GetTickCount OK**（真实间接 C 调用——
+JIT 管线的加载 + 调用侧打通）。
+
+### 22.4 门禁
+
+* fp 不动点：SHA256 = **59a2c504**，三哈希一致（tiec.exe 已升格）。
+* regress-s21：**158 PASS / 8 FAIL / 2 SKIP**，FAIL 集合逐项同基线。
+* 解释器 11 套件 A/B：**9 IDENTICAL + 2 良性 DIFF**（同 §19-§21 基线）。
+
+### 22.5 冒烟坑备忘
+
+tsh 脚本的 to_string **不支持 bool**（比较表达式结果打印需走 if 分支）；
+勘察脚本先验证输出再采数纪律再次生效。
+
+### 22.6 下一步（第二步前置）
+
+单函数 JIT 管线：deparse → 临时 unit → `tiec --shared` → load → dyn_call；
+前置勘察两项：①`deparse` 对 FnDef 全文的保真度（类型标注反生成）；
+②DLL 侧 tie 运行时与宿主 interp 会话的字符串/复合值堆所有权（第一版
+标量子集可绕开，第二步结论决定是否放开）。
