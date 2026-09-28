@@ -129,6 +129,7 @@ const lex_starstarq: i64 = 112;       // `**?` checked 幂
 // `var b = move a` 用途并未实现——全仓无 move 的 token/节点/处理），且把 move
 // 用作标识符的代码仅 9 处且全在注释/README 中 → 升为保留字无实际影响。
 const lex_move: i64 = 113;            // `move` 所有权转移形参修饰
+const lex_tilde: i64 = 114;           // `~` 整数按位取反
 // p.9.11.15 yield 生成器关键字（tag 105）：`func gen() { yield v; ... }`——
 // 含 yield 的函数 = 生成器函数（产出序列，调用返回迭代序列对象/表）。
 const lex_yield: i64 = 105;   // yield 关键字（生成器产出语句）

@@ -255,6 +255,13 @@ pub func eval_const_expr(id: i64) -> (bool, bool, bool, i64, i64) {
             }
             return (true, false, false, iv == 0 ? 1 : 0, -1)
         }
+        if op == U_BIT_NOT {
+            if hs {
+                cv_failed = true
+                return (false, false, false, 0, -1)
+            }
+            return (true, false, false, 0 - iv - 1, -1)
+        }
         cv_failed = true
         return (false, false, false, 0, -1)
     }

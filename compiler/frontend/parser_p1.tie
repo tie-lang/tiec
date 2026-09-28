@@ -88,6 +88,9 @@ func op_symbol(op: i64, is_unary: bool) -> string {
         if op == 1 {
             return "!"
         }
+        if op == U_BIT_NOT {
+            return "~"
+        }
         if op == 2 {
             return "++"
         }

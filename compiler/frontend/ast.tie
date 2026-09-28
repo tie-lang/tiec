@@ -380,13 +380,14 @@ const B_CHECK_POW: i64 = 27;
 // 而在语义期已知（node_types）。重写后本码不再出现于 irgen。
 const B_IN: i64 = 28;
 
-// 一元：0=Neg 1=Not 2=PreInc 3=PreDec 4=PostInc 5=PostDec
+// 一元：0=Neg 1=Not 2=PreInc 3=PreDec 4=PostInc 5=PostDec 6=BitNot
 const U_NEG: i64 = 0;
 const U_NOT: i64 = 1;
 const U_PRE_INC: i64 = 2;
 const U_PRE_DEC: i64 = 3;
 const U_POST_INC: i64 = 4;
 const U_POST_DEC: i64 = 5;
+const U_BIT_NOT: i64 = 6;
 
 // ---------- 全局列式节点池（T0.4 全局表：下标对齐 = 节点 id）----------
 var node_tags: table<i64>;       // 第 0 列：节点 tag
