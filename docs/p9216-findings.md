@@ -832,20 +832,24 @@ FAIL 集合同修复前基线；触发件一行差异隔离 + 运行期语义探
 
 ### 18.2 卡点：enum case 载荷绑定在**被导入的文件**里一律失效
 
-最小复现（15 行）：
+最小复现（15 行；注意 `type tie<…>` 必须是文件第一行、注释用 `//`、
+import 路径带引号——三者缺一都会先撞出别的解析错误掩盖本缺陷）：
 
-    # lib.tie  (tie<class>)
-    enum Value { Nil
-        Int(i64) }
+    // lib.tie  (tie<class>)
+    type tie<class>
+    enum Value {
+        Nil
+        Int(i64)
+    }
     pub func ff(v: Value) -> i64 {
         switch v {
             case Value.Int(x):
-                return x        # ← error[E00488] 未声明的变量 'x'
+                return x        // ← error[E00488] 未声明的变量 'x'
             default:
                 return -1
         }
     }
-    # main.tie (tie<logic>)：import ./lib.tie + 调用 ff(Value.Int(5))
+    // main.tie (tie<logic>)：import "./lib.tie" + 调用 ff(Value.Int(5))
 
 **已排除**（都实测过）：
 
@@ -878,6 +882,30 @@ FAIL 集合同修复前基线；触发件一行差异隔离 + 运行期语义探
 落地；`vval.tie`（690 行，已写好并可单独编译为库）与 parity 探针归档在仓外
 `_tiec_verify/p917_wip/`，等本缺陷修复后即接上。
 
+**【已修复 · 2026-09-27】根因（比 §18.2 猜测的 lv_keys 有序性简单得多）**：
+import 展开把被导入文件 AST 追加合并进主 AST 表时，`append_ast_mem`
+（semantic_p1.tie，内存解析路径）与 `sstate.append_ast`（sstate_q1.tie，协议
+文本路径）的子节点填充循环对**一切** `cid >= 0` 的子值无条件 `+base` 当节点
+id 平移。而 N_CASE_BIND 的 children[1..] 是 parser 直接 intern 的**裸名池 id**
+（非节点 id，ast.tie:179 注释明示；scollect.contains_yield / sgen.clone_inner
+均已有同款特判，唯独两条 append 路径漏了）。平移后登记键 = 真 id + base，
+查找键 = `intern.intern(name_str(...))` = 真 id → 二分必落空 → E00488。
+主文件 base=0 无平移，故只在被导入文件失败——全部症状（含 E00226 结构检查
+正常）由此一点解释。
+
+* 修复：两条 append 路径子节点填充循环加 N_CASE_BIND 特判——children[0]
+  （变体引用节点 id）照常 +base；children[1..]（裸名池 id）不平移。口径与
+  scollect.contains_yield / sgen.clone_inner 对齐。
+* 门禁：不动点 `2fc7e125` → **`6d7664af`**（tiec.exe 已升格）；回归
+  **158 PASS / 8 FAIL / 2 SKIP** 且 FAIL 集合与基线逐行一致（8 FAIL 均既有
+  环境类/已知缺陷）；`tests/interp` 11 套件新旧 exe 输出逐字节一致；
+  `tests/language/enum.tie` / `enum_method.tie` 输出符合期望；最小复现
+  （单绑定 + 多绑定 `case Shape.Rect(w,h)`）新旧双向验证——旧 exe 两探针均
+  E00488，新 exe 均编译运行正确（5 / 12）。
+* p.9.17.2 卡点解除：`vval.tie` 作为被导入库编译通过，parity 门禁
+  **PARITY OK（74 用例逐字节一致）**（探针修正版
+  `_tiec_verify/p917_wip/p917_parity_fixed.tie`，见 §18.4）。
+
 ### 18.3 顺带发现（与本轮无关的既有缺陷）
 
 * `tests/language/table_struct_elem.tie` 仍 FAIL，症状
@@ -885,3 +913,28 @@ FAIL 集合同修复前基线；触发件一行差异隔离 + 运行期语义探
   （`t[0].y = v`）路径，与 18.1 不同族，属既有基线 FAIL，未动。
 * `table<Struct>` 作**全局**变量报「行池 table<R> 全局变量 v1 暂不支持」
   （p.9.12.6 既有边界，改局部即可绕开）。
+* `sgen.clone_inner`（sgen_p1.tie）的 N_CASE_BIND 特判只复制 children[0..1]
+  ——多绑定解构（`case P(a, b)`）在**泛型函数克隆**下疑似截断 children[2..]
+  （未实测复现，仅代码审读发现；import 合并路径已由 §18.2 修复覆盖，此疑点
+  只影响泛型克隆路径）。待专项最小复现后另立条目。
+
+### 18.4 顺带发现：跨模块全局的**限定名**访问失效（裸名可用，既有缺陷未修）
+
+最小复现（8 行）：
+
+    type tie<logic>
+    import "compiler/interp/value.tie"
+    func main() {
+        var m = ivalue.new_int(42)
+        ivalue.g_err → error[E00488] 未声明的变量 'ivalue'   // 读失败
+        ivalue.g_ms_key = 1 → 同报错                          // 写失败
+    }
+
+* `ivalue.g_err` / `ivalue.g_ms_key =`（ns 限定全局读/写）一律 E00488
+  「未声明的变量 'ivalue'」；**裸名** `g_err` / `g_ms_key =` 跨模块读写完全
+  正常（value.tie 注释「模块级全局跨模块可见」的设计意图即走裸名内联）。
+* 旧 exe（2fc7e125）同样复现 → 既有缺陷，非本轮回归。未修。
+* parity 探针受此影响的 18 处限定名全局访问已改裸名写法
+  （`p917_parity_fixed.tie`）；`map_set`「键走全局槽」契约对外部调用方实际
+  只能经裸名使用，`pub` setter（如 `set_ms_key`）是更稳妥的长期形态，
+  留待 language.md 全局可见性规则明确时一并定夺。
