@@ -34,19 +34,14 @@ namespace lexscan {
 pub func scan_string(pos: i64) -> i64 {
     var start = pos
     var cont = g_str_interp == 2
-    var asm_tmpl: bool = false
+    // p.9.23.1 插值显式化（对齐规范 §1.9）：插值仅发生在 h"..." 插值字符串
+    //（g_str_hmode，主循环 h 分支置位）；普通串花括号一律字面——JSON/模板/
+    // 代码片段/正则照原样书写。原前瞻插值判定（含 p.9.23 D3 asm 模板特判，
+    // 其语义被「普通串花括号字面」覆盖）整体移除；插值表达式按 h"{expr}" 紧贴
+    // 书写，h 串内字面花括号写作 {{ / }}。
+    var interp_mode = g_str_hmode
     if !cont {
-        pos = pos + 1   // 跳过开引号 '"'
-        // p.9.23 缺陷修复（D3）：asm! 模板**不参与字符串插值**。前缀 token 恰为
-        // `asm` `!` `(` 时判定本串是 asm 模板——其中 `{N}` 是 LLVM 操作数占位符，
-        // 与 tie 的 `{expr}` 插值语法直接冲突。此前该写法被插值切成多段，解析器
-        // 状态错乱致 tiec 段错误（exit 139、零诊断输出）。
-        // 模板内 `{{`/`}}` 就地折叠为字面花括号，`{N}` 原样保留交
-        // llvmgen.asm_tmpl_convert 转 `$N`。
-        var tc = lextok.token_count()
-        if tc >= 3 && lextok.token_tag(tc - 1) == lex_lparen && lextok.token_tag(tc - 2) == lex_bang && lextok.token_tag(tc - 3) == lex_asm {
-            asm_tmpl = true
-        }
+        pos = pos + 1   // 跳过开引号 '"'（h 串由主循环分支先跳过 'h'）
     }
     // 段文本构建（字面 `{`/`}` 原样保留；`{{`/`}}` **不**在 lexer 折叠——
     // p.9.12.1：字符串字面量里的 `}}` 是 JSON/模板合法字节，逐字保留，不能
@@ -75,77 +70,25 @@ pub func scan_string(pos: i64) -> i64 {
             pos = pos + 1
             done = true
             break
-        } else if g_codes[pos] == 123 && pos + 1 < g_n && g_codes[pos + 1] == 123 {
-            // '{{' → '{'：插值字符串里 `{{` 表字面 `{`（且防 `{literal}` 起插值）。
-            // p.9.12.1：仅折叠 `{{`；**不**折叠 `}}`——JSON/模板里的 `}}` 是合法
-            // 字节，逐字保留（曾致 tsp 等 JSON 响应缺尾括号）。`}}`→`}` 的
-            // 插值段转义改由 parse_interp_chain 折叠。
-            sb_append_byte(sb, 123)    // '{{' → '{' 字面
+        } else if interp_mode && g_codes[pos] == 123 && pos + 1 < g_n && g_codes[pos + 1] == 123 {
+            // h 串 '{{' → '{' 字面花括号（规范 §1.9：插值串内双写代表一个）
+            sb_append_byte(sb, 123)
             pos = pos + 2
-        } else if asm_tmpl && g_codes[pos] == 125 && pos + 1 < g_n && g_codes[pos + 1] == 125 {
-            // p.9.23 D3：asm 模板内 `}}` → `}`（模板不经 parse_interp_chain，
-            // 转义须就地折叠）
+        } else if interp_mode && g_codes[pos] == 125 && pos + 1 < g_n && g_codes[pos + 1] == 125 {
+            // h 串 '}}' → '}' 字面花括号
             sb_append_byte(sb, 125)
             pos = pos + 2
-        } else if asm_tmpl && g_codes[pos] == 123 {
-            // p.9.23 D3：asm 模板内 `{` 一律字面（LLVM 操作数占位符 `{N}`）
-            sb_append_byte(sb, 123)
-            pos = pos + 1
-        } else if g_codes[pos] == 123 {
-            // 插值开始判定（前瞻）：`{` 后**紧邻**字符是表达式起始（数字/_/(/[/!/~/$
-            // 或标识符——语句关键字与映射显示串排除）才触发插值；否则 `{` 是字面
-            // （兼容既有 JSON `{"key": 1}`、代码片段 `"{ return ...; }"`、
-            // `"{ 10; }"`、映射显示 `"{a: 1}"` 等，其 `{` 后是 `"`/空白/关键字）。
-            var start_expr: bool = false
-            // 判定只认 `{` 后**紧邻**字符（不跳空白）：`"{ 10; }"`/`"{ x }"` 带
-            // 空格的花括号是字面（代码片段/模板，interp_eval 实测回归）——
-            // 插值表达式按 `"{expr}"` 紧贴书写。
-            var nx = pos + 1
-            if nx < g_n {
-                var c0 = g_codes[nx]
-                // 注意：`+`/`-` 排除（`"{" + x` 拼接字面常见；`"{-n}"` 插值
-                // 罕见）；`"`/`'` 排除（JSON `{"a":1}` 字面兼容）
-                if lextok.is_digit(c0) || c0 == 95 || c0 == 40 || c0 == 91 ||
-                    c0 == 33 || c0 == 126 || c0 == 36 {
-                    start_expr = true
-                } else if (c0 >= 65 && c0 <= 90) || (c0 >= 97 && c0 <= 122) {
-                    // 标识符起始（**仅 ASCII 字母**——非 ASCII（中文等）不触发：
-                    // 编译器/错误消息里的 `"{语句块}"` 等字面串保持原样，中文文本
-                    // 写进字面段，插值表达式用 ASCII 标识符如 `"你好，{cn}！"`）。
-                    // 语句/声明关键字不能起插值表达式——代码片段字面 `"{return ...}"`
-                    // 保持字面；值字面量 true/false/zero 可起；普通标识符（变量/
-                    // 函数名）可起——但后随 `:`（映射显示串 `"{a: 1, b: 2}"`）字面。
-                    var j = nx + 1
-                    while j < g_n && lextok.is_ident_cont(g_codes[j]) {
-                        j = j + 1
-                    }
-                    var ktag = lexsym.kw_lookup(cp_slice(nx, j))
-                    if ktag >= 0 {
-                        if ktag == lex_true || ktag == lex_false || ktag == lex_zero {
-                            start_expr = true
-                        }
-                    } else {
-                        if j < g_n && g_codes[j] == 58 {   // ':' → 映射显示串
-                            start_expr = false
-                        } else {
-                            start_expr = true
-                        }
-                    }
-                }
-            }
-            if start_expr {
-                // 插值：段 lexeme 合成（`"text"`，parser 复用 str_unescape_quoted）
-                var seg = sb_build(sb)
-                var lid = interner.intern("\"" + seg + "\"")
-                lextok.push_token_at(lex_str, start, lid)
-                var lb = interner.intern("{")
-                lextok.push_token_at(lex_interp_lbrace, pos, lb)
-                g_str_interp = 1
-                return pos + 1
-            }
-            // 字面 '{'：继续作为普通字符
-            sb_append_byte(sb, 123)
-            pos = pos + 1
+        } else if interp_mode && g_codes[pos] == 123 {
+            // h 串插值：无条件触发（字面花括号用 {{ / }} 转义；表达式紧贴书写
+            // h"{expr}"）。段以合成 lexeme 发 lex_str + 发 lex_interp_lbrace，
+            // 主循环继续 lex 表达式（g_str_interp 状态机不变）。
+            var seg = sb_build(sb)
+            var lid = interner.intern("\"" + seg + "\"")
+            lextok.push_token_at(lex_str, start, lid)
+            var lb = interner.intern("{")
+            lextok.push_token_at(lex_interp_lbrace, pos, lb)
+            g_str_interp = 1
+            return pos + 1
         } else {
             // 普通码点：按 UTF-8 字节序列追加（非 ASCII 码点 >255，不能直存字节）
             var bs = g_byte_starts[pos]
@@ -167,6 +110,7 @@ pub func scan_string(pos: i64) -> i64 {
     lextok.push_token_at(lex_str, start, lid2)
     if g_str_interp == 2 {
         g_str_interp = 0   // 续段闭合 → 退出插值模式
+        g_str_hmode = false
     }
     return pos
 }
@@ -174,6 +118,9 @@ pub func scan_string(pos: i64) -> i64 {
 
 pub func scan_triple_string(pos: i64) -> i64 {
     var cont = g_str_interp == 2
+    // p.9.23.1：h"""...""" 多行插值串（g_str_hmode）——语义同 h"..."；
+    // 普通三引号花括号一律字面（前瞻插值判定移除）。
+    var interp_mode = g_str_hmode
     var start = pos
     var c0 = pos
     var close = -1
@@ -253,8 +200,8 @@ pub func scan_triple_string(pos: i64) -> i64 {
             p = p + 1
         } else if ch == 13 && p + 1 < c1 && g_codes[p + 1] == 10 {
             p = p + 1   // CR+LF：只保留 LF（源内 CRLF 统一）
-        } else if ch == 92 && p + 1 < c1 && g_codes[p + 1] == 123 {
-            // `\{` → 字面 `{`（插值转义；raw 语义下其余 \X 逐字保留）
+        } else if interp_mode && ch == 92 && p + 1 < c1 && g_codes[p + 1] == 123 {
+            // h 三引号 `\{` → 字面 `{`（插值转义；raw 语义下其余 \X 逐字保留）
             sb_append_byte(sb, 123)
             p = p + 2
         } else if ch == 92 {
@@ -270,35 +217,18 @@ pub func scan_triple_string(pos: i64) -> i64 {
                 bi2 = bi2 + 1
             }
             p = p + 2
+        } else if interp_mode && ch == 123 && p + 1 < c1 && g_codes[p + 1] == 123 {
+            // h 三引号 '{{' → '{' 字面花括号
+            sb_append_byte(sb, 123)
+            p = p + 2
+        } else if interp_mode && ch == 125 && p + 1 < c1 && g_codes[p + 1] == 125 {
+            // h 三引号 '}}' → '}' 字面花括号
+            sb_append_byte(sb, 125)
+            p = p + 2
         } else if ch == 123 {
-            // 插值开始判定：前瞻逻辑复制自 scan_string `{` 分支（双份维护）
-            var start_expr: bool = false
-            var nx = p + 1
-            if nx < g_n {
-                var c0x = g_codes[nx]
-                if lextok.is_digit(c0x) || c0x == 95 || c0x == 40 || c0x == 91 ||
-                    c0x == 33 || c0x == 126 || c0x == 36 {
-                    start_expr = true
-                } else if (c0x >= 65 && c0x <= 90) || (c0x >= 97 && c0x <= 122) {
-                    var j = nx + 1
-                    while j < g_n && lextok.is_ident_cont(g_codes[j]) {
-                        j = j + 1
-                    }
-                    var ktag = lexsym.kw_lookup(cp_slice(nx, j))
-                    if ktag >= 0 {
-                        if ktag == lex_true || ktag == lex_false || ktag == lex_zero {
-                            start_expr = true
-                        }
-                    } else {
-                        if j < g_n && g_codes[j] == 58 {
-                            start_expr = false
-                        } else {
-                            start_expr = true
-                        }
-                    }
-                }
-            }
-            if start_expr {
+            // p.9.23.1：插值开始——h 三引号（g_str_hmode）内无条件触发；
+            // 普通三引号花括号一律字面（原前瞻判定移除，对齐规范 §1.9）。
+            if interp_mode {
                 var seg = sb_build(sb)
                 var lid = interner.intern("\"" + seg + "\"")
                 lextok.push_token_at(lex_str, start, lid)
@@ -335,6 +265,7 @@ pub func scan_triple_string(pos: i64) -> i64 {
     lextok.push_token_at(lex_str, start, lid2)
     if g_str_interp == 2 {
         g_str_interp = 0
+        g_str_hmode = false
     }
     g_str_triple = 0
     return close + 3
