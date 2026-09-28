@@ -695,6 +695,13 @@ func gen_unary(id: i64) -> Value {
         w_err = "一元负号只能作用于数字"
         return Value.Nil
     }
+    if op == U_BIT_NOT {
+        if vval.type_of(v) == W_INT {
+            return vval.new_int(0 - vval.int_val(v) - 1)
+        }
+        w_err = "按位取反只能作用于整数"
+        return Value.Nil
+    }
     // 逻辑非：布尔取反；trit 取反（-1↔1，0 保持）
     if vval.type_of(v) == W_BOOL {
         return vval.new_bool(vval.int_val(v) == 0)

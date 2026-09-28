@@ -214,6 +214,13 @@ func tig_expr_seg1(id: i64) -> i64 {
             ir.add_operand(inst, 1, 2)
             return ir.get_value(inst)
         }
+        if op == U_BIT_NOT {
+            // 按位取反 = 与同宽全 1 位模式异或。
+            var bitnot = ir.new_inst(g_cur_block, 8, oty)
+            ir.add_operand(bitnot, ov, 0)
+            ir.add_operand(bitnot, -1, 2)
+            return ir.get_value(bitnot)
+        }
         return -1
     }
     if tag == 18 {

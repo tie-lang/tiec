@@ -422,6 +422,9 @@ func deparse_arg_expr(node: i64) -> string {
         if op == 1 {
             return "!(" + opr + ")"
         }
+        if op == U_BIT_NOT {
+            return "~(" + opr + ")"
+        }
         if op == 2 || op == 3 {
             return "(" + unary_sym(op) + opr + ")"
         }
@@ -623,13 +626,16 @@ func bin_sym(op: i64) -> string {
     return "?"
 }
 
-// 一元运算符编号 → 符号文本（deparse_arg_expr 用；0=- 1=! 2/4=++ 3/5=--）。
+// 一元运算符编号 → 符号文本（deparse_arg_expr 用）。
 func unary_sym(op: i64) -> string {
     if op == 0 {
         return "-"
     }
     if op == 1 {
         return "!"
+    }
+    if op == U_BIT_NOT {
+        return "~"
     }
     if op == 2 || op == 4 {
         return "++"

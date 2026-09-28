@@ -6,7 +6,7 @@ type tie<class>
 //   1. AST 节点 tag 表（57 条目：表达式 0-22 / 语句 100-129 /
 //      语句辅助 120-124 / 类型 200-204）——权威定义见
 //      proto parser.tie 文件头注释与 ensure_tag_names；
-//   2. 运算符表（二元 18：0-17 / 一元 6：0-5）——对齐 Rust
+//   2. 运算符表（二元 18：0-17 / 一元 7：0-6）——对齐 Rust
 //      BinaryOp/UnaryOp 变体顺序，含 Debug 名与符号文本；
 //   3. 内置函数签名表（72 条目）——从 proto semantic.tie
 //      builtin_call 的按名分派 if 链提炼为数据：
@@ -47,7 +47,7 @@ var gt_segs: table<i64>;         // tag 表：段（0=expr 1=stmt 2=type）
 var bo_keys: table<i64>;         // 二元 op 表：op 码（0-17 升序）
 var bo_names: table<string>;     // 二元 op 表：Debug 名
 var bo_syms: table<string>;      // 二元 op 表：符号文本
-var uo_keys: table<i64>;         // 一元 op 表：op 码（0-5 升序）
+var uo_keys: table<i64>;         // 一元 op 表：op 码（0-6 升序）
 var uo_names: table<string>;     // 一元 op 表：Debug 名
 var uo_syms: table<string>;      // 一元 op 表：符号文本
 var bi_keys: table<string>;      // 内置函数表：函数名（升序）
@@ -147,7 +147,7 @@ pub func is_type_tag(tag: i64) -> bool {
     return tag_seg(tag) == SEG_TYPE
 }
 
-// ---------- 运算符表（懒构建；二元 18 + 一元 6）----------
+// ---------- 运算符表（懒构建；二元 18 + 一元 7）----------
 
 func ensure_ops() {
     if len(bo_keys) > 0 {
@@ -160,10 +160,10 @@ func ensure_ops() {
         "Shl", "Shr"]
     var bs: table<string> = ["+", "-", "*", "/", "%", "==", "!=", "<", ">",
         "<=", ">=", "&&", "||", "&", "|", "^", "<<", ">>"]
-    var uk: table<i64> = [0, 1, 2, 3, 4, 5]
+    var uk: table<i64> = [0, 1, 2, 3, 4, 5, 6]
     var un: table<string> = ["Neg", "Not", "PreInc", "PreDec", "PostInc",
-        "PostDec"]
-    var us: table<string> = ["-", "!", "++", "--", "++", "--"]
+        "PostDec", "BitNot"]
+    var us: table<string> = ["-", "!", "++", "--", "++", "--", "~"]
     bo_keys = table_new_i64()
     bo_names = table_new_string()
     bo_syms = table_new_string()
@@ -210,7 +210,7 @@ pub func binop_sym(op: i64) -> string {
     return bo_syms[op]
 }
 
-// 一元运算符个数（权威 6）。
+// 一元运算符个数（权威 7）。
 pub func unop_count() -> i64 {
     ensure_ops()
     return len(uo_keys)

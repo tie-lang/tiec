@@ -137,7 +137,7 @@ func global_init_fold(id: i64) -> (bool, bool, bool, i64, i64) {
         return (true, false, false, s_vals[id], -1)
     }
     if tag == 8 {
-        // UNARY：取负（op=0）
+        // UNARY：取负（op=0）与整数按位取反（U_BIT_NOT=6）。
         var op = s_vals[id]
         if op == 0 {
             var (h, hs, hf, iv, sid2) = global_init_fold(sstate.child(id, 0))
@@ -147,6 +147,11 @@ func global_init_fold(id: i64) -> (bool, bool, bool, i64, i64) {
                     return (true, false, true, 0, interner.intern("-" + interner.lookup(sid2)))
                 }
                 return (true, false, false, 0 - iv, -1)
+            }
+        } else if op == U_BIT_NOT {
+            var (h2, hs2, hf2, iv2, sid3) = global_init_fold(sstate.child(id, 0))
+            if h2 && hs2 == false && hf2 == false {
+                return (true, false, false, 0 - iv2 - 1, -1)
             }
         }
         return (false, false, false, 0, -1)
