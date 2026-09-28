@@ -57,16 +57,22 @@ var g_nids: table<i64>;
 var g_vals: table<Value>;
 
 // ==================== funcs（已注册函数：全名 → 归档 FnDef 节点 id） ====================
+// f_nids = interned id 键（热路径整数线性扫描）；f_keys 保留全名字符串
+// （显示/调试用，与 f_nids 下标对齐，由 f_put_nid 维护）。
 var f_keys: table<string>;
+var f_nids: table<i64>;
 var f_nodes: table<i64>;
 
 // ==================== macros（S3.3 宏注册表：宏名名单） ====================
 // 宏 = 编译期函数（N_MACRO_DEF，布局同 FnDef 但无泛型槽）。宏定义经
 // register_top_level 注册进 funcs（可调用）+ 本表标记（调用点分派宏展开）。
+// p.9.17.3 后半：m_nids 整数键主表（热查免字符串比较），m_keys 保留显示。
 var m_keys: table<string>;
+var m_nids: table<i64>;
 
 // ==================== externs（extern 声明名单；调用报明确错误） ====================
 var e_keys: table<string>;
+var e_nids: table<i64>;
 
 // ==================== 环境：作用域栈（扁平表 + 段 + 墓碑） ====================
 var env_nids: table<i64>;   // 变量名 interned id（p.9.17.3：整数键替代字符串键）
@@ -119,9 +125,12 @@ pub func reset() {
     g_nids = table_new_i64()
     g_vals = {}
     f_keys = table_new_string()
+    f_nids = table_new_i64()
     f_nodes = table_new_i64()
     m_keys = table_new_string()
+    m_nids = table_new_i64()
     e_keys = table_new_string()
+    e_nids = table_new_i64()
     env_nids = table_new_i64()
     env_vals = {}
     env_alive = table_new_i64()
@@ -282,11 +291,14 @@ pub func g_assign(name: string, v: Value) -> i64 {
 }
 
 // ==================== funcs / externs ====================
+// p.9.17.3 后半：函数表键改 interned id（整数键线性扫描，对齐 g_nids/env_nids
+// 先例——热路径 call_fn/gen_method_call 直传 id，免 nname_str 字符串构造与
+// 逐条字符串比较；错误/显示文本只在冷分支 interner.lookup 还原）。
 
-func f_find(name: string) -> i64 {
+func f_find_nid(nid: i64) -> i64 {
     var i: i64 = 0
-    while i < len(f_keys) {
-        if f_keys[i] == name {
+    while i < len(f_nids) {
+        if f_nids[i] == nid {
             return i
         }
         i = i + 1
@@ -294,77 +306,118 @@ func f_find(name: string) -> i64 {
     return -1
 }
 
-pub func f_has(name: string) -> bool {
-    return f_find(name) >= 0
+pub func f_has_nid(nid: i64) -> bool {
+    return f_find_nid(nid) >= 0
 }
 
-// 函数注册（顶层裸名 / 命名空间全名）。
-pub func f_put(name: string, node: i64) {
-    var i = f_find(name)
+// 函数注册（顶层裸名 / 命名空间全名）。nid 版主实现。
+pub func f_put_nid(nid: i64, node: i64) {
+    var i = f_find_nid(nid)
     if i >= 0 {
         f_nodes[i] = node  // 同名重复注册：覆盖（Rust HashMap insert 语义）
         return
     }
-    table_push(f_keys, name)
+    table_push(f_nids, nid)
+    table_push(f_keys, interner.lookup(nid))
     table_push(f_nodes, node)
 }
 
 // 按全名取函数节点 id；未注册 -1。
-pub func f_get(name: string) -> i64 {
-    var i = f_find(name)
+pub func f_get_nid(nid: i64) -> i64 {
+    var i = f_find_nid(nid)
     if i < 0 {
         return -1
     }
     return f_nodes[i]
 }
 
+// 字符串兼容薄包装（冷路径：REPL 绑定 / 调试 / 文本入口，内部 intern 一次）。
+func f_find(name: string) -> i64 {
+    return f_find_nid(interner.intern(name))
+}
+
+pub func f_has(name: string) -> bool {
+    return f_has_nid(interner.intern(name))
+}
+
+pub func f_put(name: string, node: i64) {
+    f_put_nid(interner.intern(name), node)
+}
+
+pub func f_get(name: string) -> i64 {
+    return f_get_nid(interner.intern(name))
+}
+
 // ==================== macros（S3.3） ====================
 
-// 宏名登记（register_top_level 注册 N_MACRO_DEF 时调用；线性去重）。
+// 宏名登记（register_top_level 注册 N_MACRO_DEF 时调用；nid 版主实现，线性去重）。
+pub func m_put_nid(nid: i64) {
+    var i: i64 = 0
+    while i < len(m_nids) {
+        if m_nids[i] == nid {
+            return
+        }
+        i = i + 1
+    }
+    table_push(m_nids, nid)
+    table_push(m_keys, interner.lookup(nid))
+}
+
+// 宏名登记（字符串兼容薄包装，冷路径）。
 pub func m_put(name: string) {
+    m_put_nid(interner.intern(name))
+}
+
+// 名字是否已注册宏（调用点宏展开分派用；nid 版主实现）。
+pub func m_has_nid(nid: i64) -> bool {
     var i: i64 = 0
-    while i < len(m_keys) {
-        if m_keys[i] == name {
-            return
+    while i < len(m_nids) {
+        if m_nids[i] == nid {
+            return true
         }
         i = i + 1
     }
-    table_push(m_keys, name)
+    return false
 }
 
-// 名字是否已注册宏（调用点宏展开分派用）。
+// 字符串兼容薄包装。
 pub func m_has(name: string) -> bool {
-    var i: i64 = 0
-    while i < len(m_keys) {
-        if m_keys[i] == name {
-            return true
-        }
-        i = i + 1
-    }
-    return false
+    return m_has_nid(interner.intern(name))
 }
 
-// extern 声明登记（解释路径不可调用，仅记录名字）。
-pub func e_add(name: string) {
+// extern 声明登记（解释路径不可调用，仅记录名字；nid 版主实现）。
+pub func e_add_nid(nid: i64) {
     var i: i64 = 0
-    while i < len(e_keys) {
-        if e_keys[i] == name {
+    while i < len(e_nids) {
+        if e_nids[i] == nid {
             return
         }
         i = i + 1
     }
-    table_push(e_keys, name)
+    table_push(e_nids, nid)
+    table_push(e_keys, interner.lookup(nid))
 }
 
-pub func e_has(name: string) -> bool {
+// 字符串兼容薄包装。
+pub func e_add(name: string) {
+    e_add_nid(interner.intern(name))
+}
+
+// extern 查询（nid 版主实现）。
+pub func e_has_nid(nid: i64) -> bool {
     var i: i64 = 0
-    while i < len(e_keys) {
-        if e_keys[i] == name {
+    while i < len(e_nids) {
+        if e_nids[i] == nid {
             return true
         }
         i = i + 1
     }
     return false
+}
+
+// 字符串兼容薄包装。
+pub func e_has(name: string) -> bool {
+    return e_has_nid(interner.intern(name))
 }
 
 // ==================== 作用域栈 ====================
