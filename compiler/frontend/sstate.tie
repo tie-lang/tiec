@@ -298,6 +298,7 @@ var ac_ftyoff: table<i64>;
 var ac_fvoff: table<i64>;
 var ac_fnames: table<i64>;   // 字段名 id 扁平段（声明顺序）
 var ac_ftys: table<i64>;     // 字段类型扁平段
+var ac_fdefs: table<i64>;    // 字段显式初值节点（-1 = 零值）
 var ac_foffs: table<i64>;    // 字段在记录内的字节偏移扁平段（含固定头）
 
 // ==================== S2.4 port / impl 状态表（接口模型）====================
