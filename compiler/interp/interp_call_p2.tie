@@ -7,7 +7,20 @@ import "./call_builtin_seg1.tie"
 import "./call_builtin_seg2.tie"
 import "./call_builtin_seg3.tie"
 
+// 三段名单单一数据源的全局表（p.9.17.3 后半；namespace 外——tie 全局必须顶层）。
+var cb_s1: table<string>;
+var cb_s1_ready: bool = false;
+var cb_s2: table<string>;
+var cb_s2_ready: bool = false;
+var cb_s3: table<string>;
+var cb_s3_ready: bool = false;
+var cb_s1_nids: table<i64>;
+var cb_s2_nids: table<i64>;
+var cb_s3_nids: table<i64>;
+
+
 namespace interp {
+
 // 内置函数分派（对齐 Rust call_fn 内置分支语义与错误文本）。
 // 值传递类（str_char/char_code/to_string/parse_float 等）直接转发语言底座
 // 原语（两路径共用同一份 Rust 桥实现，行为一致）。
@@ -30,80 +43,201 @@ func call_builtin(name: string, args: table<Value>) -> Value {
     return Value.Nil
 }
 
-// 段 1 名单：宏/求值/打印/字符串解析/动态表（与 call_builtin_seg1 分支一致）
+// p.9.17.3 后半：三段名单的 nid 版判定（热路径分派）。名单**内联惰性构建**
+// 在各 nid 函数体内（教训：经 cb_segN_names() 辅助函数取名单 = 每次判定多付
+// 一次完整解释器函数调用）；字符串版 cb_is_segN 转薄包装（intern 转 nid）。
+
+// 段 1 名单：宏/求值/打印/字符串解析/动态表（与 call_builtin_seg1 分支一致）。
+// 字符串版薄包装。
 func cb_is_seg1(name: string) -> bool {
-    if name == "gensym" { return true }
-    if name == "eval_code" { return true }
-    if name == "eval_expr" { return true }
-    if name == "println" { return true }
-    if name == "print" { return true }
-    if name == "len" { return true }
-    if name == "str_len" { return true }
-    if name == "str_char" { return true }
-    if name == "char_code" { return true }
-    if name == "to_string" { return true }
-    if name == "to_trit" { return true }
-    if name == "trit_val" { return true }
-    if name == "parse_int" { return true }
-    if name == "parse_float" { return true }
-    if name == "table_new_i64" { return true }
-    if name == "table_new_f64" { return true }
-    if name == "table_new_string" { return true }
-    if name == "table_new_bool" { return true }
-    if name == "table_at" { return true }
-    if name == "eval" { return true }
-    if name == "eval_call" { return true }
-    if name == "compile_error" { return true }
+    return cb_is_seg1_nid(interner.intern(name))
+}
+
+func cb_is_seg1_nid(nid: i64) -> bool {
+    if !cb_s1_ready {
+        table_push(cb_s1_nids, interner.intern("gensym"))
+        table_push(cb_s1_nids, interner.intern("eval_code"))
+        table_push(cb_s1_nids, interner.intern("eval_expr"))
+        table_push(cb_s1_nids, interner.intern("println"))
+        table_push(cb_s1_nids, interner.intern("print"))
+        table_push(cb_s1_nids, interner.intern("len"))
+        table_push(cb_s1_nids, interner.intern("str_len"))
+        table_push(cb_s1_nids, interner.intern("str_char"))
+        table_push(cb_s1_nids, interner.intern("char_code"))
+        table_push(cb_s1_nids, interner.intern("to_string"))
+        table_push(cb_s1_nids, interner.intern("to_trit"))
+        table_push(cb_s1_nids, interner.intern("trit_val"))
+        table_push(cb_s1_nids, interner.intern("parse_int"))
+        table_push(cb_s1_nids, interner.intern("parse_float"))
+        table_push(cb_s1_nids, interner.intern("table_new_i64"))
+        table_push(cb_s1_nids, interner.intern("table_new_f64"))
+        table_push(cb_s1_nids, interner.intern("table_new_string"))
+        table_push(cb_s1_nids, interner.intern("table_new_bool"))
+        table_push(cb_s1_nids, interner.intern("table_at"))
+        table_push(cb_s1_nids, interner.intern("eval"))
+        table_push(cb_s1_nids, interner.intern("eval_call"))
+        table_push(cb_s1_nids, interner.intern("compile_error"))
+        cb_s1_ready = true
+        // 构建后插入排序（一次性；查询走二分，对齐 is_builtin_nid）
+        var a: i64 = 1
+        while a < len(cb_s1_nids) {
+            var key = cb_s1_nids[a]
+            var b: i64 = a - 1
+            while b >= 0 && cb_s1_nids[b] > key {
+                cb_s1_nids[b + 1] = cb_s1_nids[b]
+                b = b - 1
+            }
+            cb_s1_nids[b + 1] = key
+            a = a + 1
+        }
+    }
+    var lo: i64 = 0
+    var hi: i64 = len(cb_s1_nids) - 1
+    while lo <= hi {
+        var mid = (lo + hi) / 2
+        var v = cb_s1_nids[mid]
+        if v == nid {
+            return true
+        }
+        if v < nid {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
     return false
 }
 
-// 段 2 名单：token 流 API/tsh 运行时桥/字符串内建/路径与目录（与 seg2 一致）
+// 段 2 名单：token 流 API/tsh 运行时桥/字符串内建/路径与目录。字符串版薄包装。
 func cb_is_seg2(name: string) -> bool {
-    if name == "tokenize" { return true }
-    if name == "deparse" { return true }
-    if name == "token_len" { return true }
-    if name == "token_tag_at" { return true }
-    if name == "token_lexeme_at" { return true }
-    if name == "get_env" { return true }
-    if name == "set_env" { return true }
-    if name == "exec_code" { return true }
-    if name == "exec_output" { return true }
-    if name == "cwd" { return true }
-    if name == "time_now" { return true }
-    if name == "file_read" { return true }
-    if name == "file_write" { return true }
-    if name == "file_append" { return true }
-    if name == "file_exists" { return true }
-    if name == "path_join" { return true }
-    if name == "mkdir_all" { return true }
-    if name == "remove_dir_all" { return true }
-    if name == "contains" { return true }
-    if name == "has_prefix" { return true }
-    if name == "has_suffix" { return true }
-    if name == "split_lines" { return true }
-    if name == "split_char" { return true }
-    if name == "substr" { return true }
-    if name == "replace_all" { return true }
-    if name == "is_empty" { return true }
-    if name == "pipe_char" { return true }
-    if name == "path_basename" { return true }
-    if name == "list_dir" { return true }
-    if name == "walk_dir" { return true }
-    if name == "arg_count" { return true }
+    return cb_is_seg2_nid(interner.intern(name))
+}
+
+func cb_is_seg2_nid(nid: i64) -> bool {
+    if !cb_s2_ready {
+        table_push(cb_s2_nids, interner.intern("tokenize"))
+        table_push(cb_s2_nids, interner.intern("deparse"))
+        table_push(cb_s2_nids, interner.intern("token_len"))
+        table_push(cb_s2_nids, interner.intern("token_tag_at"))
+        table_push(cb_s2_nids, interner.intern("token_lexeme_at"))
+        table_push(cb_s2_nids, interner.intern("get_env"))
+        table_push(cb_s2_nids, interner.intern("set_env"))
+        table_push(cb_s2_nids, interner.intern("exec_code"))
+        table_push(cb_s2_nids, interner.intern("exec_output"))
+        table_push(cb_s2_nids, interner.intern("cwd"))
+        table_push(cb_s2_nids, interner.intern("time_now"))
+        table_push(cb_s2_nids, interner.intern("file_read"))
+        table_push(cb_s2_nids, interner.intern("file_write"))
+        table_push(cb_s2_nids, interner.intern("file_append"))
+        table_push(cb_s2_nids, interner.intern("file_exists"))
+        table_push(cb_s2_nids, interner.intern("path_join"))
+        table_push(cb_s2_nids, interner.intern("mkdir_all"))
+        table_push(cb_s2_nids, interner.intern("remove_dir_all"))
+        table_push(cb_s2_nids, interner.intern("contains"))
+        table_push(cb_s2_nids, interner.intern("has_prefix"))
+        table_push(cb_s2_nids, interner.intern("has_suffix"))
+        table_push(cb_s2_nids, interner.intern("split_lines"))
+        table_push(cb_s2_nids, interner.intern("split_char"))
+        table_push(cb_s2_nids, interner.intern("substr"))
+        table_push(cb_s2_nids, interner.intern("replace_all"))
+        table_push(cb_s2_nids, interner.intern("is_empty"))
+        table_push(cb_s2_nids, interner.intern("pipe_char"))
+        table_push(cb_s2_nids, interner.intern("path_basename"))
+        table_push(cb_s2_nids, interner.intern("list_dir"))
+        table_push(cb_s2_nids, interner.intern("walk_dir"))
+        table_push(cb_s2_nids, interner.intern("arg_count"))
+        cb_s2_ready = true
+        // 构建后插入排序（一次性；查询走二分，对齐 is_builtin_nid）
+        var a: i64 = 1
+        while a < len(cb_s2_nids) {
+            var key = cb_s2_nids[a]
+            var b: i64 = a - 1
+            while b >= 0 && cb_s2_nids[b] > key {
+                cb_s2_nids[b + 1] = cb_s2_nids[b]
+                b = b - 1
+            }
+            cb_s2_nids[b + 1] = key
+            a = a + 1
+        }
+    }
+    var lo: i64 = 0
+    var hi: i64 = len(cb_s2_nids) - 1
+    while lo <= hi {
+        var mid = (lo + hi) / 2
+        var v = cb_s2_nids[mid]
+        if v == nid {
+            return true
+        }
+        if v < nid {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
     return false
 }
 
-// 段 3 名单：脚本参数/文件哈希/进程与退出/确定性内建（与 seg3 一致）
+// 段 3 名单：脚本参数/文件哈希/进程与退出/确定性内建。字符串版薄包装。
 func cb_is_seg3(name: string) -> bool {
-    if name == "arg_at" { return true }
-    if name == "get_file_hash" { return true }
-    if name == "exec_code_timeout" { return true }
-    if name == "exit" { return true }
-    if name == "remove_file" { return true }
-    if name == "sort_strings" { return true }
-    if name == "regex_findstr" { return true }
-    if name == "sleep_ms" { return true }
+    return cb_is_seg3_nid(interner.intern(name))
+}
+
+func cb_is_seg3_nid(nid: i64) -> bool {
+    if !cb_s3_ready {
+        table_push(cb_s3_nids, interner.intern("arg_at"))
+        table_push(cb_s3_nids, interner.intern("get_file_hash"))
+        table_push(cb_s3_nids, interner.intern("exec_code_timeout"))
+        table_push(cb_s3_nids, interner.intern("exit"))
+        table_push(cb_s3_nids, interner.intern("remove_file"))
+        table_push(cb_s3_nids, interner.intern("sort_strings"))
+        table_push(cb_s3_nids, interner.intern("regex_findstr"))
+        table_push(cb_s3_nids, interner.intern("sleep_ms"))
+        cb_s3_ready = true
+        // 构建后插入排序（一次性；查询走二分，对齐 is_builtin_nid）
+        var a: i64 = 1
+        while a < len(cb_s3_nids) {
+            var key = cb_s3_nids[a]
+            var b: i64 = a - 1
+            while b >= 0 && cb_s3_nids[b] > key {
+                cb_s3_nids[b + 1] = cb_s3_nids[b]
+                b = b - 1
+            }
+            cb_s3_nids[b + 1] = key
+            a = a + 1
+        }
+    }
+    var lo: i64 = 0
+    var hi: i64 = len(cb_s3_nids) - 1
+    while lo <= hi {
+        var mid = (lo + hi) / 2
+        var v = cb_s3_nids[mid]
+        if v == nid {
+            return true
+        }
+        if v < nid {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
     return false
+}
+
+// 内置函数分派（nid 版主实现）：判段用 nid 整数比较，段函数仍收 name 文本
+//（段内个别内建要用名字），由 interner.lookup 还原一次。
+func call_builtin_nid(nid: i64, args: table<Value>) -> Value {
+    var name = interner.lookup(nid)
+    if cb_is_seg1_nid(nid) {
+        return call_builtin_seg1(name, args)
+    }
+    if cb_is_seg2_nid(nid) {
+        return call_builtin_seg2(name, args)
+    }
+    if cb_is_seg3_nid(nid) {
+        return call_builtin_seg3(name, args)
+    }
+    w_err = "内部错误: 未实现的内置函数 '" + name + "'"
+    return Value.Nil
 }
 
 // findstr /r 子集正则命中（0-Rust 纯 tie，零桥）。语义：s 中存在匹配即 true。
