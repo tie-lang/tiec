@@ -156,6 +156,13 @@ func emit_globals() {
         } else {
             var ty = llvm_ty(g_global_tys[i])
             var init = "0"
+            // p.9.17.2：聚合类型全局（enum/struct，LLVM 类型名以 % 开头）零初始化
+            // 必须发 zeroinitializer——整型字面量 0 对聚合类型非法（LLVM 拒绝：
+            // "integer constant must have integer type"，实测 @g = global %enum.Value 0）。
+            // 零位模式 = Nil/默认变体（tag 0），与运行期 main 入口的初值求值衔接一致。
+            if sstate.has_prefix_str(ty, "%") {
+                init = "zeroinitializer"
+            }
             // 整数/字符折叠初值（const/var 均采纳；r.1.1.2 起以 inits_ok 区分
             // "折叠出 -1"与"无折叠值"——旧实现把无初值的 signed 全局输出成 -1）。
             // 旧实现仅 ty=="i64" 应用 → i8/i16/i32/u* 等 const 全局恒为 0

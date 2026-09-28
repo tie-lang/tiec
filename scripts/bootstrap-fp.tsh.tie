@@ -82,7 +82,10 @@ func hash_line(s: string) -> string {
 }
 
 // ---------- 0. 输出目录（mkdir + 哨兵自检） ----------
-exec_code("cmd /c if not exist " + resolve_out("..\\_tiec_verify\\fp") + " mkdir " + resolve_out("..\\_tiec_verify\\fp"))
+// p.9.17.2 修正：原 cmd if not exist/mkdir 组合对正斜杠路径报「命令语法不正确」
+//（tsh 参数路径恒被规范化为正斜杠）——改用底座 mkdir_all 原语（Windows API
+// 直接接受正斜杠），消除对 outdir 斜杠形式的敏感。
+mkdir_all(resolve_out("..\\_tiec_verify\\fp"))
 var sentinel = resolve_out("..\\_tiec_verify\\fp") + "\\_fp_sentinel.txt"
 file_write(sentinel, "fp")
 if !file_exists(sentinel) {

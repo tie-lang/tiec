@@ -192,17 +192,17 @@ func tok_len(pat: string, pi: i64, plen: i64) -> i64 {
 // 先读入**局部** string 表（规避 tie-llvm 从 Value 表读串跨调用的缓冲 bug——
 // 对齐 value.tie 头注释的"局部表过渡"工作法），局部表内比较/交换安全，排序完
 // 再统一重建 Value 表。
-func b_sort_strings(tid: i64) -> i64 {
-    var cnt = ivalue.elem_count(tid)
+func b_sort_strings(tid: Value) -> Value {
+    var cnt = vval.elem_count(tid)
     var strs: table<string> = table_new_string()
     var i: i64 = 0
     while i < cnt {
-        var e = ivalue.elem_at(tid, i)
-        if ivalue.type_of(e) != T_STR {
-            g_err = "sort_strings 表必须全为字符串元素"
-            return -1
+        var e = vval.elem_at(tid, i)
+        if vval.type_of(e) != W_STR {
+            w_err = "sort_strings 表必须全为字符串元素"
+            return Value.Nil
         }
-        table_push(strs, ivalue.str_val(e))
+        table_push(strs, vval.str_val(e))
         i = i + 1
     }
     // 插入排序（稳定；元素少，O(n²) 可接受）
@@ -217,10 +217,10 @@ func b_sort_strings(tid: i64) -> i64 {
         strs[j + 1] = key
         a = a + 1
     }
-    var nt = ivalue.new_table()
+    var nt = vval.new_table()
     var k: i64 = 0
     while k < cnt {
-        nt = ivalue.table_push_val(nt, ivalue.new_str(strs[k]))
+        nt = vval.table_push_val(nt, vval.new_str(strs[k]))
         k = k + 1
     }
     return nt
@@ -283,11 +283,11 @@ func b_str_sub(s: string, lo: i64, hi: i64) -> string {
     return out
 }
 
-func b_str_to_table(t: table<string>) -> i64 {
-    var nt = ivalue.new_table()
+func b_str_to_table(t: table<string>) -> Value {
+    var nt = vval.new_table()
     var i: i64 = 0
     while i < len(t) {
-        nt = ivalue.table_push_val(nt, ivalue.new_str(t[i]))
+        nt = vval.table_push_val(nt, vval.new_str(t[i]))
         i = i + 1
     }
     return nt
@@ -323,27 +323,27 @@ func trim_cr2(s: string) -> string {
     return s
 }
 
-func b_lines_to_table(t: table<string>) -> i64 {
+func b_lines_to_table(t: table<string>) -> Value {
     return b_str_to_table(t)
 }
 
 // 按单字符切分（保留空段；末段总产出）。
-func b_split_char_to_table(s: string, c: string) -> i64 {
-    var nt = ivalue.new_table()
+func b_split_char_to_table(s: string, c: string) -> Value {
+    var nt = vval.new_table()
     var cur = ""
     var n = str_len(s)
     var i: i64 = 0
     while i < n {
         var ch = str_char(s, i)
         if ch == c {
-            nt = ivalue.table_push_val(nt, ivalue.new_str(cur))
+            nt = vval.table_push_val(nt, vval.new_str(cur))
             cur = ""
         } else {
             cur = cur + ch
         }
         i = i + 1
     }
-    nt = ivalue.table_push_val(nt, ivalue.new_str(cur))
+    nt = vval.table_push_val(nt, vval.new_str(cur))
     return nt
 }
 
@@ -432,11 +432,11 @@ func b_lower_hex(c: string) -> string {
 }
 
 // 参数值列表 → 打印文本（print/println 共用；to_print_string 无分隔符拼接）。
-func join_print(args: table<i64>) -> string {
+func join_print(args: table<Value>) -> string {
     var out: string = ""
     var i: i64 = 0
     while i < len(args) {
-        out = out + ivalue.to_print_string(args[i])
+        out = out + vval.to_print_string(args[i])
         i = i + 1
     }
     return out

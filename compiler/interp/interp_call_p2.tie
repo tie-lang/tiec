@@ -11,24 +11,99 @@ namespace interp {
 // 内置函数分派（对齐 Rust call_fn 内置分支语义与错误文本）。
 // 值传递类（str_char/char_code/to_string/parse_float 等）直接转发语言底座
 // 原语（两路径共用同一份 Rust 桥实现，行为一致）。
-func call_builtin(name: string, args: table<i64>) -> i64 {
-    var r: i64 = 0
-    r = call_builtin_seg1(name, args)
-    if r != -1 {
-        return r
+//
+// p.9.17.2 Value 化分派约定：Value.Nil 是合法 void 返回值，旧的「-1 哨兵 =
+// 未命中」双关失效；改用前置名单分派——先以 cb_is_segN 判定名字属于哪段，
+// 只进入对应段（段尾 return 仅为防御出口）；错误统一经 w_err != "" 传播，
+// 未命中不置 w_err。名单为无状态纯函数，eval 等内建递归重入安全。
+func call_builtin(name: string, args: table<Value>) -> Value {
+    if cb_is_seg1(name) {
+        return call_builtin_seg1(name, args)
     }
-    r = call_builtin_seg2(name, args)
-    if r != -1 {
-        return r
+    if cb_is_seg2(name) {
+        return call_builtin_seg2(name, args)
     }
-    r = call_builtin_seg3(name, args)
-    if r != -1 {
-        return r
+    if cb_is_seg3(name) {
+        return call_builtin_seg3(name, args)
     }
-    g_err = "内部错误: 未实现的内置函数 '" + name + "'"
-    return -1
-    g_err = "内部错误: 未实现的内置函数 '" + name + "'"
-    return -1
+    w_err = "内部错误: 未实现的内置函数 '" + name + "'"
+    return Value.Nil
+}
+
+// 段 1 名单：宏/求值/打印/字符串解析/动态表（与 call_builtin_seg1 分支一致）
+func cb_is_seg1(name: string) -> bool {
+    if name == "gensym" { return true }
+    if name == "eval_code" { return true }
+    if name == "eval_expr" { return true }
+    if name == "println" { return true }
+    if name == "print" { return true }
+    if name == "len" { return true }
+    if name == "str_len" { return true }
+    if name == "str_char" { return true }
+    if name == "char_code" { return true }
+    if name == "to_string" { return true }
+    if name == "to_trit" { return true }
+    if name == "trit_val" { return true }
+    if name == "parse_int" { return true }
+    if name == "parse_float" { return true }
+    if name == "table_new_i64" { return true }
+    if name == "table_new_f64" { return true }
+    if name == "table_new_string" { return true }
+    if name == "table_new_bool" { return true }
+    if name == "table_at" { return true }
+    if name == "eval" { return true }
+    if name == "eval_call" { return true }
+    if name == "compile_error" { return true }
+    return false
+}
+
+// 段 2 名单：token 流 API/tsh 运行时桥/字符串内建/路径与目录（与 seg2 一致）
+func cb_is_seg2(name: string) -> bool {
+    if name == "tokenize" { return true }
+    if name == "deparse" { return true }
+    if name == "token_len" { return true }
+    if name == "token_tag_at" { return true }
+    if name == "token_lexeme_at" { return true }
+    if name == "get_env" { return true }
+    if name == "set_env" { return true }
+    if name == "exec_code" { return true }
+    if name == "exec_output" { return true }
+    if name == "cwd" { return true }
+    if name == "time_now" { return true }
+    if name == "file_read" { return true }
+    if name == "file_write" { return true }
+    if name == "file_append" { return true }
+    if name == "file_exists" { return true }
+    if name == "path_join" { return true }
+    if name == "mkdir_all" { return true }
+    if name == "remove_dir_all" { return true }
+    if name == "contains" { return true }
+    if name == "has_prefix" { return true }
+    if name == "has_suffix" { return true }
+    if name == "split_lines" { return true }
+    if name == "split_char" { return true }
+    if name == "substr" { return true }
+    if name == "replace_all" { return true }
+    if name == "is_empty" { return true }
+    if name == "pipe_char" { return true }
+    if name == "path_basename" { return true }
+    if name == "list_dir" { return true }
+    if name == "walk_dir" { return true }
+    if name == "arg_count" { return true }
+    return false
+}
+
+// 段 3 名单：脚本参数/文件哈希/进程与退出/确定性内建（与 seg3 一致）
+func cb_is_seg3(name: string) -> bool {
+    if name == "arg_at" { return true }
+    if name == "get_file_hash" { return true }
+    if name == "exec_code_timeout" { return true }
+    if name == "exit" { return true }
+    if name == "remove_file" { return true }
+    if name == "sort_strings" { return true }
+    if name == "regex_findstr" { return true }
+    if name == "sleep_ms" { return true }
+    return false
 }
 
 // findstr /r 子集正则命中（0-Rust 纯 tie，零桥）。语义：s 中存在匹配即 true。

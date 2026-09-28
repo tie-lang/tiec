@@ -4,9 +4,9 @@ type tie<class>
 // 由 split_parts.py 按行数贪心分片：只搬函数与紧邻注释，
 // 顶层全局 var 与 import 树仍留在 interp_call.tie。
 namespace interp {
-// 函数调用：内置函数 → 用户函数 → 报错。返回值 id；失败置 g_err 返回 -1。
+// 函数调用：内置函数 → 用户函数 → 报错。返回值 id；失败置 w_err 返回 -1。
 // args = 实参值 id 表；arg_nodes = 实参 AST 节点表（by_ref 需取实参变量名）。
-func call_fn(name: string, args: table<i64>, arg_nodes: table<i64>) -> i64 {
+func call_fn(name: string, args: table<Value>, arg_nodes: table<i64>) -> Value {
     // 内置函数（对齐 Rust call_fn 的 match name 分支）
     if is_builtin(name) {
         return call_builtin(name, args)
@@ -14,8 +14,8 @@ func call_fn(name: string, args: table<i64>, arg_nodes: table<i64>) -> i64 {
     // 用户函数（REPL 中定义的；命名空间函数以全名注册）
     var f = isess.f_get(name)
     if f < 0 {
-        g_err = "未定义的函数 '" + name + "'"
-        return -1
+        w_err = "未定义的函数 '" + name + "'"
+        return Value.Nil
     }
     // FnDef 泛型槽偏移：children = [类型参数槽, 返回类型, 参数..., 函数体]，
     // 形参从 1 + soff 起（对齐 sstate.slot_off——曾按旧布局读 children[1+i]，
@@ -53,8 +53,8 @@ func call_fn(name: string, args: table<i64>, arg_nodes: table<i64>) -> i64 {
         } else {
             cnt_desc = to_string(required) + "-" + to_string(total)
         }
-        g_err = "函数 '" + name + "' 期望 " + cnt_desc + " 个参数，实际 " + to_string(len(args)) + " 个"
-        return -1
+        w_err = "函数 '" + name + "' 期望 " + cnt_desc + " 个参数，实际 " + to_string(len(args)) + " 个"
+        return Value.Nil
     }
     // 函数体执行期间，裸调用按本函数命名空间前缀补全
     var saved_ns = isess.ns_save()
@@ -71,10 +71,10 @@ func call_fn(name: string, args: table<i64>, arg_nodes: table<i64>) -> i64 {
         var pname = isess.nname_str(p)
         if isess.naux(p) == 1 {
             // 变参：剩余全部实参打包为 Value 表（支持 len/下标/for）
-            var tv = ivalue.new_table()
+            var tv = vval.new_table()
             var ai: i64 = i
             while ai < len(args) {
-                tv = ivalue.table_push_val(tv, args[ai])
+                tv = vval.table_push_val(tv, args[ai])
                 ai = ai + 1
             }
             isess.var_declare(pname, tv)
@@ -82,26 +82,26 @@ func call_fn(name: string, args: table<i64>, arg_nodes: table<i64>) -> i64 {
             // T0.3 by_ref：实参必须是可寻址表变量；引用槽记录调用方变量名。
             // 注意：tie 的 || 不短路，先判越界再取节点
             if i >= len(arg_nodes) {
-                g_err = "函数 '" + name +
+                w_err = "函数 '" + name +
                     "' 的 ref 参数需要可寻址的表变量实参（字面量/下标/调用结果不可取地址）"
                 isess.ref_pop()
                 isess.scope_pop()
                 env_base = saved_base
                 isess.ns_restore(saved_ns)
-                return -1
+                return Value.Nil
             }
             if isess.ntag(arg_nodes[i]) != N_VAR {
-                g_err = "函数 '" + name +
+                w_err = "函数 '" + name +
                     "' 的 ref 参数需要可寻址的表变量实参（字面量/下标/调用结果不可取地址）"
                 isess.ref_pop()
                 isess.scope_pop()
                 env_base = saved_base
                 isess.ns_restore(saved_ns)
-                return -1
+                return Value.Nil
             }
             isess.ref_add(pname, isess.nname_str(arg_nodes[i]))
         } else {
-            var v: i64 = -1
+            var v: Value = Value.Nil
             if i < len(args) {
                 v = args[i]
             } else {
@@ -109,21 +109,21 @@ func call_fn(name: string, args: table<i64>, arg_nodes: table<i64>) -> i64 {
                 var def = isess.nchild_at(p, 1)
                 if def >= 0 {
                     v = gen_expr(def)
-                    if g_err != "" {
+                    if w_err != "" {
                         isess.ref_pop()
                         isess.scope_pop()
                         env_base = saved_base
                         isess.ns_restore(saved_ns)
-                        return -1
+                        return Value.Nil
                     }
                 } else {
-                    g_err = "函数 '" + name + "' 缺少第 " + to_string(i + 1) +
+                    w_err = "函数 '" + name + "' 缺少第 " + to_string(i + 1) +
                         " 个参数且无默认值"
                     isess.ref_pop()
                     isess.scope_pop()
                     env_base = saved_base
                     isess.ns_restore(saved_ns)
-                    return -1
+                    return Value.Nil
                 }
             }
             isess.var_declare(pname, v)
@@ -143,8 +143,8 @@ func call_fn(name: string, args: table<i64>, arg_nodes: table<i64>) -> i64 {
     isess.scope_pop()
     env_base = saved_base
     isess.ns_restore(saved_ns)
-    if g_err != "" {
-        return -1
+    if w_err != "" {
+        return Value.Nil
     }
     // 处理 return 传播
     if g_flow == FL_RETURN {
@@ -152,18 +152,18 @@ func call_fn(name: string, args: table<i64>, arg_nodes: table<i64>) -> i64 {
         return g_flow_val
     }
     if g_flow == FL_BREAK {
-        g_err = "break" + label_space(g_flow_label) + "逃出函数体（内部错误）"
-        return -1
+        w_err = "break" + label_space(g_flow_label) + "逃出函数体（内部错误）"
+        return Value.Nil
     }
     if g_flow == FL_CONTINUE {
-        g_err = "continue" + label_space(g_flow_label) + "逃出函数体（内部错误）"
-        return -1
+        w_err = "continue" + label_space(g_flow_label) + "逃出函数体（内部错误）"
+        return Value.Nil
     }
     g_flow = FL_NORMAL
-    if g_lastval >= 0 {
+    if g_has_last {
         return g_lastval
     }
-    return ivalue.new_void()
+    return vval.new_void()
 }
 
 // 内置函数名单（对齐 Rust call_fn 的内置分支；T4.1 核心子集）。
@@ -183,7 +183,7 @@ func is_builtin(name: string) -> bool {
         return true
     }
     // M4（dev33 批次9 任务27）：compile_error("消息") 宏内主动报编译错误——
-    // 置 g_err 上抛，mexpand 以调用点行列号报「宏展开失败」。
+    // 置 w_err 上抛，mexpand 以调用点行列号报「宏展开失败」。
     if name == "compile_error" {
         return true
     }

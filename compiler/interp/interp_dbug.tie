@@ -31,7 +31,7 @@ var dbg_evn: table<string>;        // C/R 的函数名；S 为空
 var dbg_evl: table<i64>;           // 事件行（C=函数体首行，S=语句行，R=-1）
 var dbg_evt: table<i64>;           // time_now() 时间戳；dbg_sample=关时 -1
 var dbg_evd: table<i64>;           // 事件时调用栈深度
-// 崩溃诊断：g_err 首次置位时的最内层调用栈快照（dbg_leave 捕获一次）
+// 崩溃诊断：w_err 首次置位时的最内层调用栈快照（dbg_leave 捕获一次）
 var dbg_err_captured: bool = false;
 var dbg_err_stack_f: table<string>;   // 崩溃点调用栈（自外向内）
 var dbg_err_stack_l: table<i64>;
@@ -95,8 +95,8 @@ func dbg_leave() {
     }
     var depth_before = len(dbg_stack_f)
     if depth_before > 0 {
-        // 崩溃诊断：捕获首次 g_err 置位时的最内层调用栈（跳过顶层空栈）
-        if g_err != "" && !dbg_err_captured {
+        // 崩溃诊断：捕获首次 w_err 置位时的最内层调用栈（跳过顶层空栈）
+        if w_err != "" && !dbg_err_captured {
             dbg_err_captured = true
             dbg_err_stack_f = slice_str_to(dbg_stack_f, depth_before)
             dbg_err_stack_l = slice_i64_to(dbg_stack_l, depth_before)

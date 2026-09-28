@@ -24,13 +24,13 @@ type tie<class>
 //
 // # 错误契约
 //   成功：返回结果文本（可能空串）；失败：返回错误文本（对齐 Rust Err 文本：
-//   "除零错误"/"变量 'x' 未声明"/"运行时错误: ..." 等）并置 g_err 槽。
+//   "除零错误"/"变量 'x' 未声明"/"运行时错误: ..." 等）并置 w_err 槽。
 //   与 C ABI 桥（tie_eval_expr 失败返回错误串）约定一致，REPL 外壳直接打印。
 //
 // # 语句/表达式分派
 //   tie 无 enum：按归档节点 tag（N_* 常量，ast.tie 权威）if/else 链分派
 //   （与 irgen.tie gen_expr/gen_stmt 同款）。流程槽（g_flow 等）见 session.tie
-//   头注释。所有求值失败路径：置 g_err 后返回哨兵，调用方逐层检查。
+//   头注释。所有求值失败路径：置 w_err 后返回哨兵，调用方逐层检查。
 //
 // # 调用约定
 //   import 后 interp.eval(...) / interp.eval_call(...) / interp.reset()。
@@ -62,7 +62,7 @@ unsafe extern fn Sleep(ms: i64) -> i32
 // 循环 flow 消费的上下文（while/for 共享 consume_flow；标签判定用）
 var g_loop_label: string = "";          // 当前循环标签（空串 = 无标签）
 var g_consume_outer: i64 = 0;           // 需上抛的 flow（FL_NORMAL；仅字面量可初始化）
-var g_consume_outer_val: i64 = 0;       // 需上抛的 return 值 id（reset 置 -1）
+var g_consume_outer_val: Value = vval.new_void(); // 需上抛的 return 值（reset 置 void）
 // 命名空间段收集（ns_segments 的全局输出槽；tie 无多返回值）
 var g_ns_segs: table<string>;
 // switch 模式辅助输出槽
@@ -109,7 +109,7 @@ pub func reset() {
     isess.reset()
     g_loop_label = ""
     g_consume_outer = 0
-    g_consume_outer_val = -1
+    g_consume_outer_val = Value.Nil
     // S3.3：宏执行环境计数清零（卫生/gensym/克隆映射/嵌套深度）
     g_hyg_counter = 0
     g_gensym_n = 0
@@ -147,7 +147,7 @@ pub func script_args() -> table<string> {
 
 // 求值一段代码：顶层定义注册，否则包装为 main 体执行，返回格式化结果或错误。
 pub func eval(src: string) -> string {
-    g_err = ""
+    w_err = ""
     // 第一趟：原样解析（顶层定义）
     var proto: string = "ERR:first-pass-failed"
     var ok1 = lexer.run_lex(src)
@@ -156,8 +156,8 @@ pub func eval(src: string) -> string {
     }
     if !has_str_prefix(proto, "ERR:") {
         if sstate.load_ast(proto) < 0 {
-            g_err = "内部错误: AST 协议加载失败"
-            return g_err
+            w_err = "内部错误: AST 协议加载失败"
+            return w_err
         }
         isess.archive_add()
         // 顶层语句非空 → 注册路径
@@ -170,59 +170,61 @@ pub func eval(src: string) -> string {
     var ok2 = lexer.run_lex(wrapped)
     if !ok2 {
         // 词法错误：行号/列号/消息取包装文本内的位置（对齐 Rust 对包装串报错）
-        g_err = "词法错误 @" + to_string(g_err_line) + ":" + to_string(g_err_col) +
+        w_err = "词法错误 @" + to_string(g_err_line) + ":" + to_string(g_err_col) +
             ": " + g_err_msg
-        return g_err
+        return w_err
     }
     var proto2 = parser.parse("")
     if has_str_prefix(proto2, "ERR:") {
-        g_err = fmt_err(proto2, "语法错误")
-        return g_err
+        w_err = fmt_err(proto2, "语法错误")
+        return w_err
     }
     if sstate.load_ast(proto2) < 0 {
-        g_err = "内部错误: AST 协议加载失败"
-        return g_err
+        w_err = "内部错误: AST 协议加载失败"
+        return w_err
     }
     isess.archive_add()
     // 取 main 的函数体执行（动态求值，不跑 analyze）
     var main = find_main()
     if main < 0 {
-        g_err = "内部错误: 包装后的 main 未找到"
-        return g_err
+        w_err = "内部错误: 包装后的 main 未找到"
+        return w_err
     }
     // REPL 顶层：直接遍历 main 体语句执行（不压作用域），使顶层 var 落入
     // globals、跨行持久；嵌套块自己压作用域（对齐 Rust 1674-1702 行）
     env_ns = table_new_string()
     env_base = 0
     var body = isess.nchild_at(main, isess.nchild(main) - 1)
-    var last: i64 = -1
+    var last: Value = Value.Nil
+    var has_last: bool = false
     var i: i64 = 0
     while i < isess.nchild(body) {
         exec_stmt(isess.nchild_at(body, i))
-        if g_err != "" {
-            return g_err
+        if w_err != "" {
+            return w_err
         }
         if g_flow == FL_RETURN {
             // return 传播到顶层（用户输入 `return 5`）：取其值
-            return ivalue.to_repl_string(g_flow_val)
+            return vval.to_repl_string(g_flow_val)
         }
         if g_flow == FL_BREAK {
             // break 传播到顶层：语义层已拦截（循环外报错），此处防御
-            g_err = "break" + label_space(g_flow_label) + "只能出现在循环体内"
-            return g_err
+            w_err = "break" + label_space(g_flow_label) + "只能出现在循环体内"
+            return w_err
         }
         if g_flow == FL_CONTINUE {
-            g_err = "continue" + label_space(g_flow_label) + "只能出现在循环体内"
-            return g_err
+            w_err = "continue" + label_space(g_flow_label) + "只能出现在循环体内"
+            return w_err
         }
-        if g_lastval >= 0 {
+        if g_has_last {
             last = g_lastval
+            has_last = true
         }
         i = i + 1
     }
     // 正常结束：返回最后表达式语句的值（void/纯声明 → 空串）
-    if last >= 0 {
-        return ivalue.to_repl_string(last)
+    if has_last {
+        return vval.to_repl_string(last)
     }
     return ""
 }
@@ -236,7 +238,7 @@ pub func eval(src: string) -> string {
 // 脚本内 exit(n) 内建置 g_tsh_exit_req/g_tsh_exit_code，循环检测到后即停止；
 // 宿主经 exit_requested()/exit_code_val() 透传为进程退出码。
 pub func eval_script(src: string) -> string {
-    g_err = ""
+    w_err = ""
     g_tsh_exit_req = false
     g_tsh_exit_code = 0
     // tie parser 顶层只接受定义语句、且函数体内不允许嵌套 `func` 定义（对齐 eval：
@@ -250,18 +252,18 @@ pub func eval_script(src: string) -> string {
     var combined = parts[0] + "\nfunc main() {\n" + parts[1] + "\n}\n"
     var ok1 = lexer.run_lex(combined)
     if !ok1 {
-        g_err = "词法错误 @" + to_string(g_err_line) + ":" + to_string(g_err_col) +
+        w_err = "词法错误 @" + to_string(g_err_line) + ":" + to_string(g_err_col) +
             ": " + g_err_msg
-        return g_err
+        return w_err
     }
     var proto = parser.parse("")
     if has_str_prefix(proto, "ERR:") {
-        g_err = fmt_err(proto, "语法错误")
-        return g_err
+        w_err = fmt_err(proto, "语法错误")
+        return w_err
     }
     if sstate.load_ast(proto) < 0 {
-        g_err = "内部错误: AST 协议加载失败"
-        return g_err
+        w_err = "内部错误: AST 协议加载失败"
+        return w_err
     }
     isess.archive_add()
     env_ns = table_new_string()
@@ -269,17 +271,18 @@ pub func eval_script(src: string) -> string {
     // 第一趟：注册顶层定义（函数/命名空间/全局变量/extern；main 也一并注册为函数，
     // 但随后的第二趟只执行 main 体）
     var rr = register_top_level()
-    if g_err != "" {
-        return g_err
+    if w_err != "" {
+        return w_err
     }
     // 第二趟：执行 main 体（顶层可执行语句）；不压作用域 → var 落 globals
     var main = find_main()
     if main < 0 {
-        g_err = "内部错误: 包装后的 main 未找到"
-        return g_err
+        w_err = "内部错误: 包装后的 main 未找到"
+        return w_err
     }
     var body = isess.nchild_at(main, isess.nchild(main) - 1)
-    var last: i64 = -1
+    var last: Value = Value.Nil
+    var has_last: bool = false
     var j: i64 = 0
     while j < isess.nchild(body) {
         var st = isess.nchild_at(body, j)
@@ -289,30 +292,31 @@ pub func eval_script(src: string) -> string {
             continue
         }
         exec_stmt(st)
-        if g_err != "" {
-            return g_err
+        if w_err != "" {
+            return w_err
         }
         if g_tsh_exit_req {
             break
         }
         if g_flow == FL_RETURN {
-            return ivalue.to_repl_string(g_flow_val)
+            return vval.to_repl_string(g_flow_val)
         }
         if g_flow == FL_BREAK {
-            g_err = "break" + label_space(g_flow_label) + "只能出现在循环体内"
-            return g_err
+            w_err = "break" + label_space(g_flow_label) + "只能出现在循环体内"
+            return w_err
         }
         if g_flow == FL_CONTINUE {
-            g_err = "continue" + label_space(g_flow_label) + "只能出现在循环体内"
-            return g_err
+            w_err = "continue" + label_space(g_flow_label) + "只能出现在循环体内"
+            return w_err
         }
-        if g_lastval >= 0 {
+        if g_has_last {
             last = g_lastval
+            has_last = true
         }
         j = j + 1
     }
-    if last >= 0 {
-        return ivalue.to_repl_string(last)
+    if has_last {
+        return vval.to_repl_string(last)
     }
     return ""
 }
@@ -332,11 +336,11 @@ pub func exit_code_val() -> i64 {
 // 调用已注册的用户函数（顶层裸名或命名空间全名），传入一个字符串参数，
 // 返回其返回值字符串（void → 空串）。tie:script 模块协议的执行基础。
 pub func eval_call(name: string, arg: string) -> string {
-    g_err = ""
+    w_err = ""
     var f = isess.f_get(name)
     if f < 0 {
-        g_err = "eval_call: 未定义的函数 '" + name + "'"
-        return g_err
+        w_err = "eval_call: 未定义的函数 '" + name + "'"
+        return w_err
     }
     // 参数检查：期望恰好 1 个必选参数（模块入口约定），且形参至少 1 个
     var total = isess.naux(f)
@@ -361,9 +365,9 @@ pub func eval_call(name: string, arg: string) -> string {
         pi = pi + 1
     }
     if required > 1 || total < 1 {
-        g_err = "eval_call: 函数 '" + name + "' 必须恰好接收 1 个字符串参数（实际形参 " +
+        w_err = "eval_call: 函数 '" + name + "' 必须恰好接收 1 个字符串参数（实际形参 " +
             to_string(total) + " 个）"
-        return g_err
+        return w_err
     }
     // 函数体执行期间，裸调用按本函数命名空间前缀补全（与 call_fn 用户分支同机制）
     var saved_ns = isess.ns_save()
@@ -377,24 +381,24 @@ pub func eval_call(name: string, arg: string) -> string {
     while i < total {
         var p = isess.nchild_at(f, 1 + fsoff + i)
         var pname = isess.nname_str(p)
-        var v: i64 = -1
+        var v = Value.Nil
         if i == 0 {
-            v = ivalue.new_str(arg)
+            v = vval.new_str(arg)
         } else {
             var def = isess.nchild_at(p, 1)
             if def >= 0 {
                 v = gen_expr(def)
-                if g_err != "" {
+                if w_err != "" {
                     isess.scope_pop()
                     isess.ns_restore(saved_ns)
-                    return g_err
+                    return w_err
                 }
             } else {
-                g_err = "eval_call: 函数 '" + name + "' 缺少第 " + to_string(i + 1) +
+                w_err = "eval_call: 函数 '" + name + "' 缺少第 " + to_string(i + 1) +
                     " 个参数且无默认值"
                 isess.scope_pop()
                 isess.ns_restore(saved_ns)
-                return g_err
+                return w_err
             }
         }
         isess.var_declare(pname, v)
@@ -407,23 +411,23 @@ pub func eval_call(name: string, arg: string) -> string {
     isess.scope_pop()
     env_base = saved_base
     isess.ns_restore(saved_ns)
-    if g_err != "" {
-        return g_err
+    if w_err != "" {
+        return w_err
     }
     // 处理 return 传播
     if g_flow == FL_RETURN {
-        return ivalue.to_repl_string(g_flow_val)
+        return vval.to_repl_string(g_flow_val)
     }
     if g_flow == FL_BREAK {
-        g_err = "break" + label_space(g_flow_label) + "只能出现在循环体内"
-        return g_err
+        w_err = "break" + label_space(g_flow_label) + "只能出现在循环体内"
+        return w_err
     }
     if g_flow == FL_CONTINUE {
-        g_err = "continue" + label_space(g_flow_label) + "只能出现在循环体内"
-        return g_err
+        w_err = "continue" + label_space(g_flow_label) + "只能出现在循环体内"
+        return w_err
     }
-    if g_lastval >= 0 {
-        return ivalue.to_repl_string(g_lastval)
+    if g_has_last {
+        return vval.to_repl_string(g_lastval)
     }
     return ""
 }

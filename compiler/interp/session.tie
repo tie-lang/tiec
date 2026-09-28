@@ -33,7 +33,7 @@ type tie<class>
 //   （a_* / g_* / env_* 等）跨模块直接可见（import 文本内联）。
 //   命名规范：命名空间内函数不加 is_ 前缀；内部工具私有（非 pub）。
 
-import "./value.tie"
+import "./vval.tie"
 
 // ==================== AST 归档池（跨 eval 持久；id = 归档基数 + 原 id） ====================
 var a_tags: table<i64>;
@@ -54,7 +54,7 @@ var a_root: i64 = 0;   // 最近一次归档的根 StmtList 节点 id（reset �
 // 增长）。AST 节点名本就以 interner id 存放（a_names），热路径天然持有 id，无需
 // 文本往返；字符串版 API 仅作兼容薄包装（内部 intern 一次，冷路径用）。
 var g_nids: table<i64>;
-var g_vals: table<i64>;
+var g_vals: table<Value>;
 
 // ==================== funcs（已注册函数：全名 → 归档 FnDef 节点 id） ====================
 var f_keys: table<string>;
@@ -70,7 +70,7 @@ var e_keys: table<string>;
 
 // ==================== 环境：作用域栈（扁平表 + 段 + 墓碑） ====================
 var env_nids: table<i64>;   // 变量名 interned id（p.9.17.3：整数键替代字符串键）
-var env_vals: table<i64>;
+var env_vals: table<Value>;
 var env_alive: table<i64>;
 var env_seg: table<i64>;    // 每条目所属的活动段索引（扁平表并非连续段：内层作用域
                             // 追加的条目会穿插在外层段条目之间——据此逐条归属定位，杜绝
@@ -88,9 +88,11 @@ var r_soff: table<i64>;    // 每层引用槽段起点（对齐作用域段方�
 
 // ==================== 流程槽（exec_stmt/exec_block 结果通道） ====================
 var g_flow: i64 = 0;       // 0=正常 1=return 2=break 3=continue
-var g_flow_val: i64 = 0;   // return 携带的值 id（reset 置 -1）
+var g_flow_val: Value = vval.new_void();  // return 携带的值（p.9.17.2 拆箱；void = Nil）
 var g_flow_label: string = "";  // break/continue 标签（空串 = 无标签）
-var g_lastval: i64 = 0;    // 最后一条表达式语句的值 id（-1 = 无；reset 置 -1）
+var g_lastval: Value = vval.new_void(); // 最后一条表达式语句的值（配合 g_has_last）
+var g_has_last: bool = false;       // g_lastval 是否携带有效值（Nil 亦为合法 void 值，
+                                    // 不能兼作「无值」哨兵，故拆出显式标志）
 
 // 流程码常量
 const FL_NORMAL: i64 = 0;
@@ -102,7 +104,7 @@ namespace isess {
 
 // 会话重置：值池 + 归档池 + globals/funcs/externs + 环境 + 流程槽全清。
 pub func reset() {
-    ivalue.reset()
+    vval.reset()
     a_tags = table_new_i64()
     a_names = table_new_i64()
     a_vals = table_new_i64()
@@ -115,13 +117,13 @@ pub func reset() {
     a_n = 0
     a_root = -1
     g_nids = table_new_i64()
-    g_vals = table_new_i64()
+    g_vals = {}
     f_keys = table_new_string()
     f_nodes = table_new_i64()
     m_keys = table_new_string()
     e_keys = table_new_string()
     env_nids = table_new_i64()
-    env_vals = table_new_i64()
+    env_vals = {}
     env_alive = table_new_i64()
     env_seg = table_new_i64()
     env_soff = table_new_i64()
@@ -133,9 +135,10 @@ pub func reset() {
     r_cnids = table_new_i64()
     r_soff = table_new_i64()
     g_flow = 0
-    g_flow_val = -1
+    g_flow_val = Value.Nil
     g_flow_label = ""
-    g_lastval = -1
+    g_lastval = Value.Nil
+    g_has_last = false
     a_root = -1
 }
 
@@ -241,41 +244,41 @@ func g_find_nid(nid: i64) -> i64 {
 }
 
 // 顶层全局声明（顶层 var 初始化后登记；重复声明由调用方校验）。
-pub func g_declare_nid(nid: i64, vid: i64) {
+pub func g_declare_nid(nid: i64, v: Value) {
     table_push(g_nids, nid)
-    table_push(g_vals, vid)
+    table_push(g_vals, v)
 }
 
-// 顶层全局读取：未命中置 g_err 返回 -1（文本对齐 Rust 变量未声明）。
-pub func g_lookup_nid(nid: i64) -> i64 {
+// 顶层全局读取：未命中置 w_err 返回 Nil（文本对齐 Rust 变量未声明）。
+pub func g_lookup_nid(nid: i64) -> Value {
     var i = g_find_nid(nid)
     if i < 0 {
-        g_err = "变量 '" + interner.lookup(nid) + "' 未声明"
-        return -1
+        w_err = "变量 '" + interner.lookup(nid) + "' 未声明"
+        return Value.Nil
     }
     return g_vals[i]
 }
 
-// 顶层全局写回：未声明置 g_err 返回 -1（对齐 Rust assign 兜底错误）。
-pub func g_assign_nid(nid: i64, vid: i64) -> i64 {
+// 顶层全局写回：未声明置 w_err 返回 -1（对齐 Rust assign 兜底错误）。
+pub func g_assign_nid(nid: i64, v: Value) -> i64 {
     var i = g_find_nid(nid)
     if i < 0 {
-        g_err = "变量 '" + interner.lookup(nid) + "' 未声明"
+        w_err = "变量 '" + interner.lookup(nid) + "' 未声明"
         return -1
     }
-    g_vals[i] = vid
+    g_vals[i] = v
     return 0
 }
 
 // 字符串兼容薄包装（冷路径：REPL 绑定 / 脚本参数注入等文本入口）。
-pub func g_declare(name: string, vid: i64) {
-    g_declare_nid(interner.intern(name), vid)
+pub func g_declare(name: string, v: Value) {
+    g_declare_nid(interner.intern(name), v)
 }
-pub func g_lookup(name: string) -> i64 {
+pub func g_lookup(name: string) -> Value {
     return g_lookup_nid(interner.intern(name))
 }
-pub func g_assign(name: string, vid: i64) -> i64 {
-    return g_assign_nid(interner.intern(name), vid)
+pub func g_assign(name: string, v: Value) -> i64 {
+    return g_assign_nid(interner.intern(name), v)
 }
 
 // ==================== funcs / externs ====================
@@ -398,9 +401,9 @@ pub func scope_top() -> i64 {
 }
 
 // 当前作用域声明变量（重复声明由调用方经 var_declared 校验）。
-pub func var_declare_nid(nid: i64, vid: i64) {
+pub func var_declare_nid(nid: i64, v: Value) {
     table_push(env_nids, nid)
-    table_push(env_vals, vid)
+    table_push(env_vals, v)
     table_push(env_alive, 1)
     var top = env_depth - 1
     if top < 0 {
@@ -411,8 +414,8 @@ pub func var_declare_nid(nid: i64, vid: i64) {
 }
 
 // 字符串兼容薄包装（冷路径：REPL 绑定 / 脚本参数注入等文本入口）。
-pub func var_declare(name: string, vid: i64) {
-    var_declare_nid(interner.intern(name), vid)
+pub func var_declare(name: string, v: Value) {
+    var_declare_nid(interner.intern(name), v)
 }
 
 // 段内变量查找：从扁平表尾部回溯到该段起点，只匹配归属该段（env_seg）的存活条目。
@@ -454,8 +457,8 @@ func ref_find_nid(nid: i64) -> i64 {
 }
 
 // 变量查找（interned id 键）：ref 槽穿透调用方 → 作用域栈 [env_base..顶部] 逆序 → globals。
-// 未命中返回 -1 且**不置错误**（调用方决定错误文本）。
-pub func lookup_nid(nid: i64) -> i64 {
+// 未命中**置 w_err** 返回 Nil（文本对齐 Rust 变量未声明；调用方按 w_err 判失败）。
+pub func lookup_nid(nid: i64) -> Value {
     // T0.3 by_ref：引用槽优先——ref 形参从调用方槽取当前值
     var cnid = ref_find_nid(nid)
     if cnid >= 0 {
@@ -475,17 +478,18 @@ pub func lookup_nid(nid: i64) -> i64 {
     if i >= 0 {
         return g_vals[i]
     }
-    return -1
+    w_err = "变量 '" + interner.lookup(nid) + "' 未声明"
+    return Value.Nil
 }
 
 // 字符串兼容薄包装（文本入口：REPL / 脚本参数注入）。
-pub func lookup(name: string) -> i64 {
+pub func lookup(name: string) -> Value {
     return lookup_nid(interner.intern(name))
 }
 
 // ref 穿透目标查找（interned id）：调用方变量槽 = 调用方作用域（env_base 之下）逆序 →
 // 顶层 globals（对齐 Rust RefTarget 解析：调用方作用域或 globals）。
-func lookup_caller_nid(cnid: i64) -> i64 {
+func lookup_caller_nid(cnid: i64) -> Value {
     var s = env_base - 1
     while s >= 0 {
         var idx = seg_find_rev_nid(s, cnid)
@@ -498,55 +502,56 @@ func lookup_caller_nid(cnid: i64) -> i64 {
     if i >= 0 {
         return g_vals[i]
     }
-    return -1
+    w_err = "变量 '" + interner.lookup(cnid) + "' 未声明"
+    return Value.Nil
 }
 
 // 变量赋值（interned id 键）：ref 槽穿透 → 作用域栈 [env_base..顶部] 逆序 → globals。
-// 未声明置 g_err 返回 -1（文本对齐 Rust assign 兜底）。
-pub func assign_nid(nid: i64, vid: i64) -> i64 {
+// 未声明置 w_err 返回 -1（文本对齐 Rust assign 兜底）。
+pub func assign_nid(nid: i64, v: Value) -> i64 {
     var cnid = ref_find_nid(nid)
     if cnid >= 0 {
-        return assign_caller_nid(cnid, vid)
+        return assign_caller_nid(cnid, v)
     }
     var s = env_depth - 1
     while s >= env_base {
         var idx = seg_find_rev_nid(s, nid)
         if idx >= 0 {
-            env_vals[idx] = vid
+            env_vals[idx] = v
             return 0
         }
         s = s - 1
     }
     var i = g_find_nid(nid)
     if i >= 0 {
-        g_vals[i] = vid
+        g_vals[i] = v
         return 0
     }
-    g_err = "变量 '" + interner.lookup(nid) + "' 未声明"
+    w_err = "变量 '" + interner.lookup(nid) + "' 未声明"
     return -1
 }
 
 // 字符串兼容薄包装（文本入口）。
-pub func assign(name: string, vid: i64) -> i64 {
-    return assign_nid(interner.intern(name), vid)
+pub func assign(name: string, v: Value) -> i64 {
+    return assign_nid(interner.intern(name), v)
 }
 
-func assign_caller_nid(cnid: i64, vid: i64) -> i64 {
+func assign_caller_nid(cnid: i64, v: Value) -> i64 {
     var s = env_base - 1
     while s >= 0 {
         var idx = seg_find_rev_nid(s, cnid)
         if idx >= 0 {
-            env_vals[idx] = vid
+            env_vals[idx] = v
             return 0
         }
         s = s - 1
     }
     var i = g_find_nid(cnid)
     if i >= 0 {
-        g_vals[i] = vid
+        g_vals[i] = v
         return 0
     }
-    g_err = "变量 '" + interner.lookup(cnid) + "' 未声明"
+    w_err = "变量 '" + interner.lookup(cnid) + "' 未声明"
     return -1
 }
 

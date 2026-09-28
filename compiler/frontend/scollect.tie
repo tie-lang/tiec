@@ -23,6 +23,16 @@ import "./scollect_port.tie"
 // 注：tie 全局变量必须放文件顶层（namespace 外）。
 var g_impl_pending: table<i64>;
 
+// p.9.17.2 缺陷 #4a：标量全局的**初始化表达式类型检查延迟**执行——
+// collect_top 期间 enum 只有名字登记（en_keys），变体表（en_vnames 等）由
+// semantic 主流程在其后的 collect_all_enums() 填充；此时对 enum 变体常量
+// 初始化器跑 infer_expr 会误报 E00506「枚举 'X' 没有变体 'Y'」（变体扫描落空）。
+// 此处暂存（节点, 标注类型, 全名），由 check_deferred_global_inits() 在
+// collect_all_enums() 之后统一检查。
+var gd_nodes: table<i64>;
+var gd_tys: table<i64>;
+var gd_nms: table<string>;
+
 namespace scollect {
 
 // 内置函数返回表预登记（语言底座）
