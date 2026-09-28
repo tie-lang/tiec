@@ -105,20 +105,41 @@ pub func collect_global_var(v: i64, full: string) -> i64 {
         sstate.sorted_insert_gb(gb_keys, gb_vals, gb_const, gb_telem, gb_mod, nid, ty, is_const + is_pub * 2, elem, sstate.file_id_of_node(v))
         return 0
     }
-    // 标量全局：字面量初始化 + 类型匹配
+    // 标量全局：字面量初始化 + 类型匹配。
+    // p.9.17.2 缺陷 #4a：检查**延迟**到 check_deferred_global_inits()（collect_all_enums
+    // 之后）——本阶段 enum 变体表尚未填充，enum 变体常量初始化器会误报 E00506。
     if init >= 0 {
-        var it = sinfer.infer_expr(init)
-        if it < 0 {
-            return -1
-        }
-        if !stype.types_match(ty, it, init) {
-            sm_err_line = s_lines[v]
-            sm_err_col = s_cols[v]
-            sm_err_msg = "全局变量 '" + nm + "' 初始化类型不匹配：期望 " + types.type_name(ty) + "，实际 " + types.type_name(it)
-            return -1
-        }
+        table_push(gd_nodes, v)
+        table_push(gd_tys, ty)
+        table_push(gd_nms, full)
     }
     sstate.sorted_insert_gb(gb_keys, gb_vals, gb_const, gb_telem, gb_mod, nid, ty, is_const + is_pub * 2, -1, sstate.file_id_of_node(v))
+    return 0
+}
+
+// 延迟的全局标量初始化类型检查（semantic 主流程在 collect_all_enums() 之后调用）。
+// 逐项 infer_expr + types_match；错误文本与原即时检查一致。
+pub func check_deferred_global_inits() -> i64 {
+    var i: i64 = 0
+    while i < len(gd_nodes) {
+        var v = gd_nodes[i]
+        var ty = gd_tys[i]
+        var nm = gd_nms[i]
+        var init = sstate.child(v, 1)
+        if init >= 0 {
+            var it = sinfer.infer_expr(init)
+            if it < 0 {
+                return -1
+            }
+            if !stype.types_match(ty, it, init) {
+                sm_err_line = s_lines[v]
+                sm_err_col = s_cols[v]
+                sm_err_msg = "全局变量 '" + nm + "' 初始化类型不匹配：期望 " + types.type_name(ty) + "，实际 " + types.type_name(it)
+                return -1
+            }
+        }
+        i = i + 1
+    }
     return 0
 }
 

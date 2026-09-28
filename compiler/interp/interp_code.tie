@@ -10,7 +10,7 @@ type tie<class>
 // **零逻辑改动**（对齐 interp_bin / interp_call / interp_macro 既有拆分）。
 //
 // # 本文件职责（S3.3 code 值 / C1 准引用 + H2 卫生 + 插值）
-//   准引用求值 N_CODE_LIT（归档池）→ code 值（AST 协议文本，T_CODE）：
+//   准引用求值 N_CODE_LIT（归档池）→ code 值（AST 协议文本，W_CODE）：
 //   - gen_code_lit(id)           ：准引用主流程（卫生 + 克隆 + 序列化 + 插值嵌入）
 //   - collect_bindings(id)       ：收集子树绑定名 → 卫生改名映射（__hygN_）
 //   - clone_node(old, out)       ：克隆归档池节点到 s_* 池末尾（含改名/登记插值）
@@ -30,7 +30,7 @@ namespace interp {
 
 // ==================== S3.3 准引用求值（code 值构造） ====================
 
-// 准引用求值：N_CODE_LIT（归档池）→ code 值（AST 协议文本，T_CODE）。
+// 准引用求值：N_CODE_LIT（归档池）→ code 值（AST 协议文本，W_CODE）。
 // 流程（H2 词法卫生 + 插值替换都在构造期完成，展开结果即最终代码）：
 //   1. 收集子树绑定名（N_VAR_DECL/N_FN_DEF 的 name，非 $ 前缀）→ 卫生改名
 //      映射（__hyg<计数>_<原名>，计数全局递增——多次展开互不冲突）；
@@ -42,12 +42,12 @@ namespace interp {
 //        字符串值 → 替换为 N_VAR（标识符引用，如 gensym 名作变量用）；
 //   5. 名字插值（$ 前缀 name 字段）：字符串 → 名字；code 值（根 N_VAR）
 //      → 其变量名（插值赋值目标 `$a = ...`）；
-//   6. 返回 code 值（T_CODE，文本 = P）。
-func gen_code_lit(id: i64) -> i64 {
+//   6. 返回 code 值（W_CODE，文本 = P）。
+func gen_code_lit(id: i64) -> Value {
     var root = isess.nchild_at(id, 0)
     if root < 0 {
-        g_err = "内部错误: 准引用节点缺少子 AST"
-        return -1
+        w_err = "内部错误: 准引用节点缺少子 AST"
+        return Value.Nil
     }
     // 清克隆/卫生映射（模块级表复用；每次准引用求值独立命名空间）
     g_clone_old = table_new_i64()
@@ -60,7 +60,7 @@ func gen_code_lit(id: i64) -> i64 {
     // 2. 克隆子树（含卫生改名 + 登记 N_CODE_INTERP 新 id）
     var new_root = clone_node(root, g_interp_nodes)
     if new_root < 0 {
-        return -1
+        return Value.Nil
     }
     // 2.5 协议 id 映射：sstate_subtree_protocol 按 BFS 重编号（池 id → 新 id
     // 0..n-1），splice_proto 须用**协议新 id** 而非池 id 匹配。此处用与
@@ -134,8 +134,8 @@ func gen_code_lit(id: i64) -> i64 {
     }
     // 3. 序列化克隆子树 → 协议文本（根 id = 0）
     var p = sstate_subtree_protocol(new_root)
-    if g_err != "" {
-        return -1
+    if w_err != "" {
+        return Value.Nil
     }
     // 4. 逐个 N_CODE_INTERP 嵌入（splice_proto 用协议新 id——g_interp_pids）
     var k: i64 = 0
@@ -143,8 +143,8 @@ func gen_code_lit(id: i64) -> i64 {
         var inode = g_interp_nodes[k]
         var ipid = g_interp_pids[k]
         if ipid < 0 {
-            g_err = "内部错误: 插值节点协议 id 映射缺失"
-            return -1
+            w_err = "内部错误: 插值节点协议 id 映射缺失"
+            return Value.Nil
         }
         var iname = s_names[inode]
         var ivar = ""
@@ -155,44 +155,45 @@ func gen_code_lit(id: i64) -> i64 {
             // $(expr) 复杂形式：先求值表达式（宏体环境）
             var ex = s_children[s_coff[inode]]
             var ev = gen_expr(ex)
-            if g_err != "" {
-                return -1
+            if w_err != "" {
+                return Value.Nil
             }
-            if ivalue.type_of(ev) == T_CODE {
-                p = splice_proto(p, ipid, ivalue.code_str(ev))
+            if vval.type_of(ev) == W_CODE {
+                p = splice_proto(p, ipid, vval.code_str(ev))
                 k = k + 1
                 continue
             }
-            if ivalue.type_of(ev) == T_STR {
-                p = replace_interp_node_with_var(p, ipid, ivalue.str_val(ev))
+            if vval.type_of(ev) == W_STR {
+                p = replace_interp_node_with_var(p, ipid, vval.str_val(ev))
                 k = k + 1
                 continue
             }
-            g_err = "插值 $(表达式) 必须是 code 或字符串，实际是 " + ivalue.type_name(ev)
-            return -1
+            w_err = "插值 $(表达式) 必须是 code 或字符串，实际是 " + vval.type_name(ev)
+            return Value.Nil
         }
         var v = isess.lookup(ivar)
-        if v < 0 {
-            g_err = "插值变量 '" + ivar + "' 未声明"
-            return -1
+        if w_err != "" {
+            // lookup miss 置通用文本；覆盖为插值原文（错误文本逐字节一致）
+            w_err = "插值变量 '" + ivar + "' 未声明"
+            return Value.Nil
         }
-        if ivalue.type_of(v) == T_CODE {
-            p = splice_proto(p, ipid, ivalue.code_str(v))
-        } else if ivalue.type_of(v) == T_STR {
-            p = replace_interp_node_with_var(p, ipid, ivalue.str_val(v))
+        if vval.type_of(v) == W_CODE {
+            p = splice_proto(p, ipid, vval.code_str(v))
+        } else if vval.type_of(v) == W_STR {
+            p = replace_interp_node_with_var(p, ipid, vval.str_val(v))
         } else {
-            g_err = "插值变量 '" + ivar + "' 必须是 code 或字符串，实际是 " + ivalue.type_name(v)
-            return -1
+            w_err = "插值变量 '" + ivar + "' 必须是 code 或字符串，实际是 " + vval.type_name(v)
+            return Value.Nil
         }
         k = k + 1
     }
     // 5. 名字插值（$ 前缀 name 字段 → 值）
     p = replace_name_interps(p)
-    if g_err != "" {
-        return -1
+    if w_err != "" {
+        return Value.Nil
     }
     // 6. code 值
-    return ivalue.new_code(p)
+    return vval.new_code(p)
 }
 
 // 收集子树（归档池）绑定名：N_VAR_DECL / N_FN_DEF 的 name（非 $ 前缀、
@@ -381,7 +382,7 @@ func splice_proto(p: string, interp_id: i64, q: string) -> string {
     var p_lines = split_proto_lines(p)
     var q_lines = split_proto_lines(q)
     if len(p_lines) < 1 || len(q_lines) < 1 {
-        g_err = "内部错误: 协议文本拼接失败（空协议）"
+        w_err = "内部错误: 协议文本拼接失败（空协议）"
         return p
     }
     var pn = len(p_lines) - 1        // 首行是 "N:"，其余是节点行
@@ -600,7 +601,7 @@ func replace_interp_node_with_var(p: string, interp_id: i64, s: string) -> strin
 // 名字插值：协议 P 中 name 字段（第 3 个字段，下标 2）以 "$" 开头的节点行
 // → 按值分派替换：字符串 → 该字符串；code 值（根 N_VAR）→ 其变量名。
 // 覆盖 N_ASSIGN 目标（`$a = ...`）、N_FN_DEF/N_VAR_DECL 名（`func $nm()`）、
-// N_FIELD_ACCESS 字段（`self.$field`）、N_PARAM 名。失败置 g_err。
+// N_FIELD_ACCESS 字段（`self.$field`）、N_PARAM 名。失败置 w_err。
 func replace_name_interps(p: string) -> string {
     var p_lines = split_proto_lines(p)
     if len(p_lines) < 1 {
@@ -620,22 +621,23 @@ func replace_name_interps(p: string) -> string {
                     if str_char(nm, 0) == "$" {
                         var vname = str.slice(nm, 1, nml)
                         var v = isess.lookup(vname)
-                        if v < 0 {
-                            g_err = "插值名变量 '" + vname + "' 未声明"
+                        if w_err != "" {
+                            // lookup miss 置通用文本；覆盖为插值原文（错误文本逐字节一致）
+                            w_err = "插值名变量 '" + vname + "' 未声明"
                             return p
                         }
                         var new_id: i64 = -1
-                        if ivalue.type_of(v) == T_STR {
-                            new_id = interner.intern(ivalue.str_val(v))
-                        } else if ivalue.type_of(v) == T_CODE {
+                        if vval.type_of(v) == W_STR {
+                            new_id = interner.intern(vval.str_val(v))
+                        } else if vval.type_of(v) == W_CODE {
                             // 赋值目标插值：code 值根必须是 N_VAR → 取其变量名
-                            new_id = code_root_var_name(ivalue.code_str(v))
+                            new_id = code_root_var_name(vval.code_str(v))
                             if new_id < 0 {
                                 return p
                             }
                         } else {
-                            g_err = "插值名变量 '" + vname + "' 必须是字符串或 code（实际 " +
-                                ivalue.type_name(v) + "）"
+                            w_err = "插值名变量 '" + vname + "' 必须是字符串或 code（实际 " +
+                                vval.type_name(v) + "）"
                             return p
                         }
                         parts[2] = to_string(new_id)
@@ -651,19 +653,19 @@ func replace_name_interps(p: string) -> string {
 }
 
 // code 值（协议文本）的根节点变量名：解析协议 → 根（id 0）必须是 N_VAR
-// → 返回其 name 池 id；否则置 g_err 返回 -1。注意：解析会重建 s_* 池
+// → 返回其 name 池 id；否则置 w_err 返回 -1。注意：解析会重建 s_* 池
 //（协议文本已独立，无副作用影响调用方）。
 func code_root_var_name(proto: string) -> i64 {
     if sstate.load_ast(proto) < 0 {
-        g_err = "内部错误: 插值 code 值解析失败"
+        w_err = "内部错误: 插值 code 值解析失败"
         return -1
     }
     if s_n < 1 {
-        g_err = "插值 code 值缺少节点"
+        w_err = "插值 code 值缺少节点"
         return -1
     }
     if s_tags[0] != N_VAR {
-        g_err = "插值赋值目标必须是变量（code 值根不是变量节点）"
+        w_err = "插值赋值目标必须是变量（code 值根不是变量节点）"
         return -1
     }
     return s_names[0]

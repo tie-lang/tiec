@@ -938,3 +938,121 @@ id 平移。而 N_CASE_BIND 的 children[1..] 是 parser 直接 intern 的**裸�
   （`p917_parity_fixed.tie`）；`map_set`「键走全局槽」契约对外部调用方实际
   只能经裸名使用，`pub` setter（如 `set_ms_key`）是更稳妥的长期形态，
   留待 language.md 全局可见性规则明确时一并定夺。
+
+## 19. p.9.17.2 第二步：call_builtin 分派链 + interp 全树 Value 化（2026-09-28）
+
+> 承接 §17/§18 的 vval 落地（step-1 infra），本步把**解释器热路径全树**
+> 从「i64 节点 id + -1 哨兵」切换到「Value 枚举直接值」（step-2 切换）。
+
+### 19.1 分派歧义根因：`-1` 哨兵双关失效
+
+`Value.Nil` 是**合法 void 返回值**，旧 `-1` 哨兵双关「未命中/错误」失效；
+且段内 `eval` 内建可递归重入 call_builtin，可变 handled 标志会被破坏。
+修法 = **前置名单分派**：每段配无状态纯函数 `cb_is_segN(name) -> bool`
+（seg1 22 名 / seg2 31 名 / seg3 8 名），分派器先判名单再进段，段尾
+`return` 仅防御；错误统一经 `w_err != ""` 传播，未命中不置 w_err：
+
+    func call_builtin(name: string, args: table<Value>) -> Value {
+        if cb_is_seg1(name) { return call_builtin_seg1(name, args) }
+        if cb_is_seg2(name) { return call_builtin_seg2(name, args) }
+        if cb_is_seg3(name) { return call_builtin_seg3(name, args) }
+        w_err = "内部错误: 未实现的内置函数 '" + name + "'"
+        return Value.Nil
+    }
+
+### 19.2 全树切换账目（16 + 4 文件，探针编译零错收敛）
+
+* interp 16 文件：`call_builtin_seg1/2/3`（82 处哨兵分类转换）、
+  `interp_call_p1/p2/p3`、`interp`、`interp_p1/p2/p3`、`interp_code`、
+  `interp_macro`、`interp_bin`、`interp_dbug`、`env`（整体 Value 化 +
+  `table_at_call` 越界前置自检重写）、`session`（`g_ms_key` → `w_ms_key`）。
+* 连带修复（value.tie 退役后 import 树失联）：`mexpand_p1` + dbug 三文件
+  （crashdiag/profiler/tiedap）`g_err` → `w_err`、`ivalue.` → `vval.`。
+* **lookup miss 约定迁移**：`lookup_nid`/`lookup` 改「miss 置 w_err 返回
+  Nil」，调用方 `cur < 0` 判定全部改 `w_err != ""`；插值变量错误文本不同
+  的两处覆盖回原文保逐字节一致。
+* **合法 i64 哨兵保留**：位置/节点查找（`find_char`/`find_main` 等）、
+  `parse_tokens`、`dbg_*` 系列的 `return -1` 是返回码语义，不转换
+  （批量替换曾误伤 `interp_p3` 两处，编译期 E00204 暴露后回滚）。
+* `env.tie` 头注释契约按行号重写；`tests/language/interp_env_file.tie` +
+  `interp_env_value.tie` 全文件迁移 vval API（miss 判定改
+  `type_of(vid) == W_VOID && str_len(w_err) > 0`，每个 miss 用例前置
+  `w_err = ""` 防残留）。
+
+### 19.3 RCA：has_last 收集点漏同步（9 DIFF → 修复 → 9 IDENTICAL）
+
+A/B 初测 9 套件 DIFF，fresh 基线重建后仍 9 DIFF（真回归）。限定名探针
+双跑定位：新侧 EXPR_STMT 后 `if g_has_last { last = g_lastval }` 收集点
+漏同步 `has_last = true`——旧模型 `last >= 0` 兼判「有值」，Value 化后拆
+`last: Value` + `has_last: bool`，**全部 10 处收集点**必须补同步
+（interp.tie 2 / interp_macro 1 / interp_p1 2 / interp_p2 5），否则尾部
+`vval.to_repl_string(last)` 拿 Nil 输出空串。修复脚本曾丢 `last` 行
+（CRLF 正则未命中 + 三行匹配逻辑错），二次修复恢复三行结构后探针
+`[3][9][6]` 与基线一致。
+
+### 19.4 两步自举升格（旧 exe 后端不认聚合全局的绕行）
+
+`%enum.Value` 全局 zeroinitializer 被旧 exe 后端拒（缺陷 #4b，工作树源码
+已修）。绕行管线：python regex（`= global (%[\w.]+) 0$` →
+`zeroinitializer`）→ `opt -O2` → `clang -fuse-ld=link -w … -Wl,/Brepro
+-Wl,/STACK:134217728 -luser32 -lgdi32 -lshell32 trm_lite.a
+-rtlib=compiler-rt`。Git Bash 下 `/Brepro` 被 POSIX 路径转换吞 →
+`MSYS_NO_PATHCONV=1` + Windows 路径形式。
+
+### 19.5 门禁数据
+
+* fp 不动点：SHA256 = **ca9fa2ba…**，三哈希一致（has_last 修复后重建）。
+* regress-s21：**158 PASS / 8 FAIL / 2 SKIP**，FAIL 集合逐项同基线
+  （generics、proc_createprocessw_pipe、std_httpc_probe、std_net_bytes、
+  std_net_text、std_sse_probe、table_struct_elem、extern_s10_ptr）。
+* 11 套件 A/B：**9 IDENTICAL + 2 良性 DIFF**——DIFF 定性为旧 `-1` 哨兵
+  双关缺陷被前置名单分派顺手修复（parse_int/parse_float/table_at 错误
+  路径曾被「未实现的内置函数」覆盖 w_err），新输出与 golden 期望一致，
+  旧侧是错的。
+
+### 19.6 性能分账（p.9.17.2 立项目的：拆箱收益验证）
+
+**方法**：tsh_main 宿主（内嵌 interp）双编译——OLD = 旧 tiec
+（6d7664af）+ wt_head worktree 的 HEAD interp（i64 哨兵版）；
+NEW = 工作树 tiec（ca9fa2ba）+ 工作树 Value interp。基准脚本各
+**1,000,000 次迭代**，OLD/NEW 同轮背靠背交替 × 5 轮取中位，扣空脚本
+启动基线（old 143.1ms / new 137.6ms）。外部计时（perf_counter）。
+
+| 基准 | 循环体 | 旧净耗时 | 新净耗时 | 提速 |
+| --- | --- | --- | --- | --- |
+| D_loop | `i = i + 1` | 3220.5 ms | 1616.1 ms | **1.99x** |
+| A_acc1 | `acc = acc + 1` + 自增 | 4864.8 ms | 2404.2 ms | **2.02x** |
+| B_accv | `acc = acc + i` + 自增 | 4353.6 ms | 2310.5 ms | **1.88x** |
+| E_var | `var x = i` + 累加 + 自增 | 6545.0 ms | 3974.6 ms | **1.65x** |
+| C_arith | `acc = acc + i*3 - 1` + 自增 | 8038.5 ms | 3513.4 ms | **2.29x** |
+| F_call | `acc = f(acc)` + 自增 | 9309.9 ms | 6201.0 ms | **1.50x** |
+
+**读数**：拆箱全线 1.5–2.3x。算术热路径收益最大（C_arith 2.29x——
+旧模型每个中间值一次 `new_node` 7 表 push，拆箱后直接值传递）；纯循环
+骨架 ~2x（2.31µs 榜单基线同口径下 3.22 → 1.62µs/次）；函数调用收益
+最小（1.50x——call_fn 的参数表/节点表操作占比仍高，留待第三步
+value.tie 退役 + 标量池清理后另攻）。
+
+* 测量坑备忘：①tiec 编译探针走 AOT 后端不经过 interp，测解释器必须
+  经 tsh 宿主；②编译缓存键不含编译器版本，双宿主编译一律 `--no-cache`；
+  ③tsh 脚本模式不支持 `unsafe extern` 声明（脚本内 clock 计时不可用，
+  需外部计时）；④10 万次信号量不足（启动噪声 ±200ms），1M 迭代 +
+  交替轮询才稳定。
+
+### 19.7 遗留（第三步）
+
+value.tie 退役文件删除、标量池槽位淘汰、内存收口；既有未修项延续
+（缺陷 #3 限定名全局访问、clone_inner 多绑定截断疑点、`f_find`
+interned id、`map_set` O(n²)、12 处 tests/interp 失效 import 路径）。
+
+### 19.8 警告检查结论（-w 全量）与遗留
+
+* 同编译器交叉对照（新 exe 编 HEAD 源 vs 编 WT 源）排除编译器因素：
+  interp 闭包警告 WT 侧 +19~51 条 W00010、+17 W00005、+4 W00015，
+  净减 W00016 -4、W00009 -2（总债务 25135 vs 25085，+0.2%）。
+* 语法层扫描两树均**无字面空控制流块**——W00010 判定在 AST 层
+  （StmtList nchild==0，位置取父语句），文件布局变化导致行列集无法
+  逐条对齐归因。行为门禁全绿（fp 一致 / regress 一致 / A/B 输出一致），
+  风格级波动接受，**精确归因留待警告系统支持文件名标注后清理**
+  （`sm_warn_add` 仅存 line/col/msg，跨文件 import 闭包下归因成本过高，
+  本轮实测已证——这是编译器警告系统的既有改进项）。
