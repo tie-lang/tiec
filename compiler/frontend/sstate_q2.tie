@@ -350,7 +350,7 @@ pub func reg_actor(name: string) -> i64 {
 // actor 私有状态字段登记（collect_actor_decl 用）：字段名 + 类型 + 记录内字节偏移
 //（含固定头；8 字节对齐，由收集方计算）。追加式排平段，与 ac_fnoff/fncnt 行对齐。
 // 返回字段下标；-1 错误（重名）。
-pub func reg_actor_field(ai: i64, fname: string, fty: i64, foff: i64) -> i64 {
+pub func reg_actor_field(ai: i64, fname: string, fty: i64, fdef: i64, foff: i64) -> i64 {
     var nid = intern.intern(fname)
     var off = ac_fnoff[ai]
     var n = ac_fncnt[ai]
@@ -365,6 +365,7 @@ pub func reg_actor_field(ai: i64, fname: string, fty: i64, foff: i64) -> i64 {
     var fi = n
     table_push(ac_fnames, nid)
     table_push(ac_ftys, fty)
+    table_push(ac_fdefs, fdef)
     table_push(ac_foffs, foff)
     ac_fncnt[ai] = n + 1
     return fi

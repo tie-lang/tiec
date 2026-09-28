@@ -184,7 +184,16 @@ func tig_actor_run(id: i64) -> i64 {
     while fk < fcnt {
         var fty = ac_ftys[fbase + fk]
         var foff = ac_foffs[fbase + fk]
+        var fdef = ac_fdefs[fbase + fk]
         var dv = tig_default_val(fty)
+        if fdef >= 0 {
+            // p.8.3.1：显式字段初值在启动记录时按声明顺序 store；字段初值
+            // 已在 scollect 阶段限制为字面量，复用 struct 构造的 tig_expr 发射路径。
+            dv = tig_expr(fdef)
+            if dv < 0 {
+                return -1
+            }
+        }
         s21_store(s21_gep(rec, foff, true), dv, fty)
         fk = fk + 1
     }

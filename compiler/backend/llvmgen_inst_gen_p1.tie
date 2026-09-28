@@ -236,9 +236,20 @@ pub func gen_inst_b_65_inline_asm(inst_id: i64) {
         // 约束拼接：out 在前 "=r"；inout "+r"；in "r"。
         var tmpl_id = ir.ins_opnd(inst_id, 0)
         var tmpl = intern.lookup(tmpl_id)
-        // 剥离模板串引号（lexer 存带引号 lexeme）
+        // p.9.23 缺陷修复（D3）：raw 字符串字面量 `r"..."` 的 lexeme 带 `r` 前缀
+        // （lex_scan.scan_raw_string 以 `r` 作 raw 标记），先剥前缀再剥引号——
+        // 否则 LLVM 收到 `asm "r"mov $0, 1""`（`r` 泄漏进模板）而报
+        // 「expected comma in inline asm expression」。
         var tlen = str_len(tmpl)
-        if tlen >= 2 && str_char(tmpl, 0) == "\"" && str_char(tmpl, tlen - 1) == "\"" {
+        var raw_tmpl: bool = false
+        if tlen >= 3 && str_char(tmpl, 0) == "r" && str_char(tmpl, 1) == "\"" {
+            // `r"body"` -> `body`：同时剥掉 r 与成对引号。
+            tmpl = l_slice(tmpl, 2, tlen - 1)
+            raw_tmpl = true
+        }
+        // 剥离普通模板串引号（lexer 存带引号 lexeme）；raw 路径已在上面完成。
+        tlen = str_len(tmpl)
+        if !raw_tmpl && tlen >= 2 && str_char(tmpl, 0) == "\"" && str_char(tmpl, tlen - 1) == "\"" {
             tmpl = l_slice(tmpl, 1, tlen - 1)
         }
         // S1.2 I1：Rust 风格 `{N}` 占位符 → LLVM `$N`（LLVM inline asm 用 $N，

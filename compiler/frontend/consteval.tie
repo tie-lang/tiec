@@ -370,6 +370,45 @@ pub func eval_const_expr(id: i64) -> (bool, bool, bool, i64, i64) {
             }
             return (true, false, false, (i1 != 0 || i2 != 0) ? 1 : 0, -1)
         }
+        // p.9.23 缺陷修复（D1）：位运算与移位此前**无分支**，落 cv_failed →
+        // 调用方按「未折叠」静默取 0（`const A: i64 = 1 << 4` 得 0，无诊断）。
+        // 补齐 B_BITAND(13)/B_BITOR(14)/B_BITXOR(15)/B_SHL(16)/B_SHR(17)；
+        // 位移量越界（<0 或 >=64）为 UB，一律不折叠。
+        if op == 13 {
+            if s1 || s2 {
+                cv_failed = true
+                return (false, false, false, 0, -1)
+            }
+            return (true, false, false, i1 & i2, -1)
+        }
+        if op == 14 {
+            if s1 || s2 {
+                cv_failed = true
+                return (false, false, false, 0, -1)
+            }
+            return (true, false, false, i1 | i2, -1)
+        }
+        if op == 15 {
+            if s1 || s2 {
+                cv_failed = true
+                return (false, false, false, 0, -1)
+            }
+            return (true, false, false, i1 ^ i2, -1)
+        }
+        if op == 16 {
+            if s1 || s2 || i2 < 0 || i2 >= 64 {
+                cv_failed = true
+                return (false, false, false, 0, -1)
+            }
+            return (true, false, false, i1 << i2, -1)
+        }
+        if op == 17 {
+            if s1 || s2 || i2 < 0 || i2 >= 64 {
+                cv_failed = true
+                return (false, false, false, 0, -1)
+            }
+            return (true, false, false, i1 >> i2, -1)
+        }
         cv_failed = true
         return (false, false, false, 0, -1)
     }

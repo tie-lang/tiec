@@ -176,7 +176,19 @@ pub func collect_actor_decl(s: i64) -> i64 {
                 sm_err_col = s_cols[item]
                 return -1
             }
-            if sstate.reg_actor_field(aidx, fname, fty, field_off) < 0 {
+            var fdef = sstate.child(item, 1)
+            if fdef >= 0 {
+                // p.8.3.1：actor 字段初值只接受字面量，与函数默认值同一白名单。
+                var dtag = s_tags[fdef]
+                if dtag != S_N_INT_LIT && dtag != S_N_FLOAT_LIT && dtag != S_N_BOOL_LIT &&
+                    dtag != S_N_CHAR_LIT && dtag != S_N_STR_LIT && dtag != S_N_TABLE_LIT {
+                    sm_err_line = s_lines[item]
+                    sm_err_col = s_cols[item]
+                    sm_err_msg = "actor 字段初值必须是字面量"
+                    return -1
+                }
+            }
+            if sstate.reg_actor_field(aidx, fname, fty, fdef, field_off) < 0 {
                 sm_err_line = s_lines[item]
                 sm_err_col = s_cols[item]
                 return -1

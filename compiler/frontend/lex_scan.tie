@@ -34,8 +34,19 @@ namespace lexscan {
 pub func scan_string(pos: i64) -> i64 {
     var start = pos
     var cont = g_str_interp == 2
+    var asm_tmpl: bool = false
     if !cont {
         pos = pos + 1   // 跳过开引号 '"'
+        // p.9.23 缺陷修复（D3）：asm! 模板**不参与字符串插值**。前缀 token 恰为
+        // `asm` `!` `(` 时判定本串是 asm 模板——其中 `{N}` 是 LLVM 操作数占位符，
+        // 与 tie 的 `{expr}` 插值语法直接冲突。此前该写法被插值切成多段，解析器
+        // 状态错乱致 tiec 段错误（exit 139、零诊断输出）。
+        // 模板内 `{{`/`}}` 就地折叠为字面花括号，`{N}` 原样保留交
+        // llvmgen.asm_tmpl_convert 转 `$N`。
+        var tc = lextok.token_count()
+        if tc >= 3 && lextok.token_tag(tc - 1) == lex_lparen && lextok.token_tag(tc - 2) == lex_bang && lextok.token_tag(tc - 3) == lex_asm {
+            asm_tmpl = true
+        }
     }
     // 段文本构建（字面 `{`/`}` 原样保留；`{{`/`}}` **不**在 lexer 折叠——
     // p.9.12.1：字符串字面量里的 `}}` 是 JSON/模板合法字节，逐字保留，不能
@@ -71,6 +82,15 @@ pub func scan_string(pos: i64) -> i64 {
             // 插值段转义改由 parse_interp_chain 折叠。
             sb_append_byte(sb, 123)    // '{{' → '{' 字面
             pos = pos + 2
+        } else if asm_tmpl && g_codes[pos] == 125 && pos + 1 < g_n && g_codes[pos + 1] == 125 {
+            // p.9.23 D3：asm 模板内 `}}` → `}`（模板不经 parse_interp_chain，
+            // 转义须就地折叠）
+            sb_append_byte(sb, 125)
+            pos = pos + 2
+        } else if asm_tmpl && g_codes[pos] == 123 {
+            // p.9.23 D3：asm 模板内 `{` 一律字面（LLVM 操作数占位符 `{N}`）
+            sb_append_byte(sb, 123)
+            pos = pos + 1
         } else if g_codes[pos] == 123 {
             // 插值开始判定（前瞻）：`{` 后**紧邻**字符是表达式起始（数字/_/(/[/!/~/$
             // 或标识符——语句关键字与映射显示串排除）才触发插值；否则 `{` 是字面
