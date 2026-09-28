@@ -601,15 +601,21 @@ func append_ast_mem() -> i64 {
         off = off + s_nchild[base + j]
         j = j + 1
     }
-    // 第三遍：填充子节点（id 偏移 +base，-1 哨兵保持）并落盘 s_coff
+    // 第三遍：填充子节点（id 偏移 +base，-1 哨兵保持）并落盘 s_coff。
+    // N_CASE_BIND 特判（对齐 scollect.contains_yield / sgen.clone_inner）：
+    // children[0] = 变体引用节点 id（照常 +base）；children[1..] = 绑定变量
+    // 名池 id（parser 直接把 intern id 塞进 children，非节点 id）——不平移，
+    // 平移会破坏被导入文件里 case 载荷绑定的登记/查找一致（E00488，
+    // findings §18.2）。
     var k: i64 = 0
     while k < cnt {
         s_coff[base + k] = new_offs[k]
+        var is_cb = ast.tag(k) == N_CASE_BIND
         var nc = s_nchild[base + k]
         var c: i64 = 0
         while c < nc {
             var cid = ast.child_at(k, c)
-            if cid >= 0 {
+            if cid >= 0 && !(is_cb && c >= 1) {
                 cid = cid + base
             }
             table_push(s_children, cid)

@@ -320,14 +320,19 @@ pub func append_ast(ast_text: string) -> i64 {
             }
             line_end = line_end + 1
         }
-        // 子节点字段从下标 8 起连续排列，直接按 f[8 + c] 取用
+        // 子节点字段从下标 8 起连续排列，直接按 f[8 + c] 取用。
+        // N_CASE_BIND 特判（对齐 append_ast_mem / sgen.clone_inner）：
+        // children[1..] 是绑定变量名池 id（裸 intern id，非节点 id）——
+        // 不做 +base 平移，否则被导入/协议合并后 case 载荷绑定查找落空
+        //（E00488，findings §18.2）。
         var f: table<i64> = parse_row(str.slice(ast_text, pos, line_end))
         s_coff[base + node_id] = new_offs[node_id]
+        var is_cb = f[1] == N_CASE_BIND
         var nc = s_nchild[base + node_id]
         var c: i64 = 0
         while c < nc {
             var cid = f[8 + c]
-            if cid >= 0 {
+            if cid >= 0 && !(is_cb && c >= 1) {
                 cid = cid + base
             }
             table_push(s_children, cid)
