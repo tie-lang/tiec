@@ -1,0 +1,10 @@
+type tie<logic>
+#cfg(平台 = linux)
+pub func path_sep() -> string { return "/" }
+#else
+pub func path_sep() -> string { return "X" }
+#end
+func main() -> i64 {
+    println(path_sep())
+    return 0
+}

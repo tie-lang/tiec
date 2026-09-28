@@ -1,0 +1,8 @@
+type tie<logic>
+
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3, 4]
+    var (a, ...rest) = xs
+    println(to_string(a) + "/" + to_string(len(rest)))
+    return 0
+}

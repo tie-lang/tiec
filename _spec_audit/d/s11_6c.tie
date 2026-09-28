@@ -1,0 +1,10 @@
+type tie<logic>
+// ch11.6 按模块授权 —— 函数级 #[unsafe.共享域]
+#[unsafe.共享域]
+pub func aggregate() -> i64 {
+    return 1
+}
+
+func main() -> i64 {
+    return 0
+}

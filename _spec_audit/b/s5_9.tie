@@ -1,0 +1,12 @@
+type tie<logic>
+
+func apply(g: fn(i64) -> i64, v: i64) -> i64 { return g(v) }
+
+func main() -> i64 {
+    var f: fn(i64) -> i64 = t -> t + 1
+    println(to_string(f(1)))
+    f = t -> t + 10
+    println(to_string(f(1)))
+    println(to_string(apply(t -> t * 3, 5)))
+    return 0
+}

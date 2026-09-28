@@ -1,0 +1,12 @@
+type tie<logic>
+// 16.11 switch v { case 1: ... default: ... } 与 panic
+func main() -> i64 {
+    var v = 1
+    switch v {
+        case 1:
+            return 1
+        default:
+            return 0
+    }
+    return 0
+}

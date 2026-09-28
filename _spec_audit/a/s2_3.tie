@@ -1,0 +1,11 @@
+type tie<logic>
+func main() {
+    var a: num = 42
+    var b: num = 3.14
+    var s: text = "hi"
+    var c: text = 'x'
+    var d: misc = true
+    println(to_string(a))
+    println(to_string(b))
+    println(s)
+}

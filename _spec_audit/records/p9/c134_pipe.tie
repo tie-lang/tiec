@@ -1,0 +1,14 @@
+type tie<logic>
+func inc(x: i64) -> i64 { return x + 1 }
+func main() {
+    var t = table_new_i64()
+    table_push(t, 10); table_push(t, 20); table_push(t, 30)
+    println(to_string(t -> [1]))
+    println(to_string(5 -> + 3))
+    println(to_string(7 -> > 5))
+    println(to_string(3 -> * 4 -> + 1))
+    println(to_string(5 -> (true ? inc : inc)))
+    println(to_string(9 -> { v -> v * 2 }))
+    var (a, c) <- (1, 2)
+    println(to_string(a + c))
+}

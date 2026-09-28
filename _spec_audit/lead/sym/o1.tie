@@ -1,0 +1,10 @@
+type tie<logic>
+struct Addr {
+    var city: string = ""
+}
+func main() -> i64 {
+    var a = Addr("bj")
+    var c = a?.city
+    println(c)
+    return 0
+}

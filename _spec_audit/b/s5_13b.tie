@@ -1,0 +1,7 @@
+type tie<logic>
+
+func main() -> i64 {
+    var f: fn(i64) -> i64 = { it * 2 }
+    println(to_string(f(3)))
+    return 0
+}

@@ -1,0 +1,23 @@
+type tie<logic>
+
+enum Option<T> {
+    Some(T)
+    None
+}
+
+func find(xs: table<i64>, target: i64) -> Option<i64> {
+    for x in xs {
+        if x == target { return Option.Some(x) }
+    }
+    return Option.None
+}
+
+func main() -> i64 {
+    var xs: table<i64> = [3, 7, 9]
+    if let Some(v) = find(xs, 7) {
+        println("找到 " + to_string(v))
+    } else {
+        println("未找到")
+    }
+    return 0
+}

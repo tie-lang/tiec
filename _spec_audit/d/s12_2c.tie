@@ -1,0 +1,9 @@
+type tie<logic>
+macro unless(cond: code, body: code) -> code {
+    return `{ if !($cond) { $body } }
+}
+func main() -> i64 {
+    var done: bool = false
+    unless(done, { println("x") })
+    return 0
+}

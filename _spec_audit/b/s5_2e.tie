@@ -1,0 +1,8 @@
+type tie<logic>
+
+func by_ref(ref t: table<i64>) -> i64 { return len(t) }
+
+func main() -> i64 {
+    println(to_string(by_ref([1, 2, 3])))
+    return 0
+}

@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    unsafe {
+        var n: i64 = 0
+        asm!("mov {{0}}, 1", out(reg) n)
+        println(to_string(n))
+    }
+    return 0
+}

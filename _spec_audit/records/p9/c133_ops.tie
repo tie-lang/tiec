@@ -1,0 +1,18 @@
+type tie<logic>
+func main() {
+    var xs = table_new_i64()
+    table_push(xs, 1); table_push(xs, 2)
+    println(to_string(2 in xs))          // true
+    println(to_string(9 in xs))          // false
+    println(to_string(9 not in xs))      // true
+    println(to_string("n=" + 5))         // n=5
+    println(to_string(5 + "x"))          // 5x
+    println(to_string(7 \ 2))            // 3
+    println(to_string(-7.0 \ 3.0))       // -3.0 floor div
+    println(to_string(-7.0 %% 3.0))      // 2.0 floor mod
+    println(to_string(2 ** 10))          // 1024
+    println(to_string(2 **? 10))         // 1024 checked
+    println(to_string("  hi  " -> trim)) // hi (prelude)
+    println(to_string(clamp_i(15, 0, 10)))  // 10
+    println(to_string(pow_i(2, 8)))         // 256
+}

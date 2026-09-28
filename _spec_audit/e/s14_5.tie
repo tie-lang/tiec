@@ -1,0 +1,14 @@
+type tie<logic>
+// 14.5 图语法：graph N { node a  node b  a -> b when valid }
+func main() -> i64 {
+    graph Pipeline {
+        node fetch
+        node parse
+        node store
+
+        fetch -> parse
+        parse -> store
+        parse -> store when valid
+    }
+    return 0
+}

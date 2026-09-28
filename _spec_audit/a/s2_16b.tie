@@ -1,0 +1,5 @@
+type tie<logic>
+func main() {
+    var big = big_parse("123456789012345678901234567890")
+    println(to_string(big))
+}

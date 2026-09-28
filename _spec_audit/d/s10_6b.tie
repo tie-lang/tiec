@@ -1,0 +1,18 @@
+type tie<logic>
+// ch10.6 结果的延后取得 —— await
+actor Worker {
+    var n: i64 = 0
+
+    pub async func compute(x: i64) -> i64 {
+        n = x
+        return n
+    }
+}
+
+func main() -> i64 {
+    var w = run Worker()
+    var f = w.compute(3)
+    var r = await f
+    println(to_string(r))
+    return 0
+}

@@ -1,0 +1,4 @@
+type tie<logic>
+struct C { var n: i64 = 0; }
+namespace C { pub func bump(c: C) -> i64 { return c.n } }
+func main() -> i64 { return 0 }

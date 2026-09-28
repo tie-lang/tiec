@@ -1,0 +1,6 @@
+type tie<logic>
+func main() {
+    unsafe use mem {
+        println("x")
+    }
+}

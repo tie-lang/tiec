@@ -1,0 +1,8 @@
+type tie<logic>
+struct Plain<T> {
+    var data: T
+}
+func main() {
+    var b: Plain<i64> = Plain<i64>(5)
+    println(to_string(b.data))
+}

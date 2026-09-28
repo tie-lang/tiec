@@ -1,0 +1,9 @@
+type tie<logic>
+
+func helper() -> i64 {
+    return 42
+}
+
+pub func api() -> i64 {
+    return 7
+}

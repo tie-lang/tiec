@@ -1,0 +1,16 @@
+type tie<logic>
+func main() -> i64 {
+    var t: table<i64> = [1, 2]
+    var f: fn() -> i64 = func() -> i64 { return len(t) }
+    table_push(t, 3)
+    println("closure sees len = " + to_string(f()))
+    var g: fn() -> i64 = func() -> i64 { table_push(t, 99); return len(t) }
+    var before = len(t)
+    g()
+    println("outer len before=" + to_string(before) + " after=" + to_string(len(t)))
+    var n: i64 = 7
+    var h: fn() -> i64 = func() -> i64 { return n }
+    n = 8
+    println("scalar capture = " + to_string(h()))
+    return 0
+}

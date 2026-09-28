@@ -1,0 +1,7 @@
+type tie<logic>
+func main() {
+    var f: fn(i64) -> i64 = func(t: i64) -> i64 { return t * 2 }
+    println(to_string(f(21)))
+    var g: fn(i64) -> i64 = { it * 2 }
+    println(to_string(g(21)))
+}

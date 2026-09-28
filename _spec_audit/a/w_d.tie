@@ -1,0 +1,5 @@
+type tie<logic>
+func main() {
+    var d: misc = true
+    println("ok")
+}

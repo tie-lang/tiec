@@ -1,0 +1,14 @@
+type tie<logic>
+
+func main() -> i64 {
+    var c = 4
+    switch c {
+        case 1, 2:
+            println("小")
+        case 3..7:
+            println("中")
+        default:
+            println("其他")
+    }
+    return 0
+}

@@ -1,0 +1,11 @@
+type tie<logic>
+// ch12.2/12.6 —— 实现形态：反引号准引用 + $ 插值
+macro twice(x: code) -> code {
+    return `{ $x + $x }
+}
+
+func main() -> i64 {
+    var y = twice(3)
+    println(to_string(y))
+    return 0
+}

@@ -1,0 +1,25 @@
+type tie<logic>
+const ADD: i64 = 1 + 2
+const SUB: i64 = 5 - 2
+const MUL: i64 = 2 * 3
+const DIV: i64 = 8 / 2
+const MOD: i64 = 7 % 4
+const SHL: i64 = 1 << 4
+const SHR: i64 = 16 >> 2
+const AND: i64 = 6 & 3
+const OR: i64 = 1 | 2
+const XOR: i64 = 5 ^ 1
+const CMP: bool = 1 < 2
+func main() -> i64 {
+    println(to_string(ADD))
+    println(to_string(SUB))
+    println(to_string(MUL))
+    println(to_string(DIV))
+    println(to_string(MOD))
+    println(to_string(SHL))
+    println(to_string(SHR))
+    println(to_string(AND))
+    println(to_string(OR))
+    println(to_string(XOR))
+    return 0
+}

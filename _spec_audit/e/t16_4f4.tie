@@ -1,0 +1,11 @@
+type tie<logic>
+// 16.4 p\ 解引用（unsafe 内，对照内建 deref）
+func main() -> i64 {
+    var y: i64 = 0
+    unsafe {
+        var x = 5
+        var p = addr_of(x)
+        y = p\
+    }
+    return y
+}

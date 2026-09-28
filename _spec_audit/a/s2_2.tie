@@ -1,0 +1,12 @@
+type tie<logic>
+func main() {
+    var a: trit = true
+    var b: trit = zero
+    var c: trit = false
+    println(to_string(a && b))
+    println(to_string(a || c))
+    println(to_string(!a))
+    println(to_string(!b))
+    var m: i64 = 5
+    println(to_string(trit_val(a) + m))
+}

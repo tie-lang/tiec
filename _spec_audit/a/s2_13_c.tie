@@ -1,0 +1,6 @@
+type tie<logic>
+func main() {
+    var a: array<f64, 3> = array_init(0.0)
+    var b: array<f64, 4> = a
+    println("ok")
+}

@@ -1,0 +1,9 @@
+type tie<logic>
+
+func main() -> i64 {
+    var buf: table<i64> = []
+    if len(buf) == 0 {
+        panic("缓冲区不应为空")
+    }
+    return 0
+}

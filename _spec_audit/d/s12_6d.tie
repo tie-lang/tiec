@@ -1,0 +1,8 @@
+type tie<logic>
+macro unless2(cond: code, body: code) -> code {
+    return `{ if !($cond) { $body } }
+}
+func main() -> i64 {
+    unless2(false, println("ran"))
+    return 0
+}

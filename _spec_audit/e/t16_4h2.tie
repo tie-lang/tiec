@@ -1,0 +1,6 @@
+type tie<logic>
+// 16.4 0..10 独占
+func main() -> i64 {
+    var b = 0..10
+    return len(b)
+}

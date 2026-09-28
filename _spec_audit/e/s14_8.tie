@@ -1,0 +1,16 @@
+type tie<logic>
+// 14.8 修饰与事件 + 分层与作用域
+func main() -> i64 {
+    @Text "标题" .title
+    @Text "说明" .muted
+    @Button "+1" .lg -> Inc
+    @layer base, components, overrides
+    @scope Card {
+        .title { 前景: 表面色 }
+    }
+    @theme dark {
+        表面色 = 深灰900
+        强调色 = 蓝400
+    }
+    return 0
+}

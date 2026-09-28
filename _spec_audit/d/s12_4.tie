@@ -1,0 +1,10 @@
+type tie<logic>
+// ch12.4 编译期计算 —— const 常量表达式
+const TABLE_SIZE = 1 << 10
+const MASK = TABLE_SIZE - 1
+
+func main() -> i64 {
+    println(to_string(TABLE_SIZE))
+    println(to_string(MASK))
+    return 0
+}

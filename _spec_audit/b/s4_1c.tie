@@ -1,0 +1,8 @@
+type tie<logic>
+
+func main() -> i64 {
+    const MAX: i64 = 10
+    MAX = 20
+    println(to_string(MAX))
+    return 0
+}

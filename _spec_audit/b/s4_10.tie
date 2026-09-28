@@ -1,0 +1,17 @@
+type tie<logic>
+
+func close(h: i64) { println("close " + to_string(h)) }
+
+func process(path: string) -> i64 {
+    var h: i64 = 1
+    defer { close(h) }
+    var buf: i64 = 2
+    defer { close(buf) }
+    println("use")
+    return 0
+}
+
+func main() -> i64 {
+    println(to_string(process("p")))
+    return 0
+}

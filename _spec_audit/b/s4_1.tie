@@ -1,0 +1,14 @@
+type tie<logic>
+
+func main() -> i64 {
+    var count = 0
+    var name: string = "tie"
+    const MAX = 1024
+    count = count + MAX
+    if count > 0 {
+        var count = 5
+        println(name + to_string(count))
+    }
+    println(to_string(count))
+    return 0
+}

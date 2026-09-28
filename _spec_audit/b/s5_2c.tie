@@ -1,0 +1,10 @@
+type tie<logic>
+
+func g(x: ref table<i64>) -> i64 { return len(x) }
+
+func main() -> i64 {
+    var t = table_new_i64()
+    table_push(t, 1)
+    println(to_string(g(t)))
+    return 0
+}

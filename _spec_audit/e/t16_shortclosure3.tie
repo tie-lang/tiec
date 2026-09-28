@@ -1,0 +1,9 @@
+type tie<logic>
+// 16.4 t -> t + 1 短闭包作为参数（表方法 map 不存在，改用接受 code 的宏位置不适用）
+func call(f: i64, v: i64) -> i64 { return v }
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3]
+    var n = len(xs)
+    var g = n -> { x -> x + 1 }
+    return g
+}

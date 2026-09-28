@@ -1,0 +1,13 @@
+type tie<logic>
+
+func read() -> i64 { return 0 }
+func finish(r: i64) { println(to_string(r)) }
+
+unsafe func main() -> i64 {
+    #[tag.retry]
+    var r = read()
+    if r == 0 { unsafe goto #retry }
+    #[tag.done]
+    finish(r)
+    return 0
+}

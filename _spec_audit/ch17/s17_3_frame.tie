@@ -1,0 +1,41 @@
+type tie<logic>
+// s17_3_frame.tie —— tink 帧协议：编码/解析/CRC 拒帧
+import "/std/tink.tie"
+using tink;
+
+func main() -> i64 {
+    var payload = table_new_i64()
+    table_push(payload, 7)
+    table_push(payload, 8)
+    var fr = frame_encode(payload)
+    println("frame_len=" + to_string(len(fr)))
+    var (p, np) = frame_next(fr, 0)
+    if len(p) != 2 || p[0] != 7 || p[1] != 8 {
+        println("FAIL frame roundtrip")
+        return 1
+    }
+    if np != len(fr) {
+        println("FAIL next_pos")
+        return 2
+    }
+    // 快校验向量 crc32("123456789") == 0xCBF43926
+    var probe = table_new_i64()
+    var k: i64 = 0
+    while k < 9 {
+        table_push(probe, 0x31 + k)
+        k = k + 1
+    }
+    if crc32(probe) != 0xCBF43926 {
+        println("FAIL crc32 vector")
+        return 4
+    }
+    // 破坏 CRC：末字节取反
+    fr[len(fr) - 1] = fr[len(fr) - 1] ^ 0xFF
+    var (p2, np2) = frame_next(fr, 0)
+    if np2 != -1 {
+        println("FAIL crc-failed frame NOT rejected")
+        return 3
+    }
+    println("tink OK")
+    return 0
+}

@@ -1,0 +1,24 @@
+type tie<logic>
+// 16.9 字符串与数字
+func main() -> i64 {
+    var a: i64 = 42
+    var b: i64 = 0xFF
+    var c: i64 = 0b1011
+    var d: i64 = 0o755
+    var e: i64 = 0t1T0
+    var f: i64 = 1_000_000
+    var g: f64 = 3.14
+    var h: f64 = 1.5e3
+    var i: i32 = 42i32
+    var j: u16 = 0x80u16
+    var k: f32 = 1.5f32
+    var l: f64 = 0.1d
+    var m: trit = -1t
+    var n: trit = 0t
+    var o: trit = 1t
+    var s = "普通字符串，花括号即字面量"
+    var t = h"{a}"
+    var u = r"原始字符串无转义"
+    var ch = 'A'
+    return 0
+}

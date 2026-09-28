@@ -1,0 +1,12 @@
+type tie<logic>
+// 16.5 语句形态：while / for / return / break / continue / panic
+func main() -> i64 {
+    var i: i64 = 0
+    while i < 3 {
+        i = i + 1
+        if i == 1 { continue }
+        if i == 2 { break }
+    }
+    if i > 5 { panic("msg") }
+    return i
+}

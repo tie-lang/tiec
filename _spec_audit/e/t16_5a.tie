@@ -1,0 +1,9 @@
+type tie<logic>
+// 16.5 for i in 0..10
+func main() -> i64 {
+    var s: i64 = 0
+    for i in 0..10 {
+        s = s + i
+    }
+    return s
+}

@@ -1,0 +1,7 @@
+type tie<data>
+// s17_1_bare.data.tie —— type tie<data> 裸表形态
+[
+    "season": "S13",
+    "season_id": "2026-08",
+    "author": "tie-lang",
+]

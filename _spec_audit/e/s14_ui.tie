@@ -1,0 +1,2 @@
+type tie<ui>
+func main() -> i64 { return 0 }

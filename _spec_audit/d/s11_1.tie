@@ -1,0 +1,5 @@
+type tie<logic>
+func main() -> i64 {
+    var p: ptr<i64> = addr_of(0)
+    return 0
+}

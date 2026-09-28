@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var p = (1, 2)
+    var (a, b) = p
+    println(to_string(a) + "/" + to_string(b))
+    return 0
+}

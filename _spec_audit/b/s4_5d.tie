@@ -1,0 +1,22 @@
+type tie<logic>
+
+enum Color {
+    Red
+    Green
+    Blue
+}
+
+func name(c: Color) -> string {
+    switch c {
+        case Color.Red:
+            return "红"
+        case Color.Green:
+            return "绿"
+    }
+    return "?"
+}
+
+func main() -> i64 {
+    println(name(Color.Red))
+    return 0
+}

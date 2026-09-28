@@ -1,0 +1,9 @@
+type tie<logic>
+macro twice(x: code) -> code {
+    return `($x + $x)
+}
+func main() -> i64 {
+    var y = twice(3)
+    println(to_string(y))
+    return 0
+}

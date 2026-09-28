@@ -1,0 +1,10 @@
+type tie<logic>
+struct S {
+    var a: i64 = 0
+}
+func main() -> i64 {
+    var s = S(1)
+    var t = s with { a: 9 }
+    println(to_string(t.a))
+    return 0
+}

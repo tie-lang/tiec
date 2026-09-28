@@ -1,0 +1,12 @@
+type tie<logic>
+
+func fill(z: ref array<i64, 3>) {
+    z[0] = 9
+}
+
+func main() -> i64 {
+    var a: array<i64, 3> = array_init(0)
+    fill(a)
+    println(to_string(a[0]))
+    return 0
+}

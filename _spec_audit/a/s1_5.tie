@@ -1,0 +1,8 @@
+type tie<logic>
+func main() -> i64 {
+    var 用户数: i64 = 3
+    var _tmp: i64 = 1
+    var 结果1: i64 = 用户数 + _tmp
+    println(to_string(结果1))
+    return 0
+}

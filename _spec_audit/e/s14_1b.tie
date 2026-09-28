@@ -1,0 +1,6 @@
+type tie<logic>
+// 14.1 元素块写在函数外（顶层）
+@ window "设置" {
+    size: 480 x 320
+}
+func main() -> i64 { return 0 }

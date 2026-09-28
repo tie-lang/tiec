@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    var n: i64 = 3
+    var a = h"h-prefix: {n}"
+    var b = "no-prefix: {n}"
+    println(a)
+    println(b)
+    return 0
+}

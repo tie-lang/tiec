@@ -1,0 +1,11 @@
+type tie<logic>
+
+func main() -> i64 {
+    var pairs: table<table<i64>> = [[1, 2], [3, 4]]
+    var total: i64 = 0
+    for (k, v) in pairs {
+        total += k + v
+    }
+    println(to_string(total))
+    return 0
+}

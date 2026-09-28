@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.10 x %%= v 成对取余复合赋值
+func main() -> i64 {
+    var c = 7
+    c %%= 3
+    return c
+}

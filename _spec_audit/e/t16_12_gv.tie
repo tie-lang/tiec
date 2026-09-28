@@ -1,0 +1,5 @@
+type tie<logic>
+// 16.12 全局 var 与 const
+var g: table<i64> = []
+const K: i64 = 10
+func main() -> i64 { return K }

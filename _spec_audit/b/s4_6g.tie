@@ -1,0 +1,17 @@
+type tie<logic>
+
+func open_a() -> i64 { return 0 }
+func open_b() -> i64 { return 1 }
+func close_a() { println("close_a") }
+func close_b() { println("close_b") }
+
+func main() -> i64 {
+    if open_a() != 0 { goto cleanup_a }
+    if open_b() != 0 { goto cleanup_b }
+    println("body")
+cleanup_b:
+    close_b()
+cleanup_a:
+    close_a()
+    return 0
+}

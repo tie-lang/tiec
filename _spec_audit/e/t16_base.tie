@@ -1,0 +1,11 @@
+type tie<logic>
+// 16.10 a + b 等算术与 x = v 简单赋值基线
+func main() -> i64 {
+    var x = 1
+    x = 2
+    x += 3
+    x -= 1
+    var y = 10 / 3
+    var z = 10 % 3
+    return x + y + z
+}

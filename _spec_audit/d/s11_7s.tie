@@ -1,0 +1,5 @@
+type tie<logic>
+func main() -> i64 {
+    asm!("nop")
+    return 0
+}

@@ -1,0 +1,11 @@
+type tie<logic>
+
+func main() -> i64 {
+    var count = 10
+    count = 10
+    count += 1
+    count *= 2
+    count %%= 5
+    println(to_string(count))
+    return 0
+}

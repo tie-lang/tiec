@@ -1,0 +1,6 @@
+type tie<logic>
+func main() {
+    var s: text = "hi"
+    var t = s + "!"
+    println(t)
+}

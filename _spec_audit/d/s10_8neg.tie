@@ -1,0 +1,17 @@
+type tie<logic>
+// ch10.8 —— 初值必须字面量：用非常量表达式作初值
+var G: i64 = 3
+
+actor Bad {
+    var n: i64 = G + 1
+
+    pub func get() -> i64 {
+        return n
+    }
+}
+
+func main() -> i64 {
+    var b = run Bad()
+    println(to_string(b.get()))
+    return 0
+}

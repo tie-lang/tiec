@@ -1,0 +1,10 @@
+type tie<logic>
+// 16.10 xs[1..3] xs[..2] xs[2..] xs[..] 切片
+func main() -> i64 {
+    var xs: table<i64> = [0, 1, 2, 3, 4]
+    var a = xs[1..3]
+    var b = xs[..2]
+    var c = xs[2..]
+    var d = xs[..]
+    return len(a) + len(b) + len(c) + len(d)
+}

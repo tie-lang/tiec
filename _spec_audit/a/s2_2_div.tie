@@ -1,0 +1,7 @@
+type tie<logic>
+func main() {
+    var a: trit = true
+    var b: trit = false
+    var x = a / b
+    println(to_string(x))
+}

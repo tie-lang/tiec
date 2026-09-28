@@ -1,0 +1,47 @@
+type tie<logic>
+// s17_2_header.tie —— zd 头部识别规则实测（v1 8字节 / v2 10字节 / v3 头 / 9字节）
+import "F:/Projects/tie-repo/tdb/src/zd.tie"
+
+func mk(d1: i64, d2: i64, flags: i64) -> table<i64> {
+    var h = table_new_i64()
+    var magic = "TIEDBZD"
+    var i: i64 = 0
+    while i < 7 {
+        table_push(h, char_code(str_char(magic, i)))
+        i = i + 1
+    }
+    table_push(h, d1)
+    table_push(h, d2)
+    table_push(h, flags)
+    return h
+}
+
+func show(name: string, t: table<i64>) {
+    var (v, hl, fl) = zd.header_info(t)
+    println(name + " -> version=" + to_string(v) + " hlen=" + to_string(hl) + " flags=" + to_string(fl))
+}
+
+func main() -> i64 {
+    var v2 = mk(0, 2, 0)
+    show("v2[0][2] 10B", v2)
+    var v3 = mk(0, 3, 0)
+    show("v3[0][3] 10B", v3)
+    var v1 = mk(0, 2, 0)
+    // v1 头 = 魔数 + 版本 1（8 字节）
+    var v1_8 = table_new_i64()
+    var i: i64 = 0
+    while i < 7 { table_push(v1_8, v1[i]); i = i + 1 }
+    table_push(v1_8, 1)
+    show("v1 magic+01 8B", v1_8)
+    // 9 字节：魔数 + 两位版本数字（无 flags）
+    var nine = table_new_i64()
+    i = 0
+    while i < 9 { table_push(nine, v2[i]); i = i + 1 }
+    show("v2 head 9B(no flags)", nine)
+    var bad = mk(0, 2, 0)
+    bad[0] = 0x58
+    show("bad magic", bad)
+    var oob = mk(0, 60, 0)
+    show("version digit 60 (>47)", oob)
+    return 0
+}

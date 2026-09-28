@@ -1,0 +1,12 @@
+type tie<logic>
+// 16.10 可空链 obj?.f 与 obj?[i]
+struct P {
+    var f: i64 = 0
+}
+func main() -> i64 {
+    var p = P { f: 1 }
+    var c = p?.f
+    var xs: table<i64> = [1, 2, 3]
+    var d = xs?[0]
+    return c
+}

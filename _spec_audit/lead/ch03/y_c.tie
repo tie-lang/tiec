@@ -1,0 +1,10 @@
+type tie<logic>
+struct User {
+    var name: string = ""
+}
+func main() -> i64 {
+    var user = User("ann")
+    var nm = user -> .name
+    println(nm)
+    return 0
+}

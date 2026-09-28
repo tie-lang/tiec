@@ -1,0 +1,5 @@
+type tie<logic>
+
+pub func fmt_it(x: i64) -> string {
+    return "v=" + to_string(x)
+}

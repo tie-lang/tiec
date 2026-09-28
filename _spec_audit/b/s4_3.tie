@@ -1,0 +1,15 @@
+type tie<logic>
+
+func main() -> i64 {
+    var score = 75
+    var grade: string = ""
+    if score >= 90 {
+        grade = "A"
+    } else if score >= 60 {
+        grade = "B"
+    } else {
+        grade = "C"
+    }
+    println(grade)
+    return 0
+}

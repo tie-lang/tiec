@@ -1,0 +1,7 @@
+type tie<logic>
+func apply(g: fn(i64) -> i64, x: i64) -> i64 { return g(x) }
+func main() -> i64 {
+    var r = apply(func(t) -> i64 { return t + 1 }, 5)
+    println(to_string(r))
+    return 0
+}

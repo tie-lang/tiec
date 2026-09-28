@@ -1,0 +1,13 @@
+type tie<logic>
+
+const DEF_PORT: i64 = 8080
+
+func connect(host: string, p: i64 = DEF_PORT) -> i64 {
+    println(host + ":" + to_string(p))
+    return 0
+}
+
+func main() -> i64 {
+    connect("localhost")
+    return 0
+}

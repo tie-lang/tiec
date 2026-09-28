@@ -1,0 +1,8 @@
+type tie<logic>
+struct A extends B {
+    var x: i64 = 0
+}
+struct B extends A {
+    var y: i64 = 0
+}
+func main() -> i64 { return 0 }

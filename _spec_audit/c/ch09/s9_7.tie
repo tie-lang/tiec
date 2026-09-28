@@ -1,0 +1,8 @@
+type tie<logic>
+import "./geometry.tie" as geo
+using geo;
+
+func main() -> i64 {
+    println(to_string(distance(9, 4)))
+    return 0
+}

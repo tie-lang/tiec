@@ -1,0 +1,18 @@
+type tie<logic>
+func main() {
+    var fixed: table<i64> = [1, 2, 3]
+    var dyn = table_new_i64()
+    table_push(dyn, 1)
+    table_push(dyn, 2)
+    table_push(dyn, 30)
+    var grid: table<table<i64>> = [[1, 2], [3, 4]]
+    var sum = 0
+    for row in grid {
+        for cell in row {
+            sum = sum + cell
+        }
+    }
+    println(to_string(len(fixed)))
+    println(to_string(len(dyn)))
+    println(to_string(sum))
+}

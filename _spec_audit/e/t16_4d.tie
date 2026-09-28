@@ -1,0 +1,8 @@
+type tie<logic>
+// 16.4 n %% 1 原地修改  /  16.10 a %% b 成对取余
+func main() -> i64 {
+    var n = 7
+    n %% 1
+    var r = 7 %% 3
+    return r
+}

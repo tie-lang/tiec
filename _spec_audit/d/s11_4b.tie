@@ -1,0 +1,13 @@
+type tie<logic>
+func mk(ref x: table<i64>) -> fn() {
+    unsafe {
+        return func() { table_push(x, 1) }
+    }
+}
+func main() -> i64 {
+    var xs = table_new_i64()
+    var f = mk(xs)
+    f()
+    println(to_string(len(xs)))
+    return 0
+}

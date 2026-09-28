@@ -1,0 +1,7 @@
+type tie<logic>
+import "./nslib.tie"
+
+func main() -> i64 {
+    println(to_string(lib.secret()))
+    return 0
+}

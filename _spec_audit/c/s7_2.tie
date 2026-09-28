@@ -1,0 +1,28 @@
+type tie<logic>
+
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+    pub func bounds(self) -> i64
+}
+
+struct Button {
+    var label: string
+    var w: i64
+    var h: i64
+}
+
+impl Drawable for Button {
+    pub func draw(self, ctx: i64) -> string {
+        return "Button(" + self.label + ")"
+    }
+    pub func bounds(self) -> i64 {
+        return self.w * self.h
+    }
+}
+
+func main() -> i64 {
+    var b: Button = Button("ok", 10, 20)
+    println(b.draw(0))
+    println(to_string(b.bounds()))
+    return 0
+}

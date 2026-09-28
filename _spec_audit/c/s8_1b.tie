@@ -1,0 +1,17 @@
+type tie<logic>
+
+func parse_port(s: string) -> Result<i64, string> {
+    if str_len(s) == 0 { return Result.Err("空输入") }
+    return Result.Ok(to_int(s))
+}
+
+func main() -> i64 {
+    var r = parse_port("80")
+    switch r {
+        case Result.Ok(v):
+            println(to_string(v))
+        case Result.Err(msg):
+            println(msg)
+    }
+    return 0
+}

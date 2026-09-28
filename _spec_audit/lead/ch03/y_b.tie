@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var t: table<i64> = [7, 8]
+    var first = t -> [0]
+    println(to_string(first))
+    return 0
+}

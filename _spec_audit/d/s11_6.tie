@@ -1,0 +1,10 @@
+type tie<logic>
+// ch11.6 能力域与凭据 —— unsafe.get / unsafe use 块
+func main() -> i64 {
+    var g = unsafe.get(内存域)
+    unsafe use g {
+        var p = alloc(64)
+        free(p)
+    }
+    return 0
+}

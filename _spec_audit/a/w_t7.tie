@@ -1,0 +1,7 @@
+type tie<logic>
+func main() {
+    var d: misc = true
+    if d {
+        println("misc ok")
+    }
+}

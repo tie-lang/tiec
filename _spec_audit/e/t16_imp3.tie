@@ -1,0 +1,4 @@
+type tie<logic>
+// 16.12 pub import "m.tie" 重导出
+pub import "./mod16.tie"
+func main() -> i64 { return 0 }

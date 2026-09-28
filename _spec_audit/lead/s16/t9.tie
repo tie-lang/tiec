@@ -1,0 +1,3 @@
+type tie<logic>
+var g: table<i64> = []
+func main() -> i64 { return 0 }

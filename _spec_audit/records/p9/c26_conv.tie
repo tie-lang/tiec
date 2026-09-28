@@ -1,0 +1,13 @@
+type tie<logic>
+func take_move(move t: table<i64>) -> i64 { return len(t) }
+func ro(immut t: table<i64>) -> i64 { return len(t) }
+func write(ref t: table<i64>) { table_push(t, 9) }
+func main() {
+    var a = table_new_i64()
+    table_push(a, 1)
+    println(to_string(ro(a)))
+    write(a)
+    println(to_string(len(a)))
+    var b = table_new_i64()
+    println(to_string(take_move(b)))
+}

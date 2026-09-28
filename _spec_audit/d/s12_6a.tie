@@ -1,0 +1,10 @@
+type tie<logic>
+// ch12.6 —— 规范原文函数式宏（反引号 + @cond/@body 混合）
+macro unless(cond: code, body: code) -> code {
+    return `{ if !(@cond) { @body } }
+}
+
+func main() -> i64 {
+    unless(true, { println("x") })
+    return 0
+}

@@ -1,0 +1,7 @@
+type tie<logic>
+
+namespace math {
+    pub func lcm(a: i64, b: i64) -> i64 {
+        return (a / gcd(a, b)) * b
+    }
+}

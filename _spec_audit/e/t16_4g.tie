@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.4 x not in m
+func main() -> i64 {
+    var xs: table<i64> = [3, 1, 2]
+    var d = 9 not in xs
+    return 0
+}

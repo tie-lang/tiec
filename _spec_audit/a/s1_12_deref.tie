@@ -1,0 +1,8 @@
+type tie<logic>
+func main() {
+    var p = int_to_ptr(0)
+    unsafe {
+        var v = \p
+        println(to_string(v))
+    }
+}

@@ -1,0 +1,16 @@
+type tie<logic>
+func main() -> i64 {
+    var a: map<i64> = ["k": 1, "j": 2]
+    var b: map<i64> = ["k": 9]
+    println(to_string(map_has(a, "k")))
+    println(to_string(map_has(a, "zz")))
+    var c = a + b
+    println(to_string(c["k"]))
+    var xs: table<i64> = [1, 2]
+    var ys: table<i64> = [3]
+    var zs = xs + ys
+    println(to_string(len(zs)))
+    var m2 = a with { "k": 7 }
+    println(to_string(m2["k"]))
+    return 0
+}

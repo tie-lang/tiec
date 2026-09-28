@@ -1,0 +1,21 @@
+type tie<logic>
+
+struct Vec2 {
+    var x: i64 = 0
+    var y: i64 = 0
+}
+
+namespace Vec2 {
+    pub func add(a: Vec2, b: Vec2) -> Vec2 {
+        return Vec2(a.x + b.x, a.y + b.y)
+    }
+}
+
+func main() -> i64 {
+    var p = Vec2(1, 2)
+    var q = Vec2(3, 4)
+    // 直接调用约定函数（对照：运算符写法是否可用）
+    var v = Vec2.add(p, q)
+    println(to_string(v.x))
+    return 0
+}

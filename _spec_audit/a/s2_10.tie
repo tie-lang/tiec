@@ -1,0 +1,13 @@
+type tie<logic>
+func main() {
+    var v: any = 42
+    v = "text"
+    if is_num(v) {
+        var n = as_i64(v)
+        println(to_string(n))
+    } else {
+        println("not num")
+    }
+    var w: any = 7
+    println(to_string(as_i64(w)))
+}

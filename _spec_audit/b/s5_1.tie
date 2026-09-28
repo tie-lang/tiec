@@ -1,0 +1,14 @@
+type tie<logic>
+
+func add(a: i64, b: i64) -> i64 {
+    return a + b
+}
+
+pub func mul(a: i64, b: i64) -> i64 = a * b
+
+func main() -> i64 {
+    var s = add(1, 2)
+    println(to_string(s))
+    println(to_string(mul(2, 3)))
+    return 0
+}

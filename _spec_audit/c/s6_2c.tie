@@ -1,0 +1,14 @@
+type tie<logic>
+
+struct Counter {
+    var n: i64 = 0
+}
+
+func main() -> i64 {
+    var c = Counter(0)
+    var d = c
+    d.n = 99
+    println(to_string(c.n))
+    println(to_string(d.n))
+    return 0
+}

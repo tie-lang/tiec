@@ -1,0 +1,9 @@
+type tie<logic>
+func take(move t: table<i64>) -> i64 { return len(t) }
+func main() {
+    var b = table_new_i64()
+    table_push(b, 1)
+    println(to_string(take(b)))
+    println(to_string(len(b)))
+    println(to_string(take(b)))
+}

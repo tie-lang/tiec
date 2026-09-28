@@ -1,0 +1,29 @@
+type tie<logic>
+func main() -> i64 {
+    var a = 6 & 3
+    var b = 6 | 3
+    var c = 6 ^ 3
+    var d = 1 << 4
+    var e = 32 >> 2
+    var f = !true
+    println(to_string(a))
+    println(to_string(b))
+    println(to_string(c))
+    println(to_string(d))
+    println(to_string(e))
+    var g = 10
+    g += 1
+    g -= 2
+    g *= 3
+    g /= 2
+    g %= 5
+    println(to_string(g))
+    var h = 12
+    h &= 6
+    h |= 1
+    h ^= 3
+    h <<= 1
+    h >>= 1
+    println(to_string(h))
+    return 0
+}

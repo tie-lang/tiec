@@ -1,0 +1,9 @@
+type tie<logic>
+func main() {
+    var age: map<i64> = ["alice": 3, "bob": 5]
+    age["carol"] = 7
+    if age.has("alice") {
+        println(to_string(age["alice"]))
+    }
+    println(to_string(age.bob))
+}

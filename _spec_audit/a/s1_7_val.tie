@@ -1,0 +1,13 @@
+type tie<logic>
+func main() -> i64 {
+    println(to_string(0xFF))
+    println(to_string(0b1011))
+    println(to_string(0o755))
+    println(to_string(1_000_000))
+    println(to_string(0xCA_FE))
+    println(to_string(0t12))
+    println(to_string(0t120))
+    var f = 3.14
+    println(to_string(f))
+    return 0
+}

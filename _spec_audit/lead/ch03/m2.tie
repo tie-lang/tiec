@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var age: map<i64> = ["alice": 3]
+    if age.has("alice") { println("has") }
+    return 0
+}

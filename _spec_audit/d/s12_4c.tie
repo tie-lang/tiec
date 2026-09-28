@@ -1,0 +1,8 @@
+type tie<logic>
+const FOO: i64 = 42
+func main() -> i64 {
+    println(to_string(FOO))
+    var a: i64 = FOO + 1
+    println(to_string(a))
+    return 0
+}

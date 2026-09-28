@@ -1,0 +1,15 @@
+type tie<logic>
+// ch10.8 字段初值 —— 非零字面量初值
+actor Cache {
+    var hits: i64 = 7
+
+    pub func get() -> i64 {
+        return hits
+    }
+}
+
+func main() -> i64 {
+    var c = run Cache()
+    println(to_string(c.get()))
+    return 0
+}

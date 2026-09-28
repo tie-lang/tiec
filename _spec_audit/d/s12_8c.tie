@@ -1,0 +1,7 @@
+type tie<logic>
+#[cfg(target = "x86_64")]
+pub func f() -> i64 { return 1 }
+func main() -> i64 {
+    println(to_string(f()))
+    return 0
+}

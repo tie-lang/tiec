@@ -1,0 +1,2 @@
+type tie<data>
+func f() -> i64 { return 1 }

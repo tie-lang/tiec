@@ -1,0 +1,14 @@
+type tie<logic>
+func main() -> i64 {
+    var a = 7 \ 3
+    var b = 7 %% 3
+    println(to_string(a))
+    println(to_string(b))
+    var c = 5 +? 6
+    var d = 5 -? 6
+    var f = 5 *? 6
+    println(to_string(c))
+    println(to_string(d))
+    println(to_string(f))
+    return 0
+}

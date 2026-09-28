@@ -1,0 +1,9 @@
+type tie<logic>
+// 14.7 元素与控制流：字面量省括号 / 表达式保留括号
+func main() -> i64 {
+    var count: i64 = 1
+    @Text "直接写字面量"
+    @Text(to_string(count))
+    @Text "计数：" + to_string(count)
+    return 0
+}

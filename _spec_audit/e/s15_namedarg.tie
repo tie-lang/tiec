@@ -1,0 +1,6 @@
+type tie<logic>
+func connect(host: string, port: i64) -> i64 { return 0 }
+func main() -> i64 {
+    var r = connect(host: "localhost")
+    return r
+}

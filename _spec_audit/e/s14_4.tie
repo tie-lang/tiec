@@ -1,0 +1,12 @@
+type tie<logic>
+// 14.4 数据与界面：界面元素引用作用域值
+struct AppState { var n: i64 = 0 }
+func bump() -> i64 { return 0 }
+func view(state: AppState) -> i64 {
+    @ window "计数器" {
+        @ label "计数：" + to_string(state.n)
+        @ button "加一" on_click: bump
+    }
+    return 0
+}
+func main() -> i64 { return 0 }

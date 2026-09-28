@@ -1,0 +1,4 @@
+type tie<logic>
+const K: i64 = 10
+func f(a: i64 = K) -> i64 { return a }
+func main() -> i64 { return f() }

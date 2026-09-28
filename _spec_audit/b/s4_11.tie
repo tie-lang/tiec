@@ -1,0 +1,29 @@
+type tie<logic>
+
+enum Option<T> {
+    Some(T)
+    None
+}
+
+func read_first() -> Option<i64> { return Option.Some(1) }
+func read_second() -> Option<i64> { return Option.Some(2) }
+func read_fail() -> Option<i64> { return Option.None }
+
+func compute() -> Option<i64> {
+    var total = try {
+        var a = read_first() ?
+        var b = read_second() ?
+        a + b
+    }
+    return Option.Some(total)
+}
+
+func main() -> i64 {
+    switch compute() {
+        case Option.Some:
+            println("some")
+        default:
+            println("none")
+    }
+    return 0
+}

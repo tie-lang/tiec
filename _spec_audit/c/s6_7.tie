@@ -1,0 +1,10 @@
+type tie<logic>
+func min_max(xs: table<i64>) -> (i64, i64) {
+    return (1, 9)
+}
+func main() -> i64 {
+    var xs: table<i64> = [1, 2]
+    var lo, hi = min_max(xs)
+    println(to_string(lo))
+    return 0
+}

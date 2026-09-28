@@ -1,0 +1,10 @@
+type tie<logic>
+// 16.5 goto cleanup 与 16.11 unsafe goto #tag + #[tag.tag]
+func main() -> i64 {
+    var x = 1
+    unsafe {
+        if x == 0 { goto #done }
+    }
+    #[done.ok]
+    return 0
+}

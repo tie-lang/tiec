@@ -1,0 +1,4 @@
+type tie<data>
+// s17_1_bad.data.tie —— 解析失败路径：表未闭合
+[
+    "k": 1,

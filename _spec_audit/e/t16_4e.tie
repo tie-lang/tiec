@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.4 a ** b 幂  /  a **? b 带检查的幂
+func main() -> i64 {
+    var a = 2 ** 3
+    var b = 2 **? 3
+    return a + b
+}

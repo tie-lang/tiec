@@ -1,0 +1,19 @@
+type tie<logic>
+enum Shape {
+    Circle(r: f64)
+    Rect(w: f64, h: f64)
+}
+
+func area(s: Shape) -> f64 {
+    switch s {
+        case Shape.Circle(r):
+            return 3.14159 * r * r
+        case Shape.Rect(w, h):
+            return w * h
+    }
+}
+
+func main() {
+    println(to_string(area(Shape.Circle(1.0))))
+    println(to_string(area(Shape.Rect(2.0, 3.0))))
+}

@@ -1,0 +1,9 @@
+type tie<logic>
+
+func f(ref x: i64) -> i64 { return x }
+
+func main() -> i64 {
+    var a: i64 = 5
+    println(to_string(f(a)))
+    return 0
+}

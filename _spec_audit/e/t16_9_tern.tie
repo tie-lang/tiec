@@ -1,0 +1,6 @@
+type tie<logic>
+// 16.9 0t1T0 三进制字面量
+func main() -> i64 {
+    var e: i64 = 0t1T0
+    return e
+}

@@ -1,0 +1,10 @@
+type tie<logic>
+func main() -> i64 {
+    var a = map()
+    map_set(a, "k", 1)
+    var b = map()
+    map_set(b, "k", 2)
+    var c = a + b
+    println(to_string(map_get(c, "k")))
+    return 0
+}

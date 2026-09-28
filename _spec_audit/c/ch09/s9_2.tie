@@ -1,0 +1,15 @@
+type tie<logic>
+import "./mathlib2.tie"
+
+namespace math {
+    pub func gcd(a: i64, b: i64) -> i64 {
+        if b == 0 { return a }
+        return gcd(b, a % b)
+    }
+}
+
+func main() -> i64 {
+    println(to_string(math.gcd(12, 18)))
+    println(to_string(math.lcm(4, 6)))
+    return 0
+}

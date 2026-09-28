@@ -1,0 +1,8 @@
+type tie<logic>
+func main() {
+    var n = 0
+    for i in 0..=3 {
+        n = n + i
+    }
+    println(to_string(n))
+}

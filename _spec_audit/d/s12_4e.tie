@@ -1,0 +1,10 @@
+type tie<logic>
+const A: i64 = 1 << 10
+const B: i64 = A - 1
+const C: i64 = 2 * 3
+func main() -> i64 {
+    println(to_string(A))
+    println(to_string(B))
+    println(to_string(C))
+    return 0
+}

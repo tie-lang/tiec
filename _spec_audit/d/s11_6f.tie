@@ -1,0 +1,8 @@
+type tie<logic>
+#[unsafe.share]
+pub func aggregate() -> i64 {
+    return 1
+}
+func main() -> i64 {
+    return 0
+}

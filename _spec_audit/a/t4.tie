@@ -1,0 +1,5 @@
+type tie<logic>
+func main() -> i64 {
+    var v: trit = 0t1
+    return 0
+}

@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    var v: any = 42
+    if v is i64 {
+        var n = as_i64(v)
+        println(to_string(n))
+    }
+    return 0
+}

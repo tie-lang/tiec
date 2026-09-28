@@ -1,0 +1,26 @@
+type tie<logic>
+
+interface Named {
+    pub func name(self) -> string
+}
+
+struct Circle {
+    var r: i64 = 0
+}
+
+namespace Circle {
+    pub func name(self: Circle) -> string {
+        return "circle"
+    }
+}
+
+func label<T: Named>(x: T) -> string {
+    return x.name()
+}
+
+func main() -> i64 {
+    var c = Circle()
+    c.r = 3
+    println(label(c))
+    return 0
+}

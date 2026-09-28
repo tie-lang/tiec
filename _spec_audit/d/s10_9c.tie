@@ -1,0 +1,9 @@
+type tie<logic>
+// ch10.9 —— 图字面量（去掉波浪号，只测花括号+箭头）
+func A() -> i64 { return 1 }
+func B(x: i64) -> i64 { return x + 1 }
+
+func main() -> i64 {
+    var flow = { A } - { B }
+    return 0
+}

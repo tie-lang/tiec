@@ -1,0 +1,7 @@
+type tie<logic>
+
+extern func getenv(name: string) -> i64
+
+func main() -> i64 {
+    return 0
+}

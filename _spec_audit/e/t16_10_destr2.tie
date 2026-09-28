@@ -1,0 +1,10 @@
+type tie<logic>
+// 16.10 (a, b) <- t 解构（tuple 值）
+func f() -> (i64, i64) {
+    var p = (1, 2)
+    return p
+}
+func main() -> i64 {
+    var (a, b) <- f()
+    return a + b
+}

@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var n: i64 = 0
+    for i in 0..<3 { n += 1 }
+    println(to_string(n))
+    return 0
+}

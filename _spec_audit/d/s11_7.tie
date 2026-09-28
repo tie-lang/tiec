@@ -1,0 +1,10 @@
+type tie<logic>
+// ch11.7 内联汇编 —— 规范原文示例（单引号模板 + 中文方向词/约束）
+func main() -> i64 {
+    unsafe {
+        var v: i64 = 1
+        var n: i64 = 2
+        asm!('add {dst}, {src}', dst: 输出(寄存器) = v, src: 输入(寄存器) = n)
+    }
+    return 0
+}

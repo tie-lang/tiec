@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var a: i64 = 9223372036854775807
+    var b: i64 = a +? 1
+    println(to_string(b))
+    return 0
+}

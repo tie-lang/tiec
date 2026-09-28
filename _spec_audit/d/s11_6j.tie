@@ -1,0 +1,10 @@
+type tie<logic>
+func main() -> i64 {
+    unsafe {
+        var g = unsafe.get(share)
+        var h = g
+        unsafe use h { println("h") }
+        unsafe use g { println("g") }
+    }
+    return 0
+}

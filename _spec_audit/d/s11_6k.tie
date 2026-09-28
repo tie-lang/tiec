@@ -1,0 +1,8 @@
+type tie<logic>
+func main() -> i64 {
+    unsafe {
+        var g = unsafe.get(share)
+        var sub = g.delegate()
+    }
+    return 0
+}

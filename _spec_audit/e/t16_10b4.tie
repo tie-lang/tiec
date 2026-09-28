@@ -1,0 +1,10 @@
+type tie<logic>
+// 16.10 v -> .field 独占
+struct P {
+    var x: i64 = 0
+}
+func main() -> i64 {
+    var p = P(1)
+    var g = p -> .x
+    return g
+}

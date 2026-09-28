@@ -1,0 +1,13 @@
+type tie<logic>
+import "/std/result.tie"
+
+struct P {
+    var x: i64 = 0
+}
+
+func main() {
+    var o: Option<P> = Option.Some(P(7))
+    var n: Option<P> = Option.None
+    println(o?.x ?: -1)
+    println(n?.x ?: -1)
+}

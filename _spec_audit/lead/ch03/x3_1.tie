@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    println(to_string(-2 ** 2))
+    println(to_string(2 ** 3 ** 2))
+    return 0
+}

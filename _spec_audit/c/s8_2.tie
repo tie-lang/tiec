@@ -1,0 +1,24 @@
+type tie<logic>
+
+func parse_port(s: string) -> Result<i64, string> {
+    if str_len(s) == 0 { return Result.Err("空输入") }
+    return Result.Ok(to_int(s))
+}
+
+func config_port(cfg: map<string>) -> Result<i64, string> {
+    var raw = cfg["port"]?
+    var port = parse_port(raw)?
+    return Result.Ok(port)
+}
+
+func main() -> i64 {
+    var cfg: map<string> = ["port": "8080"]
+    var r = config_port(cfg)
+    switch r {
+        case Result.Ok(v):
+            println(to_string(v))
+        case Result.Err(msg):
+            println(msg)
+    }
+    return 0
+}

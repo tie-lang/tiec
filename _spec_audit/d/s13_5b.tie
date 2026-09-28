@@ -1,0 +1,11 @@
+type tie<logic>
+struct P { x: i64 }
+func main() -> i64 {
+    var p = P { x: 1 }
+    var q = p.clone()
+    println(to_string(q.x))
+    var s = "ab"
+    var t = s.clone()
+    println(t)
+    return 0
+}

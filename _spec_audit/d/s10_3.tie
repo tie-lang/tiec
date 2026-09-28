@@ -1,0 +1,16 @@
+type tie<logic>
+// ch10.3 消息与返回 —— 隐式等待取值
+actor Counter {
+    var n: i64 = 0
+
+    pub func value() -> i64 {
+        return n
+    }
+}
+
+func main() -> i64 {
+    var c = run Counter()
+    var total = c.value()
+    println(to_string(total))
+    return 0
+}

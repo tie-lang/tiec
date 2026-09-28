@@ -1,0 +1,7 @@
+type tie<logic>
+import "./format.tie".{ fmt_it }
+
+func main() -> i64 {
+    println(fmt_it(7))
+    return 0
+}

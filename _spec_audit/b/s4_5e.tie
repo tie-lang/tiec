@@ -1,0 +1,23 @@
+type tie<logic>
+
+enum Num {
+    Int(i64)
+    None
+}
+
+func desc(n: Num) -> string {
+    switch n {
+        case Num.Int(v) when v > 0:
+            return "正"
+        case Num.Int(v):
+            return "非正"
+        default:
+            return "无"
+    }
+}
+
+func main() -> i64 {
+    println(desc(Num.Int(5)))
+    println(desc(Num.Int(-1)))
+    return 0
+}

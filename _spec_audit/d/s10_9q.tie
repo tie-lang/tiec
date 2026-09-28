@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var g = graph()
+    var n = g.nodes()
+    return 0
+}

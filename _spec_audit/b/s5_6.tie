@@ -1,0 +1,11 @@
+type tie<logic>
+
+func divmod(a: i64, b: i64) -> (q: i64, r: i64) {
+    return a / b, a % b
+}
+
+func main() -> i64 {
+    var q, r = divmod(7, 3)
+    println(to_string(q) + "/" + to_string(r))
+    return 0
+}

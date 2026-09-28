@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var score: i64 = 70
+    var label = score -> score >= 60 ? "pass" : "fail"
+    println(label)
+    return 0
+}

@@ -1,0 +1,13 @@
+type tie<logic>
+
+func inc(x: i64) -> i64 { return x + 1 }
+
+func pick() -> fn(i64) -> i64 {
+    return inc
+}
+
+func main() -> i64 {
+    var g = pick()
+    println(to_string(g(4)))
+    return 0
+}

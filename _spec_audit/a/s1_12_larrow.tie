@@ -1,0 +1,11 @@
+type tie<logic>
+func main() {
+    var x = 0
+    x <- 5
+    println(to_string(x))
+    var t = (7, 8)
+    var a = 0
+    var b = 0
+    (a, b) <- t
+    println(to_string(a + b))
+}

@@ -1,0 +1,12 @@
+type tie<logic>
+// 16.11 defer { cleanup() } 与 try { x = f()? }
+func f() -> i64 { return 1 }
+func cleanup() -> i64 { return 0 }
+func main() -> i64 {
+    defer { cleanup() }
+    var x: i64 = 0
+    try {
+        x = f()
+    }
+    return x
+}

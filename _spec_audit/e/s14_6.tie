@@ -1,0 +1,18 @@
+type tie<logic>
+// 14.6 界面单元：view V(p) -> (Act) { @Column { } }
+view Counter(count: i64, history: table<string>) -> (Dec, Inc, Reset) {
+    @Column {
+        @Text "计数：" + to_string(count)
+        if count > 2 {
+            @Badge "偏大"
+        }
+        for h in history {
+            @Text h .muted
+        }
+        @Row {
+            @Button "-1" .lg -> Dec
+            @Button "+1" .lg -> Inc
+        }
+    }
+}
+func main() -> i64 { return 0 }

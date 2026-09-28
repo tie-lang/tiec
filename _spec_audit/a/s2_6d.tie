@@ -1,0 +1,9 @@
+type tie<logic>
+func mm(xs: table<i64>) -> (lo: i64, hi: i64) {
+    return (1, 9)
+}
+func main() {
+    var t = mm([3, 1, 9])
+    println(to_string(t.lo))
+    println(to_string(t.hi))
+}

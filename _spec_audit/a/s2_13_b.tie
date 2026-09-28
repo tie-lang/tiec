@@ -1,0 +1,5 @@
+type tie<logic>
+func main() {
+    var v: array<f64, 3> = array_init(0.0)
+    println(to_string(v[5]))
+}

@@ -1,0 +1,16 @@
+type tie<logic>
+func main() {
+    var fn = 1
+    var let = 2
+    var not = 3
+    var try = 4
+    var defer = 5
+    var guard = 6
+    var out = 7
+    var inout = 8
+    var target = 9
+    var array = 10
+    var r = 11
+    var h = 12
+    println(to_string(fn + let + not + try + defer + guard + out + inout + target + array + r + h))
+}

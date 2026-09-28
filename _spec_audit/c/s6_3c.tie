@@ -1,0 +1,19 @@
+type tie<logic>
+
+struct Counter {
+    var n: i64 = 0
+}
+
+namespace Counter {
+    pub func bump(c: Counter, step: i64) -> i64 {
+        c.n += step
+        return c.n
+    }
+}
+
+func main() -> i64 {
+    var c = Counter(0)
+    var r = c.bump(5)
+    println(to_string(c.n))
+    return 0
+}

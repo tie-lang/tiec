@@ -1,0 +1,13 @@
+type tie<logic>
+import "/std/dataflow.tie"
+
+func main() {
+    dataflow.new_g()
+    var a = dataflow.node(func(x: i64) -> i64 { return x + 1 })
+    var b = dataflow.node(func(x: i64) -> i64 { return x * 2 })
+    dataflow.link(a, b)
+    dataflow.entry(a)
+    var out = dataflow.run(10)
+    println("n=" + to_string(len(out)))
+    println("v=" + to_string(out[0]))
+}

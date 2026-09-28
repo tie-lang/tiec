@@ -1,0 +1,17 @@
+type tie<logic>
+alias Matrix = table<f64>
+alias Pair<T> = (T, T)
+alias Handler = fn(i64) -> i64
+
+func dbl(x: i64) -> i64 {
+    return x * 2
+}
+
+func main() {
+    var m: Matrix = [1.0, 2.0]
+    var p: Pair<i64> = (3, 4)
+    var h: Handler = dbl
+    println(to_string(len(m)))
+    println(to_string(p.0 + p.1))
+    println(to_string(h(5)))
+}

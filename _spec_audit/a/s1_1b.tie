@@ -1,0 +1,2 @@
+type tie<logic>
+func main() -> i64 { return 0 }

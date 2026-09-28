@@ -1,0 +1,8 @@
+type tie<logic>
+
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3]
+    var doubled = map(xs, { it * 2 })
+    println(to_string(len(doubled)))
+    return 0
+}

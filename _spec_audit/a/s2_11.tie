@@ -1,0 +1,10 @@
+type tie<logic>
+func main() {
+    var a: i64 = 1000
+    var b = to_i32(a)
+    var c: f64 = to_f64(a)
+    var d = to_string(a)
+    println(d)
+    println(to_string(b))
+    println(to_string(c))
+}

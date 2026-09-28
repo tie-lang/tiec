@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    var s = "  hi  "
+    var t = s -> trim
+    println("[" + t + "]")
+    var r = trim(s)
+    println("[" + r + "]")
+    return 0
+}

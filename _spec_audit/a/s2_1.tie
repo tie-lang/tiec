@@ -1,0 +1,21 @@
+type tie<logic>
+func main() {
+    var a: i8 = 1
+    var b: i16 = 2
+    var c: i32 = 3
+    var d: i64 = 4
+    var e: u8 = 5
+    var f: u16 = 6
+    var g: u32 = 7
+    var h: u64 = 8
+    var i: i128 = 9
+    var j: u128 = 10
+    var k: f32 = 1.5
+    var l: f64 = 2.5
+    var m: bool = true
+    var n: trit = zero
+    var o: char = 'x'
+    var p: string = "s"
+    println(to_string(d + i + j))
+    println(p)
+}

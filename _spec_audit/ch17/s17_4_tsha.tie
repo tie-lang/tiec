@@ -1,0 +1,26 @@
+type tie<logic>
+// s17_4_tsha.tie —— tsha1 四模型 / 位长范围 / base48 输出
+import "/std/tsha1.tie"
+using tsha;
+import "/std/base48.tie"
+using b48;
+
+func main() -> i64 {
+    println("f48=" + tsha1f("abc", 48))
+    println("b48=" + tsha1b("abc", 48))
+    println("x48=" + tsha1x("abc", 48))
+    println("r48=" + tsha1r("abc", 48))
+    println("f69=" + tsha1f("abc", 69))
+    println("f92=" + tsha1f("abc", 92))
+    println("f144=" + tsha1f("abc", 144))
+    println("f5=[" + tsha1f("abc", 5) + "]")
+    println("f100=[" + tsha1f("abc", 100) + "]")
+    println("f1=[" + tsha1f("abc", 1) + "]")
+    println("f2=[" + tsha1f("abc", 2) + "]")
+    println("f7=[" + tsha1f("abc", 7) + "]")
+    println("b48b16=" + tsha1f("abc", 48, 16))
+    println("b48b2len=" + to_string(str_len(tsha1f("abc", 48, 2))))
+    // base48 字符台：84 字节全 0xFF → 编码应含最大值字符 'L'
+    println("b48_enc=" + b48.encode("ff"))
+    return 0
+}

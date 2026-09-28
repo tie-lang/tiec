@@ -1,0 +1,6 @@
+type tie<logic>
+import "/std/utf.tie" as utf
+
+func main() -> i64 {
+    return 0
+}

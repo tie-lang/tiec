@@ -1,0 +1,5 @@
+type tie<logic>
+// 16.12 #cfg(cond) 条件编译
+#cfg(cond)
+func f() -> i64 { return 1 }
+func main() -> i64 { return 0 }

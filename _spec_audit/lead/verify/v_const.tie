@@ -1,0 +1,15 @@
+type tie<logic>
+const A: i64 = 1 << 4
+const B: i64 = 16 >> 2
+const C: i64 = 6 & 3
+const D: i64 = 1 | 2
+const E: i64 = 5 ^ 1
+const F: i64 = 2 + 3
+const G: i64 = 10 * 4
+func main() -> i64 {
+    println(to_string(A)); println(to_string(B)); println(to_string(C))
+    println(to_string(D)); println(to_string(E)); println(to_string(F)); println(to_string(G))
+    var r = 1 << 4
+    println(to_string(r))
+    return 0
+}

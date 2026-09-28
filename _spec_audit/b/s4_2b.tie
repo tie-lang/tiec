@@ -1,0 +1,15 @@
+type tie<logic>
+
+func main() -> i64 {
+    var a = 10
+    a += 1
+    a -= 1
+    a *= 2
+    a /= 2
+    a %= 3
+    println(to_string(a))
+    var b = 10
+    b = b %% 5
+    println(to_string(b))
+    return 0
+}

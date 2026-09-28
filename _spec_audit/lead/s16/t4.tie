@@ -1,0 +1,3 @@
+type tie<logic>
+enum E2 { A  B(x: i64) }
+func main() -> i64 { return 0 }

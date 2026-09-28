@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.11 guard c else { return }
+func main() -> i64 {
+    var x = 0
+    guard x > 0 else { return 1 }
+    return 0
+}

@@ -1,0 +1,8 @@
+type tie<logic>
+func f(x: i64) -> i64 {
+    switch x {
+        case 1 => return 10
+        case _ => return 20
+    }
+}
+func main() { println(to_string(f(1))) }

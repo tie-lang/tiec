@@ -1,0 +1,11 @@
+type tie<logic>
+
+func main() -> i64 {
+    var xs = table_new_i64()
+    table_push(xs, 1)
+    var f: fn() -> i64 = func() -> i64 { return len(xs) }
+    table_push(xs, 2)
+    table_push(xs, 3)
+    println(to_string(f()))
+    return 0
+}

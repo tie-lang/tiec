@@ -1,0 +1,25 @@
+type tie<logic>
+
+struct Point {
+    var x: f64 = 0.0
+    var y: f64 = 0.0
+}
+
+namespace Point {
+    pub func dist(p: Point) -> f64 {
+        return sqrt(p.x * p.x + p.y * p.y)
+    }
+
+    pub func move_by(ref p: Point, dx: f64, dy: f64) {
+        p.x += dx
+        p.y += dy
+    }
+}
+
+func main() -> i64 {
+    var p = Point(3.0, 4.0)
+    println(to_string(p.dist()))
+    p.move_by(1.0, 1.0)
+    println(to_string(p.x))
+    return 0
+}

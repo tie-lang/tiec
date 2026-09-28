@@ -1,0 +1,6 @@
+type tie<logic>
+func main() {
+    var a: atomic<i64> = atomic_new(0)
+    atomic_store(a, 5)
+    println(to_string(atomic_load(a)))
+}

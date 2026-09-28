@@ -1,0 +1,7 @@
+type tie<logic>
+import "./reexp.tie"
+
+func main() -> i64 {
+    println(fmt_it(3))
+    return 0
+}

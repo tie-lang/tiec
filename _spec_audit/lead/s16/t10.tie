@@ -1,0 +1,4 @@
+type tie<logic>
+struct B2 { var z: i64 = 0; }
+struct S3<T> extends B2 { var f: T = z }
+func main() -> i64 { return 0 }

@@ -1,0 +1,5 @@
+type tie<data>
+// s17_1_noheader.data.tie —— 仅裸表、无 type 声明的对照样例（按实现约定会失败）
+[
+    "k": 1,
+]

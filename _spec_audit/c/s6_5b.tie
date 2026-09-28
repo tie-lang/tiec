@@ -1,0 +1,20 @@
+type tie<logic>
+
+struct Shape {
+    var name: string = ""
+}
+
+struct Circle extends Shape {
+    var r: f64 = 0.0
+}
+
+func take_shape(s: Shape) -> string {
+    return s.name
+}
+
+func main() -> i64 {
+    var c = Circle("c", 2.0)
+    // 子类型传给期望父类型的参数
+    println(take_shape(c))
+    return 0
+}

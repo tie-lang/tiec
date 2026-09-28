@@ -1,0 +1,10 @@
+type tie<logic>
+func main() -> i64 {
+    var type = 1
+    var self = 2
+    var run = 3
+    var extends = 4
+    var with = 5
+    println(to_string(type + self + run + extends + with))
+    return 0
+}

@@ -1,0 +1,25 @@
+type tie<logic>
+// s17_5_frame_zd.tie —— 端到端：tie:data 经编译器产出 .zd，帧内承载该 zd 消息
+import "/std/tink.tie"
+using tink;
+
+func main() -> i64 {
+    var zd = byte_read("F:/_tmp/s17_1_values.zd")
+    if len(zd) == 0 {
+        println("FAIL read zd")
+        return 1
+    }
+    var fr = frame_encode(zd)
+    var (back, np) = frame_next(fr, 0)
+    if len(back) != len(zd) || np != len(fr) {
+        println("FAIL frame/zd roundtrip")
+        return 2
+    }
+    // 负载首字节应为 zd 魔数 'T'
+    if back[0] != 0x54 {
+        println("FAIL payload head")
+        return 3
+    }
+    println("zd_in_frame OK len=" + to_string(len(zd)))
+    return 0
+}

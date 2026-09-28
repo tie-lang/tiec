@@ -1,0 +1,9 @@
+type tie<logic>
+actor W { pub async func compute(x: i64) -> i64 { return x + 1 } }
+func main() -> i64 {
+    var w = run W()
+    var f = w.compute(1)
+    var r = await f
+    println(to_string(r))
+    return 0
+}

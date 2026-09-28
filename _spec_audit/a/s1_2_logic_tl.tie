@@ -1,0 +1,2 @@
+type tie<logic>
+println(42)

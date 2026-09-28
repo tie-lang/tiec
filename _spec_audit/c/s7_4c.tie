@@ -1,0 +1,23 @@
+type tie<logic>
+
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+}
+
+struct Button {
+    var label: string = ""
+}
+
+impl Drawable for Button {
+    pub func draw(self, ctx: i64) -> string {
+        return "B"
+    }
+}
+
+func main() -> i64 {
+    var b: Button = Button("ok")
+    // 规范 7.4 的写法：table_new_Drawable()
+    var items = table_new_Drawable()
+    table_push(items, b)
+    return 0
+}

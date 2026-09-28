@@ -1,0 +1,6 @@
+type tie<logic>
+import "std/string"
+
+func main() -> i64 {
+    return 0
+}

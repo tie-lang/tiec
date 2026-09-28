@@ -1,0 +1,11 @@
+type tie<logic>
+// 16.4 表达式记号：管道/成员判定/范围
+func inc(x: i64) -> i64 { return x + 1 }
+func main() -> i64 {
+    var xs: table<i64> = [3, 1, 2]
+    var a = 5 -> inc
+    var b = 0..10
+    var c = 0..=10
+    var d = 3 in xs
+    return a + len(b) + len(c)
+}

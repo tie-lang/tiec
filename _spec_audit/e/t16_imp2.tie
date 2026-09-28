@@ -1,0 +1,4 @@
+type tie<logic>
+// 16.12 import "m.tie".{ a, b } 选择性导入
+import "./mod16.tie".{ alpha, beta }
+func main() -> i64 { return alpha() + beta() }

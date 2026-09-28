@@ -1,0 +1,13 @@
+type tie<logic>
+
+func make(immut t: table<i64>) -> fn() -> i64 {
+    return func() -> i64 { return len(t) }
+}
+
+func main() -> i64 {
+    var x = table_new_i64()
+    table_push(x, 1)
+    var f = make(x)
+    println(to_string(f()))
+    return 0
+}

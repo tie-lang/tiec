@@ -1,0 +1,19 @@
+type tie<logic>
+import "/std/string.tie" as m_string
+import "/std/utf.tie" as m_utf
+import "/std/collection.tie" as m_collection
+import "/std/sort.tie" as m_sort
+import "/std/math.tie" as m_math
+import "/std/regex.tie" as m_regex
+import "/std/fs.tie" as m_fs
+import "/std/path.tie" as m_path
+import "/std/json.tie" as m_json
+import "/std/time.tie" as m_time
+import "/std/random.tie" as m_random
+import "/std/process.tie" as m_process
+import "/std/net.tie" as m_net
+import "/std/crypto.tie" as m_crypto
+
+func main() -> i64 {
+    return 0
+}

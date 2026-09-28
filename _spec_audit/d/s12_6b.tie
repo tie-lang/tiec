@@ -1,0 +1,11 @@
+type tie<logic>
+// ch12.6 —— 模板宏：规范原文用 @stmt
+macro twice(stmt) {
+    @stmt
+    @stmt
+}
+
+func main() -> i64 {
+    twice(println("hi"))
+    return 0
+}

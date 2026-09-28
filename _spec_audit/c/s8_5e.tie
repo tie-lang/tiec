@@ -1,0 +1,13 @@
+type tie<logic>
+
+func boom() -> i64 {
+    panic("boom")
+    return 1
+}
+
+func main() -> i64 {
+    var f = func() -> i64 { var y = boom(); return y; }
+    var c = catch_panic(f)
+    if c { println("caught") } else { println("not caught") }
+    return 0
+}

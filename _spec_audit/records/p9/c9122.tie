@@ -1,0 +1,10 @@
+type tie<logic>
+func main() {
+    var t = table_new_i64()
+    t[5] = 42
+    println(to_string(len(t)))
+    println(to_string(t[5]))
+    t[1000] = 7
+    println(to_string(len(t)))
+    println(to_string(t[1000]))
+}

@@ -1,0 +1,10 @@
+type tie<logic>
+// 16.11 if let Some(v) = opt （位置式枚举变体）
+enum Opt { Some(i64), None }
+func main() -> i64 {
+    var opt = Opt.Some(3)
+    if let Some(v) = opt {
+        return v
+    }
+    return 0
+}

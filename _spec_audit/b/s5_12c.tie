@@ -1,0 +1,8 @@
+type tie<logic>
+
+func log(x: i64) -> void = println(to_string(x))
+
+func main() -> i64 {
+    log(5)
+    return 0
+}

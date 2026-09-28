@@ -1,0 +1,13 @@
+type tie<logic>
+
+func counter(n: i64) -> table<i64> {
+    for i in 0..n {
+        yield i
+    }
+}
+
+func main() -> i64 {
+    var t = counter(3)
+    println(to_string(len(t)))
+    return 0
+}

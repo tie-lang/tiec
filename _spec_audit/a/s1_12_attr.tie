@@ -1,0 +1,11 @@
+type tie<logic>
+#[unsafe.share]
+unsafe fn tagged_fn() -> i64 {
+    return 42
+}
+
+func main() {
+    unsafe {
+        println("tagged_fn: " + to_string(tagged_fn()))
+    }
+}

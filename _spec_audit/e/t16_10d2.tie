@@ -1,0 +1,11 @@
+type tie<logic>
+// 16.10 v -> .field 管道进字段 / v with {k:x}
+struct P {
+    var x: i64 = 0
+}
+func main() -> i64 {
+    var p = P { x: 1 }
+    var g = p.x
+    var q = p with { x: 9 }
+    return g + q.x
+}

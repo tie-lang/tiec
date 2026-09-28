@@ -1,0 +1,12 @@
+type tie<logic>
+// ch11.3 —— ptr<T> 类型声明 + 整数回译 int_to_ptr
+func main() -> i64 {
+    unsafe {
+        var x: i64 = 7
+        var p: ptr<i64> = addr_of(x)
+        var a = ptr_to_int(p)
+        var q: ptr<i64> = int_to_ptr(a)
+        println(to_string(as_i64(deref(q))))
+    }
+    return 0
+}

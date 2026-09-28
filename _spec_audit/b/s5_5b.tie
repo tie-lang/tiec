@@ -1,0 +1,9 @@
+type tie<logic>
+
+func sum(ref rest: ...i64) -> i64 {
+    return len(rest)
+}
+
+func main() -> i64 {
+    return 0
+}

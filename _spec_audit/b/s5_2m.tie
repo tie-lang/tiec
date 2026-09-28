@@ -1,0 +1,13 @@
+type tie<logic>
+
+func grow(x: ref table<i64>) {
+    table_push(x, 42)
+}
+
+func main() -> i64 {
+    var t = table_new_i64()
+    table_push(t, 1)
+    grow(t)
+    println(to_string(len(t)))
+    return 0
+}

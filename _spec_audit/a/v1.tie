@@ -1,0 +1,8 @@
+type tie<logic>
+struct Buffer<CAP: i64> {
+    var data: array<u8, CAP>
+}
+func main() {
+    var b: Buffer<512> = Buffer<512>()
+    println(to_string(len(b.data)))
+}

@@ -1,0 +1,8 @@
+type tie<logic>
+
+func main() -> i64 {
+    var y: i64 = 300
+    var z: i8 = y
+    println(to_string(z))
+    return 0
+}

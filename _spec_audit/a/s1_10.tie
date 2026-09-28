@@ -1,0 +1,13 @@
+type tie<logic>
+func main() -> i64 {
+    var a = 1 +
+        2 +
+        3
+    var list = [1,
+        2,
+        3]
+    var x = 10; var y = 20;
+    println(to_string(a + x + y))
+    println(to_string(len(list)))
+    return 0
+}

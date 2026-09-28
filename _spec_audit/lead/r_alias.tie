@@ -1,0 +1,6 @@
+type tie<logic>
+alias Pair<T> = (T, T)
+func main() -> i64 {
+    var p: Pair<i64> = (1, 2)
+    return 0
+}

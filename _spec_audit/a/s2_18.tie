@@ -1,0 +1,11 @@
+type tie<logic>
+func zeros<N: i64>() -> array<f64, N> {
+    return array_init(0.0)
+}
+struct Buffer<CAP: i64 = 1280> {
+    var data: array<u8, CAP>
+}
+func main() {
+    var b = Buffer<512>()
+    println(to_string(len(b.data)))
+}

@@ -1,0 +1,8 @@
+type tie<logic>
+// 16.4 t -> t + 1 短闭包（要求函数值的位置）
+func apply(f: i64, x: i64) -> i64 { return x }
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3]
+    var ys = xs.map(t -> t + 1)
+    return len(ys)
+}

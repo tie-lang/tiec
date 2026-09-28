@@ -1,0 +1,15 @@
+type tie<logic>
+func main() {
+    var xs: table<i64> = [1, 2, 3]
+    if 2 in xs {
+        println("in ok")
+    }
+    if 9 not in xs {
+        println("notin ok")
+    }
+    var n = 0
+    for i in 0..3 {
+        n = n + i
+    }
+    println(to_string(n))
+}

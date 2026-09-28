@@ -1,0 +1,6 @@
+type tie<logic>
+// 16.4 t -> t + 1 短闭包字面量
+func main() -> i64 {
+    var f = t -> t + 1
+    return f(1)
+}

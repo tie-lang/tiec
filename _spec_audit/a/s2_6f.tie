@@ -1,0 +1,8 @@
+type tie<logic>
+func mm() -> (i64, i64) {
+    return (1, 9)
+}
+func main() {
+    var (lo, hi) = mm()
+    println(to_string(lo + hi))
+}

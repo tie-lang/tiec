@@ -1,0 +1,12 @@
+type tie<logic>
+// 16.6 常用内建（逐个）
+func main() -> i64 {
+    var t = table_new_i64()
+    table_push(t, 7)
+    var a = len(t)
+    var b = to_string(1)
+    var c = str_len("abc")
+    var d = str_char("abc", 0)
+    var e = char_code('a')
+    return a + c
+}

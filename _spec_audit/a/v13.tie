@@ -1,0 +1,8 @@
+type tie<logic>
+struct Cfg<CAP: i64 = 1280> {
+    var cap: i64 = CAP
+}
+func main() {
+    var b = Cfg<512>()
+    println(to_string(b.cap))
+}

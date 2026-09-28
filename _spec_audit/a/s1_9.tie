@@ -1,0 +1,12 @@
+type tie<logic>
+func main() -> i64 {
+    var c: char = 'A'
+    var esc = "tab:\t quote:\" backslash:\\"
+    var n = 3
+    var plain = "共 {n} 项"
+    var interp = h"共 {n} 项"
+    println(esc)
+    println(plain)
+    println(interp)
+    return 0
+}

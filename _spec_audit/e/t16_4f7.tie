@@ -1,0 +1,11 @@
+type tie<logic>
+// 16.4 \p 前缀解引用（unsafe）
+func main() -> i64 {
+    unsafe {
+        var x = 5
+        var p = addr_of(x)
+        var y = \p
+        return y
+    }
+    return 0
+}

@@ -1,0 +1,10 @@
+type tie<logic>
+macro emit(x) {
+    var __t = x
+    println(to_string(__t))
+}
+func main() -> i64 {
+    emit(1)
+    emit(2)
+    return 0
+}

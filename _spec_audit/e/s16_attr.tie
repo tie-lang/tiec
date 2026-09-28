@@ -1,0 +1,5 @@
+type tie<logic>
+// 16.12 #[属性] 通用属性
+#[unsafe.share]
+func f() -> i64 { return 1 }
+func main() -> i64 { return 0 }

@@ -1,0 +1,4 @@
+type tie<logic>
+
+func f3(move ref t: table<i64>) -> i64 { return len(t) }
+func main() -> i64 { return 0 }

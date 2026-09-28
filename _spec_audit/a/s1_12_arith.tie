@@ -1,0 +1,18 @@
+type tie<logic>
+func main() -> i64 {
+    var a = 7 + 3
+    var b = 7 - 3
+    var c = 7 * 3
+    var d = 7 / 3
+    var e = 7 % 3
+    println(to_string(a))
+    println(to_string(b))
+    println(to_string(c))
+    println(to_string(d))
+    println(to_string(e))
+    var p = 2 ** 10
+    println(to_string(p))
+    var q = 2 **? 10
+    println(to_string(q))
+    return 0
+}

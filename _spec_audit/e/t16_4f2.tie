@@ -1,0 +1,8 @@
+type tie<logic>
+// 16.4 / 16.10 解引用记号 p\ 与 \p（对比内建 deref）
+func main() -> i64 {
+    var x = 5
+    var p = addr_of(x)
+    var y = p\
+    return y
+}

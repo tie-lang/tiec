@@ -1,0 +1,23 @@
+type tie<logic>
+
+enum Shape {
+    Circle(i64)
+    Rect(i64, i64)
+}
+
+func desc(s: Shape) -> string {
+    switch s {
+        case Shape.Circle(r):
+            return to_string(r)
+        case Shape.Rect(w, h):
+            return to_string(w * h)
+        default:
+            return "?"
+    }
+}
+
+func main() -> i64 {
+    println(desc(Shape.Circle(5)))
+    println(desc(Shape.Rect(3, 4)))
+    return 0
+}

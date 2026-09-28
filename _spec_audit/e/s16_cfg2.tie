@@ -1,0 +1,6 @@
+type tie<logic>
+// 16.12 #cfg(cond) 真实形态（需 #end 闭合）
+#cfg(debug)
+func f() -> i64 { return 1 }
+#end
+func main() -> i64 { return 0 }

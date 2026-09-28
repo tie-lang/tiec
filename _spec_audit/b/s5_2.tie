@@ -1,0 +1,21 @@
+type tie<logic>
+
+func by_value(x: i64) -> i64 { return x }
+func by_ref(ref t: table<i64>) -> i64 { table_push(t, 1); return len(t) }
+func by_read(immut t: table<i64>) -> i64 { return len(t) }
+func by_move(move t: table<i64>) -> i64 { return len(t) }
+
+func main() -> i64 {
+    var a: i64 = 5
+    println(to_string(by_value(a)))
+    var t = table_new_i64()
+    table_push(t, 1)
+    table_push(t, 2)
+    println(to_string(by_ref(t)))
+    println(to_string(len(t)))
+    println(to_string(by_read(t)))
+    var m = table_new_i64()
+    table_push(m, 1)
+    println(to_string(by_move(m)))
+    return 0
+}

@@ -1,0 +1,8 @@
+type tie<logic>
+// 16.9 trit 三值字面量
+func main() -> i64 {
+    var m: trit = -1t
+    var n: trit = 0t
+    var o: trit = 1t
+    return 0
+}

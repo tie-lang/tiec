@@ -1,0 +1,15 @@
+type tie<logic>
+func read_only(immut x: table<i64>) -> i64 {
+    return len(x)
+}
+func add_to(ref x: table<i64>) {
+    table_push(x, 9)
+}
+func main() -> i64 {
+    var xs = table_new_i64()
+    table_push(xs, 1)
+    println(to_string(read_only(xs)))
+    add_to(xs)
+    println(to_string(len(xs)))
+    return 0
+}

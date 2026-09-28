@@ -1,0 +1,13 @@
+type tie<logic>
+// 16.10 比较链式 / 带检查算术 / 位运算 / 逻辑
+func main() -> i64 {
+    var a = 1 +? 2
+    var b = 5 -? 1
+    var c = 3 *? 4
+    var d = (1 < 2) && (2 < 3)
+    var e = 1 << 2
+    var f = 6 & 3
+    var g = 6 | 1
+    var h = 6 ^ 3
+    return a + b + c + e + f + g + h
+}

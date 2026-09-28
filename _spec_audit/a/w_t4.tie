@@ -1,0 +1,6 @@
+type tie<logic>
+func main() {
+    var a: num = 42
+    var b: i64 = a
+    println(to_string(b))
+}

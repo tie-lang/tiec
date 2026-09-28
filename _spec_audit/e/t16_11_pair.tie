@@ -1,0 +1,10 @@
+type tie<logic>
+// 16.11 var (a, b) = pair 可用形式
+func f() -> (i64, i64) {
+    var p = (1, 2)
+    return p
+}
+func main() -> i64 {
+    var (a, b) = f()
+    return a + b
+}

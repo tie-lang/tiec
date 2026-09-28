@@ -1,0 +1,15 @@
+type tie<logic>
+// ch10.7 重入 —— reentrant 标注
+actor Router {
+    var n: i64 = 0
+
+    pub reentrant func route(id: i64) -> i64 {
+        return id + 1
+    }
+}
+
+func main() -> i64 {
+    var r = run Router()
+    println(to_string(r.route(1)))
+    return 0
+}

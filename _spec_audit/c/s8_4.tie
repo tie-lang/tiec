@@ -1,0 +1,13 @@
+type tie<logic>
+import "F:/Projects/tie-repo/lib_v1/std/result.tie"
+
+func parse_it(s: string) -> Result<i64, string> {
+    if str_len(s) == 0 { return Result.Err("空输入") }
+    return Result.Ok(parse_int(s))
+}
+
+func main() -> i64 {
+    var doubled = parse_it("21") -> map_result(func(v: i64) -> i64 { return v * 2; })
+    println(to_string(doubled))
+    return 0
+}

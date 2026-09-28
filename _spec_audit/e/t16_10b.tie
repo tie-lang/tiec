@@ -1,0 +1,11 @@
+type tie<logic>
+// 16.10 管道进下标 / 进字段 / 块管道
+struct P { var f: i64 = 0 }
+func main() -> i64 {
+    var xs: table<i64> = [10, 20, 30]
+    var i = xs -> [key]
+    var p = P { f: 1 }
+    var g = p -> .f
+    var h = 3 -> { x -> x + 1 }
+    return i + g + h
+}

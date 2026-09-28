@@ -1,0 +1,4 @@
+type tie<logic>
+// 16.12 import "m.tie" as m
+import "./mod16.tie" as m
+func main() -> i64 { return m.alpha() }

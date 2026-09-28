@@ -1,0 +1,19 @@
+type tie<logic>
+
+func inc(x: i64) -> i64 { return x + 1 }
+
+func apply(g: fn(i64) -> i64, v: i64) -> i64 {
+    return g(v)
+}
+
+func twice(g: fn(i64) -> i64, x: i64) -> i64 {
+    return g(g(x))
+}
+
+func main() -> i64 {
+    println(to_string(apply(inc, 5)))
+    println(to_string(twice(inc, 5)))
+    var f: fn(i64) -> i64 = inc
+    println(to_string(f(9)))
+    return 0
+}

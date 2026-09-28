@@ -1,0 +1,7 @@
+type tie<logic>
+/// 求两数的最大公约数。
+///
+/// 示例：
+///     gcd(12, 18)   // 6
+pub func gcd(a: i64, b: i64) -> i64 { return a }
+func main() -> i64 { return 0 }

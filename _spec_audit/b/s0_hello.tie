@@ -1,0 +1,6 @@
+type tie<logic>
+
+func main() -> i64 {
+    println("hi")
+    return 0
+}

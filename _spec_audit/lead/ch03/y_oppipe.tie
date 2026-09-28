@@ -1,0 +1,8 @@
+type tie<logic>
+func main() -> i64 {
+    var t: table<i64> = [1]
+    var x: i64 = 5
+    var grown = t -> + [x]
+    println(to_string(len(grown)))
+    return 0
+}

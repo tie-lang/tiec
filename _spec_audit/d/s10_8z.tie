@@ -1,0 +1,17 @@
+type tie<logic>
+// ch10.8 —— 规范原示例（初值全是零值）
+actor Cache {
+    var hits: i64 = 0
+    var name: string = ""
+    var items: table<i64> = []
+
+    pub func get_hits() -> i64 {
+        return hits
+    }
+}
+
+func main() -> i64 {
+    var c = run Cache()
+    println(to_string(c.get_hits()))
+    return 0
+}

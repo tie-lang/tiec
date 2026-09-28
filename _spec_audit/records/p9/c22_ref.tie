@@ -1,0 +1,9 @@
+type tie<logic>
+func outer(t: ref table<i64>) -> i64 {
+    var f: fn() -> i64 = func() -> i64 { return len(t) }
+    return f()
+}
+func main() {
+    var t = table_new_i64()
+    println(to_string(outer(t)))
+}

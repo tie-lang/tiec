@@ -1,0 +1,4 @@
+type tie<logic>
+// 16.2/16.12 extern 声明（对照 extern func vs extern fn）
+extern fn e(a: i64) -> i64
+func main() -> i64 { return 0 }

@@ -1,0 +1,10 @@
+type tie<logic>
+// ch11.6 —— unsafe with 作用域临时凭据
+var shared_counter: i64 = 0
+
+func main() -> i64 {
+    unsafe with(共享域) {
+        shared_counter += 1
+    }
+    return 0
+}

@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.11 var x = switch v { 0 -> a, _ -> b } 分支即表达式
+func main() -> i64 {
+    var v = 2
+    var s = switch v { 0 -> 10, _ -> 20 }
+    return s
+}

@@ -1,0 +1,20 @@
+type tie<logic>
+
+func find(xs: table<i64>, target: i64) -> Option<i64> {
+    for x in xs {
+        if x == target { return Option.Some(x) }
+    }
+    return Option.None
+}
+
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3]
+    var r = find(xs, 2)
+    switch r {
+        case Option.Some(v):
+            println(to_string(v))
+        case Option.None:
+            println("none")
+    }
+    return 0
+}

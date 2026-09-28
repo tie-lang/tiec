@@ -1,0 +1,12 @@
+type tie<logic>
+
+const LIMIT: i64 = 7
+var gcount: i64 = 3
+
+func main() -> i64 {
+    var a: fn() -> i64 = func() -> i64 { return LIMIT }
+    var b: fn() -> i64 = func() -> i64 { return gcount }
+    println(to_string(a()))
+    println(to_string(b()))
+    return 0
+}

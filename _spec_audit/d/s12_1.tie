@@ -1,0 +1,7 @@
+type tie<logic>
+func twice(x: code) -> code {
+    return `($x + $x)
+}
+func main() -> i64 {
+    return 0
+}

@@ -1,0 +1,11 @@
+type tie<logic>
+func main() -> i64 {
+    var age = map_new()
+    map_set(age, "alice", 30)
+    if "alice" in age { println("map-hit") }
+    if "dave" not in age { println("map-miss") }
+    var xs: table<i64> = [1, 2, 3]
+    if 2 in xs { println("tbl-hit") }
+    if "bc" in "abcd" { println("str-hit") }
+    return 0
+}

@@ -1,0 +1,11 @@
+type tie<logic>
+// ch11.2 —— 安全代码调用 unsafe 函数（应被拒）
+unsafe func poke(p: ptr<u8>, v: u8) {
+    deref_write(p, v)
+}
+
+func main() -> i64 {
+    var buf = alloc(8)
+    poke(buf, as_u8(3))
+    return 0
+}

@@ -1,0 +1,8 @@
+type tie<logic>
+macro dbl(x: code) -> code {
+    return `($x * 2)
+}
+func main() -> i64 {
+    println(to_string(dbl(5)))
+    return 0
+}

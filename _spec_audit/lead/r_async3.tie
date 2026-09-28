@@ -1,0 +1,7 @@
+type tie<logic>
+actor W { pub async func reset() { } }
+func main() -> i64 {
+    var w = run W()
+    w.reset()
+    return 0
+}

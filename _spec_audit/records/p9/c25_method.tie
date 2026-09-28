@@ -1,0 +1,14 @@
+type tie<logic>
+struct P {
+    var x: i64 = 0
+    var y: i64 = 0
+}
+namespace P {
+    pub func sum(self: P, a: i64 = 1, b: i64 = 2) -> i64 { return self.x + self.y + a + b }
+}
+func main() {
+    var p: P = P(10, 20)
+    println(to_string(p.sum(b: 5)))
+    println(to_string(p.sum()))
+    println(to_string(p.sum(100, 200)))
+}

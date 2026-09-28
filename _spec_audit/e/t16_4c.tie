@@ -1,0 +1,9 @@
+type tie<logic>
+// 16.4 v? 存在判定
+func main() -> i64 {
+    var v = 3
+    if v? {
+        return 1
+    }
+    return 0
+}

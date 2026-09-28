@@ -1,0 +1,12 @@
+type tie<logic>
+// 16.11 unsafe goto #tag 在 unsafe 块内 + #[tag.x]
+func main() -> i64 {
+    var x = 1
+    unsafe {
+        if x == 0 {
+            unsafe goto #done
+        }
+    }
+    #[tag.done]
+    return 0
+}

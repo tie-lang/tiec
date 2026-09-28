@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.10 x \= v 整除复合赋值
+func main() -> i64 {
+    var b = 7
+    b \= 2
+    return b
+}

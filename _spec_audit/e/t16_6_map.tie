@@ -1,0 +1,6 @@
+type tie<logic>
+// 16.6 map_new() 新建映射
+func main() -> i64 {
+    var m = map_new()
+    return 0
+}

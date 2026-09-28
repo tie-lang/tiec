@@ -1,0 +1,10 @@
+type tie<logic>
+func cmp(a: ptr<u8>, b: ptr<u8>) -> bool {
+    return a == b
+}
+func main() -> i64 {
+    var x: u8 = 1
+    var p: ptr<u8> = addr_of(x)
+    println(to_string(cmp(p, p)))
+    return 0
+}

@@ -1,0 +1,2 @@
+type tie<db>
+func main() -> i64 { return 0 }

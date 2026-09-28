@@ -1,0 +1,6 @@
+type tie<logic>
+func main() {
+    var p = int_to_ptr(0)
+    var v = deref(p)
+    println(to_string(v))
+}

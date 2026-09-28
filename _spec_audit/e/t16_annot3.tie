@@ -1,0 +1,5 @@
+type tie<logic>
+// 16.12 @注解(3) 声明前置注解
+@custom(3)
+func f() -> i64 { return 1 }
+func main() -> i64 { return f() }

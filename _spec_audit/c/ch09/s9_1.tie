@@ -1,0 +1,10 @@
+type tie<logic>
+import "./geometry.tie" as geo
+import "./format.tie"
+
+func main() -> i64 {
+    var d = geo.distance(9, 4)
+    println(to_string(d))
+    println(fmt_it(7))
+    return 0
+}

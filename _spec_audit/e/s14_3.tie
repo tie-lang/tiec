@@ -1,0 +1,11 @@
+type tie<logic>
+// 14.3 事件：on_事件名 绑定函数值（具名函数 / 短闭包）
+func retry() -> i64 { return 0 }
+func clear_all() -> i64 { return 0 }
+func host_changed(s: string) -> i64 { return 0 }
+func main() -> i64 {
+    @ button "重试" on_click: retry
+    @ button "清空" on_click: t -> clear_all()
+    @ input host: "localhost" on_change: host_changed
+    return 0
+}

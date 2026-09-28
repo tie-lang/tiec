@@ -1,0 +1,4 @@
+type tie<class, unsafe>
+func main() -> i64 {
+    return 0
+}

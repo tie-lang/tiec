@@ -1,0 +1,8 @@
+type tie<logic>
+func f(x: i64) -> i64 { return x + 1 }
+func main() -> i64 {
+    var v = 5
+    var r = v -> f
+    println(to_string(r))
+    return 0
+}

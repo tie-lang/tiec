@@ -1,0 +1,8 @@
+type tie<logic>
+func main() -> i64 {
+    var a = 0t1T0
+    var b: trit = -1t
+    var c: trit = 0t
+    var d: trit = 1t
+    return 0
+}

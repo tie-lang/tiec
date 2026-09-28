@@ -1,0 +1,6 @@
+type tie<class, unsafe>
+func poke() -> i64 {
+    var p = alloc(8)
+    free(p)
+    return 0
+}

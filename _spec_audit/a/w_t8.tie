@@ -1,0 +1,5 @@
+type tie<logic>
+func main() {
+    var f = func(a: num) -> num { return a }
+    println(to_string(f(42)))
+}

@@ -1,0 +1,10 @@
+type tie<logic>
+func main() -> i64 {
+    var t: trit = true
+    var u: trit = false
+    var z: trit = zero
+    println(to_string(t && u))
+    println(to_string(t || u))
+    println(to_string(t && z))
+    return 0
+}

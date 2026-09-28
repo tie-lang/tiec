@@ -1,0 +1,20 @@
+type tie<logic>
+
+struct Ring {
+    var n: i64 = 0
+    var i: i64 = 0
+    var buf: table<i64> = []
+}
+
+namespace Ring {
+    pub func has_next(r: Ring) -> bool { return r.i < r.n }
+    pub func next(r: Ring) -> i64 { r.i += 1; return r.buf[r.i - 1] }
+}
+
+func main() -> i64 {
+    var ring = Ring(3, 0, [10, 20, 30])
+    for v in ring {
+        println(to_string(v))
+    }
+    return 0
+}

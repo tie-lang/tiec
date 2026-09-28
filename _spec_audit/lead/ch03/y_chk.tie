@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var (s, ok) = checked_add(3, 4)
+    println(to_string(s))
+    return 0
+}

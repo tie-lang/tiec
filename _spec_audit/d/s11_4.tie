@@ -1,0 +1,10 @@
+type tie<logic>
+func mk(ref x: table<i64>) -> fn() {
+    return func() { table_push(x, 1) }
+}
+func main() -> i64 {
+    var xs = table_new_i64()
+    var f = mk(xs)
+    f()
+    return 0
+}

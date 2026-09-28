@@ -1,0 +1,6 @@
+type tie<logic>
+func main() {
+    var f: fn(i64) -> i64
+    f = t -> t + 1
+    println(to_string(f(41)))
+}

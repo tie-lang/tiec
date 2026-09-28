@@ -1,0 +1,7 @@
+func add(a: i64, b: i64) -> i64 {
+    /// 函数体内文档注释（应退化为普通注释，不附着）
+    var c = a + b
+    return c
+}
+/// 附着到 main
+func main() -> i64 { return 0 }

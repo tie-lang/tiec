@@ -1,0 +1,5 @@
+type tie<logic>
+func main() {
+    var f: num = 7i32
+    println("ok")
+}

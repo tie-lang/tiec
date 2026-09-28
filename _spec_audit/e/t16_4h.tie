@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.4 0..10 与 0..=10 范围
+func main() -> i64 {
+    var b = 0..10
+    var c = 0..=10
+    return len(b) + len(c)
+}

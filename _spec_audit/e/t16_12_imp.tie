@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.12 导入形态
+import "std/string.tie" as st
+import "std/string.tie".{ trim }
+pub import "std/string.tie"
+using st
+func main() -> i64 { return 0 }

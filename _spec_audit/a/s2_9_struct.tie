@@ -1,0 +1,12 @@
+type tie<logic>
+struct P {
+    var x: i64 = 0
+}
+enum E {
+    A(P)
+    B(i64)
+}
+func main() {
+    var e = E.B(3)
+    println("ok")
+}

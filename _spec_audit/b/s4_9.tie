@@ -1,0 +1,14 @@
+type tie<logic>
+
+func transfer(from: string, amount: i64) -> bool {
+    guard amount > 0 else { return false }
+    guard from != "" else { return false }
+    println("ok")
+    return true
+}
+
+func main() -> i64 {
+    if transfer("alice", 5) { println("pass") }
+    if transfer("", 5) { } else { println("reject") }
+    return 0
+}

@@ -1,0 +1,9 @@
+type tie<data>
+
+api = [
+    [ "id": "tsci.linalg", "version": "0.1.0" ],
+    [ "funcs": [
+        [ "name": "mat_mul", "in": 2, "out": 1 ],
+    ],
+    ],
+]

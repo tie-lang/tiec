@@ -1,0 +1,5 @@
+type tie<logic>
+// 16.12 using ns.sub
+import "./mod16.tie" as m
+using m
+func main() -> i64 { return alpha() }

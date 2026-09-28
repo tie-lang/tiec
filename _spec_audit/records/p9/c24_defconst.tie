@@ -1,0 +1,7 @@
+type tie<logic>
+const BASE: i64 = 10
+const fn dbl(n: i64) -> i64 { return n * 2 }
+func f(a: i64 = BASE, b: i64 = dbl(3)) -> i64 { return a + b }
+func main() {
+    println(to_string(f()))
+}

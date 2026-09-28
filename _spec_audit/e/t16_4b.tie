@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.4 v ?: 10 安全默认值（非 Option 左值）
+func main() -> i64 {
+    var v = 3
+    var r = v ?: 10
+    return r
+}

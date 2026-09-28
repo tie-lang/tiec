@@ -1,0 +1,19 @@
+type tie<logic>
+
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+}
+
+struct NoImpl {
+    var x: i64 = 0
+}
+
+func render<T: Drawable>(d: T, ctx: i64) {
+    d.draw(ctx)
+}
+
+func main() -> i64 {
+    var n: NoImpl = NoImpl(1)
+    render(n, 0)
+    return 0
+}

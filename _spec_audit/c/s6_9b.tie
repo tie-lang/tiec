@@ -1,0 +1,19 @@
+type tie<logic>
+
+struct Circle {
+    var r: f64 = 0.0
+    var tag: string = ""
+}
+
+namespace Circle {
+    pub func area(c: Circle) -> f64 { return 3.14159 * c.r * c.r }
+    pub func label(c: Circle) -> string { return "圆 " + to_string(c.r) }
+}
+
+func main() -> i64 {
+    var c = Circle(2.0, "")
+    var a = c.area
+    println(to_string(a))
+    println(c.label)
+    return 0
+}

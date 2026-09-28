@@ -1,0 +1,11 @@
+type tie<logic>
+
+func take_i(x: i64) -> i64 {
+    return x
+}
+
+func main() -> i64 {
+    var f: f64 = 3.9
+    println(to_string(take_i(f)))
+    return 0
+}

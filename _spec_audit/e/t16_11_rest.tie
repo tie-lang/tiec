@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.11 var (a, ...rest) = xs 解构带剩余
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3, 4]
+    var (a, ...rest) = xs
+    return a + len(rest)
+}

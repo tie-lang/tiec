@@ -1,0 +1,17 @@
+type tie<logic>
+
+struct Circle {
+    var r: f64 = 0.0
+    var tag: string = ""
+}
+
+namespace Circle {
+    pub func label_set(c: Circle, v: string) { c.tag = v }
+}
+
+func main() -> i64 {
+    var c = Circle(2.0, "")
+    c.label_set("x")
+    println(c.tag)
+    return 0
+}

@@ -1,0 +1,5 @@
+// 前导注释
+type tie<logic>
+
+// 空行后再来一行头部（是否算连续）
+func main() -> i64 { return 0 }

@@ -1,0 +1,7 @@
+type tie<logic>
+func main() {
+    var a: trit = true
+    var m: i64 = 5
+    var x = a + m
+    println(to_string(x))
+}

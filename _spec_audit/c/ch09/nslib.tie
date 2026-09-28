@@ -1,0 +1,10 @@
+type tie<logic>
+
+namespace lib {
+    func secret() -> i64 {
+        return 99
+    }
+    pub func open_api() -> i64 {
+        return 1
+    }
+}

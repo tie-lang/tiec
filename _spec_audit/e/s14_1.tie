@@ -1,0 +1,11 @@
+type tie<logic>
+// 14.1 元素块：@ window "设置" { size: 480 x 320 @ panel { ... } }
+func main() -> i64 {
+    @ window "设置" {
+        size: 480 x 320
+        @ panel {
+            @ label "服务地址"
+        }
+    }
+    return 0
+}

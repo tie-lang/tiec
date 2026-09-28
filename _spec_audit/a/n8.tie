@@ -1,0 +1,5 @@
+type tie<logic>
+func main() -> i64 {
+    var v: i32 = 42i32
+    return 0
+}

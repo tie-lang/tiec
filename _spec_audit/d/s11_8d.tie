@@ -1,0 +1,7 @@
+type tie<logic>
+repr(C) struct S { var a: i64; var b: i64; }
+func main() -> i64 {
+    var s = S(1, 2)
+    println(to_string(s.a))
+    return 0
+}

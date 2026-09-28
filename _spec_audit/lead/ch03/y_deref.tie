@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    unsafe {
+        var p = alloc(8)
+        var v = as_i64(\p)
+        println(to_string(v))
+    }
+    return 0
+}

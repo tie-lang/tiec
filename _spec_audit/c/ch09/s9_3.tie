@@ -1,0 +1,7 @@
+type tie<logic>
+import "./privlib.tie"
+
+func main() -> i64 {
+    println(to_string(api()))
+    return 0
+}

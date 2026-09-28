@@ -1,0 +1,48 @@
+type tie<logic>
+
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+    pub func bounds(self) -> i64
+}
+
+struct Button {
+    var label: string
+    var w: i64
+    var h: i64
+}
+
+impl Drawable for Button {
+    pub func draw(self, ctx: i64) -> string {
+        return "Button(" + self.label + ")"
+    }
+    pub func bounds(self) -> i64 {
+        return self.w * self.h
+    }
+}
+
+struct LabelX {
+    var msg: string
+}
+
+impl Drawable for LabelX {
+    pub func draw(self, ctx: i64) -> string {
+        return "Label(" + self.msg + ")"
+    }
+    pub func bounds(self) -> i64 {
+        return 10
+    }
+}
+
+func main() -> i64 {
+    var b: Button = Button("ok", 10, 20)
+    var l: LabelX = LabelX("hi")
+    unsafe {
+        var d: Drawable = b
+        var d2: Drawable = l
+        var items: table<Drawable> = [d, d2]
+        for it in items {
+            println(it.draw(0))
+        }
+    }
+    return 0
+}

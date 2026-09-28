@@ -1,0 +1,11 @@
+type tie<logic>
+func main() -> i64 {
+    var first = 1
+    var second = 2
+    var third = 3
+    var total = first + \
+        second + \
+        third
+    println(to_string(total))
+    return 0
+}

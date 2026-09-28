@@ -1,0 +1,14 @@
+type tie<logic>
+// ch10.8 —— 初值类型不匹配（i64 字段给字符串）
+actor Bad {
+    var n: i64 = "hello"
+
+    pub func get() -> i64 {
+        return n
+    }
+}
+
+func main() -> i64 {
+    var b = run Bad()
+    return 0
+}

@@ -1,0 +1,7 @@
+// pack.data.tie —— type tie<data>
+// s17_1_specsample.data.tie —— 严格照抄规范 17.1 示例（首行注释、无 type 声明行）
+[
+    "season": "S13",
+    "season_id": "2026-08",
+    "author": "tie-lang",
+]

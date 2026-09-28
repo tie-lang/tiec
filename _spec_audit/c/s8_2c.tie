@@ -1,0 +1,21 @@
+type tie<logic>
+import "F:/Projects/tie-repo/lib_v1/std/result.tie"
+
+func div(a: i64, b: i64) -> Result<i64, string> {
+    if b == 0 { return Result.Err("div0") }
+    return Result.Ok(a / b)
+}
+
+func chain(a: i64, b: i64) -> Result<i64, string> {
+    var x = div(a, b)?
+    return Result.Ok(x + 1)
+}
+
+func main() -> i64 {
+    var r = chain(10, 2)
+    switch r {
+        case Ok(v): println(to_string(v))
+        case Err(e): println(e)
+    }
+    return 0
+}

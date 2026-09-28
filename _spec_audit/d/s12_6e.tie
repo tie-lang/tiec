@@ -1,0 +1,9 @@
+type tie<logic>
+macro twice(stmt) {
+    $stmt
+    $stmt
+}
+func main() -> i64 {
+    twice(println("hi"))
+    return 0
+}

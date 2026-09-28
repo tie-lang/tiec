@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var input = "  hi  "
+    input -> trim -> len -> to_string -> println
+    return 0
+}

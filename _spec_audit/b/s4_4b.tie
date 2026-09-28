@@ -1,0 +1,14 @@
+type tie<logic>
+
+func main() -> i64 {
+    var found: i64 = -1
+    outer: for a in 0..10 {
+        for b in 0..10 {
+            if b == 5 { break outer }
+            if b == 2 { continue outer }
+            found = a * 100 + b
+        }
+    }
+    println(to_string(found))
+    return 0
+}

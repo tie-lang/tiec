@@ -1,0 +1,6 @@
+type tie<logic>
+func side() -> i64 { return 3 }
+struct S {
+    var a: i64 = side()
+}
+func main() -> i64 { return 0 }

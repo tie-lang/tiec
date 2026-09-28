@@ -1,0 +1,7 @@
+type tie<logic>
+
+func connect(host: string, p: i64 = 1) -> i64 { return p }
+func main() -> i64 {
+    connect("x", host: "y")
+    return 0
+}

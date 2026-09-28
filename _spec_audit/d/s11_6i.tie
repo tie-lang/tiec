@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    unsafe {
+        var buf = alloc(8)
+        var bound = unsafe.get(mem -> buf)
+        free(buf)
+    }
+    return 0
+}

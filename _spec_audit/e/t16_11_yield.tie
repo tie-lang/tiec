@@ -1,0 +1,11 @@
+type tie<logic>
+// 16.11 yield v（生成器）
+func gen() -> table<i64> {
+    yield 1
+    yield 2
+    return 0
+}
+func main() -> i64 {
+    var g = gen()
+    return len(g)
+}

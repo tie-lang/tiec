@@ -1,0 +1,6 @@
+type tie<data>
+// s17_1_named.data.tie —— 带可选表名形态 name = [ ... ]
+pack = [
+    "season": "S13",
+    "id": 7,
+]

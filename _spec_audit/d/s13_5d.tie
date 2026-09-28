@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var s = "ab"
+    var t = s.clone()
+    println(t)
+    return 0
+}

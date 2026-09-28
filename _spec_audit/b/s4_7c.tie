@@ -1,0 +1,13 @@
+type tie<logic>
+
+func double(x: i64) -> i64 { return x * 2 }
+func print_i(x: i64) { println(to_string(x)) }
+
+func main() -> i64 {
+    println("hello")
+    var v: i64 = 5
+    var r = v -> double
+    println(to_string(r))
+    v -> print_i
+    return 0
+}

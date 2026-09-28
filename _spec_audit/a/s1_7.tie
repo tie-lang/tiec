@@ -1,0 +1,14 @@
+type tie<logic>
+func main() -> i64 {
+    var a = 0xFF
+    var b = 0b1011
+    var c = 0o755
+    var d = 1_000_000
+    var e = 0xCA_FE
+    var f = 3.14
+    var g = 1.5e3
+    var h = 42i32
+    var i = 0x80u16
+    var j = 0t1T0
+    return 0
+}

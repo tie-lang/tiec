@@ -1,0 +1,10 @@
+type tie<logic>
+func main() -> i64 {
+    var x: i64 = 0
+    x <- 42
+    println(to_string(x))
+    var arr: table<i64> = [1, 2]
+    arr[0] <- 9
+    println(to_string(arr[0]))
+    return 0
+}

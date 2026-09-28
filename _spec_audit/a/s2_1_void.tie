@@ -1,0 +1,9 @@
+type tie<logic>
+func f() -> void {
+    println("v")
+}
+func main() {
+    f()
+    var a: any = 1
+    println(to_string(as_i64(a)))
+}

@@ -1,0 +1,10 @@
+type tie<logic>
+// 16.10 a \ b 整除 与 x \= v / x %%= v 复合赋值
+func main() -> i64 {
+    var a = 7 \ 2
+    var b = 7
+    b \= 2
+    var c = 7
+    c %%= 3
+    return a + b + c
+}

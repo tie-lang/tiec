@@ -1,0 +1,13 @@
+type tie<logic>
+func main() {
+    var a = 1 -| 2
+    println(to_string(a))
+    var b = 1 <-| 2
+    println(to_string(b))
+    var c = 1 ->x 2
+    println(to_string(c))
+    var d = ~x 1
+    println(to_string(d))
+    var e = 1 ->< 2
+    println(to_string(e))
+}

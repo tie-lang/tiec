@@ -1,0 +1,7 @@
+type tie<logic>
+struct Buf[const N: i64] {
+    var data: table<i64> = table_new_i64()
+}
+func main() {
+    println("x")
+}

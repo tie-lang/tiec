@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var c: atomic<i64> = 0
+    c.store(5)
+    println(to_string(c.load()))
+    return 0
+}

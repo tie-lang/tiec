@@ -1,0 +1,6 @@
+type tie<logic>
+using std.args
+
+func main() -> i64 {
+    return 0
+}

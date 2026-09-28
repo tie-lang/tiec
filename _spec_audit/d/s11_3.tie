@@ -1,0 +1,15 @@
+type tie<logic>
+// ch11.3 指针操作 —— 规范原文示例
+func main() -> i64 {
+    unsafe {
+        var p = alloc(64)
+        var q = ptr_add(p, 8)
+        deref_write(q, as_i64(42))
+        var n = as_i64(deref(q))
+        var a = ptr_to_int(p)
+        free(p)
+        println(to_string(n))
+        println(to_string(a))
+    }
+    return 0
+}

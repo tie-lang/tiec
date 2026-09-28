@@ -1,0 +1,5 @@
+type tie<logic>
+func main() -> i64 {
+    var v: u16 = 0x80u16
+    return 0
+}

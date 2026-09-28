@@ -1,0 +1,20 @@
+type tie<logic>
+// ch10.2 —— 方法 pub + 句柄写 Counter()（不带 run）
+actor Counter {
+    var n: i64 = 0
+
+    pub func inc(step: i64) {
+        n += step
+    }
+
+    pub func value() -> i64 {
+        return n
+    }
+}
+
+func main() -> i64 {
+    var c = Counter()
+    c.inc(5)
+    println(to_string(c.value()))
+    return 0
+}

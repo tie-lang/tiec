@@ -1,0 +1,11 @@
+type tie<logic>
+// ch11.7 —— 实现形态：英文方向词 + 双引号模板
+func main() -> i64 {
+    unsafe {
+        asm!("nop")
+        var n: i64 = 0
+        asm!("mov {d}, 1", out(reg) n)
+        println(to_string(n))
+    }
+    return 0
+}

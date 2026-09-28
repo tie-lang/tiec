@@ -1,0 +1,13 @@
+type tie<logic>
+// 16.5 for c in s.chars()  与  lbl break
+func main() -> i64 {
+    var s = "abc"
+    var n: i64 = 0
+    for c in s.chars() {
+        n = n + 1
+    }
+    lbl: for i in 0..10 {
+        if i == 3 { break lbl }
+    }
+    return n
+}

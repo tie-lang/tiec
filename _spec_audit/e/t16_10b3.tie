@@ -1,0 +1,6 @@
+type tie<logic>
+// 16.10 v -> { x -> e } 块管道
+func main() -> i64 {
+    var h = 3 -> { x -> x + 1 }
+    return h
+}

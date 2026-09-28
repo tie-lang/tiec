@@ -1,0 +1,8 @@
+type tie<logic>
+func main() -> i64 {
+    var xs = table_new_i64()
+    table_push(xs, 7)
+    var s: slice<i64> = slice_of(xs, 0, 1)
+    println(to_string(s[0]))
+    return 0
+}

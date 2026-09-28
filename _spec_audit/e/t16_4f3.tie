@@ -1,0 +1,8 @@
+type tie<logic>
+// 对照：内建 deref(addr_of(x)) 是否可用
+func main() -> i64 {
+    var x = 5
+    var p = addr_of(x)
+    var y = deref(p)
+    return y
+}

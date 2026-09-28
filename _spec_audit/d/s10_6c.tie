@@ -1,0 +1,22 @@
+type tie<logic>
+// ch10.6 —— 句柄可复制（多副本指向同一执行体）
+actor Counter {
+    var n: i64 = 0
+
+    pub func inc(step: i64) -> i64 {
+        n += step
+        return n
+    }
+
+    pub func value() -> i64 {
+        return n
+    }
+}
+
+func main() -> i64 {
+    var c = run Counter()
+    var d = c
+    d.inc(5)
+    println(to_string(c.value()))
+    return 0
+}

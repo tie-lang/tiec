@@ -1,0 +1,10 @@
+type tie<logic>
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3, 4]
+    var head = xs[0..3]
+    var rest = xs[3..]
+    var upto = xs[..2]
+    var all = xs[..]
+    println(to_string(len(head) + len(rest) + len(upto) + len(all)))
+    return 0
+}

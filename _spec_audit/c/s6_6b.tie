@@ -1,0 +1,6 @@
+type tie<logic>
+struct S {
+    var a: i64 = 0
+    var a: i64 = 1
+}
+func main() -> i64 { return 0 }

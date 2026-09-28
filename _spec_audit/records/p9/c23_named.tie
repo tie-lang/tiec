@@ -1,0 +1,7 @@
+type tie<logic>
+func d(a: i64 = 1, b: i64 = 2, c: i64 = 3) -> i64 { return a * 100 + b * 10 + c }
+func main() {
+    println(to_string(d(c: 9)))
+    println(to_string(d(a: 7, c: 5)))
+    println(to_string(d()))
+}

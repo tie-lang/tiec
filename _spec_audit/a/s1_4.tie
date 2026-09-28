@@ -1,0 +1,13 @@
+type tie<logic>
+// 行注释
+/* 块注释
+   可跨行 */
+/// 文档注释：附着到紧随其后的声明
+func add(a: i64, b: i64) -> i64 {
+    /// 函数体内部的文档注释（应退化为普通注释）
+    return a + b
+}
+func main() -> i64 {
+    println(to_string(add(1, 2)))
+    return 0
+}

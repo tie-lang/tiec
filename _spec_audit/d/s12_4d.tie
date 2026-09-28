@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    const K: i64 = 7
+    println(to_string(K))
+    return 0
+}

@@ -1,0 +1,10 @@
+type tie<logic>
+macro unless(cond: code, body: code) -> code {
+    return `{ if !($cond) { $body } }
+}
+func cleanup() { println("x") }
+func main() -> i64 {
+    var done: bool = false
+    unless(done, cleanup())
+    return 0
+}

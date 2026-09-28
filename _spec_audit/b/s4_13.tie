@@ -1,0 +1,12 @@
+type tie<logic>
+
+func main() -> i64 {
+    var n = 5
+    var label = switch n {
+        0 -> "零"
+        1..9 -> "个位"
+        _ -> "多位"
+    }
+    println(label)
+    return 0
+}

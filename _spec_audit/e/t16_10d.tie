@@ -1,0 +1,8 @@
+type tie<logic>
+// 16.10 v with { k: x } 不可变更新
+struct P { var x: i64 = 0 }
+func main() -> i64 {
+    var p = P { x: 1 }
+    var q = p with { x: 9 }
+    return q.x
+}

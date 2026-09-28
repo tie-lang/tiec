@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var r = 3 *? 4
+    println(to_string(r))
+    return 0
+}

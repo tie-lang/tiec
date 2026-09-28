@@ -1,0 +1,17 @@
+type tie<logic>
+// ch10.8 —— 初值必须字面量：函数调用作初值
+func make() -> i64 { return 9 }
+
+actor Bad {
+    var n: i64 = make()
+
+    pub func get() -> i64 {
+        return n
+    }
+}
+
+func main() -> i64 {
+    var b = run Bad()
+    println(to_string(b.get()))
+    return 0
+}

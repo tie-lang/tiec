@@ -1,0 +1,8 @@
+type tie<logic>
+
+func apply(g: fn(i64) -> i64, v: i64) -> i64 { return g(v) }
+
+func main() -> i64 {
+    println(to_string(apply(func(x) { return x + 1 }, 5)))
+    return 0
+}

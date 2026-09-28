@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.10 v -> [i] 管道进下标
+func main() -> i64 {
+    var xs: table<i64> = [10, 20, 30]
+    var i = xs[0]
+    return i
+}

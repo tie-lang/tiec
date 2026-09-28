@@ -1,0 +1,13 @@
+type tie<logic>
+// 16.11 unsafe goto #tag 向后跳（标签先于 goto）
+func main() -> i64 {
+    var n: i64 = 0
+    #[tag.head]
+    unsafe {
+        n = n + 1
+        if n < 2 {
+            unsafe goto #head
+        }
+    }
+    return n
+}

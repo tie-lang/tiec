@@ -1,0 +1,11 @@
+type tie<logic>
+actor Counter {
+    var count: i64 = 7
+    pub func get() -> i64 {
+        return count
+    }
+}
+func main() {
+    var c = run Counter()
+    println("count=" + to_string(c.get()))
+}

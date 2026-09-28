@@ -1,0 +1,13 @@
+type tie<logic>
+// 16.10 可空链 opt ?  opt ?: d  obj?.f  obj?[i]
+struct P { var f: i64 = 0 }
+func main() -> i64 {
+    var o: i64 = 5
+    var a = o ?: 10
+    var b = o?
+    var p = P { f: 1 }
+    var c = p?.f
+    var xs: table<i64> = [1, 2, 3]
+    var d = xs?[0]
+    return a
+}

@@ -1,0 +1,9 @@
+type tie<logic>
+// 14.2 属性与绑定：值可字面量/变量/表达式（花括号界定）
+func view(done: i64, total: i64, config: i64) -> i64 {
+    @ label title
+    @ progress value: done * 100 / total
+    @ input host: config.host
+    return 0
+}
+func main() -> i64 { return 0 }

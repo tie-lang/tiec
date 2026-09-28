@@ -1,0 +1,14 @@
+type tie<logic>
+interface Drawable {
+    pub func draw(x: i64) -> void
+}
+func render_all<T: Drawable>(items: table<T>) -> i64 {
+    return len(items)
+}
+struct S {
+    var v: i64 = 0
+}
+func main() {
+    var t: table<i64> = [1, 2]
+    println(to_string(render_all<i64>(t)))
+}

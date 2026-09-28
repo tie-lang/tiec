@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3]
+    var ys = xs -> map(it * 2)
+    return 0
+}

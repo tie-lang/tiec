@@ -1,0 +1,12 @@
+type tie<logic>
+struct Shape {
+    var name: string = ""
+}
+struct Circle extends Shape {
+    var r: f64 = 0.0
+}
+func main() -> i64 {
+    var c = Circle("x", 1.5)
+    println(c.name)
+    return 0
+}

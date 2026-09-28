@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var n: i64 = 3
+    var b = "no-prefix: {n}"
+    println(b)
+    return 0
+}

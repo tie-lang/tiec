@@ -1,0 +1,9 @@
+type tie<logic>
+import "F:/Projects/tie-repo/lib_v1/std/result.tie"
+
+func main() -> i64 {
+    var cfg: map<string> = ["port": "8080"]
+    var raw = cfg["port"]?
+    println(raw)
+    return 0
+}

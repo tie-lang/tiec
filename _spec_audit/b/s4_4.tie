@@ -1,0 +1,25 @@
+type tie<logic>
+
+func main() -> i64 {
+    var running = true
+    var i: i64 = 0
+    while running {
+        i += 1
+        if i >= 3 { running = false }
+    }
+    var total: i64 = 0
+    for k in 0..10 {
+        total += k
+    }
+    var items: table<i64> = [1, 2, 3]
+    for item in items {
+        total += item
+    }
+    var s = "abc"
+    var n: i64 = 0
+    for ch in s.chars() {
+        n += 1
+    }
+    println(to_string(total) + "/" + to_string(n))
+    return 0
+}

@@ -1,0 +1,8 @@
+type tie<logic>
+actor C { var n: i64 = 5;
+    pub func get() -> i64 { return n } }
+func main() -> i64 {
+    var c = run C()
+    println(to_string(c.get()))
+    return 0
+}

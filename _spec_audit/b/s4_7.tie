@@ -1,0 +1,9 @@
+type tie<logic>
+
+func main() -> i64 {
+    println("hello")
+    var items: table<i64> = [3, 1, 2]
+    var sorted = items -> sort
+    println(to_string(sorted[0]))
+    return 0
+}

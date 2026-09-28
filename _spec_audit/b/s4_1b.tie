@@ -1,0 +1,11 @@
+type tie<logic>
+
+func main() -> i64 {
+    var x: i64 = 1
+    if true {
+        var x: i64 = 2
+        println(to_string(x))
+    }
+    println(to_string(x))
+    return 0
+}

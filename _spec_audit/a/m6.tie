@@ -1,0 +1,5 @@
+type tie<logic>
+func main() -> i64 {
+    var v: f32 = 1.5
+    return 0
+}

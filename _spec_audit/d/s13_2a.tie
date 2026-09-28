@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var a: i64 = 5
+    var b = move a
+    println(to_string(b))
+    return 0
+}

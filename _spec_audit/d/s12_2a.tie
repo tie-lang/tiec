@@ -1,0 +1,13 @@
+type tie<logic>
+// ch12.2 —— 规范原文：函数式宏用 quote 关键字
+macro unless(cond: code, body: code) -> code {
+    return quote {
+        if !@cond {
+            @body
+        }
+    }
+}
+
+func main() -> i64 {
+    return 0
+}

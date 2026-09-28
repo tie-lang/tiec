@@ -1,0 +1,17 @@
+type tie<logic>
+
+func sum(rest: ...i64) -> i64 {
+    var total: i64 = 0
+    for x in rest {
+        total += x
+    }
+    return total
+}
+
+func main() -> i64 {
+    println(to_string(sum()))
+    println(to_string(sum(1, 2, 3)))
+    var xs: table<i64> = [1, 2, 3]
+    println(to_string(sum(xs...)))
+    return 0
+}

@@ -1,0 +1,6 @@
+type tie<logic>
+func main() {
+    var price = 0.1d + 0.2d
+    var big = big_parse("123456789012345678901234567890")
+    println(to_string(price))
+}

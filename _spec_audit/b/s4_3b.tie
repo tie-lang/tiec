@@ -1,0 +1,8 @@
+type tie<logic>
+
+func main() -> i64 {
+    if 1 {
+        println("x")
+    }
+    return 0
+}

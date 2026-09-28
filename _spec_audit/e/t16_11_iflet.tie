@@ -1,0 +1,11 @@
+type tie<logic>
+// 16.11 if let Some(v) = opt / switch 分支即表达式 / var (a,b) = pair
+enum Opt { Some(v: i64), None }
+func main() -> i64 {
+    var opt = Opt.Some(3)
+    if let Some(v) = opt {
+        return v
+    }
+    var s = switch 2 { 0 -> 10, _ -> 20 }
+    return s
+}

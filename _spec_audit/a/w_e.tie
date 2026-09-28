@@ -1,0 +1,5 @@
+type tie<logic>
+func main() {
+    var e: misc = 3
+    println("ok")
+}

@@ -1,0 +1,6 @@
+type tie<logic>
+// 16.3 变长参数 rest: ...i64
+func f6(rest: ...i64) -> i64 { return 1 }
+func main() -> i64 {
+    return f6(1, 2, 3)
+}

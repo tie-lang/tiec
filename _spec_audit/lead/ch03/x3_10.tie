@@ -1,0 +1,11 @@
+type tie<logic>
+func main() -> i64 {
+    var n: i64 = 5
+    var msg = "n = " + n
+    println(msg)
+    var xs: table<i64> = [1, 2]
+    var ys: table<i64> = [3]
+    var all = xs + ys
+    println(to_string(len(all)))
+    return 0
+}

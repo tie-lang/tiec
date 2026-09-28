@@ -1,0 +1,7 @@
+type tie<logic>
+actor R { pub reentrant func route(id: i64) -> i64 { return id } }
+func main() -> i64 {
+    var r = run R()
+    println(to_string(r.route(7)))
+    return 0
+}

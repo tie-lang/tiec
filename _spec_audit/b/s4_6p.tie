@@ -1,0 +1,13 @@
+type tie<logic>
+
+func f(x: i64) -> i64 {
+    if x < 0 {
+        panic("negative")
+    }
+    return x * 2
+}
+
+func main() -> i64 {
+    println(to_string(f(3)))
+    return 0
+}

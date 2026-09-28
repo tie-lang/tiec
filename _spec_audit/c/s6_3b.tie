@@ -1,0 +1,19 @@
+type tie<logic>
+
+struct Point {
+    var x: f64 = 0.0
+    var y: f64 = 0.0
+}
+
+namespace Point {
+    pub func move_by(p: Point, dx: f64, dy: f64) -> Point {
+        return Point(p.x + dx, p.y + dy)
+    }
+}
+
+func main() -> i64 {
+    var p = Point(3.0, 4.0)
+    var q = p.move_by(1.0, 1.0)
+    println(to_string(q.x))
+    return 0
+}

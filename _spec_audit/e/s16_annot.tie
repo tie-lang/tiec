@@ -1,0 +1,7 @@
+type tie<logic>
+// 16.12 @注解(3) 声明前置注解（已实现的 @ 用法）
+@inline(3)
+func f() -> i64 { return 1 }
+@deprecated
+struct S { var n: i64 = 0 }
+func main() -> i64 { return f() }
