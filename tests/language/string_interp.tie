@@ -1,7 +1,8 @@
 type tie<logic>
 
 // ============================================================
-// p.8.2.3 字符串插值验收：`"Hello, {name}!"` 模板（lexer 拆段 + 拼接链 desugar）
+// p.9.23.1 字符串插值验收（原 p.8.2.3）：插值显式化——`h"Hello, {name}!"`
+// 插值字符串（lexer 拆段 + 拼接链 desugar）；普通串花括号一律字面
 //
 // 覆盖场景：
 //   1. 变量插值：string / i64 / f64 / bool（true/false）
@@ -22,18 +23,18 @@ func main() {
     var f: f64 = 3.5
     var b: bool = true
     // 1. 变量插值（string/i64/f64/bool）
-    println("Hello, {name}!")
-    println("n={n} f={f} b={b}")
+    println(h"Hello, {name}!")
+    println(h"n={n} f={f} b={b}")
     // 2. 表达式插值
-    println("sum={n + 8}")
-    println("len={len(name)}")
+    println(h"sum={n + 8}")
+    println(h"len={len(name)}")
     // 3. 转义花括号
-    println("{{literal}} {n}")
+    println(h"{{literal}} {n}")
     // 4. 连续插值
-    println("{n}{n}")
+    println(h"{n}{n}")
     // 5. 普通字符串
     println("plain string ok")
     // 6. 非 ASCII 文本段
     var cn = "tie"
-    println("你好，{cn}！")
+    println(h"你好，{cn}！")
 }
