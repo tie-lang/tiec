@@ -20,6 +20,8 @@ pub func eat_assign_op() -> i64 {
         op = B_DIV
     } else if tag == lex_percenteq {
         op = B_MOD
+    } else if tag == lex_percentpercenteq {
+        op = B_FLOORMOD
     } else if tag == lex_backslasheq {
         op = B_IDIV  // p.9.13.3 `\=` 整除复合赋值
     } else if tag == lex_ampeq {

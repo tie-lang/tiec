@@ -35,7 +35,16 @@ pub func parse_expr() -> i64 {
     if lhs < 0 {
         return -1
     }
-    if putil.eat(lex_dotdot) {
+    var has_range: bool = false
+    var closed: bool = false
+    if putil.eat(lex_dotdoteq) {
+        has_range = true
+        closed = true
+    } else if putil.eat(lex_dotdot) {
+        has_range = true
+        closed = false
+    }
+    if has_range {
         var line = ast.line(lhs)
         var col = ast.col(lhs)
         var end = parse_expr()

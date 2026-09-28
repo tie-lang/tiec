@@ -239,6 +239,31 @@ func global_init_fold(id: i64) -> (bool, bool, bool, i64, i64) {
                 if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
                     return (true, false, false, (li1 != 0 || li2 != 0) ? 1 : 0, -1)
                 }
+            } else if op2 == 13 {
+                // B_BITAND（p.9.23 D1：此前缺失 → has=false → 调用方静默取零值）
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
+                    return (true, false, false, li1 & li2, -1)
+                }
+            } else if op2 == 14 {
+                // B_BITOR
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
+                    return (true, false, false, li1 | li2, -1)
+                }
+            } else if op2 == 15 {
+                // B_BITXOR
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false {
+                    return (true, false, false, li1 ^ li2, -1)
+                }
+            } else if op2 == 16 {
+                // B_SHL（位移量越界不折叠）
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false && li2 >= 0 && li2 < 64 {
+                    return (true, false, false, li1 << li2, -1)
+                }
+            } else if op2 == 17 {
+                // B_SHR
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false && li2 >= 0 && li2 < 64 {
+                    return (true, false, false, li1 >> li2, -1)
+                }
             }
         }
         return (false, false, false, 0, -1)
