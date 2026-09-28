@@ -1056,3 +1056,74 @@ interned id、`map_set` O(n²)、12 处 tests/interp 失效 import 路径）。
   风格级波动接受，**精确归因留待警告系统支持文件名标注后清理**
   （`sm_warn_add` 仅存 line/col/msg，跨文件 import 闭包下归因成本过高，
   本轮实测已证——这是编译器警告系统的既有改进项）。
+
+## 20. p.9.17.2 第三步：value.tie 退役 + 内存收口（2026-09-28）
+
+### 20.1 退役账目
+
+* `compiler/interp/value.tie`（698 行，i64 节点 id + 平行表盒装模型）删除。
+  删除前盘点：全树 `import` 引用**为零**（仅 findings 文档示例与 untracked 探针
+  `_p917_box.tie` 引用文本）；`ivalue.` 代码级调用残留**为零**（env/interp_call/
+  interp_code/interp_macro/vval 五文件仅存注释级「语义对齐 ivalue.xxx」历史记录，
+  保留不改——注释变更会触发源码字节变化连带动点重录，收益仅文档性）。
+* **标量平行表槽位随文件退役**：`v_ivals`/`v_fvals`/`v_svals`（Int/Bool/Trit/Char/
+  Range/Float/Str 槽）全部只在 value.tie 内部定义与使用，interp 其余文件零引用；
+  vval 侧标量已内联（Value enum），无标量槽位可清——「淘汰仅服务标量的平行表槽位」
+  由文件退役一并完成。
+* `diagcodes.data.tie` 中 src 字段仍记 value.tie 历史路径：诊断码元数据是
+  **来源记录**不是依赖，随文件保留（诊断码本体在 diagcode*.tie，不受影响）。
+
+### 20.2 门禁（三联，独立跑全套）
+
+* fp 不动点：SHA256 = **ca9fa2ba**，三哈希一致——与第二步**完全相同**（强预期命中：
+  纯删无引用文件，driver 闭包源码字节不变，产物必然逐字节一致）。
+* regress-s21：**158 PASS / 8 FAIL / 2 SKIP**，FAIL 集合逐项同基线（extern_s10_ptr /
+  generics / proc_createprocessw_pipe / std_httpc_probe / std_net_bytes /
+  std_net_text / std_sse_probe / table_struct_elem，全 COMPILE_FAIL 族）。
+* 解释器 11 套件 A/B（旧 exe 6d7664af + wt_head interp vs 新 exe + 工作树 interp）：
+  **9 IDENTICAL + 2 良性 DIFF**（interp_strings / interp_table），DIFF 内容与第二步
+  门禁完全一致（旧侧「未实现的内置函数 parse_int/table_at」哨兵双关缺陷，
+  新侧错误文本与 golden 一致）。
+
+### 20.3 内存收口勘察（设计 §五假设验证）
+
+方法：tsh 宿主（内嵌 vval interp）+ GetProcessMemoryInfo 轮询（5ms 采样 ×3 轮
+取最大），PeakWorkingSet/PeakCommit 双口径。脚本组：
+
+| 脚本 | 求值步数 | 复合值数 | peakWS | peakCommit |
+| --- | --- | --- | --- | --- |
+| scal_only（标量循环） | ~300 万 | 0 | 10.3 MB | **8.1 MB** |
+| tbl_100k（10 万元素表） | ~20 万 | 10 万 | 15.7 MB | 14.5 MB |
+| tbl_1m（100 万元素表） | ~200 万 | 100 万 | 51.9 MB | 62.0 MB |
+
+**结论**：①标量密集求值（300 万步）内存与空脚本启动基线持平——**标量不再入池**
+实证（盒装时代 v_ivals 每 Int/Bool/Trit/Char 各 push 一次，同循环池增量线性于
+求值步数）；②池增长与**复合值数量**线性相关（每复合值 ~54B：24B Value 载荷 +
+描述符/元素表摊销 + 尾复用共享），与求值步数无关——设计 §五的判据达成；
+③**小整数预置缓存结论 = 无对象不需要**：池中只有复合值，标量零占位，
+「小整数分布」不影响内存曲线（原勘察动因消失，留档备查）。
+
+* 勘察坑：`string_builder` 等编译器侧内建在 tsh 脚本环境不存在；
+  `t = table_push(t, x)` 赋值内嵌形态触发 eval_table_push 的 Void 二次写回
+  （见 20.4），脚本必须**裸调用**；首轮三组数据因脚本秒退全为启动内存假数据
+  ——**勘察脚本必须先验证输出正确再采数**。
+* 工具留存：`_tiec_verify/bench917/memprobe.py`（可复测）。
+
+### 20.4 顺带发现：eval_table_push 赋值内嵌 Void 二次写回（既有缺陷，未修）
+
+`t = table_push(t, x)` 形态：eval_table_push 内部已 `isess.assign(nm, nt)` 写回
+新表描述符，随后**又返回 `vval.new_void()`**，赋值语句把 RHS（Void）二次写回 t
+→ 变量被 Void 污染（后续 len 报「len 只支持字符串、表或键值表」）。裸调用形态
+正常（void 作为表达式语句值被丢弃）。HEAD 版（i64 哨兵）行为等价（同样
+`return ivalue.new_void()`，赋值写回 -1 污染）——**既有缺陷非本轮回归**。
+语义裁定待办：table_push 特判路径的返回值应为**新表值**（对齐
+`t = table_push(t, x)` 的 Rust 语义）或赋值侧识别 void 不写回；因涉及
+exec_stmt_assign 与特判路径的职责边界（§9.17.3 直驱改造相邻），另立条目处理。
+
+### 20.5 状态
+
+p.9.17.2 三步全部落地（基建 → 热路径切换 → 清理与内存收口）。p.9.18.1 面 A
+侧附加交付（嵌入裁剪形态 + 内存峰值/稳态报告）随 p.9.18.5 验收；本节内存勘察
+数据可作为其基线引用。既有未修项延续：缺陷 #3 限定名全局访问、clone_inner
+多绑定截断疑点、`f_find` interned id、`map_set` O(n²)、12 处 tests/interp 失效
+import 路径、20.4 赋值内嵌写回语义。
