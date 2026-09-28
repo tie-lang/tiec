@@ -1237,3 +1237,57 @@ tsh 脚本的 to_string **不支持 bool**（比较表达式结果打印需走 i
 前置勘察两项：①`deparse` 对 FnDef 全文的保真度（类型标注反生成）；
 ②DLL 侧 tie 运行时与宿主 interp 会话的字符串/复合值堆所有权（第一版
 标量子集可绕开，第二步结论决定是否放开）。
+
+## 23. p.9.23.1 插值显式化：h"..." 前缀（对齐规范 §1.9）（2026-09-28）
+
+> 规范 tie-spec ch01_lex §1.9：普通串 `"{n}"` 花括号**原样保留**（JSON/模板/
+> 正则照原样写）；`h"..."` 才插值（`{{`/`}}` = 字面花括号；多行 `h"""`；
+> h 与 r 不组合）；`{expr:规格}` 格式说明符（**本轮未实现，见 23.4**）。
+
+### 23.1 改动账目
+
+* **lex_scan.tie**：scan_string/scan_triple_string 读 `g_str_hmode`
+  （lex_state 新全局）——h 串内 `{{`→`{`、`}}`→`}` 折叠 + `{` **无条件**
+  插值段触发；普通串花括号一律字面（**原前瞻插值判定整段移除**——JSON
+  `{"k":1}`/代码片段 `"{return}"`/映射显示 `"{a:1}"` 等特例随之消亡，
+  全部自然字面；**p.9.23 D3 asm 模板特判被「普通串花括号字面」语义覆盖**，
+  分支删除）。收尾闭合时清 g_str_hmode。
+* **lexer.tie**：主循环新增 `h` 分支（`h` 紧跟 `"` 时置 g_str_hmode 并分派，
+  h 后 `"""` 走多行插值）；`"` 普通串分支置 g_str_hmode=false。
+* **tests/language/string_interp.tie**：插值语料全量 h 化（原 p.8.2.3 验收
+  转为 h 前缀验收）；普通（无花括号）串断言保持。
+* compiler/ 与 std 库源码**零真实插值使用**（grep 粗筛 23+2 处全为注释/JSON
+  字面——自举源码素来用 `+` 拼接），无需迁移。
+
+### 23.2 RCA：hmode 重置策略（插值表达式中间 token 丢模式）
+
+首版在主循环**每 token** 重置 g_str_hmode=false——插值表达式的中间 token
+（`h"n={n} f={f} b={b}"` 的 `f`/`b`）轮次也重置 → 插值续扫段读到 false →
+**后续插值字面化**（实测 `{f}{b}` 与第二个 `{n}` 不展开）。修复 = 重置只在
+**串开始**处（`"` 分支置 false、h 分支置 true、续扫分支保持）——hmode 的
+生命周期 = 整个 h 串（跨插值链多段）。
+
+### 23.3 p.9.23 批次回归发现与词法部分回滚
+
+h 词法落地后 regress 掉至 154/12——4 项新 FAIL（variadic/spread_call/
+rest_destructure/generics_enhance，全 COMPILE_FAIL「期望类型，实际是
+DotDot」）。对照验证：dc8c1a0 版 tiec（p.9.23 批次前）编译这 4 项**成功**
+→ 回归出自 **706968a 批次自身的 range 语法重构**（新增 lex_dotdoteq=114/
+lex_percentpercenteq=115 + lex_symtab 符号表 + pexpr range 解析重构——
+破坏了 `..` rest/spread 既有语法；与 h 词法无关，h 改动只在字符串扫描）。
+**处置**：词法 4 文件（lex_tokdefs/lex_symtab/pexpr/putil_q2）回滚至
+dc8c1a0 版（`..=` 闭区间特性随批次回滚，待 p.9.23 工作流修复后重进）；
+**D1 consteval/D3 asm 发射层/actor 修正保留**（无回归）。回滚后 regress
+回到 **158/8**，且 variadic 等 4 项在**含 h 词法**的 tiec 下编译成功
+（h 词法与 rest/spread 兼容实锤）。
+
+### 23.4 门禁与遗留
+
+* fp 不动点：SHA256 = **a4ce493f**，三哈希一致（tiec.exe 已升格）。
+* regress-s21：**158 PASS / 8 FAIL / 2 SKIP**，FAIL 集合逐项同基线。
+* string_interp 语料（h 版）期望输出逐行一致；tsh 宿主冒烟（普通串字面/
+  h 插值/{{}} 折叠）全绿。
+* **遗留**：①`{expr:规格}` 格式说明符（规范 §1.9 后半：对齐/填充/宽度/
+  精度/进制）——独立批次；②p.9.23 的 `..=` 闭区间与符号表改动需其工作流
+  修复 DotDot 回归后重进；③std 库与 proto/lexer.tie 的同族词法副本同步
+  核查（proto 为协议工具链独立演化，本轮未动）。

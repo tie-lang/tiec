@@ -153,7 +153,19 @@ pub func run_lex(src: string) -> bool {
                 continue
             }
             r = lexscan.scan_symbol(pos)   // '\' 后非换行 → 无法识别的字符
+        } else if c == 104 && pos + 1 < g_n && g_codes[pos + 1] == 34 {
+            // p.9.23.1（规范 §1.9）：h 紧跟引号 = 插值字符串。h 非保留字，
+            // 仅在此位置特殊识别（h(x)/hx 等仍走标识符）。普通串花括号一律
+            // 字面，插值显式开启：h"{expr}"、多行 h"""..."""（同带插值）；
+            // h 串内字面花括号写作 {{ / }}；h 与形态前缀 r 不组合。
+            g_str_hmode = true
+            if pos + 3 < g_n && g_codes[pos + 2] == 34 && g_codes[pos + 3] == 34 {
+                r = lexscan.scan_triple_string(pos + 1)   // h"""（pos+1 指向首引号）
+            } else {
+                r = lexscan.scan_string(pos + 1)          // h"（pos+1 指向开引号）
+            }
         } else if c == 34 {                // '"' 字符串（p.9.11.30：`"""` 三引号多行）
+            g_str_hmode = false   // 新普通串：非插值（h 串由 h 分支置位）
             if pos + 2 < g_n && g_codes[pos + 1] == 34 && g_codes[pos + 2] == 34 {
                 r = lexscan.scan_triple_string(pos)
             } else {
