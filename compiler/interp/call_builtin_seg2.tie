@@ -123,6 +123,68 @@ func call_builtin_seg2(name: string, args: table<Value>) -> Value {
     if name == "exec_code" {
         return vval.new_int(exec_code(vval.str_val(args[0])))
     }
+    // ---------- 动态加载原语（p.9.17.4 第一步：编译端 p.6.6.20 四件套移植）----------
+    // 语言内置原语直调（interp.tie 被 AOT 编译时 irgen 展开为 LoadLibraryW/
+    // GetProcAddress/call-ptr，与 std/sqlite.tie 同机制）。语义对齐编译端
+    // builtin_expr_seg1：load_library 失败 0；get_proc 失败 0；dyn_call 调
+    // int 返回 C 函数、dyn_call_p 调 64 位返回；cstr_to_string NUL 结尾
+    // UTF-8 → tie 字符串。第一版 dyn_call 实参限整数（JIT 标量子集；
+    // 字符串/指针跨边界的堆所有权勘察后放开，见 docs/designs/interp-performance.md §4.3.3）。
+    if name == "load_library" {
+        if len(args) != 1 || vval.type_of(args[0]) != W_STR {
+            w_err = "load_library 需要一个字符串参数"
+            return Value.Nil
+        }
+        return vval.new_int(load_library(vval.str_val(args[0])))
+    }
+    if name == "get_proc" {
+        if len(args) != 2 || vval.type_of(args[0]) != W_INT || vval.type_of(args[1]) != W_STR {
+            w_err = "get_proc 需要整数句柄与字符串符号名两个参数"
+            return Value.Nil
+        }
+        return vval.new_int(get_proc(vval.int_val(args[0]), vval.str_val(args[1])))
+    }
+    if name == "dyn_call" || name == "dyn_call_p" {
+        // 签名：addr + 至多 5 个 i64 实参（缺位补 0，对齐编译端 op73）。
+        if len(args) < 1 || len(args) > 6 {
+            w_err = name + " 需要 1~6 个参数（函数地址 + 至多 5 个整数实参）"
+            return Value.Nil
+        }
+        if vval.type_of(args[0]) != W_INT {
+            w_err = name + " 第 1 个参数必须是函数地址（整数）"
+            return Value.Nil
+        }
+        var k: i64 = 1
+        while k < len(args) {
+            if vval.type_of(args[k]) != W_INT {
+                w_err = name + " 实参必须是整数（第一版标量子集，字符串/复合值跨边界待勘察）"
+                return Value.Nil
+            }
+            k = k + 1
+        }
+        var a1: i64 = 0
+        var a2: i64 = 0
+        var a3: i64 = 0
+        var a4: i64 = 0
+        var a5: i64 = 0
+        if len(args) >= 2 { a1 = vval.int_val(args[1]) }
+        if len(args) >= 3 { a2 = vval.int_val(args[2]) }
+        if len(args) >= 4 { a3 = vval.int_val(args[3]) }
+        if len(args) >= 5 { a4 = vval.int_val(args[4]) }
+        if len(args) >= 6 { a5 = vval.int_val(args[5]) }
+        var addr = vval.int_val(args[0])
+        if name == "dyn_call" {
+            return vval.new_int(dyn_call(addr, a1, a2, a3, a4, a5))
+        }
+        return vval.new_int(dyn_call_p(addr, a1, a2, a3, a4, a5))
+    }
+    if name == "cstr_to_string" {
+        if len(args) != 1 || vval.type_of(args[0]) != W_INT {
+            w_err = "cstr_to_string 需要一个地址参数（整数）"
+            return Value.Nil
+        }
+        return vval.new_str(cstr_to_string(vval.int_val(args[0])))
+    }
     if name == "exec_output" {
         return vval.new_str(exec_output(vval.str_val(args[0])))
     }
