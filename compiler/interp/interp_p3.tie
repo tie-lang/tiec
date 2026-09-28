@@ -3,13 +3,24 @@ type tie<class>
 // ============================================================
 // 由 split_parts.py 按行数贪心分片：只搬函数与紧邻注释，
 // 顶层全局 var 与 import 树仍留在 interp.tie。
+// table_push 特判用的惰性 nid（p.9.17.3 后半；namespace 外——tie 全局必须顶层）。
+var tp_nid: i64 = -1;
+var tp_nid_ready: bool = false;
+
 namespace interp {
 // 函数调用（Call 节点）：name=函数名，children=实参...
 func gen_call(id: i64) -> Value {
-    var nm = isess.nname_str(id)
+    // p.9.17.3 后半：热入口直传 interned id（免 nname_str 构造；名字只在
+    // ns 前缀补全 / 错误文本等冷分支经 interner.lookup 还原）。
+    var nid = isess.nname(id)
     // table_push 需要**原地修改**表变量（值按值传参无法写回），
-    // 故特判：直接对变量做 push 并写回（对齐 Rust eval_table_push）
-    if nm == "table_push" {
+    // 故特判：直接对变量做 push 并写回（对齐 Rust eval_table_push）。
+    // nid 比较惰性初始化一次（同 is_builtin_nid 手法；tie 全局在 namespace 外）。
+    if tp_nid_ready == false {
+        tp_nid = interner.intern("table_push")
+        tp_nid_ready = true
+    }
+    if nid == tp_nid {
         return eval_table_push(id)
     }
     var arg_nodes: table<i64> = table_new_i64()
@@ -38,27 +49,30 @@ func gen_call(id: i64) -> Value {
         i = i + 1
     }
     // 裸调用名解析：先查裸名（顶层/内置函数），查不到则按当前命名空间
-    // 前缀补全（命名空间内函数互调，如 tcmsg::error 内 helper()）
-    var resolved = nm
-    if !isess.f_has(nm) {
+    // 前缀补全（命名空间内函数互调，如 tcmsg::error 内 helper()）。
+    // nid 版：f/e/m 三表整数键查询，ns 补全的拼接全名 intern 一次。
+    var resolved_nid = nid
+    if !isess.f_has_nid(nid) {
         var cn = len(env_ns)
         if cn > 0 {
-            var full = ns_join(env_ns, nm)
-            if isess.f_has(full) {
-                resolved = full
+            var full = ns_join(env_ns, interner.lookup(nid))
+            var fnid = interner.intern(full)
+            if isess.f_has_nid(fnid) {
+                resolved_nid = fnid
             }
         }
     }
     // T0.7 extern 调用检查：extern 是链接期符号，解释器无实现体
-    if isess.e_has(resolved) {
-        w_err = "REPL 不支持调用 extern 函数 '" + resolved +
+    if isess.e_has_nid(resolved_nid) {
+        w_err = "REPL 不支持调用 extern 函数 '" + interner.lookup(resolved_nid) +
             "'（仅编译路径可用，请用 tie-llvm 编译运行）"
         return Value.Nil
     }
     // S3.3 宏调用（宏体内调用宏 / 展开调用）：实参必须已是 code 值——
     // 实参表达式先求值（`$x` 插值 = 读取 x 的 code 值；准引用 = code 值；
     // 其他表达式 → 报错），再执行宏函数，结果 code 文本还原为值。
-    if isess.m_has(resolved) {
+    if isess.m_has_nid(resolved_nid) {
+        var resolved = interner.lookup(resolved_nid)
         var macro_args: table<string> = table_new_string()
         var ai: i64 = 0
         while ai < len(args) {
@@ -76,7 +90,7 @@ func gen_call(id: i64) -> Value {
         }
         return vval.new_code(r)
     }
-    return call_fn(resolved, args, arg_nodes)
+    return call_fn_nid(resolved_nid, args, arg_nodes)
 }
 
 // 动态表追加：`table_push(t, x)`——对表变量 t 原地 push 元素 x 并写回。
@@ -195,7 +209,7 @@ func gen_method_call(id: i64) -> Value {
         table_push(args, v)
         i = i + 1
     }
-    return call_fn(full, args, arg_nodes)
+    return call_fn_nid(interner.intern(full), args, arg_nodes)
 }
 
 // receiver 命名空间前缀判定：Path / 未绑定 Var / FieldAccess 链 → 前缀段。
