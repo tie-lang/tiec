@@ -136,6 +136,13 @@ pub func parse_unary() -> i64 {
             return -1
         }
         expr = mk_unary(U_NOT, operand, line, col)
+    } else if tag == lex_tilde {
+        putil.advance()
+        var operand = parse_unary()
+        if operand < 0 {
+            return -1
+        }
+        expr = mk_unary(U_BIT_NOT, operand, line, col)
     } else if tag == lex_inc {
         putil.advance()
         var operand = parse_unary()

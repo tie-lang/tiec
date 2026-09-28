@@ -467,6 +467,13 @@ pub func infer_expr_unary(id: i64) -> i64 {
                 sm_err_msg = "逻辑非的操作数必须是 bool"
                 return -1
             }
+        } else if op == U_BIT_NOT {
+            if !types.is_int(operand) {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "按位取反的操作数必须是整数"
+                return -1
+            }
         } else {
             // 自增/自减：可写数字变量
             var target = sstate.child(id, 0)

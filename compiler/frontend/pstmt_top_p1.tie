@@ -379,7 +379,7 @@ func is_annot_literal(n: i64) -> bool {
     }
     if tag == N_UNARY {
         // 一元负号/正号/取反包字面量（如 @test(-1) / @test(!true)）
-        if ast.val(n) == U_NEG || ast.val(n) == U_NOT {
+        if ast.val(n) == U_NEG || ast.val(n) == U_NOT || ast.val(n) == U_BIT_NOT {
             return is_annot_literal(ast.child_at(n, 0))
         }
         return false
