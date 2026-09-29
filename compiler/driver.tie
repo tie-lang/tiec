@@ -258,15 +258,6 @@ func main() -> i64 {
         println("读取源码失败: " + g_input)
         return 1
     }
-    // p.9.11.29：--dump-docs 短路——解析后输出 doc 注释注册表摘要（不编译）
-    if g_dump_docs {
-        if parser.parse_ast(src) < 0 {
-            println(diagcode.render_err_proto(parser.ast_err_protocol()))
-            return 1
-        }
-        print(pstmt_top.pdoc_dump())
-        return 0
-    }
     // S3.4：自定义角色注册表需先于头部扫描可用（config.data.tie roles 段）。 
     // 分层合并：无配置文件时返回内置默认根；config 语法错误 → 报错退出。
     if !g_cfg_loaded {
@@ -310,6 +301,20 @@ func main() -> i64 {
     // 剥离头部声明行（`type tie` / `type tie<X>` 是真语法行，须从正文移除；
     // 旧 `// tie:` 是注释由 lexer 跳过，无需处理）
     var clean = strip_type_header(src)
+    // p.9.11.29：--dump-docs 短路——解析后输出 doc 注释注册表摘要（不编译）。
+    // 修复 2026-09-29：原短路置于头部剥离之前，对任何含规范 §1.1 头部的文件
+    // （`type tie<X>` 为真语法行、必须位于文件最前）一律 E00000 解析失败，故
+    // tlib 全部文件不可用。现移至此——src 已过 #cfg 裁剪，clean 已剥离头部行，
+    // 与正文路径同一前置；行号空间自洽（doc 注册表与符号行同基于 clean）。
+    // 置于 prelude_inject 之前：dump 只看用户所写内容，不受注入行位移影响。
+    if g_dump_docs {
+        if parser.parse_ast(clean) < 0 {
+            println(diagcode.render_err_proto(parser.ast_err_protocol()))
+            return 1
+        }
+        print(pstmt_top.pdoc_dump())
+        return 0
+    }
     // p.9.13.2 语言前置注入：应用代码（logic/script）自动获得 str/math 域基元的
     // 裸名（免 import、免前缀）。同名用户定义优先遮蔽（using 语义已保证）。
     clean = prelude_inject(clean, g_role, src)
