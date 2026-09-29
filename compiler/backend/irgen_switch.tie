@@ -148,7 +148,11 @@ while k < ncases {
             var lt = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
             ir.add_operand(lt, sv, 0)
             ir.add_operand(lt, re, 0)
-            ir.add_operand(lt, 2, 2)
+            if s_vals[pat] == 1 {
+                ir.add_operand(lt, 4, 2)  // sle
+            } else {
+                ir.add_operand(lt, 2, 2)  // slt
+            }
             var lt_v = ir.get_value(lt)
             var and = ir.new_inst(g_cur_block, 6, types.named(TK_BOOL))
             ir.add_operand(and, ge_v, 0)

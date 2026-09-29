@@ -1291,3 +1291,80 @@ dc8c1a0 版（`..=` 闭区间特性随批次回滚，待 p.9.23 工作流修复�
   精度/进制）——独立批次；②p.9.23 的 `..=` 闭区间与符号表改动需其工作流
   修复 DotDot 回归后重进；③std 库与 proto/lexer.tie 的同族词法副本同步
   核查（proto 为协议工具链独立演化，本轮未动）。
+
+## 24. p.9.0-S.6 闭区间范围 `..=`（2026-09-29）
+
+第 23.3 节回滚的 `..=` 在本轮**从稳定提交 b536c0d 重新实现**，不带入旧门禁未过的改动。
+
+### 24.1 语义
+
+* `a..b` 继续为左闭右开 `[a, b)`，既有行为逐字节不变。
+* `a..=b` 为闭区间 `[a, b]`。
+* 闭区间以**显式 inclusive 标志**承载（`N_RANGE.val`：0=半开，1=闭），
+  **不把终点改写为 `b + 1`**——`i64` 最大值作终点时加一会回绕。
+* 端点仍必须是整数，非整数端点报既有诊断 `E00575 范围两端必须是整数`。
+* 切片语法（`t[a..b]` / `t[..n]` / `t[n..]`）只消费 `..`，不识别 `..=`，
+  不与本轮改动交互。
+
+### 24.2 改动账目（tiec）
+
+* `frontend/lex_tokdefs.tie`：新增 `lex_dotdoteq = 115`（符号侧最大 tag 113/114
+  之后新分配，符合「分配前先做值重复扫描」纪律）；`no_semi_end` 纳入 `..=`。
+* `frontend/lex_symtab.tie`：符号表登记 `..=` → 115。**`sym_keys` 与 `sym_vals`
+  必须严格同序**（二分查找的前提），故值数组同位置插入而不是追加到末尾。
+* `frontend/pexpr.tie`：`parse_expr`（普通表达式/for 源）与
+  `parse_case_arm_pattern`（switch case 模式）两个入口都在消费 `..` / `..=` 后
+  把 inclusive 写入 `N_RANGE.val`；原 `..` 分支的消费顺序与控制流保持等价。
+* `frontend/ast.tie`：文档布局补记 `Range[val=1=闭区间, 0=半开区间]`。
+* `frontend/mexpand_p1.tie`：`deparse_arg_expr` 反解析按 `val` 还原 `..=`，
+  避免宏展开把闭区间降级成半开区间。
+* `frontend/scheck_p1.tie`：case 区间端点序检查按标志分派——
+  半开仍要求 `start < end`，闭区间放宽为 `start <= end`（`3..=3` 合法）。
+* `backend/irgen_stmt_gen_p1.tie`：AOT for 循环 inclusive 时比较发 `sle(4)`
+  代替 `slt(2)`，并在 step 块前插入终点保护——`cur == end` 直接 br exit，
+  不执行 `cur + 1`，消除终点溢出。
+* `backend/irgen_stmt_p2.tie` / `backend/irgen_switch.tie`：switch 语句与
+  switch 表达式两处范围模式按 `s_vals[pat]` 选择 `sle` / `slt`。
+* `interp/vval.tie`：`Value.Rng` 扩为三载荷 `Rng(i64, i64, i64)`（起点/终点/
+  闭标志）；新增 `range_start` / `range_inclusive`（对称既有 `range_end`）；
+  `to_print_string` 按标志打印 `..=`。
+* `interp/interp_p2.tie`：`gen_expr` 的 N_RANGE 分支把 `nval` 传入
+  `new_range`；`pat_matches` 按标志选 `<=` / `<`；`exec_stmt_for` 改用
+  `range_start` 取起点、按标志选循环条件，终点处 `break` 退出。
+
+### 24.3 RCA
+
+* **符号表同序（新引入坑）**：`sym_keys`/`sym_vals` 是按键升序的二分布局，
+  首轮把 115 追加到值数组末尾会让 `..=` 之后的所有符号取错 tag。修正为
+  在 `..` 相邻位置同步插入两表。**教训：符号表是「同序双数组」，任何新增
+  必须两表同位插入，不能只 push 值。**
+* **协议字段传递（上一轮漂移面之一）**：inclusive 只走 `N_RANGE.val`，不改
+  子节点布局。AST 协议字段序（`id tag name val aux line col nchild children…`）
+  不变，`copy_ast_tables` / `append_ast_mem` / 宏克隆（通用复制 `nval/naux`）
+  无需特判即可保留标志——这正是选择 `val` 而非新增子节点的原因。
+* **终点溢出（本轮设计核心）**：闭区间若按「终点加一 + 半开比较」实现，
+  `i64::MAX` 作终点会回绕成负数导致空循环或死循环。故 AOT 生成
+  `sle` 比较 + 终点保护块，解释器不变量为「`i == end` 时不再步进」。
+  探针 `max_for=1` / `max_switch=1` 实证。
+* **解释器起点缺陷（既有 bug，本轮一并修）**：`exec_stmt_for` 原用
+  `vval.int_val(iter)` 取范围起点，而 `int_val` 不处理 `Value.Rng` 默认返回 0
+  ⇒ `for i in 5..8` 实际从 0 迭代。旧解释器实测返回 28（0..7 之和）而非 18。
+  修复方式：新增 `range_start` 取载荷，不污染 `int_val` 的通用语义。
+* **rest/spread 回归面（第 23.3 节回滚原因）**：本轮不重构 `..` 的解析与
+  扫描路径，只在符号最长匹配中区分 `..=`。回归实测
+  `rest_destructure` / `slice_table` / `slice_table_probe` / `spread_call` /
+  `variadic` / `rest_neg` / `variadic_neg` **全 PASS**，DotDot 回归未复现。
+
+### 24.4 门禁
+
+* 三阶不动点：`FIXED-POINT OK (ae76206c2496dbf3)`，n1/n2/n3 全部探针结果一致。
+* 升格后 regress-s21：**158 PASS / 8 FAIL / 2 SKIP**，`^FAIL` 逐行 diff
+  与基线集合完全一致。
+* p924 探针（AOT）：`closed=6` / `half=3` / `hit=1` / `miss=0`；
+  非整数端点 `E00575`；`max_for=1` / `max_switch=1`。
+* 解释器副本 12 项断言全 PASS（闭区间、半开、非零起点、单点区间、
+  break/continue、switch 命中/不命中、最大值边界）。
+* 旧/新对照：旧编译器（b536c0d）对 AOT 闭区间探针报
+  `E00000 无法以 Eq 开始表达式`；旧解释器对全部 `..=` 用例报同类语法错误。
+* 不带 `--no-warn` 全量编译：仅 1 条 LLVM 环境级 target triple 覆盖警告，
+  tie 语言层无新增警告。
