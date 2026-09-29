@@ -64,6 +64,30 @@ func prelude_path() -> string {
     return ""
 }
 
+// p.9.0-S.8 内建 Result/Option：是否应注入 std/result.tie 的导入。
+// 规范 §2.11 / §8.1 假定 Result/Option 开箱可用；实现上它们定义在
+// `tlib/std/result.tie`（生态统一，与用户自定义 enum 无差别）。
+// 由隐式前置自动引入 → 应用代码无需 import 即可用 Result/Option。
+//
+// **兼容策略（必需）**：以下两种文件**不注入**，避免「泛型模板重复定义」
+// （E00523）——既有代码零变化：
+//   ① 已显式 `import` 了 std/result.tie（重复 import 同一文件同样报错，实测）；
+//   ② 自行定义了同名枚举（`enum Result` / `enum Option`）。
+// 判定用源文本扫描（与 prelude_is_lib 的 `<class>` 扫描同款做法）；
+// 文本命中宁可保守跳过注入，也不冒重复定义的风险。
+func prelude_needs_result(raw: string) -> bool {
+    if str.find(raw, "std/result.tie") >= 0 {
+        return false
+    }
+    if str.find(raw, "enum Result") >= 0 {
+        return false
+    }
+    if str.find(raw, "enum Option") >= 0 {
+        return false
+    }
+    return true
+}
+
 // 注入前置：命中角色且 prelude 可用时在正文首部拼入 import + using；否则原样返回。
 // 注 1：形参名不可用 `code`（tie 保留类型名：宏参类型），故用 `body`。
 // 注 2：import 的**别名必须与 prelude 内的命名空间同名**（lang），否则 `using`
@@ -78,5 +102,10 @@ func prelude_inject(body: string, role: string, raw: string) -> string {
     if str_len(prelude_path()) == 0 {
         return body
     }
-    return "import \"/std/prelude.tie\" as lang\nusing lang;\n" + body
+    var head = "import \"/std/prelude.tie\" as lang\nusing lang;\n"
+    // 内建 Result/Option：无别名 import（顶层 enum 对导入方裸名可见，实测）
+    if prelude_needs_result(raw) {
+        head = "import \"/std/result.tie\"\n" + head
+    }
+    return head + body
 }

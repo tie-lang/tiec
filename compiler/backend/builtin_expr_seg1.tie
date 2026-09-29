@@ -27,29 +27,29 @@ namespace irgen {
         if nm == "slice_index" { return bi_slice_index(nm, id) }
         var as_dst: i64 = -1
         var as_dst: i64 = -1
-        if nm == "as_i8" {
+        if nm == "as_i8" || nm == "to_i8" {
             as_dst = types.named(TK_I8)
-        } else if nm == "as_i16" {
+        } else if nm == "as_i16" || nm == "to_i16" {
             as_dst = types.named(TK_I16)
-        } else if nm == "as_i32" {
+        } else if nm == "as_i32" || nm == "to_i32" {
             as_dst = types.named(TK_I32)
-        } else if nm == "as_i64" {
+        } else if nm == "as_i64" || nm == "to_i64" {
             as_dst = types.named(TK_I64)
-        } else if nm == "as_u8" {
+        } else if nm == "as_u8" || nm == "to_u8" {
             as_dst = types.named(TK_U8)
-        } else if nm == "as_u16" {
+        } else if nm == "as_u16" || nm == "to_u16" {
             as_dst = types.named(TK_U16)
-        } else if nm == "as_u32" {
+        } else if nm == "as_u32" || nm == "to_u32" {
             as_dst = types.named(TK_U32)
-        } else if nm == "as_u64" {
+        } else if nm == "as_u64" || nm == "to_u64" {
             as_dst = types.named(TK_U64)
-        } else if nm == "as_f32" {
+        } else if nm == "as_f32" || nm == "to_f32" {
             as_dst = types.named(TK_F32)
-        } else if nm == "as_f64" {
+        } else if nm == "as_f64" || nm == "to_f64" {
             as_dst = types.named(TK_F64)
-        } else if nm == "as_i128" {
+        } else if nm == "as_i128" || nm == "to_i128" {
             as_dst = types.named(TK_I128)
-        } else if nm == "as_u128" {
+        } else if nm == "as_u128" || nm == "to_u128" {
             as_dst = types.named(TK_U128)
         }
         if as_dst >= 0 {
@@ -58,9 +58,22 @@ namespace irgen {
                 return -1
             }
             var at = node_types[call_arg(id, 0)]
-            // P2b：as_i64/as_f64 重载——参数是 any → 拆箱（运行时 tag 检查，
-            // 不匹配 → 运行时错误）；数字 → 下方数值转换
+            // p.9.0-S.8 三族职责收口（对齐规范 §2.11）：
+            //   to_* 只做**数值类型转换**（参数必须是数值）；
+            //   as_* 只做**从 any 解包**（参数必须是 any）。
+            // 此前两组共用一个分支，靠「返回类型恰好兼容」实现双身份——
+            // as_i64 既做数值转换又做解包，与规范的三族正交划分不符。
+            var is_num_conv = nm == "to_i8" || nm == "to_i16" || nm == "to_i32" ||
+                nm == "to_i64" || nm == "to_i128" || nm == "to_u8" || nm == "to_u16" ||
+                nm == "to_u32" || nm == "to_u64" || nm == "to_u128" ||
+                nm == "to_f32" || nm == "to_f64"
             if at == types.named(TK_ANY) {
+                if is_num_conv {
+                    sm_err_line = s_lines[id]
+                    sm_err_col = s_cols[id]
+                    sm_err_msg = nm + "() 是数值类型转换，不接受 any；从 any 解包请用 as_ 族"
+                    return -1
+                }
                 var ux = tig_unbox_any(av, as_dst, nm)
                 if ux < 0 {
                     return -1
@@ -69,6 +82,12 @@ namespace irgen {
                 return 0
             }
             if at >= 0 && at != as_dst && (types.is_int(at) || types.is_float(at)) {
+                if !is_num_conv {
+                    sm_err_line = s_lines[id]
+                    sm_err_col = s_cols[id]
+                    sm_err_msg = nm + "() 只做从 any 解包；数值类型转换请用 to_ 族（如 to_i64）"
+                    return -1
+                }
                 var cv = tig_coerce(av, at, as_dst)
                 if cv < 0 {
                     return -1

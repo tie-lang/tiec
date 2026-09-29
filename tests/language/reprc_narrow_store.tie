@@ -9,8 +9,8 @@ repr(C) struct Pod {
 }
 func main() {
     var q: Pod = Pod()          // 默认窄字段零值填充（曾崩 opt）
-    q.a = as_u32(300)
-    q.b = as_i16(7)
+    q.a = to_u32(300)
+    q.b = to_i16(7)
     q.c = 42
     println("narrow struct store ok")
 }
