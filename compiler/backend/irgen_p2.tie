@@ -86,10 +86,34 @@ func fold_char_code(name_id: i64) -> i64 {
     return char_code(ch)
 }
 
+// p.9.0-S.7 规范 §3.3：floor 整除与成对取余（全局 const 折叠用，纯算术）。
+// 定义与 AOT（tig_floor_divmod）/ 解释器（idiv_floor_i64）/ consteval（cv_*）
+// 三处一致：先取截断结果，余数非零且与除数异号时调整一格。
+func gif_idiv_floor(a: i64, b: i64) -> i64 {
+    var q = a / b
+    var r = a % b
+    if r != 0 {
+        if (r < 0 && b > 0) || (r > 0 && b < 0) {
+            return q - 1
+        }
+    }
+    return q
+}
+func gif_floormod(a: i64, b: i64) -> i64 {
+    var r = a % b
+    if r != 0 {
+        if (r < 0 && b > 0) || (r > 0 && b < 0) {
+            return r + b
+        }
+    }
+    return r
+}
+
 // 顶层标量初始化的**编译期常量折叠**（bounded subset）：
 // 支持 INT_LIT / FLOAT_LIT / CHAR_LIT / BOOL_LIT / STR_LIT（经
 // str_unescape_quoted 去引号反转义）/ UNARY 取负（整数/浮点）/
-// BINARY + - * / %（字符串 + 走拼接；整数走算术）。跨全局引用（S_N_VAR 节点）
+// BINARY + - * / % \ %%（字符串 + 走拼接；整数走算术）。跨全局引用（S_N_VAR
+// 节点）
 // p.9.12.1：对先前已折叠的标量全局做引用折叠（`var B = A + lit` 正确继承
 // A 而非变空/零）；未登记的全局/表全局不折叠 → 返回 has=false（保持原语义）。
 // 返回 (has, is_str, is_fp, intv, sid)：is_str 用 sid（纯文本池 id）；
@@ -203,6 +227,17 @@ func global_init_fold(id: i64) -> (bool, bool, bool, i64, i64) {
                 // B_MOD（模 0 不折叠）
                 if ls1 == false && ls2 == false && lf1 == false && lf2 == false && li2 != 0 {
                     return (true, false, false, li1 % li2, -1)
+                }
+            } else if op2 == 24 {
+                // p.9.0-S.7 整除 `\`（规范 §3.3 floor 商）。此前**本分支缺失** →
+                // has=false → 调用方静默取零值（与 D1 B_BITAND 同族缺陷）。
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false && li2 != 0 {
+                    return (true, false, false, gif_idiv_floor(li1, li2), -1)
+                }
+            } else if op2 == 26 {
+                // p.9.0-S.7 成对取余 `%%`（与 `\` 配对，余数符号跟随除数）
+                if ls1 == false && ls2 == false && lf1 == false && lf2 == false && li2 != 0 {
+                    return (true, false, false, gif_floormod(li1, li2), -1)
                 }
             } else if op2 == 5 {
                 // B_EQ（p.8.1.1 比较折叠：整数相等 / 字符串同文——池 id 相同）
