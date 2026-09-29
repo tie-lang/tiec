@@ -13,9 +13,9 @@
 // 失败短路：cv_failed 置位后所有求值立即返回 false（递归深度/死循环/不支持操作）。
 // 支持子集（首版）：
 //   表达式：字面量（int/float-拒绝/bool/char/string）/ 局部变量 / 一元取负/取反 /
-//           二元（算术 + - * / %、比较 == != < > <= >=、逻辑 && ||）/ 三元 ?: /
+//           二元（算术 + - * / % \ %%、比较 == != < > <= >=、逻辑 && ||）/ 三元 ?: /
 //           const fn 调用（递归，深度 ≤ 256）
-//   语句：var 声明 / 表达式语句 / 赋值（含复合 += -= *= /= %=）/ if-else /
+//   语句：var 声明 / 表达式语句 / 赋值（含复合 += -= *= /= %= \=）/ if-else /
 //         while / break / continue / return（含 void）
 //   其余（表/结构体/闭包/指针/运行时内置/for/switch）→ 失败（不折叠）。
 // ============================================================
@@ -40,6 +40,30 @@ var cv_out_iv: i64 = 0;
 var cv_out_sid: i64 = -1;
 
 namespace consteval {
+
+// p.9.0-S.7 规范 §3.3：floor 整除与成对取余（编译期折叠用）。
+// 与 AOT（tig_floor_divmod）和解释器（idiv_floor_i64/floormod_i64）同一定义：
+// 先取截断结果，余数非零且与除数异号时调整一格。不用布尔 != 比较，避免
+// 依赖布尔不等运算在求值器子集里的可用性。
+func cv_idiv_floor(a: i64, b: i64) -> i64 {
+    var q = a / b
+    var r = a % b
+    if r != 0 {
+        if (r < 0 && b > 0) || (r > 0 && b < 0) {
+            return q - 1
+        }
+    }
+    return q
+}
+func cv_floormod(a: i64, b: i64) -> i64 {
+    var r = a % b
+    if r != 0 {
+        if (r < 0 && b > 0) || (r > 0 && b < 0) {
+            return r + b
+        }
+    }
+    return r
+}
 
 // 局部表重置（每次 const fn 调用进入时清空）
 func env_reset() {
@@ -312,6 +336,22 @@ pub func eval_const_expr(id: i64) -> (bool, bool, bool, i64, i64) {
             }
             return (true, false, false, i1 % i2, -1)
         }
+        // p.9.0-S.7 整除 `\`（规范 §3.3：向下取整的商）
+        if op == 24 {
+            if s1 || s2 || i2 == 0 {
+                cv_failed = true
+                return (false, false, false, 0, -1)
+            }
+            return (true, false, false, cv_idiv_floor(i1, i2), -1)
+        }
+        // p.9.0-S.7 成对取余 `%%`（与 `\` 配对，余数符号跟随除数）
+        if op == 26 {
+            if s1 || s2 || i2 == 0 {
+                cv_failed = true
+                return (false, false, false, 0, -1)
+            }
+            return (true, false, false, cv_floormod(i1, i2), -1)
+        }
         if op == 5 {
             // B_EQ：整数相等 / 字符串同文（池 id 相同）
             if s1 || s2 {
@@ -504,6 +544,13 @@ func exec_stmt(st: i64) -> i64 {
                 return -1
             }
             nv = cur_iv / iv
+        } else if op == 24 {
+            // p.9.0-S.7 `\=`：floor 整除（规范 §3.3）
+            if iv == 0 {
+                cv_failed = true
+                return -1
+            }
+            nv = cv_idiv_floor(cur_iv, iv)
         } else if op == 4 {
             if iv == 0 {
                 cv_failed = true
