@@ -34,19 +34,19 @@ unsafe fn widebuf(s: string, out: ptr<u8>) {
     var i: i64 = 0
     while i < n {
         var cp: i64 = char_code(str_char(s, i))
-        deref_write(ptr_add(out, 2 * i), as_u8(cp & 0xFF))
-        deref_write(ptr_add(out, 2 * i + 1), as_u8(0))
+        deref_write(ptr_add(out, 2 * i), to_u8(cp & 0xFF))
+        deref_write(ptr_add(out, 2 * i + 1), to_u8(0))
         i = i + 1
     }
-    deref_write(ptr_add(out, 2 * n), as_u8(0))
-    deref_write(ptr_add(out, 2 * n + 1), as_u8(0))
+    deref_write(ptr_add(out, 2 * n), to_u8(0))
+    deref_write(ptr_add(out, 2 * n + 1), to_u8(0))
 }
 
 // 用 0..255 循环填充 n 字节缓冲（用于固定摘要）
 unsafe fn fill_pattern(buf: ptr<u8>, n: i64) {
     var i: i64 = 0
     while i < n {
-        deref_write(ptr_add(buf, i), as_u8(i))
+        deref_write(ptr_add(buf, i), to_u8(i))
         i = i + 1
     }
 }
@@ -86,20 +86,20 @@ func main() {
             println("FAIL sign=0x" + to_string(r5))
             return
         }
-        if as_i64(siglen) != 64 {
-            println("FAIL siglen=" + to_string(as_i64(siglen)))
+        if to_i64(siglen) != 64 {
+            println("FAIL siglen=" + to_string(to_i64(siglen)))
             return
         }
         // 5) 验证：正确签名 → ACCEPT（0 = STATUS_SUCCESS）
-        var r6 = BCryptVerifySignature(key, 0, hash, 32u32, sig, as_u32(as_i64(siglen)), 0)
+        var r6 = BCryptVerifySignature(key, 0, hash, 32u32, sig, to_u32(to_i64(siglen)), 0)
         if r6 != 0 {
             println("FAIL verify=0x" + to_string(r6))
             return
         }
         // 6) 微变敏感：翻转签名首字节 → REJECT
-        var first = as_i64(deref(sig))
-        deref_write(sig, as_u8(first ^ 1))
-        var r7 = BCryptVerifySignature(key, 0, hash, 32u32, sig, as_u32(as_i64(siglen)), 0)
+        var first = to_i64(deref(sig))
+        deref_write(sig, to_u8(first ^ 1))
+        var r7 = BCryptVerifySignature(key, 0, hash, 32u32, sig, to_u32(to_i64(siglen)), 0)
         if r7 == 0 {
             println("FAIL 微变未被拒（签名篡改仍 ACCEPT）")
             return

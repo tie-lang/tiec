@@ -103,7 +103,7 @@ func main() {
     var xs512: array<f64, 512> = array_init(0.0)
     var k: i64 = 0
     while k < 512 {
-        xs512[k] = as_f64(k)
+        xs512[k] = to_f64(k)
         k = k + 1
     }
     chk(mean512(xs512, 8) == 3.5, "mean512[i:i<8]=3.5")                    // 42

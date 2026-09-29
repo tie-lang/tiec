@@ -1,14 +1,14 @@
 type tie<logic>
 
 // 最小对照：同文件泛型 enum 的无 payload 变体作为函数实参
-enum Option<T> {
+enum MyOpt<T> {
     Some(T)
     None
 }
 
-func desc(o: Option<i64>) -> string {
+func desc(o: MyOpt<i64>) -> string {
     switch o {
-        case Option.Some:
+        case MyOpt.Some:
             return "some"
         default:
             return "none"
@@ -16,5 +16,5 @@ func desc(o: Option<i64>) -> string {
 }
 
 func main() {
-    println(desc(Option.None))
+    println(desc(MyOpt.None))
 }

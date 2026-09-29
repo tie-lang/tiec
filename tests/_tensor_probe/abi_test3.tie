@@ -7,7 +7,7 @@ struct Tensor {
 func main() {
     var t: Tensor = Tensor(array_init(0.0), 0)
     writeat(t.data, 2, 9.0)
-    println("ok " + to_string(as_f64(readat(t.data, 2))))
+    println("ok " + to_string(to_f64(readat(t.data, 2))))
 }
 func readat(me: ref array<f32, 64>, i: i64) -> f32 {
     return me[i]

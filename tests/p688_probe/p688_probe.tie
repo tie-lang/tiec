@@ -50,10 +50,10 @@ func check(cond: bool, msg: string) {
 // 读 peek 缓冲某像素某通道（off: 0=B 1=G 2=R 3=A）
 func px(info: Pixels, x: i64, y: i64, off: i64) -> i64 {
     unsafe {
-        var rb = as_i64(info.row_bytes)
+        var rb = to_i64(info.row_bytes)
         var addr = info.pixels + y * rb + x * 4 + off
         var p: ptr<u8> = int_to_ptr(addr)
-        return as_i64(deref(p))
+        return to_i64(deref(p))
     }
 }
 
@@ -76,7 +76,7 @@ func png_bytes(enc: Encoded, out: table<i64>) -> i64 {
     unsafe {
         var b: ptr<u8> = int_to_ptr(enc.bytes)
         while j < n {
-            table_push(out, as_i64(deref(ptr_add(b, j))))
+            table_push(out, to_i64(deref(ptr_add(b, j))))
             j = j + 1
         }
     }
@@ -263,8 +263,8 @@ func main() {
     var cs1 = build_cmds()
     gfx.run_commands(c, cs1)
     var info1 = gfx.surface_peek(s)
-    check(info1.w == as_i32(W) && info1.h == as_i32(H),
-        "peek 200x200, got " + to_string(as_i64(info1.w)) + "x" + to_string(as_i64(info1.h)))
+    check(info1.w == to_i32(W) && info1.h == to_i32(H),
+        "peek 200x200, got " + to_string(to_i64(info1.w)) + "x" + to_string(to_i64(info1.h)))
 
     // === 4. 逐像素断言（每类命令判定点）===
     check(px(info1, 5, 170, 0) == 255 && px(info1, 5, 170, 1) == 255 &&
@@ -292,14 +292,14 @@ func main() {
             deref(ptr_add(b, 4)) == 0x0D && deref(ptr_add(b, 5)) == 0x0A &&
             deref(ptr_add(b, 6)) == 0x1A && deref(ptr_add(b, 7)) == 0x0A,
             "PNG magic = 89 50 4E 47 0D 0A 1A 0A")
-        var pw: i64 = as_i64(deref(ptr_add(b, 16))) * 16777216 +
-            as_i64(deref(ptr_add(b, 17))) * 65536 +
-            as_i64(deref(ptr_add(b, 18))) * 256 +
-            as_i64(deref(ptr_add(b, 19)))
-        var ph: i64 = as_i64(deref(ptr_add(b, 20))) * 16777216 +
-            as_i64(deref(ptr_add(b, 21))) * 65536 +
-            as_i64(deref(ptr_add(b, 22))) * 256 +
-            as_i64(deref(ptr_add(b, 23)))
+        var pw: i64 = to_i64(deref(ptr_add(b, 16))) * 16777216 +
+            to_i64(deref(ptr_add(b, 17))) * 65536 +
+            to_i64(deref(ptr_add(b, 18))) * 256 +
+            to_i64(deref(ptr_add(b, 19)))
+        var ph: i64 = to_i64(deref(ptr_add(b, 20))) * 16777216 +
+            to_i64(deref(ptr_add(b, 21))) * 65536 +
+            to_i64(deref(ptr_add(b, 22))) * 256 +
+            to_i64(deref(ptr_add(b, 23)))
         check(pw == W && ph == H, "PNG IHDR size = 200x200, got " +
             to_string(pw) + "x" + to_string(ph))
     }

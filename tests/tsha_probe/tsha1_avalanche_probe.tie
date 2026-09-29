@@ -53,7 +53,7 @@ func gen_blocks(nb: i64) -> table<string> {
         var sb = string_builder()
         var i: i64 = 0
         while i < 64 {
-            var b = as_i64(s & 0xFFu64)
+            var b = to_i64(s & 0xFFu64)
             sb_append_byte(sb, b)
             s = s * 6364136223846793005u64 + 1442695040888963407u64
             i = i + 1

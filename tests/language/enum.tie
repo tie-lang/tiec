@@ -8,7 +8,7 @@ type tie<logic>
 //   2. 带 payload 变体构造 + switch 匹配（Shape.Circle(5) / Shape.Rect(1,2)）
 //   3. 枚举类型注解 + 函数参数/返回值 + 跨函数传递
 //   4. 枚举作为 struct 字段（struct Holder { var c: Color }）
-//   5. 泛型 enum：Option<i64> 类型注解、Option.Some(42) 构造、switch 匹配
+//   5. 泛型 enum：MyOpt<i64> 类型注解、MyOpt.Some(42) 构造、switch 匹配
 //   6. 多变体带 payload 的 tag 区分（Circle vs Rect 匹配各自分支）
 //   7. 枚举变量赋值传递
 //
@@ -21,7 +21,7 @@ type tie<logic>
 //   矩形     场景2+6 shape_desc(Shape.Rect(1,2))
 //   红       场景3 跨函数传递 color_chain(Color.Red)
 //   蓝       场景4 struct 字段 h.c（Holder(Color.Blue)）
-//   有值     场景5 option_desc(Option.Some(42))
+//   有值     场景5 option_desc(MyOpt.Some(42))
 //   有值     场景5 构造推断 T=i64 再验证
 //   红       场景7 赋值传递 b = a
 // ============================================================
@@ -39,8 +39,8 @@ enum Shape {
     Rect(i64, i64)
 }
 
-// ----- 泛型 enum：Option<T> -----
-enum Option<T> {
+// ----- 泛型 enum：MyOpt<T> -----
+enum MyOpt<T> {
     Some(T)
     None
 }
@@ -96,10 +96,10 @@ struct Holder {
     var c: Color
 }
 
-// 场景 5：泛型 enum 函数（类型注解 Option<i64>，switch case 用模板名）
-func option_desc(o: Option<i64>) -> string {
+// 场景 5：泛型 enum 函数（类型注解 MyOpt<i64>，switch case 用模板名）
+func option_desc(o: MyOpt<i64>) -> string {
     switch o {
-        case Option.Some:
+        case MyOpt.Some:
             return "有值"
         default:
             return "无值"
@@ -128,10 +128,10 @@ func main() {
     var h = Holder(Color.Blue)
     println(color_name(h.c))
 
-    // 场景 5：泛型 enum 构造（Option.Some(42) 推断 T=i64）+ 类型注解
-    var o: Option<i64> = Option.Some(42)
+    // 场景 5：泛型 enum 构造（MyOpt.Some(42) 推断 T=i64）+ 类型注解
+    var o: MyOpt<i64> = MyOpt.Some(42)
     println(option_desc(o))
-    println(option_desc(Option.Some(7)))
+    println(option_desc(MyOpt.Some(7)))
 
     // 场景 7：枚举变量赋值传递
     var a = Color.Red

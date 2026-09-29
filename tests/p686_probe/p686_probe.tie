@@ -64,7 +64,7 @@ func layout_section() {
 // ---------- 像素读回（ptr 解引用，不经 byte_read） ----------
 func px_byte(info: TSkImageInfo, x: i64, y: i64, off: i64) -> u8 {
     unsafe {
-        var rb = as_i64(info.row_bytes)
+        var rb = to_i64(info.row_bytes)
         var addr = info.pixels + y * rb + x * 4 + off
         var p: ptr<u8> = int_to_ptr(addr)
         return deref(p)
@@ -73,10 +73,10 @@ func px_byte(info: TSkImageInfo, x: i64, y: i64, off: i64) -> u8 {
 
 // 读出 4 字节归类：0=背景白(全255)，1=纯色（恰两个255两个0），2=其它(AA/blend)。
 func classify(info: TSkImageInfo, x: i64, y: i64) -> i64 {
-    var b0 = as_i64(px_byte(info, x, y, 0))
-    var b1 = as_i64(px_byte(info, x, y, 1))
-    var b2 = as_i64(px_byte(info, x, y, 2))
-    var b3 = as_i64(px_byte(info, x, y, 3))
+    var b0 = to_i64(px_byte(info, x, y, 0))
+    var b1 = to_i64(px_byte(info, x, y, 1))
+    var b2 = to_i64(px_byte(info, x, y, 2))
+    var b3 = to_i64(px_byte(info, x, y, 3))
     var cnt255: i64 = 0
     var cnt0: i64 = 0
     if b0 == 255 {
@@ -122,7 +122,7 @@ func main() {
     layout_section()
     unsafe {
         // === 绘制 ===
-        var surface: ptr<u8> = sk_surface_create(as_i32(W), as_i32(H))
+        var surface: ptr<u8> = sk_surface_create(to_i32(W), to_i32(H))
         check(!is_null(surface), "surface created 96x48")
         var canvas: ptr<u8> = sk_surface_canvas(surface)
         check(!is_null(canvas), "canvas obtained from surface")
@@ -147,8 +147,8 @@ func main() {
         sk_surface_peek_pixels(surface, addr_of(info))
 
         // === 逐像素校验 ===
-        check(info.width == as_i32(W) && info.height == as_i32(H), "peek width/height = 96x48")
-        check(as_i64(info.row_bytes) == W * 4, "peek row_bytes == width*4, got " + to_string(as_i64(info.row_bytes)))
+        check(info.width == to_i32(W) && info.height == to_i32(H), "peek width/height = 96x48")
+        check(to_i64(info.row_bytes) == W * 4, "peek row_bytes == width*4, got " + to_string(to_i64(info.row_bytes)))
         check(info.color_type != 0, "peek color_type nonzero (N32)")
         check(info.pixels != 0, "peek pixels nonnull")
 
@@ -200,14 +200,14 @@ func main() {
             "PNG magic = 89 50 4E 47 0D 0A 1A 0A")
 
         // IHDR：b+8 len(4), +12 "IHDR", +16 width(4 BE), +20 height(4 BE)
-        var pw = as_i64(deref(ptr_add(b, 16))) * 16777216 +
-            as_i64(deref(ptr_add(b, 17))) * 65536 +
-            as_i64(deref(ptr_add(b, 18))) * 256 +
-            as_i64(deref(ptr_add(b, 19)))
-        var ph = as_i64(deref(ptr_add(b, 20))) * 16777216 +
-            as_i64(deref(ptr_add(b, 21))) * 65536 +
-            as_i64(deref(ptr_add(b, 22))) * 256 +
-            as_i64(deref(ptr_add(b, 23)))
+        var pw = to_i64(deref(ptr_add(b, 16))) * 16777216 +
+            to_i64(deref(ptr_add(b, 17))) * 65536 +
+            to_i64(deref(ptr_add(b, 18))) * 256 +
+            to_i64(deref(ptr_add(b, 19)))
+        var ph = to_i64(deref(ptr_add(b, 20))) * 16777216 +
+            to_i64(deref(ptr_add(b, 21))) * 65536 +
+            to_i64(deref(ptr_add(b, 22))) * 256 +
+            to_i64(deref(ptr_add(b, 23)))
         check(pw == W && ph == H, "PNG IHDR size = 96x48, got " + to_string(pw) + "x" + to_string(ph))
 
         // 落盘（thunk 侧 wb + fflush 同步）

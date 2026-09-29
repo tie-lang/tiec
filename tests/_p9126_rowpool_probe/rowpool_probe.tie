@@ -112,7 +112,7 @@ func main() -> i64 {
     dflt[3] = P(7, 3.5)
     expect(len(dflt) == 4, "P 行池 dflt[3] 写后 len 应为 4")
     var dOut = dflt[10]
-    expect(dOut.w == 42 && as_f64(dOut.h) == 2.5, "越界读返回默认行（非零默认）")
+    expect(dOut.w == 42 && to_f64(dOut.h) == 2.5, "越界读返回默认行（非零默认）")
     var dIn = dflt[0]
     expect(dIn.w == 42, "范围内未写过槽为默认行（w=42）")
     expect(dflt[3].w == 7, "写过槽读回（w=7）")

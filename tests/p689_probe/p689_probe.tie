@@ -46,10 +46,10 @@ func check(cond: bool, msg: string) {
 // 读 peek 缓冲某像素某通道（0=B 1=G 2=R 3=A）。
 func px(info: Pixels, x: i64, y: i64, off: i64) -> i64 {
     unsafe {
-        var rb = as_i64(info.row_bytes)
+        var rb = to_i64(info.row_bytes)
         var addr = info.pixels + y * rb + x * 4 + off
         var p: ptr<u8> = int_to_ptr(addr)
-        return as_i64(deref(p))
+        return to_i64(deref(p))
     }
 }
 
@@ -90,8 +90,8 @@ func main() {
     commands.cmd_text(cs, 32.0, 10.0, 130.0, C_BLACK, "p689")
     gfx.run_commands(c, cs)
     var info = gfx.surface_peek(s)
-    check(as_i64(info.w) == W && as_i64(info.h) == H,
-        "peek 320x200, got " + to_string(as_i64(info.w)) + "x" + to_string(as_i64(info.h)))
+    check(to_i64(info.w) == W && to_i64(info.h) == H,
+        "peek 320x200, got " + to_string(to_i64(info.w)) + "x" + to_string(to_i64(info.h)))
 
     // === 3. 离屏逐像素断言（CI 可跑确定性）===
     check(px(info, 5, 180, 0) == 255 && px(info, 5, 180, 1) == 255 &&

@@ -16,6 +16,6 @@ func main() {
     var d = t.data
     writeat(d, 2, 9.0)
     t.data[2] = 7.0
-    println("field direct+ref=" + to_string(as_f64(readat(t.data, 2))))
-    println("ref via local=" + to_string(as_f64(readat(d, 2))))
+    println("field direct+ref=" + to_string(to_f64(readat(t.data, 2))))
+    println("ref via local=" + to_string(to_f64(readat(d, 2))))
 }

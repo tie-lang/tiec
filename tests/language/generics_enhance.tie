@@ -21,7 +21,7 @@ func g_sum<T>(items: ...T) -> i64 {
     var s: i64 = 0
     var i: i64 = 0
     while i < len(items) {
-        s = s + as_i64(items[i])
+        s = s + to_i64(items[i])
         i = i + 1
     }
     return s

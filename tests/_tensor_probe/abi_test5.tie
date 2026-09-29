@@ -14,6 +14,6 @@ func main() {
     var t: Tensor = Tensor(array_init(0.0), 0)
     var a: array<f32, 64> = t.data
     writeat(a, 2, 9.0)
-    var v: f64 = as_f64(readat(a, 2))
+    var v: f64 = to_f64(readat(a, 2))
     println("ref via local = " + to_string(v))
 }

@@ -55,7 +55,7 @@ func main() {
 
     var tFill = tensor.new([2, 2, 1, 1], 3, 7.5)
     var dFill: array<f32, 1024> = tFill.data
-    chk(as_f64(tensor.at(dFill, tFill, 0)) == 7.5, "new fill applied")
+    chk(to_f64(tensor.at(dFill, tFill, 0)) == 7.5, "new fill applied")
 
     // ---- at/set 线性 ----
     var tLin = tensor.new([4, 4, 1, 1], 3, 0.0)
@@ -63,26 +63,26 @@ func main() {
     tensor.set(dLin, tLin, 0, 3.0)
     tensor.set(dLin, tLin, 5, 9.0)
     tensor.set(dLin, tLin, 15, 2.0)
-    chk(as_f64(tensor.at(dLin, tLin, 0)) == 3.0, "at/set linear i0")
-    chk(as_f64(tensor.at(dLin, tLin, 5)) == 9.0, "at/set linear i5")
-    chk(as_f64(tensor.at(dLin, tLin, 15)) == 2.0, "at/set linear i15")
+    chk(to_f64(tensor.at(dLin, tLin, 0)) == 3.0, "at/set linear i0")
+    chk(to_f64(tensor.at(dLin, tLin, 5)) == 9.0, "at/set linear i5")
+    chk(to_f64(tensor.at(dLin, tLin, 15)) == 2.0, "at/set linear i15")
 
     // ---- at3/set3 ----
     var t3d = tensor.new([4, 3, 2, 1], 3, 0.0)
     var d3d: array<f32, 1024> = t3d.data
     tensor.set3(d3d, t3d, 1, 2, 1, 5.0)   // idx=1+4*2+4*3*1=21
-    chk(as_f64(tensor.at3(d3d, t3d, 1, 2, 1)) == 5.0, "set3/at3 roundtrip")
-    chk(as_f64(tensor.at(d3d, t3d, 21)) == 5.0, "at3 == linear idx21")
+    chk(to_f64(tensor.at3(d3d, t3d, 1, 2, 1)) == 5.0, "set3/at3 roundtrip")
+    chk(to_f64(tensor.at(d3d, t3d, 21)) == 5.0, "at3 == linear idx21")
 
     // ---- at2 / at4 ----
     var t2d = tensor.new([3, 4, 1, 1], 2, 0.0)
     var d2d: array<f32, 1024> = t2d.data
     tensor.set(d2d, t2d, 8, 4.0)   // (2,2): 2+3*2=8
-    chk(as_f64(tensor.at2(d2d, t2d, 2, 2)) == 4.0, "at2 (x,y)")
+    chk(to_f64(tensor.at2(d2d, t2d, 2, 2)) == 4.0, "at2 (x,y)")
     var t4d = tensor.new([2, 2, 2, 2], 4, 0.0)
     var d4d: array<f32, 1024> = t4d.data
     tensor.set(d4d, t4d, 15, 8.0)  // (1,1,1,1): 1+2+4+8=15
-    chk(as_f64(tensor.at4(d4d, t4d, 1, 1, 1, 1)) == 8.0, "at4 (x,y,z,w)")
+    chk(to_f64(tensor.at4(d4d, t4d, 1, 1, 1, 1)) == 8.0, "at4 (x,y,z,w)")
 
     // ---- reshape ----
     var tR = tensor.new([2, 6, 1, 1], 2, 0.0)   // len 12
@@ -97,34 +97,34 @@ func main() {
     var dS: array<f32, 1024> = tS.data
     var iS: i64 = 0
     while iS < 16 {
-        tensor.set(dS, tS, iS, as_f64(iS))
+        tensor.set(dS, tS, iS, to_f64(iS))
         iS = iS + 1
     }
     var tSL = tensor.slice(dS, tS, 0, 1, 3)
     var dSL: array<f32, 1024> = tSL.data
     chk(tSL.shape0 == 2 && tSL.len == 8, "slice axis0 size/len")
     // tS 为 4×4（x 最快）；slice axis0[1,3) 保留 x∈{1,2}，result(x=0,y=0)=orig(1,0)=idx1
-    chk(as_f64(tensor.at(dSL, tSL, 0)) == 1.0, "slice axis0 value")
+    chk(to_f64(tensor.at(dSL, tSL, 0)) == 1.0, "slice axis0 value")
     tensor.set(dS, tS, 5, 99.0)   // orig idx5=(x=1,y=1)，在 slice 内
-    chk(as_f64(tensor.at(dSL, tSL, 2)) == 5.0, "slice copy independent of original")
+    chk(to_f64(tensor.at(dSL, tSL, 2)) == 5.0, "slice copy independent of original")
     var tSV = tensor.slice(dS, tS, 1, 1, 3)
     var dSV: array<f32, 1024> = tSV.data
     chk(tSV.shape1 == 2 && tSV.len == 8, "slice axis1 size/len")
     // axis1(y)[1,3) 保留 y∈{1,2}；result(x=1,yr=1)=orig(x=1,y=2)=idx 1+4*2=9
-    chk(as_f64(tensor.at(dSV, tSV, 5)) == 9.0, "slice axis1 value")
+    chk(to_f64(tensor.at(dSV, tSV, 5)) == 9.0, "slice axis1 value")
 
     // ---- sum/mean/max/min ----
     var tM = tensor.new([5, 1, 1, 1], 1, 0.0)
     var dM: array<f32, 1024> = tM.data
     var iM: i64 = 0
     while iM < 5 {
-        tensor.set(dM, tM, iM, as_f64(iM + 1))
+        tensor.set(dM, tM, iM, to_f64(iM + 1))
         iM = iM + 1
     }
     chk(near(tensor.sum(dM, tM), 15.0), "sum 1..5 == 15")
     chk(near(tensor.mean(dM, tM), 3.0), "mean 1..5 == 3")
-    chk(as_f64(tensor.max(dM, tM)) == 5.0, "max == 5")
-    chk(as_f64(tensor.min(dM, tM)) == 1.0, "min == 1")
+    chk(to_f64(tensor.max(dM, tM)) == 5.0, "max == 5")
+    chk(to_f64(tensor.min(dM, tM)) == 1.0, "min == 1")
 
     // ---- fill/scale/clip ----
     var tF = tensor.new([4, 1, 1, 1], 1, 0.0)
@@ -177,12 +177,12 @@ func main() {
     var b0: array<f32, 1024> = tBlk0.data
     chk(tBlk0.len == 2 * 256 * 2, "block_slice(0) len = X*YBLOCK*Z")
     chk(tBlk0.shape0 == 2 && tBlk0.shape1 == 256 && tBlk0.shape2 == 2, "block_slice(0) shape")
-    chk(as_f64(tensor.at3(b0, tBlk0, 1, 100, 1)) == 9.0, "block_slice copies region")
+    chk(to_f64(tensor.at3(b0, tBlk0, 1, 100, 1)) == 9.0, "block_slice copies region")
     var tBlk1 = tensor.block_slice(db3, tb3, 1)
     chk(tBlk1.len == 0, "block_slice out-of-range -> len 0")
     tensor.set3(b0, tBlk0, 1, 50, 0, 7.0)
     tensor.block_write(db3, tb3, 0, b0)
-    chk(as_f64(tensor.at3(db3, tb3, 1, 50, 0)) == 7.0, "block_write merges update")
+    chk(to_f64(tensor.at3(db3, tb3, 1, 50, 0)) == 7.0, "block_write merges update")
 
     // ---- density_sub ----
     var tds = tensor.new([4, 4, 4, 1], 3, 0.0)
@@ -191,7 +191,7 @@ func main() {
     var tsub = tensor.density_sub(dds, tds, 2, 2)
     var dsub: array<f32, 1024> = tsub.data
     chk(tsub.shape0 == 2 && tsub.shape2 == 2 && tsub.len == 16, "density_sub 4x4x4 /2 -> 2x4x2")
-    chk(as_f64(tensor.at3(dsub, tsub, 1, 1, 1)) == 3.0, "density_sub keeps sample")
+    chk(to_f64(tensor.at3(dsub, tsub, 1, 1, 1)) == 3.0, "density_sub keeps sample")
 
     // ================= linalg =================
     // ---- matmul 3x3x3 (A*I==A) ----
@@ -200,14 +200,14 @@ func main() {
     var mOf: array<f32, 1024> = array_init(0.0)
     var vv: i64 = 0
     while vv < 9 {
-        mAf[vv] = as_f32(as_f64(vv + 1))
+        mAf[vv] = to_f32(to_f64(vv + 1))
         vv = vv + 1
     }
     mBf[0] = 1.0; mBf[4] = 1.0; mBf[8] = 1.0
     linalg.matmul_f32(mAf, 3, 3, 3, mBf, mOf)
-    chk(near(as_f64(mOf[0]), 1.0), "matmul 3x3x3 out(0,0) A*I == 1")
-    chk(near(as_f64(mOf[4]), 5.0), "matmul 3x3x3 out(1,1) == 5")
-    chk(near(as_f64(mOf[8]), 9.0), "matmul 3x3x3 out(2,2) == 9")
+    chk(near(to_f64(mOf[0]), 1.0), "matmul 3x3x3 out(0,0) A*I == 1")
+    chk(near(to_f64(mOf[4]), 5.0), "matmul 3x3x3 out(1,1) == 5")
+    chk(near(to_f64(mOf[8]), 9.0), "matmul 3x3x3 out(2,2) == 9")
 
     // ---- matmul 2x4x3 ----
     var mAb: array<f32, 1024> = array_init(0.0)
@@ -215,7 +215,7 @@ func main() {
     var mOb: array<f32, 1024> = array_init(0.0)
     var aa: i64 = 0
     while aa < 8 {
-        mAb[aa] = as_f32(as_f64(aa + 1))
+        mAb[aa] = to_f32(to_f64(aa + 1))
         aa = aa + 1
     }
     mBb[0] = 2.0; mBb[1] = 0.0; mBb[2] = 0.0
@@ -223,26 +223,26 @@ func main() {
     mBb[6] = 0.0; mBb[7] = 0.0; mBb[8] = 2.0
     mBb[9] = 1.0; mBb[10] = 1.0; mBb[11] = 1.0
     linalg.matmul_f32(mAb, 2, 3, 4, mBb, mOb)
-    chk(near(as_f64(mOb[0]), 6.0), "matmul 2x4x3 out(0,0) == 6")
-    chk(near(as_f64(mOb[1]), 8.0), "matmul 2x4x3 out(0,1) == 8")
-    chk(near(as_f64(mOb[2]), 10.0), "matmul 2x4x3 out(0,2) == 10")
-    chk(near(as_f64(mOb[3]), 18.0), "matmul 2x4x3 out(1,0) == 18")
-    chk(near(as_f64(mOb[5]), 22.0), "matmul 2x4x3 out(1,2) == 22")
+    chk(near(to_f64(mOb[0]), 6.0), "matmul 2x4x3 out(0,0) == 6")
+    chk(near(to_f64(mOb[1]), 8.0), "matmul 2x4x3 out(0,1) == 8")
+    chk(near(to_f64(mOb[2]), 10.0), "matmul 2x4x3 out(0,2) == 10")
+    chk(near(to_f64(mOb[3]), 18.0), "matmul 2x4x3 out(1,0) == 18")
+    chk(near(to_f64(mOb[5]), 22.0), "matmul 2x4x3 out(1,2) == 22")
 
     // ---- transpose 2x3 ----
     var tt23 = tensor.new([2, 3, 1, 1], 2, 0.0)
     var dt23: array<f32, 1024> = tt23.data
     var q: i64 = 0
     while q < 6 {
-        tensor.set(dt23, tt23, q, as_f64(q + 1))
+        tensor.set(dt23, tt23, q, to_f64(q + 1))
         q = q + 1
     }
     var tTr = linalg.transpose(dt23, tt23)
     var dTr: array<f32, 1024> = tTr.data
     chk(tTr.shape0 == 3 && tTr.shape1 == 2 && tTr.len == 6, "transpose 2x3 -> 3x2")
-    chk(as_f64(tensor.at(dTr, tTr, 0)) == 1.0, "transpose t[0][0]=1")
-    chk(as_f64(tensor.at(dTr, tTr, 1)) == 4.0, "transpose t[0][1]=4")
-    chk(as_f64(tensor.at(dTr, tTr, 5)) == 6.0, "transpose t[2][1]=6")
+    chk(to_f64(tensor.at(dTr, tTr, 0)) == 1.0, "transpose t[0][0]=1")
+    chk(to_f64(tensor.at(dTr, tTr, 1)) == 4.0, "transpose t[0][1]=4")
+    chk(to_f64(tensor.at(dTr, tTr, 5)) == 6.0, "transpose t[2][1]=6")
 
     // ---- dot ----
     var va: array<f32, 1024> = array_init(0.0)

@@ -46,10 +46,10 @@ func check(cond: bool, msg: string) {
 // 读 peek 缓冲某像素某通道（off: 0=B 1=G 2=R 3=A）
 func px(info: Pixels, x: i64, y: i64, off: i64) -> i64 {
     unsafe {
-        var rb = as_i64(info.row_bytes)
+        var rb = to_i64(info.row_bytes)
         var addr = info.pixels + y * rb + x * 4 + off
         var p: ptr<u8> = int_to_ptr(addr)
-        return as_i64(deref(p))
+        return to_i64(deref(p))
     }
 }
 
@@ -87,8 +87,8 @@ func main() {
 
     // === peek 逐像素断言（BGRA）===
     var info = gfx.surface_peek(s)
-    check(info.w == as_i32(W) && info.h == as_i32(H), "peek width/height = 96x48, got " +
-        to_string(as_i64(info.w)) + "x" + to_string(as_i64(info.h)))
+    check(info.w == to_i32(W) && info.h == to_i32(H), "peek width/height = 96x48, got " +
+        to_string(to_i64(info.w)) + "x" + to_string(to_i64(info.h)))
     check(info.row_bytes != 0 && info.pixels != 0, "peek row_bytes/pixels nonnull")
 
     // 背景白 (5,30)：远离一切图形
@@ -119,14 +119,14 @@ func main() {
             deref(ptr_add(b, 6)) == 0x1A && deref(ptr_add(b, 7)) == 0x0A,
             "PNG magic = 89 50 4E 47 0D 0A 1A 0A")
         // IHDR 尺寸（b+16/20 宽高 4 字节 BE）
-        var pw: i64 = as_i64(deref(ptr_add(b, 16))) * 16777216 +
-            as_i64(deref(ptr_add(b, 17))) * 65536 +
-            as_i64(deref(ptr_add(b, 18))) * 256 +
-            as_i64(deref(ptr_add(b, 19)))
-        var ph: i64 = as_i64(deref(ptr_add(b, 20))) * 16777216 +
-            as_i64(deref(ptr_add(b, 21))) * 65536 +
-            as_i64(deref(ptr_add(b, 22))) * 256 +
-            as_i64(deref(ptr_add(b, 23)))
+        var pw: i64 = to_i64(deref(ptr_add(b, 16))) * 16777216 +
+            to_i64(deref(ptr_add(b, 17))) * 65536 +
+            to_i64(deref(ptr_add(b, 18))) * 256 +
+            to_i64(deref(ptr_add(b, 19)))
+        var ph: i64 = to_i64(deref(ptr_add(b, 20))) * 16777216 +
+            to_i64(deref(ptr_add(b, 21))) * 65536 +
+            to_i64(deref(ptr_add(b, 22))) * 256 +
+            to_i64(deref(ptr_add(b, 23)))
         check(pw == W && ph == H, "PNG IHDR size = 96x48, got " + to_string(pw) + "x" + to_string(ph))
     }
     var wrc = gfx.data_write_file(enc, "tests/p687_probe/out.png")

@@ -9,7 +9,7 @@ func fill(z: ref array<f32, 8>) {
     var k: f64 = 0.0
     while i < 8 {
         k = k + 1.0
-        z[i] = as_f32(1.5 * k)
+        z[i] = to_f32(1.5 * k)
         i = i + 1
     }
 }
@@ -19,7 +19,7 @@ func sum(z: ref array<f32, 8>) -> f64 {
     var s: f64 = 0.0
     var i: i64 = 0
     while i < 8 {
-        s = s + as_f64(z[i])
+        s = s + to_f64(z[i])
         i = i + 1
     }
     return s
@@ -45,7 +45,7 @@ namespace Vec4 {
         var s: f64 = 0.0
         var i: i64 = 0
         while i < 4 {
-            s = s + as_f64(v.data[i]) * as_f64(w.data[i])
+            s = s + to_f64(v.data[i]) * to_f64(w.data[i])
             i = i + 1
         }
         return s
@@ -65,15 +65,15 @@ func main() {
     // 下标读 → f32 变量
     var x: f32 = a[1]
     var sx: f64 = 0.0
-    sx = sx + as_f64(x)
+    sx = sx + to_f64(x)
     println("a[1]=" + to_string(sx))
     println("sum(a)=" + to_string(sum(a)))
     // 字面量初始化 + 复制赋值
     var s: array<f32, 3> = [1.0, 2.0, 3.0]
     var t: array<f32, 3> = s
     t[0] = 5.0
-    println("s2sum=" + to_string(as_f64(s[0]) + as_f64(s[1]) + as_f64(s[2])))
-    println("t0=" + to_string(as_f64(t[0])))
+    println("s2sum=" + to_string(to_f64(s[0]) + to_f64(s[1]) + to_f64(s[2])))
+    println("t0=" + to_string(to_f64(t[0])))
     // 按值传参（数组字面量）
     println("sum_vals=" + to_string(sum_vals([1.0, 2.0, 3.0])))
     // 数组返回值 + 推断类型变量
@@ -83,7 +83,7 @@ func main() {
     var g: array<array<f32, 4>, 4> = array_init(array_init(0.0))
     g[1][2] = 9.0
     g[0][3] = 2.5
-    println("g12=" + to_string(as_f64(g[1][2])) + " g03=" + to_string(as_f64(g[0][3])))
+    println("g12=" + to_string(to_f64(g[1][2])) + " g03=" + to_string(to_f64(g[0][3])))
     // struct 内嵌数组字段
     var v: Vec4 = Vec4([1.0, 2.0, 3.0, 4.0])
     var w: Vec4 = Vec4([5.0, 6.0, 7.0, 8.0])

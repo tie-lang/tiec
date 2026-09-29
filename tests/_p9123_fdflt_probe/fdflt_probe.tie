@@ -58,7 +58,7 @@ func main() {
     var s = S()
     // f32 断言经 as_f64 拓宽（fpext）再比——避免混合宽 fcmp（f32 字面量
     // 发射恒 f64，属既有独立缺口，非本探针范围）
-    check(as_f64(s.a) == 3.0, "S() f32 default int lit")
+    check(to_f64(s.a) == 3.0, "S() f32 default int lit")
     check(s.b == 7, "S() u16 default")
     check(s.c == 8, "S() i64 default")
     check(s.d == true, "S() bool default")

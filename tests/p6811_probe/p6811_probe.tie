@@ -55,10 +55,10 @@ func check(cond: bool, msg: string) {
 // 读 peek 缓冲某像素某通道（off: 0=B 1=G 2=R 3=A）
 func px(info: Pixels, x: i64, y: i64, off: i64) -> i64 {
     unsafe {
-        var rb = as_i64(info.row_bytes)
+        var rb = to_i64(info.row_bytes)
         var addr = info.pixels + y * rb + x * 4 + off
         var p: ptr<u8> = int_to_ptr(addr)
-        return as_i64(deref(p))
+        return to_i64(deref(p))
     }
 }
 
@@ -102,7 +102,7 @@ func main() {
         if render == 1 {
             var k = len(pixel_seen)
             var rval = 50 + k * 80                       // 自增色，k=0→50, k=1→130
-            var color: u32 = as_u32(4278190080 | (rval << 16)) // 0xFF000000|(R<<16)
+            var color: u32 = to_u32(4278190080 | (rval << 16)) // 0xFF000000|(R<<16)
             gfx.run_commands(dirty_c, build_color_cmds(color))
             var info = gfx.surface_peek(dirty_s)
             table_push(pixel_seen, px(info, 35, 30, 2))  // 剪在填充矩形内部

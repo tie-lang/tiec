@@ -85,21 +85,21 @@ func main() {
     var r_u = rr32_u32(u0, 13)
     // 对比（u32 值用 as_i64 转 i64 打印对比位模式）
     var ok: bool = true
-    if as_i64(sp_u) != sp_i { ok = false }
-    if as_i64(sn_u) != sn_i { ok = false }
-    if as_i64(tp_u) != tp_i { ok = false }
-    if as_i64(tn_u) != tn_i { ok = false }
-    if as_i64(q_u) != q_i { ok = false }
-    if as_i64(r_u) != r_i { ok = false }
+    if to_i64(sp_u) != sp_i { ok = false }
+    if to_i64(sn_u) != sn_i { ok = false }
+    if to_i64(tp_u) != tp_i { ok = false }
+    if to_i64(tn_u) != tn_i { ok = false }
+    if to_i64(q_u) != q_i { ok = false }
+    if to_i64(r_u) != r_i { ok = false }
     if ok {
         println("PASS u32==i64 KAT 等价")
     } else {
         println("FAIL u32!=i64")
-        println(as_i64(sp_u))
+        println(to_i64(sp_u))
         println(sp_i)
-        println(as_i64(sn_u))
+        println(to_i64(sn_u))
         println(sn_i)
-        println(as_i64(r_u))
+        println(to_i64(r_u))
         println(r_i)
         exit(1)
     }
