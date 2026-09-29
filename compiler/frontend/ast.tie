@@ -39,7 +39,8 @@ type tie<class>
 //     Var[name] / Call[name=函数名, children=[类型实参槽, 实参...]]
 //     Unary[val=一元 op 码, children=[操作数]]
 //     Binary[val=二元 op 码, children=[左, 右]]
-//     Ternary[children=[条件, 真支, 假支]] / Range[children=[起点, 终点]]
+//     Ternary[children=[条件, 真支, 假支]] / Range[val=1=闭区间, 0=半开区间,
+//       children=[起点, 终点]]
 //     TableLit[children=TableCell...] / Index[children=[基址, 下标]]
 //     TupleLit[children=TupleField...]
 //     FieldAccess[name=字段名, children=[基址]] / Path[children=Segment...]
