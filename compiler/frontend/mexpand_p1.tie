@@ -538,6 +538,9 @@ func deparse_arg_expr(node: i64) -> string {
         if w_err != "" {
             return ""
         }
+        if s_vals[node] == 1 {
+            return a + "..=" + b
+        }
         return a + ".." + b
     }
     if t == N_TABLE_LIT {

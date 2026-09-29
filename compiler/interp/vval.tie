@@ -19,12 +19,12 @@ type tie<class>
 //   Bool(i64) 0/1           布尔
 //   Trit(i64) -1/0/1        平衡三进制
 //   Chr(i64)                字符码点
-//   Rng(i64, i64)           范围起点/终点（**内联**——盒装时代的 v_aux 槽消失）
+//   Rng(i64, i64, i64)       范围起点/终点/闭区间标志（**内联**）
 //   Str(i64)                文本槽（w_svals 下标）
 //   Tbl(i64)                表描述符槽（w_koff/w_kcnt 下标；元素在 w_kids）
 //   Map(i64)                键值表描述符槽（键在 w_mkeys，值在 w_mvals）
 //   Code(i64)               宏/准引用文本槽（w_svals 下标）
-//   槽数 K=2（Rng 两个载荷）⇒ 每值 24 字节。
+//   Rng 三个 i64 载荷 ⇒ 每值按 enum 最大变体布局内联。
 //
 // # 与 ivalue 的关系
 //   标量不再入池（消灭每值 7 次 table_push 与后续表寻址）；复合值仍走「描述符槽 +
@@ -63,7 +63,7 @@ enum Value {
     Bool(i64)
     Trit(i64)
     Chr(i64)
-    Rng(i64, i64)
+    Rng(i64, i64, i64)
     Str(i64)
     Tbl(i64)
     Map(i64)
@@ -146,8 +146,8 @@ pub func new_str(s: string) -> Value {
     return Value.Str(new_text(s))
 }
 
-pub func new_range(s: i64, e: i64) -> Value {
-    return Value.Rng(s, e)
+pub func new_range(s: i64, e: i64, inclusive: i64) -> Value {
+    return Value.Rng(s, e, inclusive)
 }
 
 // 空表值（后续 push 产生新描述符槽；语义对齐 ivalue.new_table）。
@@ -289,11 +289,27 @@ pub func code_str(v: Value) -> string {
     }
 }
 
-// Range 终点。
+// Range 起点、终点与闭区间标志。
+pub func range_start(v: Value) -> i64 {
+    switch v {
+        case Value.Rng(a, b, c):
+            return a
+        default:
+            return 0
+    }
+}
 pub func range_end(v: Value) -> i64 {
     switch v {
-        case Value.Rng(a, b):
+        case Value.Rng(a, b, c):
             return b
+        default:
+            return 0
+    }
+}
+pub func range_inclusive(v: Value) -> i64 {
+    switch v {
+        case Value.Rng(a, b, c):
+            return c
         default:
             return 0
     }
@@ -536,7 +552,10 @@ pub func to_print_string(v: Value) -> string {
             return utf_char_of(x)
         case Value.Str(x):
             return w_svals[x]
-        case Value.Rng(a, b):
+        case Value.Rng(a, b, c):
+            if c != 0 {
+                return to_string(a) + "..=" + to_string(b)
+            }
             return to_string(a) + ".." + to_string(b)
         case Value.Tbl(k):
             return table_print(k)

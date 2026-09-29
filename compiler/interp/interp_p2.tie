@@ -25,10 +25,11 @@ func exec_stmt_for(id: i64) {
     var it = vval.type_of(iter)
     if it == W_RANGE {
         // 范围迭代：逐值绑定循环变量
-        var start = vval.int_val(iter)
+        var start = vval.range_start(iter)
         var end = vval.range_end(iter)
+        var inclusive = vval.range_inclusive(iter) == 1
         var i = start
-        while i < end {
+        while (inclusive && i <= end) || (!inclusive && i < end) {
             var rc = for_iterate(body, var_name, vval.new_int(i))
             if w_err != "" {
                 g_flow = FL_NORMAL
@@ -37,11 +38,14 @@ func exec_stmt_for(id: i64) {
                 return
             }
             if rc == 0 {
-                i = end
+                break
             } else {
                 if rc == 1 && g_has_last {
                     last = g_lastval
                     has_last = true
+                }
+                if inclusive && i == end {
+                    break
                 }
                 i = i + 1
             }
@@ -282,6 +286,9 @@ func pat_matches(pat: i64, subject: Value) -> bool {
             return false  // 类型不匹配 → 不命中（对齐 Rust continue）
         }
         var v = vval.int_val(subject)
+        if isess.nval(pat) == 1 {
+            return v >= sv && v <= ev
+        }
         return v >= sv && v < ev
     }
     if ptag == N_TYPE_LIT {
@@ -598,7 +605,7 @@ func gen_expr(id: i64) -> Value {
         if w_err != "" {
             return Value.Nil
         }
-        return vval.new_range(s, e)
+        return vval.new_range(s, e, isess.nval(id))
     }
     if t == N_CALL {
         return gen_call(id)

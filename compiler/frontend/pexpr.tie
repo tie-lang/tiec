@@ -35,21 +35,26 @@ pub func parse_expr() -> i64 {
     if lhs < 0 {
         return -1
     }
+    var inclusive: i64 = 0
     if putil.eat(lex_dotdot) {
-        var line = ast.line(lhs)
-        var col = ast.col(lhs)
-        var end = parse_expr()
-        if end < 0 {
-            return -1
-        }
-        var n = ast.new_node(N_RANGE, -1, -1, -1, line, col)
+        inclusive = 0
+    } else if putil.eat(lex_dotdoteq) {
+        inclusive = 1
+    } else {
+        return lhs
+    }
+    var line = ast.line(lhs)
+    var col = ast.col(lhs)
+    var end = parse_expr()
+    if end < 0 {
+        return -1
+    }
+    var n = ast.new_node(N_RANGE, -1, inclusive, -1, line, col)
         var kids: table<i64> = table_new_i64()
         table_push(kids, lhs)
         table_push(kids, end)
-        ast.set_children(n, kids)
-        return n
-    }
-    return lhs
+    ast.set_children(n, kids)
+    return n
 }
 
 // p.9.13.1 单箭头统一：switch 臂的**模式/守卫**用「不消费顶层 `->`」的表达式解析。
@@ -61,21 +66,26 @@ pub func parse_case_arm_pattern() -> i64 {
     if lhs < 0 {
         return -1
     }
+    var inclusive: i64 = 0
     if putil.eat(lex_dotdot) {
-        var line = ast.line(lhs)
-        var col = ast.col(lhs)
-        var end = parse_ternary()
-        if end < 0 {
-            return -1
-        }
-        var n = ast.new_node(N_RANGE, -1, -1, -1, line, col)
-        var kids: table<i64> = table_new_i64()
-        table_push(kids, lhs)
-        table_push(kids, end)
-        ast.set_children(n, kids)
-        return n
+        inclusive = 0
+    } else if putil.eat(lex_dotdoteq) {
+        inclusive = 1
+    } else {
+        return lhs
     }
-    return lhs
+    var line = ast.line(lhs)
+    var col = ast.col(lhs)
+    var end = parse_ternary()
+    if end < 0 {
+        return -1
+    }
+    var n = ast.new_node(N_RANGE, -1, inclusive, -1, line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, lhs)
+    table_push(kids, end)
+    ast.set_children(n, kids)
+    return n
 }
 
 

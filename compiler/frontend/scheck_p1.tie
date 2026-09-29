@@ -530,13 +530,19 @@ func check_arm_patterns_plain(c: i64, subj_ty: i64) -> i64 {
                 sm_err_msg = "case 区间两端必须是整数或字符字面量（浮点区间不支持）"
                 return -1
             }
-            // start < end（对齐 Rust：左闭右开，字符按码点比较）
+            // 普通范围要求 start < end；闭区间允许 start == end。
+            // 字符按码点比较，边界标志来自 N_RANGE.val。
             var stv = int_lit_val(sstate.child(p, 0))
             var env = int_lit_val(sstate.child(p, 1))
-            if stv >= env {
+            var inclusive = s_vals[p] == 1
+            if (inclusive && stv > env) || (!inclusive && stv >= env) {
                 sm_err_line = s_lines[c]
                 sm_err_col = s_cols[c]
-                sm_err_msg = "case 区间必须 start < end（左闭右开）"
+                if inclusive {
+                    sm_err_msg = "case 闭区间必须 start <= end"
+                } else {
+                    sm_err_msg = "case 区间必须 start < end（左闭右开）"
+                }
                 return -1
             }
             if (st_chr && subj_ty != TK_CHAR) || (st_int && !types.is_int(subj_ty)) {

@@ -592,6 +592,10 @@ pub func tig_stmt_b_107_For(id: i64) -> i64 {
         // 字符串码点迭代 `for c in s.chars()`（dev33 批次4，iter 为 MethodCall）。
         var iter = sstate.child(id, 0)
         var body = sstate.child(id, 1)
+        var iter_inclusive: bool = false
+        if s_tags[iter] == 11 && s_vals[iter] == 1 {
+            iter_inclusive = true
+        }
         var iter_tag = s_tags[iter]
         if iter_tag == 18 {
             // 字符串码点迭代器 `.chars()`：走 UTF-8 码点步进循环
@@ -655,7 +659,11 @@ pub func tig_stmt_b_107_For(id: i64) -> i64 {
         var cmp = ir.new_inst(g_cur_block, 12, types.named(10))  // icmp, i1
         ir.add_operand(cmp, cur_v, 0)
         ir.add_operand(cmp, end, 0)
-        ir.add_operand(cmp, 2, 2)  // lt
+        if iter_inclusive {
+            ir.add_operand(cmp, 4, 2)  // sle
+        } else {
+            ir.add_operand(cmp, 2, 2)  // slt
+        }
         var cmp_v = ir.get_value(cmp)
         var cb = ir.new_inst(g_cur_block, 31, -1)
         ir.add_operand(cb, cmp_v, 0)
@@ -671,8 +679,21 @@ pub func tig_stmt_b_107_For(id: i64) -> i64 {
             var bb2 = ir.new_inst(g_cur_block, 30, -1)  // br step
             ir.add_operand(bb2, step_blk, 1)
         }
-        // step 块：cur + 1 → store → br cond
+        // step 块：闭区间在终点处直接退出，避免 i64 最大值加一回绕。
         g_cur_block = step_blk
+        if iter_inclusive {
+            var at_end = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
+            ir.add_operand(at_end, cur_v, 0)
+            ir.add_operand(at_end, end, 0)
+            ir.add_operand(at_end, 0, 2)  // eq
+            var add_blk = ir.new_block(g_cur_func, interner.intern("for.add"))
+            var end_guard = ir.new_inst(g_cur_block, 31, -1)
+            ir.add_operand(end_guard, ir.get_value(at_end), 0)
+            ir.add_operand(end_guard, exit_blk, 1)
+            ir.add_operand(end_guard, add_blk, 1)
+            g_cur_block = add_blk
+        }
+        // 普通步进：cur + 1 → store → br cond
         var add1 = ir.new_inst(g_cur_block, 0, types.named(3))  // add
         ir.add_operand(add1, cur_v, 0)
         ir.add_operand(add1, 1, 2)  // 立即数 1

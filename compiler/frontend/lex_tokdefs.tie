@@ -130,6 +130,7 @@ const lex_starstarq: i64 = 112;       // `**?` checked 幂
 // 用作标识符的代码仅 9 处且全在注释/README 中 → 升为保留字无实际影响。
 const lex_move: i64 = 113;            // `move` 所有权转移形参修饰
 const lex_tilde: i64 = 114;           // `~` 整数按位取反
+const lex_dotdoteq: i64 = 115;        // `..=` 闭区间
 // p.9.11.15 yield 生成器关键字（tag 105）：`func gen() { yield v; ... }`——
 // 含 yield 的函数 = 生成器函数（产出序列，调用返回迭代序列对象/表）。
 const lex_yield: i64 = 105;   // yield 关键字（生成器产出语句）
@@ -210,7 +211,7 @@ func is_bin_op(tag: i64) -> bool {
 // 是否「行尾不可结束语句」集合（Rust finish_line 排除表；RBracket 不在其中）
 func no_semi_end(tag: i64) -> bool {
     var bad: table<i64> = [lex_comma, lex_colon, lex_dcolon, lex_dot, lex_dotdot,
-        lex_ellipsis, lex_lparen, lex_lbracket, lex_lbrace, lex_rbrace, lex_semi,
+        lex_dotdoteq, lex_ellipsis, lex_lparen, lex_lbracket, lex_lbrace, lex_rbrace, lex_semi,
         lex_else, lex_in, lex_interp_lbrace]
     var i: i64 = 0
     while i < len(bad) {
