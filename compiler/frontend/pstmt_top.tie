@@ -414,8 +414,12 @@ pub func pdoc_of(decl: i64) -> string {
 }
 
 // 注册表可读摘要（--dump-docs 调试输出；tsp hover/补全经 pdoc_* 消费）。
+// 性能：用 StringBuilder 累积（旧实现 out = out + ... 循环拼接，每轮复制全串，
+// 文档条数 k 时为 O(k²) 字节复制；本仓无 GC，峰值内存随之增长）。范式同
+// driver/util.tie strip_type_header 的性能重写。
 pub func pdoc_dump() -> string {
-    var out: string = "共 " + to_string(len(g_doc_nodes)) + " 条声明 doc:\n"
+    var sb = string_builder()
+    sb_append(sb, "共 " + to_string(len(g_doc_nodes)) + " 条声明 doc:\n")
     var i: i64 = 0
     while i < len(g_doc_nodes) {
         var node = g_doc_nodes[i]
@@ -424,11 +428,11 @@ pub func pdoc_dump() -> string {
         if nid >= 0 {
             nm = interner.name_str(nid)
         }
-        out = out + "  [" + to_string(g_doc_dlines[i]) + "] " + nm + ": " +
-            interner.name_str(g_doc_texts[i]) + "\n"
+        sb_append(sb, "  [" + to_string(g_doc_dlines[i]) + "] " + nm + ": " +
+            interner.name_str(g_doc_texts[i]) + "\n")
         i = i + 1
     }
-    return out
+    return sb_build(sb)
 }
 
 // ---------- 语句分派 ----------
