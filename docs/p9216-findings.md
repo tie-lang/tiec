@@ -1368,3 +1368,20 @@ dc8c1a0 版（`..=` 闭区间特性随批次回滚，待 p.9.23 工作流修复�
   `E00000 无法以 Eq 开始表达式`；旧解释器对全部 `..=` 用例报同类语法错误。
 * 不带 `--no-warn` 全量编译：仅 1 条 LLVM 环境级 target triple 覆盖警告，
   tie 语言层无新增警告。
+
+### 24.5 补充验证（覆盖缺口补齐）
+
+* **switch 表达式闭区间**：语句位 switch（`irgen_stmt_p2.tie`）与表达式位
+  switch（`irgen_switch.tie`）是**两份独立实现**，首轮探针只覆盖语句位，
+  表达式位那条改动属未执行代码。补 `range_switch_expr_probe.tie`：
+  `expr_hit=7`（3∈[1,3]）/ `expr_miss=0` / `expr_half=0`（半开边界不变）/
+  `expr_single=9`（`2..=2` 单点区间），n1/n2/n3 结果逐字一致。
+  表达式位分支臂**不写 `case` 关键字**（写 `1..=3 -> 7`），写 `case` 会报
+  `E00000 无法以 Case 开始表达式`；语句位则必须写 `case`（箭头报
+  `E00484 期望 ':'，实际是 Arrow`）。
+* **切片不受影响**：补 `slice_regression_probe.tie`，`t[1..3]` / `t[..2]` /
+  `t[2..]` / `t[..]` / `s[1..3]` 全部正常（`mid=2/head=2/tail=3/all=5/str=2`），
+  确认 `..=` 未改切片路径（切片分支只消费 `lex_dotdot`）。
+* **解释器 switch 表达式不可测**：`interp.eval` 只接受语句序列，`switch`
+  开头按语句位解析（表达式位写法报「switch 体内只允许 case/default」）。
+  该形态由 AOT 探针覆盖，解释器侧测语句位等价语义即可。
