@@ -32,15 +32,16 @@ func tig_expr(id: i64) -> i64 {
     if r != -1 {
         return r
     }
-    sm_err_line = s_lines[id]
-    sm_err_col = s_cols[id]
-    sm_err_msg = "irgen 未支持的表达式（tag=" + to_string(tag) + "，函数 " + g_cur_fn_name + "）"
-    return -1
-    var tag = s_tags[id]
-    // 其他表达式后续扩展
-    sm_err_line = s_lines[id]
-    sm_err_col = s_cols[id]
-    sm_err_msg = "irgen 未支持的表达式（tag=" + to_string(tag) + "，函数 " + g_cur_fn_name + "）"
+    // p.9.0-S.8：保留更具体的诊断。seg1/seg2 内部若已置 sm_err_msg（例如内置
+    // 调用识别成功但参数类型不符的语义错误），此处不覆盖为通用消息——否则
+    // 「as_i64 收到了数值参数」这类可行动的诊断会被冲成「未支持的表达式」。
+    // 与 tig_expr_seg1 里 is_builtin_name 分支的既有约定一致（该处同样只在
+    // sm_err_msg 为空时填默认消息）。
+    if str_len(sm_err_msg) == 0 {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "irgen 未支持的表达式（tag=" + to_string(tag) + "，函数 " + g_cur_fn_name + "）"
+    }
     return -1
 }
 
@@ -159,11 +160,14 @@ func is_builtin_name(nm: string) -> bool {
         nm == "volatile_load" || nm == "volatile_store" {
         return true
     }
-    // ---------- S1.3 as_* 显式数值转换族 ----------
+    // ---------- S1.3 to_* / as_* 数值转换与解包族 ----------
     if nm == "as_i8" || nm == "as_i16" || nm == "as_i32" || nm == "as_i64" ||
         nm == "as_u8" || nm == "as_u16" || nm == "as_u32" || nm == "as_u64" ||
         nm == "as_f32" || nm == "as_f64" ||
-        nm == "as_i128" || nm == "as_u128" {
+        nm == "as_i128" || nm == "as_u128" ||
+        nm == "to_i8" || nm == "to_i16" || nm == "to_i32" || nm == "to_i64" ||
+        nm == "to_i128" || nm == "to_u8" || nm == "to_u16" || nm == "to_u32" ||
+        nm == "to_u64" || nm == "to_u128" || nm == "to_f32" || nm == "to_f64" {
         return true
     }
     // ---------- S1.3 checked_* 溢出检测族 ----------

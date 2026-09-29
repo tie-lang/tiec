@@ -173,37 +173,37 @@ pub func builtin_call_b_as_i8(fn_name: string, args: table<i64>, call_node: i64)
             sm_err_msg = fn_name + "() 期望 1 个参数，实际 " + to_string(nargs) + " 个"
             return -2
         }
-        if fn_name == "as_i8" {
+        if fn_name == "as_i8" || fn_name == "to_i8" {
             return types.named(TK_I8)
         }
-        if fn_name == "as_i16" {
+        if fn_name == "as_i16" || fn_name == "to_i16" {
             return types.named(TK_I16)
         }
-        if fn_name == "as_i32" {
+        if fn_name == "as_i32" || fn_name == "to_i32" {
             return types.named(TK_I32)
         }
-        if fn_name == "as_i64" {
+        if fn_name == "as_i64" || fn_name == "to_i64" {
             return types.named(TK_I64)
         }
-        if fn_name == "as_u8" {
+        if fn_name == "as_u8" || fn_name == "to_u8" {
             return types.named(TK_U8)
         }
-        if fn_name == "as_u16" {
+        if fn_name == "as_u16" || fn_name == "to_u16" {
             return types.named(TK_U16)
         }
-        if fn_name == "as_u32" {
+        if fn_name == "as_u32" || fn_name == "to_u32" {
             return types.named(TK_U32)
         }
-        if fn_name == "as_u64" {
+        if fn_name == "as_u64" || fn_name == "to_u64" {
             return types.named(TK_U64)
         }
-        if fn_name == "as_f32" {
+        if fn_name == "as_f32" || fn_name == "to_f32" {
             return types.named(TK_F32)
         }
-        if fn_name == "as_i128" {
+        if fn_name == "as_i128" || fn_name == "to_i128" {
             return types.named(TK_I128)
         }
-        if fn_name == "as_u128" {
+        if fn_name == "as_u128" || fn_name == "to_u128" {
             return types.named(TK_U128)
         }
         return types.named(TK_F64)

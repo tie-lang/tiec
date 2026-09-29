@@ -17,7 +17,7 @@ const CI64: i64 = 7
 func main() {
     unsafe {
         var ok: i64 = 0
-        if as_i64(abs(CI32)) == 42 && as_i64(CI64) == 7 {
+        if to_i64(abs(CI32)) == 42 && to_i64(CI64) == 7 {
             ok = 1
         }
         println(to_string(ok))

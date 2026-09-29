@@ -71,14 +71,14 @@ func pow2f(e: f64) -> f64 {
     if e < 0.0 {
         return 1.0 / pow2f(0.0 - e)
     }
-    var m = as_i64(e)
+    var m = to_i64(e)
     var v: f64 = 1.0
     var i: i64 = 0
     while i < m {
         v = v * 2.0
         i = i + 1
     }
-    var f = e - as_f64(m)
+    var f = e - to_f64(m)
     var x = f * 0.6931471805599453
     return v * (1.0 + x + (x * x) / 2.0 + (x * x * x) / 6.0 + (x * x * x * x) / 24.0)
 }
@@ -98,10 +98,10 @@ func sci_str(v: f64) -> string {
             y = y - 1
         }
     }
-    var m = as_i64(t)
-    var frac = t - as_f64(m)
-    var d1 = as_i64(frac * 10.0)
-    var d2 = as_i64((frac * 10.0 - as_f64(d1)) * 10.0)
+    var m = to_i64(t)
+    var frac = t - to_f64(m)
+    var d1 = to_i64(frac * 10.0)
+    var d2 = to_i64((frac * 10.0 - to_f64(d1)) * 10.0)
     if d2 < 0 {
         d2 = 0
     }
@@ -114,16 +114,16 @@ func fmt_time(t_s: f64) -> string {
         return "≈" + sci_str(t_s) + " 秒"
     }
     if t_s < 60.0 {
-        return "≈" + itoa(as_i64(t_s)) + " 秒"
+        return "≈" + itoa(to_i64(t_s)) + " 秒"
     }
     if t_s < 3600.0 {
-        return "≈" + itoa(as_i64(t_s / 60.0)) + " 分"
+        return "≈" + itoa(to_i64(t_s / 60.0)) + " 分"
     }
     if t_s < 86400.0 {
-        return "≈" + itoa(as_i64(t_s / 3600.0)) + " 小时"
+        return "≈" + itoa(to_i64(t_s / 3600.0)) + " 小时"
     }
     if t_s < 31557600.0 {
-        return "≈" + itoa(as_i64(t_s / 86400.0)) + " 天"
+        return "≈" + itoa(to_i64(t_s / 86400.0)) + " 天"
     }
     return "≈" + sci_str(t_s / 31557600.0) + " 年"
 }
@@ -152,23 +152,23 @@ func bench_config(tag: string, msg: string, n: i64, eff_override: i64) -> void {
 
     var eff: f64 = 0.0
     if eff_override > 0 {
-        eff = as_f64(eff_override)
+        eff = to_f64(eff_override)
     } else {
-        eff = as_f64(n) * 5.5849625007
+        eff = to_f64(n) * 5.5849625007
     }
     var E = eff * 0.5
     var ops = pow2f(E)
-    var t_s = ops / as_f64(hps)
+    var t_s = ops / to_f64(hps)
 
     var ops_s: string = "≈" + sci_str(ops) + " 次"
     if E < 20.0 {
-        ops_s = "≈" + itoa(as_i64(ops)) + " 次"
+        ops_s = "≈" + itoa(to_i64(ops)) + " 次"
     }
     var line = tag
     if eff_override == 0 {
         line = line + " n=" + itoa(n)
     }
-    line = line + " 有效" + itoa(as_i64(eff)) + "bit 碰撞" + ops_s +
+    line = line + " 有效" + itoa(to_i64(eff)) + "bit 碰撞" + ops_s +
         " | 速率=" + itoa(mbs) + "MB/s " + itoa(hps) + "次/s (iters=" + itoa(iters) + " sec=" + itoa(sec) + ")" +
         " | 预计碰撞时间 " + fmt_time(t_s)
     println(line)
