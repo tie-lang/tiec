@@ -194,13 +194,14 @@ func tig_binary(op: i64, lhs: i64, rhs: i64) -> i64 {
     } else if op == 3 {
         iop = 3
     } else if op == 24 {
-        // p.9.13.3 整除 `\`：int 族与 `/` 同走 sdiv（截断语义，对齐设计「int 族截断」）
+        // p.9.0-S.7：整除 `\` 的 floor 语义由 tig_floor_divmod 前置处理（见本函数
+        // 窄整数分支与 i64 分支的拦截）；此处的 sdiv 保留为**防御**——若将来新增
+        // 未拦截的调用路径，退化为截断除而非生成非法 IR。
         iop = 3
     } else if op == 4 {
         iop = 4
     } else if op == 26 {
-        // p.9.13.3 `%%`：int 族与 `%` 同（因 int 的 `\` 本身即截断除，故成对的
-        // 取余就是 srem）。f64 的 floor 语义在 tig_binary_float 处理。
+        // p.9.0-S.7：`%%` 同理由 tig_floor_divmod 前置处理；此处 srem 为防御兜底。
         iop = 4
     } else if op == 5 {
         iop = 12
@@ -267,6 +268,18 @@ func tig_binary(op: i64, lhs: i64, rhs: i64) -> i64 {
                 common = types.named(TK_I64)
             }
         }
+        // p.9.0-S.7：整除 `\` / 成对取余 `%%` 按公共宽度走 floor 语义（规范 §3.3）
+        if op == 24 || op == 26 {
+            var lf = tig_widen(lv, lhs_t, common)
+            if lf < 0 {
+                return -1
+            }
+            var rf = tig_widen(rv, rhs_t, common)
+            if rf < 0 {
+                return -1
+            }
+            return tig_floor_divmod(op, lf, rf, common)
+        }
         return tig_narrow_bin(op, iop, lv, rv, lhs_t, rhs_t, common)
     }
     // p.6.8.1 typed ptr ==/!=（一等指针相等）：指针经 ptrtoint 后整数 icmp。
@@ -275,6 +288,10 @@ func tig_binary(op: i64, lhs: i64, rhs: i64) -> i64 {
     // 推导偏差（ins_ty 承载元素语义类型非 ptr）——先正确后性能，等值语义无损。
     if types.is_ptr(lhs_t) || types.is_ptr(rhs_t) {
         return tig_binary_ptr(op, lv, rv, lhs_t, rhs_t)
+    }
+    // p.9.0-S.7：整除 `\` / 成对取余 `%%` 的 floor 语义（i64 路径；窄整数见上）
+    if op == 24 || op == 26 {
+        return tig_floor_divmod(op, lv, rv, types.named(TK_I64))
     }
     var inst = ir.new_inst(g_cur_block, iop, types.named(3))
     ir.add_operand(inst, lv, 0)
@@ -576,6 +593,72 @@ func tig_select_i(cond: i64, tval: i64, fval: i64, ty: i64) -> i64 {
     ir.add_operand(sl, tval, 0)
     ir.add_operand(sl, fval, 0)
     return ir.get_value(sl)
+}
+
+// ---------- p.9.0-S.7 整除 `\` / 成对取余 `%%` 的 floor 语义（规范 §3.3）----------
+// 规范定义：整除给出**向下取整**的商，`%%` 给出与之配对的余数（余数符号跟随除数），
+// 二者满足 a == (a \ b) * b + (a %% b)。C 风格截断在负数上不满足该式。
+//
+// 实现：先取截断结果（sdiv / srem），当**余数非零且与除数异号**时调整一格——
+// 商减一、余数加除数。无符号与 char/trit 无负值，截断即 floor，原样返回
+// （这一分支同时保证既有无符号路径的指令序列零变化）。
+//
+// 注意本实现不把结束端点改写为别的数值，且对 i64 最小值/除数 -1 的
+// 溢出情形与截断路径同态（LLVM sdiv 的既有 UB 边界不变）。
+
+// 截断商 → floor 商（余数与除数异号则减一）。
+func tig_floor_fix_div(a: i64, trunc_q: i64, b: i64, ty: i64) -> i64 {
+    if !stype.is_signed(ty) {
+        return trunc_q
+    }
+    var z0 = tig_int_lit_ty(0, ty)
+    var rem = ir.new_inst(g_cur_block, 4, ty)  // srem：取截断余数
+    ir.add_operand(rem, a, 0)
+    ir.add_operand(rem, b, 0)
+    var r = ir.get_value(rem)
+    var r_nonzero = tig_icmp_c(r, z0, 1)           // ne
+    var r_neg = tig_icmp_c(r, z0, 2)               // slt
+    var b_neg = tig_icmp_c(b, z0, 2)               // slt
+    var sign_diff = tig_icmp_c(r_neg, b_neg, 1)   // i1 不等 = 符号异或
+    var adjust = tig_and_i1(r_nonzero, sign_diff)
+    var one = tig_int_lit_ty(1, ty)
+    var dec = ir.new_inst(g_cur_block, 1, ty)  // sub：商 - 1
+    ir.add_operand(dec, trunc_q, 0)
+    ir.add_operand(dec, one, 0)
+    return tig_select_i(adjust, ir.get_value(dec), trunc_q, ty)
+}
+
+// 截断余数 → 成对余数（与除数异号则加除数）。
+func tig_floor_fix_mod(trunc_r: i64, b: i64, ty: i64) -> i64 {
+    if !stype.is_signed(ty) {
+        return trunc_r
+    }
+    var z0 = tig_int_lit_ty(0, ty)
+    var r_nonzero = tig_icmp_c(trunc_r, z0, 1)
+    var r_neg = tig_icmp_c(trunc_r, z0, 2)
+    var b_neg = tig_icmp_c(b, z0, 2)
+    var sign_diff = tig_icmp_c(r_neg, b_neg, 1)
+    var adjust = tig_and_i1(r_nonzero, sign_diff)
+    var inc = ir.new_inst(g_cur_block, 0, ty)  // add：余数 + 除数
+    ir.add_operand(inc, trunc_r, 0)
+    ir.add_operand(inc, b, 0)
+    return tig_select_i(adjust, ir.get_value(inc), trunc_r, ty)
+}
+
+// 整数二元 floor 整除（op 24）/ 成对取余（op 26）统一入口。
+func tig_floor_divmod(op: i64, a: i64, b: i64, ty: i64) -> i64 {
+    var base: i64 = 3  // sdiv
+    if op == 26 {
+        base = 4  // srem
+    }
+    var inst = ir.new_inst(g_cur_block, base, ty)
+    ir.add_operand(inst, a, 0)
+    ir.add_operand(inst, b, 0)
+    var res = ir.get_value(inst)
+    if op == 26 {
+        return tig_floor_fix_mod(res, b, ty)
+    }
+    return tig_floor_fix_div(a, res, b, ty)
 }
 
 // 二元组聚合构造：(v0, v1) → alloca 聚合 + 逐字段 agg_gep/store + load

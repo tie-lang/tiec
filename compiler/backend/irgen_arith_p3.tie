@@ -25,7 +25,7 @@ func tig_compound_assign(op: i64, lv: i64, rv: i64, ty: i64) -> i64 {
     } else if op == 3 {
         iop = 3  // /=
     } else if op == 24 {
-        iop = 3  // \=（整数：与 /= 同为 sdiv 截断除）
+        iop = 3  // \=：先取截断商；有符号整数随后套 floor 调整（见函数尾）
     } else if op == 4 {
         iop = 4  // %=
     } else if op == 13 {
@@ -64,6 +64,11 @@ func tig_compound_assign(op: i64, lv: i64, rv: i64, ty: i64) -> i64 {
     // p.9.13.3 `\=`（浮点）：fdiv 结果再取 floor，保持与二元 `\` 的 floor-div 语义一致。
     if op == 24 && is_f {
         return tig_ext_call1("floor", res, ty, ty)
+    }
+    // p.9.0-S.7 `\=`（有符号整数）：截断商 → floor 商，与二元 `\` 同语义（规范 §3.3）。
+    // 无符号/char/trit 在 tig_floor_fix_div 内直接返回截断值（无负值，两者等价）。
+    if op == 24 {
+        return tig_floor_fix_div(lv, res, rv, ty)
     }
     return res
 }
