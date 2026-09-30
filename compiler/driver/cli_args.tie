@@ -78,6 +78,10 @@ pub func parse_args() -> i64 {
             g_cli_fast_math = true
         } else if a == "--check-bounds" {
             g_cli_check_bounds = true
+        } else if a == "--esc-audit" {
+            // r.1.6.7：打印每处「独占免锁」判定（变量名/函数/行号）——用于人工
+            // 核对不变量：全局变量 / 函数参数 / 已泄漏变量**从不**出现在快路径。
+            g_cli_esc_audit = true
         } else if a == "--compress-data" {
             g_compress_data = true
         } else if a == "--lsp" {

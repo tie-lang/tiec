@@ -12,10 +12,21 @@ func s21_table_len(t: i64) -> i64 {
 // 表追加：p.6.7.2 起委托 tl_tbl$tbl_push 单步原子 append（锁内完成
 // len/ensure/memcpy/set_len，多线程并发 push 正确）。值先落临时槽再传地址。
 func s21_table_push(t: i64, elem_llvm_ty: i64, v: i64) {
+    s21_table_push_ex(t, elem_llvm_ty, v, false)
+}
+
+// r.1.6.7：excl = 编译器**静态证得**该表独占（句柄从未离开本次函数调用）→ 走
+// `tbl_push_nl` 免锁入口。判据与风险边界见 irgen_esc.tie；默认（excl=false）与
+// 原实现逐指令一致。
+func s21_table_push_ex(t: i64, elem_llvm_ty: i64, v: i64, excl: bool) {
     g_used_trmlite = true
     var slot = ir.new_inst(g_cur_block, 20, elem_llvm_ty)  // 值临时槽
     ir.add_operand(slot, elem_llvm_ty, 2)
     s21_store(ir.get_value(slot), v, elem_llvm_ty)
+    if excl {
+        tl_void_2("tl_tbl$tbl_push_nl", t21_ptri(t), t21_ptri(ir.get_value(slot)))
+        return
+    }
     tl_void_2("tl_tbl$tbl_push", t21_ptri(t), t21_ptri(ir.get_value(slot)))
 }
 
@@ -50,6 +61,11 @@ func s21_elem_zero(ty: i64) -> i64 {
 // 值先落槽再传指针整数。编译期 IR 发射层展开，零改运行期 tbl_set（自举不动点
 // 只随 tiec 源码变化）。用 tbl_push 零值逐个追加（string 槽得有效 "" 而非 null）。
 func s21_table_set(t: i64, i: i64, elem_llvm_ty: i64, v: i64) {
+    s21_table_set_ex(t, i, elem_llvm_ty, v, false)
+}
+
+// r.1.6.7：excl = 静态证得独占 → 扩容路径末尾改走 `tbl_set_nl`（扩容时表仍独占）。
+func s21_table_set_ex(t: i64, i: i64, elem_llvm_ty: i64, v: i64, excl: bool) {
     g_used_trmlite = true
     var T64 = types.named(TK_I64)
     var t_i = t21_ptri(t)
@@ -101,7 +117,8 @@ func s21_table_set(t: i64, i: i64, elem_llvm_ty: i64, v: i64) {
     ir.add_operand(lcb, le, 1)
     // 循环体：push 一个零值，cur += 1
     g_cur_block = lb
-    s21_table_push(t, elem_llvm_ty, zeroval)
+    // r.1.6.7：扩容期间的零值填充同样按独占分派（扩容时表仍独占）
+    s21_table_push_ex(t, elem_llvm_ty, zeroval, excl)
     s21_store(idx_p, s21_bin(0, cur, tig_int_lit(1)), T64)  // cur+1
     var bb = ir.new_inst(g_cur_block, 30, -1)  // br lc
     ir.add_operand(bb, lc, 1)
@@ -110,6 +127,10 @@ func s21_table_set(t: i64, i: i64, elem_llvm_ty: i64, v: i64) {
     var brg = ir.new_inst(g_cur_block, 30, -1)  // br ge
     ir.add_operand(brg, ge, 1)
     g_cur_block = ge
+    if excl {
+        tl_void_3("tl_tbl$tbl_set_nl", t_i, i, t21_ptri(sv))
+        return
+    }
     tl_void_3("tl_tbl$tbl_set", t_i, i, t21_ptri(sv))
 }
 
@@ -117,6 +138,11 @@ func s21_table_set(t: i64, i: i64, elem_llvm_ty: i64, v: i64) {
 // p.9.12.2 裁决：越界读（含负下标）语义不变（高侧返零；负下标为既有 UB，编译器
 // 自举运行期有惰性负下标读，禁加负下标守卫以防自举失稳）；仅写路径负下标报错。
 func s21_table_at(t: i64, i: i64, ok_ptr: i64, elem_llvm_ty: i64) -> i64 {
+    return s21_table_at_ex(t, i, ok_ptr, elem_llvm_ty, false)
+}
+
+// r.1.6.7：excl = 静态证得独占 → `tbl_at_nl` 免锁读（见 s21_table_push_ex 说明）。
+func s21_table_at_ex(t: i64, i: i64, ok_ptr: i64, elem_llvm_ty: i64, excl: bool) -> i64 {
     g_used_trmlite = true
     var T64 = types.named(TK_I64)
     var t_i = t21_ptri(t)
@@ -124,7 +150,12 @@ func s21_table_at(t: i64, i: i64, ok_ptr: i64, elem_llvm_ty: i64) -> i64 {
     var slot = ir.new_inst(g_cur_block, 20, elem_llvm_ty)
     ir.add_operand(slot, elem_llvm_ty, 2)
     var sv = ir.get_value(slot)
-    var ok = tl_i64_3("tl_tbl$tbl_at", t_i, i, t21_ptri(sv))
+    var ok: i64 = 0
+    if excl {
+        ok = tl_i64_3("tl_tbl$tbl_at_nl", t_i, i, t21_ptri(sv))
+    } else {
+        ok = tl_i64_3("tl_tbl$tbl_at", t_i, i, t21_ptri(sv))
+    }
     s21_store(ok_ptr, s21_trunc_i8(ok), types.named(TK_I8))  // 越界标志 → 出参 i8
     return s21_load(sv, elem_llvm_ty)
 }

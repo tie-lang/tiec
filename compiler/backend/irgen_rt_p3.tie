@@ -47,6 +47,12 @@ func gen_actor_method(aidx: i64, mi: i64, anode: i64) -> i64 {
     g_lp_top = 0
     g_tv_keys = table_new_i64()
     g_tv_elems = table_new_i64()
+    // r.1.6.7：逃逸分析状态同样按「每函数」重置——闭包体/方法体是独立函数，
+    // 其内候选集与外层互不串用（外层候选在本函数体内不成立：捕获变量的所有权
+    // 可能落在另一执行流）。注意此处是**清空**而非保存/恢复：闭包体生成发生在外层
+    // 函数的生成过程中，若恢复外层状态会把「已被闭包捕获 ⇒ 可能被并发访问」的表
+    // 重新判为独占 —— 方向必须偏向保守。
+    esc_reset()
     // rec = inttoptr(param0) → ptr
     var rec = ir.new_inst(g_cur_block, 25, types.named(TK_STR))  // inttoptr
     ir.add_operand(rec, ir.param_val(fid, 0), 0)
@@ -121,6 +127,12 @@ func gen_actor_dispatch(aidx: i64, anode: i64) -> i64 {
     g_lp_top = 0
     g_tv_keys = table_new_i64()
     g_tv_elems = table_new_i64()
+    // r.1.6.7：逃逸分析状态同样按「每函数」重置——闭包体/方法体是独立函数，
+    // 其内候选集与外层互不串用（外层候选在本函数体内不成立：捕获变量的所有权
+    // 可能落在另一执行流）。注意此处是**清空**而非保存/恢复：闭包体生成发生在外层
+    // 函数的生成过程中，若恢复外层状态会把「已被闭包捕获 ⇒ 可能被并发访问」的表
+    // 重新判为独占 —— 方向必须偏向保守。
+    esc_reset()
     // rec_i64 = ptrtoint(env)（handler 的 rec 形参是 i64；handler 内部再 inttoptr）
     var env_p = ir.param_val(fid, 0)
     var recpi = ir.new_inst(g_cur_block, 24, T64)  // ptrtoint → i64
