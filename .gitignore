@@ -36,3 +36,4 @@ opencode.json
 _tiec_verify/esc_safety_out/
 compiler/_*.txt
 _tiec_verify/esc_safety_out/
+tests/language/_*.tie

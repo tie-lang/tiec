@@ -9,6 +9,16 @@ pub func check_var_decl(s: i64) -> i64 {
     var nm = sstate.name_str(s)
     var nid = intern.intern(nm)
     var is_const = s_vals[s]
+    // r.1.6.7 凭据派生登记：`var sub = g.delegate(cap)` ⇒ 记下 (sub → g)，供
+    // `unsafe.revoke(g)` 沿派生关系传播失效（撤销父 ⇒ 子女一并失效）。
+    // 登记的是「名 → 名」的编译期关系，与类型/值无关，故在类型推断之前做。
+    var init_d = sstate.child(s, 1)
+    if init_d >= 0 && s_tags[init_d] == S_N_METHOD_CALL && sstate.name_str(init_d) == "delegate" {
+        var recv_d = sstate.child(init_d, sstate.slot_off(init_d))
+        if recv_d >= 0 && s_tags[recv_d] == S_N_VAR {
+            sstate.gr_add(nid, intern.intern(sstate.name_str(recv_d)))
+        }
+    }
     // 重复声明对齐 Rust 版：不报错（scope.insert 覆盖语义）
     var ty_node = sstate.child(s, 0)
     var init = sstate.child(s, 1)
