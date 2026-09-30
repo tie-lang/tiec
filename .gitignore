@@ -33,3 +33,6 @@ opencode.json
 .codegraph/
 .omo/
 .superpowers/
+_tiec_verify/esc_safety_out/
+compiler/_*.txt
+_tiec_verify/esc_safety_out/

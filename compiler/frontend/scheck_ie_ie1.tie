@@ -88,10 +88,11 @@ pub func check_stmt_guard_with(s: i64) -> i64 {
             return -1
         }
         var capn = sstate.name_str(sstate.child(s, 0))
-        if capn != "share" && capn != "mem" && capn != "ext" {
+        // r.1.6.7：域映射走 types 层单一事实源（新增 lock 域 = 绕过运行时表锁）
+        if types.guard_cap_index(capn) < 0 {
             sm_err_line = s_lines[s]
             sm_err_col = s_cols[s]
-            sm_err_msg = "unsafe with 的能力域必须是 share/mem/ext，实际是 '" + capn + "'"
+            sm_err_msg = "unsafe with 的能力域必须是 share/mem/ext/lock，实际是 '" + capn + "'"
             return -1
         }
         var saved_w = g_unsafe_depth

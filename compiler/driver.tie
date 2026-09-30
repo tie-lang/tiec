@@ -297,9 +297,14 @@ func main() -> i64 {
     }
     src = pruned
     // 头部扫描（文件类型声明 / 角色）
-    if driver.scan_header(str.clone(src)) < 0 {
+    var _sh_r = driver.scan_header(str.clone(src))
+    if _sh_r < 0 {
         return 1
     }
+    // r.1.6.7：文件级 lock 授权（`type tie<logic, unsafe:lock>`）——头部角色声明
+    // 中的修饰角色 `unsafe:lock` ⇒ 整文件的表访问置于**去锁**作用域（文件级持证
+    // 形态，见 unsafe-credential-lock.md §3）。注入 irgen，供函数体生成时判定。
+
     // 剥离头部声明行（`type tie` / `type tie<X>` 是真语法行，须从正文移除；
     // 旧 `// tie:` 是注释由 lexer 跳过，无需处理）
     var clean = strip_type_header(src)
