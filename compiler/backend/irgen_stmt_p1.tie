@@ -207,7 +207,8 @@ func tig_index_read(id: i64) -> i64 {
     var ok_slot = ir.new_inst(g_cur_block, 20, types.named(TK_I8))  // alloca i8
     ir.add_operand(ok_slot, types.named(TK_I8), 2)
     var ok_addr = ir.get_value(ok_slot)
-    return s21_table_at(t, iv, ok_addr, ret_ty)
+    // r.1.6.7 独占免锁：base 是**裸局部变量**且静态证得独占 → tbl_at_nl
+    return s21_table_at_ex(t, iv, ok_addr, ret_ty, esc_take(base, "读 t[i]"))
 }
 
 // p.6.10.2 步2：表句柄引用计数插桩辅助——生成 tl_tbl$tbl_retain / tl_tbl$tbl_release
@@ -562,7 +563,9 @@ func tig_index_assign(id: i64) -> i64 {
     if op >= 0 {
         var ok_r = ir.new_inst(g_cur_block, 20, types.named(TK_I8))  // alloca i8
         ir.add_operand(ok_r, types.named(TK_I8), 2)
-        var old = s21_table_at(t, iv, ir.get_value(ok_r), pty)
+        // r.1.6.7 独占免锁：base 裸局部变量且静态证得独占 → 免锁读旧值。
+        // 注意此处**只查询不计审计数**（esc_live 直查），避免同一处访问被计两次。
+        var old = s21_table_at_ex(t, iv, ir.get_value(ok_r), pty, esc_var_live(base))
         if old < 0 {
             return -1
         }
@@ -603,7 +606,8 @@ func tig_index_assign(id: i64) -> i64 {
             v = bx
         }
     }
-    s21_table_set(t, iv, pty, v)  // 下标写：越界静默跳过（不追加）
+    // r.1.6.7 独占免锁：写路径同样按独占判定选免锁入口（越界静默跳过语义不变）
+    s21_table_set_ex(t, iv, pty, v, esc_take(base, "写 t[i]"))
     return 0
 }
 

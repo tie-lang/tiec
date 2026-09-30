@@ -33,6 +33,7 @@ import "./irgen_bi_str.tie"
 import "./irgen_bi_sys.tie"
 import "./irgen_bi_trm.tie"
 import "./irgen_archive.tie"
+import "./irgen_esc.tie"
 import "./irgen_bits.tie"
 import "./irgen_conv.tie"
 import "./irgen_dir.tie"
@@ -161,6 +162,12 @@ var g_rx_slotsv: i64 = 0;        // 本次匹配尝试的捕获槽表句柄（SS
 // irgen 自己登记 table_new_f64()/table<T> 变量的元素类型。
 var g_tv_keys: table<i64>;
 var g_tv_elems: table<i64>;
+// r.1.6.7 编译期「独占局部表」逃逸分析：候选表变量（名池 id）与并行存活位。
+// 详见 irgen_esc.tie 头注释（判据 / 泄漏点 / 控制流处理 / 为何必须编译期）。
+var g_esc_names: table<i64>;
+var g_esc_live: table<i64>;
+var g_esc_audit: bool = false;
+var g_esc_hits: i64 = 0;
 // p.6.10.3：函数参数表名集合（intern id → 1）——出口析构跳过参数（借用语义，
 // 所有权在调用方）；参数槽被赋值覆盖也不 release（避免收回调用方所有权）。
 var g_param_nids: table<i64>;
@@ -293,6 +300,7 @@ pub func tig_ast() -> i64 {
     g_sc_allocas = table_new_i64()
     g_sc_tys = table_new_i64()
     g_sc_top = 0
+    esc_reset()
     g_lp_labels = table_new_i64()
     g_lp_breaks = table_new_i64()
     g_lp_cont = table_new_i64()

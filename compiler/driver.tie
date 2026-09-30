@@ -91,6 +91,7 @@ var g_emit_ir: bool = false;
 var g_keep_ir: bool = false;
 var g_cli_fast_math: bool = false;    // --ffast-math：训练性能优先（编译产物启用 fast-math，默认关）
 var g_cli_check_bounds: bool = false; // --check-bounds：调试期数组越界检查（默认关）
+var g_cli_esc_audit: bool = false;    // --esc-audit：打印独占免锁判定（审计用，默认关）
 // --visibility=<档>：可见性梯度（p.9.21.4 II1）。0=A1a 全开放 1=A1b ns 级私有
 // （默认 = 历史行为，不传旗标的编译语义逐字节不变）2=A1c 包级 3=A1d 全私有。
 var g_cli_visibility: i64 = 1;
@@ -185,6 +186,7 @@ func main() -> i64 {
     }
     // S1.4：两个可选开关接线——--check-bounds → irgen（越界检查），--ffast-math → 后端工具链。
     irgen.set_check_bounds(g_cli_check_bounds)
+    irgen.set_esc_audit(g_cli_esc_audit)
     // p.9.20.5 tail call：t>=1 启用文本级 tail 提示（t0 保持不动点基线）
     llvmgen.set_tail_enable(driver.effective_tie_opt() >= 1 ? 1 : 0)
     tc.set_fast_math(g_cli_fast_math)
