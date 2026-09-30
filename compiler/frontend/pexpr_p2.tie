@@ -675,10 +675,10 @@ func parse_guard_get(line: i64, col: i64) -> i64 {
     if cap < 0 {
         return -1
     }
-    // 能力域白名单：share / mem / ext（三期最小闭环 share）
+    // 能力域白名单：share / mem / ext / lock（r.1.6.7 新增 lock = 绕过运行时表锁）
     var capname = interner.lookup(cap)
-    if capname != "share" && capname != "mem" && capname != "ext" {
-        putil.set_err(putil.peek_line(), putil.peek_col(), "unsafe.get 的能力域必须是 share/mem/ext，实际是 '" + capname + "'")
+    if types.guard_cap_index(capname) < 0 {
+        putil.set_err(putil.peek_line(), putil.peek_col(), "unsafe.get 的能力域必须是 share/mem/ext/lock，实际是 '" + capname + "'")
         return -1
     }
     var bind = -1

@@ -136,6 +136,55 @@ func esc_is_live(nm: i64) -> bool {
     return g_esc_live[k] == 1
 }
 
+// ==================== 显式 lock 凭据（语法层去锁，r.1.6.7） ====================
+// 与上面的**自动独占分析**并列的第二条去锁路径：用户显式持 `guard<lock>` 凭据
+// 时，凭据作用域内的表访问直接走免锁入口。两条路径的关系：
+//   · 自动路径：编译器**能证明**独占 ⇒ 免费去锁（保守、覆盖率低）；
+//   · 显式路径：**开发者声明**「我知道这里没有并发访问」⇒ 去锁（责任归开发者）。
+// 二者都在**双锁**约束下：显式路径要求 `unsafe` 上下文（门禁）+ `guard<lock>`
+// 凭据（能力域）。语法承载见 unsafe-credential-lock.md §3 的三种持证形态：
+//   · 块级临时凭据 `unsafe with(lock) { ... }`；
+//   · 块级绑证 `unsafe use g { ... }`（g 的类型须为 guard<lock>）；
+//   · 函数级 `#[unsafe.lock] func f`；
+//   · 文件级 `type tie<logic, unsafe:lock>`。
+
+// 进入/退出「持 lock 凭据」的作用域（嵌套计数；退块自动回收，与 guard 生命周期一致）。
+func lock_enter() {
+    g_lock_depth = g_lock_depth + 1
+}
+
+func lock_leave() {
+    g_lock_depth = g_lock_depth - 1
+}
+
+// 取消所有 lock 作用域（每函数重置用：闭包体/方法体是独立函数，凭据不跨函数继承）。
+func lock_reset() {
+    g_lock_depth = 0
+}
+
+// 保存/恢复 lock 深度。闭包体、port 方法体是**独立函数**，其内不继承外层凭据：
+//   · 若不清零 ⇒ 闭包体沿用外层的去锁状态，而闭包**可能被 spawn / 存全局**
+//     ⇒ 该闭包在另一执行流里对同一张表做免锁访问 ⇒ **真实数据竞争**；
+//   · 但又不能简单清零后不管 ⇒ 生成完闭包体后外层还要继续（外层仍持凭据）。
+// 故用保存/恢复：进入独立函数体生成前 save+reset，退出后 restore。
+func lock_save() -> i64 {
+    return g_lock_depth
+}
+
+func lock_restore(v: i64) {
+    g_lock_depth = v
+}
+
+// 当前是否处于持 lock 凭据的作用域内。
+func lock_active() -> bool {
+    return g_lock_depth > 0
+}
+
+// 文件级授权（`type tie<logic, unsafe:lock>`）：整文件所有函数的 lock 作用域初值。
+pub func set_file_lock(v: bool) {
+    g_file_lock = v
+}
+
 // 便利：AST 节点若是「裸变量」→ 返回其名池 id；否则 -1。
 func esc_var_id(n: i64) -> i64 {
     if n < 0 || s_tags[n] != S_N_VAR {
@@ -154,8 +203,28 @@ func esc_var_live(n: i64) -> bool {
     return esc_is_live(nm)
 }
 
-// 便利：该访问点是否对节点 n 指向的表走免锁路径。命中则计数 + 审计。
+// **去锁判定唯一入口**：该访问点是否对节点 n 指向的表走免锁路径。
+// 两条来源：① 编译器静态证明独占（自动）；② 处于持 lock 凭据的作用域（显式）。
+// 任一成立即免锁；均不成立则走加锁入口（默认、也是绝大多数情况）。
 func esc_take(n: i64, site: string) -> bool {
+    // ② 显式凭据路径优先判定（与变量是否可证独占无关——用户已声明承担责任）
+    if lock_active() {
+        g_lock_hits = g_lock_hits + 1
+        if g_esc_audit {
+            var ln2: i64 = 0
+            if n >= 0 && n < len(s_lines) {
+                ln2 = s_lines[n]
+            }
+            var vn = ""
+            if esc_var_id(n) >= 0 {
+                vn = sstate.name_str(n)
+            }
+            println("[esc] 凭据去锁 " + site + " 变量=" + vn +
+                " 函数=" + g_cur_fn_name + " 行=" + to_string(ln2))
+        }
+        return true
+    }
+    // ① 自动独占路径
     var nm = esc_var_id(n)
     if nm < 0 {
         return false
@@ -173,6 +242,14 @@ func esc_take(n: i64, site: string) -> bool {
             " 函数=" + g_cur_fn_name + " 行=" + to_string(ln))
     }
     return true
+}
+
+// 只查询版本（读旧值等第二次查询）：同样计入两条来源，但不重复计数/打印。
+func esc_live_or_lock(n: i64) -> bool {
+    if lock_active() {
+        return true
+    }
+    return esc_var_live(n)
 }
 
 // 初值是否为**新鲜分配**（无别名，绝不可能已在别处被共享）。

@@ -13,6 +13,11 @@ pub func frontend(src: string, base_dir: string) -> i64 {
     unsafe {
         var t0 = clock()
     }
+    // r.1.6.7：文件级 lock 授权（`type tie<logic, unsafe:lock>`）须在**解析之前**
+    // 告知 parser —— 只有 parser 知道「本文件」的边界（`parse_ast` 仅对主输入文件
+    // 调用；import 的模块走语义层另一条路径），故文件级授权在 parser 内展开为
+    // 「本文件每个函数隐式持 lock 域」，范围天然精确、不会波及 import 的模块。
+    sstate.set_file_lock_auth(driver.role_has_lock())
     var prc = parser.parse_ast(src)
     unsafe {
         var t0e = clock()

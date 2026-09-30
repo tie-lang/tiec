@@ -281,7 +281,19 @@ func parse_fn_def() -> i64 {
     // 附着到函数节点（val bit3 = has_attr；函数级便捷 = 整函数隐式持证）
     if g_pending_attr != 0 {
         ast.set_val(f, ast.val(f) + 8)   // val bit3 = has_attr
+        // r.1.6.7：`#[unsafe.lock]` ⇒ 登记该函数节点，irgen 阶段把整函数体置于
+        // **去锁作用域**（持 lock 凭据，函数级持证形态）。节点 id 经 proto 文本
+        // 按行序传递，与语义/irgen 侧的 s_* 池一致（load_ast 逐行 push 不跳过）。
+        if interner.lookup(g_pending_attr) == "unsafe.lock" {
+            sstate.lock_fn_put(f)
+        }
         g_pending_attr = 0
+    }
+    // r.1.6.7 文件级授权（`type tie<logic, unsafe:lock>`）：本文件的**每个**函数
+    // 隐式带 lock 域（文件级持证形态）。因 `parse_ast` 只对主输入文件调用一次，
+    // import 的模块走另一条解析路径 ⇒ 不会被误授权（范围精确限定在本文件）。
+    if sstate.file_lock_auth() {
+        sstate.lock_fn_put(f)
     }
     return f
 }

@@ -262,21 +262,15 @@ pub func parse_generic_type_node(tid: i64) -> i64 {
                 sm_err_msg = "类型 '" + nm + "' 缺少元素类型实参"
                 return -1
             }
-            // guard<cap>：cap 是能力名（share/mem/ext 标识符），非类型实参
+            // guard<cap>：cap 是能力名（share/mem/ext/lock 标识符），非类型实参
             if nm == "guard" {
                 var capn = sstate.name_str(arg0)
-                var gidx2: i64 = -1
-                if capn == "share" {
-                    gidx2 = 0
-                } else if capn == "mem" {
-                    gidx2 = 1
-                } else if capn == "ext" {
-                    gidx2 = 2
-                }
+                // r.1.6.7：域映射走 types 层单一事实源（新增 lock 域 = 绕过运行时表锁）
+                var gidx2 = types.guard_cap_index(capn)
                 if gidx2 < 0 {
                     sm_err_line = s_lines[tid]
                     sm_err_col = s_cols[tid]
-                    sm_err_msg = "guard<cap> 能力域必须是 share/mem/ext，实际是 '" + capn + "'"
+                    sm_err_msg = "guard<cap> 能力域必须是 share/mem/ext/lock，实际是 '" + capn + "'"
                     return -1
                 }
                 return types.guard_of(gidx2)

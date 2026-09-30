@@ -353,9 +353,39 @@ pub func set_actor_name(idx: i64, nm: string) {
 }
 
 // ---------- 三期 A 组 guard<cap> 凭据类型构造 ----------
-// guard<cap>：id = 13<<40 | 能力域索引（0=share 1=mem 2=ext）。
+// guard<cap>：id = 13<<40 | 能力域索引（0=share 1=mem 2=ext 3=lock）。
+// r.1.6.7：新增 lock 域——能力面 = **绕过运行时表锁**（去锁访问），危害面 = 数据竞争。
+// 与 share 域（跨 actor 共享内存）语义分开：share 管「共享出去」，lock 管「主动去锁」，
+// 审计清单据此可区分两种意图。trm/raw 目前只走 `#[unsafe.*]` 属性形态、无 guard 索引，
+// 故 3 不冲突；若将来它们需要 guard 域，索引顺延。
 pub func guard_of(cap: i64) -> i64 {
     return BASE_GUARD + cap
+}
+
+// 能力域名 → 索引（-1 = 未知域）。名字映射的**单一事实源**：前端各校验点与后端
+// 判定一律经此，避免多处内联 if 链漂移。
+pub func guard_cap_index(name: string) -> i64 {
+    if name == "share" {
+        return 0
+    }
+    if name == "mem" {
+        return 1
+    }
+    if name == "ext" {
+        return 2
+    }
+    if name == "lock" {
+        return 3
+    }
+    return 0 - 1
+}
+
+// 该 guard 类型是否 lock 域（irgen 表访问去锁判定用）。
+pub func is_lock_guard(t: i64) -> bool {
+    if !is_guard(t) {
+        return false
+    }
+    return low(t) == 3
 }
 
 // guard 能力域索引（0=share 1=mem 2=ext，与 guard_of 编码一致）
@@ -371,7 +401,7 @@ pub func is_guard(t: i64) -> bool {
     return false
 }
 
-// guard 能力域名（type_name 用）：share / mem / ext
+// guard 能力域名（type_name 用）：share / mem / ext / lock
 pub func guard_cap_name(t: i64) -> string {
     var c = low(t)
     if c == 0 {
@@ -379,6 +409,9 @@ pub func guard_cap_name(t: i64) -> string {
     }
     if c == 1 {
         return "mem"
+    }
+    if c == 3 {
+        return "lock"
     }
     return "ext"
 }

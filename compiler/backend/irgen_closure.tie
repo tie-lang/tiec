@@ -266,6 +266,12 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
     // 函数的生成过程中，若恢复外层状态会把「已被闭包捕获 ⇒ 可能被并发访问」的表
     // 重新判为独占 —— 方向必须偏向保守。
     esc_reset()
+    // r.1.6.7：显式 lock 凭据**不跨函数继承**——闭包/方法体是独立函数，若沿用
+    // 外层的去锁状态，而该闭包可能被 spawn / 存全局 ⇒ 在另一执行流里对同一张表
+    // 做免锁访问 ⇒ 真实数据竞争。故在此清零。
+    // 刻意**不保存/恢复**：闭包体生成发生在外层生成过程中，恢复会把外层的去锁
+    // 状态带回「已被闭包捕获」的表 —— 方向必须偏向保守（少去锁只会更慢）。
+    lock_reset()
     g_param_nids = table_new_i64()
     g_tblcand_allocas = table_new_i64()
     g_sb_keys = table_new_i64()
