@@ -1,0 +1,7 @@
+type tie<logic>
+// 保留项：安全代码调用 unsafe 函数仍须自己也在 unsafe 内
+unsafe func inner() -> i64 { return 1 }
+func bad() -> i64 {
+    return inner()
+}
+func main() { println("0") }

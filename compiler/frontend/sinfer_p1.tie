@@ -71,14 +71,13 @@ func infer_arrow(id: i64, op: i64) -> i64 {
 //   fetch_add/sub/and/or/xor(v, order) → T（读改写，返回旧值）
 //   compare_exchange(exp, new, order) → bool（CAS 成功标志）
 // order 参数：Relaxed/Acquire/Release/AcqRel/SeqCst 标识符 → IMM 0..4。
-// 全部要求 unsafe 上下文。
+//
+// §11.8 重分类（2026-10-01）：原子操作**不再要求 unsafe 上下文**。
+// 判据（设计定稿）：「构造安全 ⟺ 不可能引发 UB」——原子操作不产生数据竞争 UB，
+// 内存序写错属正确性 bug 而非内存不安全（与 Rust 同判）。故原先此处的
+// `g_unsafe_depth == 0 ⇒ 报错` 整段撤除；内存序参数照旧显式书写，后果由
+// 文档约定，编译器不替使用者猜。
 func infer_atomic_method(aty: i64, mname: string, args: table<i64>, id: i64) -> i64 {
-    if g_unsafe_depth == 0 {
-        sm_err_line = s_lines[id]
-        sm_err_col = s_cols[id]
-        sm_err_msg = "原子操作 '" + mname + "()' 必须在 unsafe 块或 unsafe 函数中使用（安全代码禁止触底）"
-        return -1
-    }
     var elem = types.table_elem(aty)
     var nargs = len(args)
     if mname == "load" {

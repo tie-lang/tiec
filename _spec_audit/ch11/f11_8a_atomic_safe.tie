@@ -1,0 +1,14 @@
+type tie<logic>
+// §11.8 重分类：atomic 全家在**安全代码**中可用（无 unsafe 块/函数）
+func atomic_ops() -> i64 {
+    var c: atomic<i64> = 0
+    c.store(10, Release)
+    var old = c.fetch_add(5, AcqRel)
+    var cur = c.load(Acquire)
+    var ok = c.compare_exchange(15, 100, SeqCst)
+    if ok {
+        return old + cur + c.load(SeqCst)
+    }
+    return old + cur
+}
+func main() { println(to_string(atomic_ops())) }

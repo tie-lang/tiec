@@ -1,7 +1,0 @@
-type tie<logic>
-func f() -> i64 {
-    var a: atomic<i64> = atomic_new(0)
-    atomic_store(a, 1)
-    return atomic_load(a)
-}
-func main() { println(to_string(f())) }

@@ -1,0 +1,26 @@
+type tie<logic>
+// §11.8 重分类：ptr 的**声明 / 参数 / 比较**在安全代码中可用（只要不解引）
+func same(a: ptr<u8>, b: ptr<u8>) -> bool {
+    return is_null(a) && is_null(b)
+}
+func identity(p: ptr<u8>) -> ptr<u8> {
+    return p
+}
+unsafe func make() -> ptr<u8> {
+    return alloc(8)
+}
+func main() {
+    unsafe {
+        var p = make()
+        var q = identity(p)
+        // p 来自 alloc ⇒ 非空；same() 判空 ⇒ 期望 false。
+        // 断言点：安全函数**能**接收/返回/比较指针（编译通过即核心结论），
+        // 且比较结果是可用的运行期值。
+        if !same(p, q) {
+            println("ptr-safe PASS")
+        } else {
+            println("ptr-safe FAIL")
+        }
+        free(q)
+    }
+}

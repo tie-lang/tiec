@@ -1,0 +1,7 @@
+type tie<logic>
+// 保留项：解引用在安全代码中仍须 unsafe
+func bad(p: ptr<u8>) -> i64 {
+    var v = deref(p)
+    return 0
+}
+func main() { println("0") }

@@ -1,0 +1,6 @@
+type tie<logic>
+// 保留项：指针↔整数转换在安全代码中仍须 unsafe
+func bad(p: ptr<u8>) -> i64 {
+    return ptr_to_int(p)
+}
+func main() { println("0") }
