@@ -265,6 +265,15 @@ func check_stmt(s: i64) -> i64 {
         }
         return 0
     }
+    if tag == S_N_GUARD_REVOKE {
+        // r.1.6.7 `unsafe.revoke(g)`：实参**豁免** moved 检查。
+        // 理由：`delegate` 会 move 消费接收者（父凭据），而规范语义要求
+        // 「撤销父凭据 ⇒ 其派生凭据一并失效」——若在此对已 move 的父凭据报
+        // moved 错，撤销父就永远不可达，该语义成为死条文。撤销的对象是
+        // **凭据身份**（编译期概念），不是运行时值，故不受 moved 约束；
+        // 实参的类型/定义有效性由 sinfer 的 infer_expr 保证。
+        return 0
+    }
     // FieldAssign：children=[基址, 值]（基址按引用；值 = 读取/移动）
     if tag == S_N_FIELD_ASSIGN {
         var base = sstate.child(s, 0)

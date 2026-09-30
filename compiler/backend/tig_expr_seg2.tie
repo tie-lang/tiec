@@ -134,6 +134,19 @@ func tig_expr_seg2(id: i64) -> i64 {
         }
         return tig_int_lit(0)
     }
+    if tag == S_N_GUARD_REVOKE {
+        // r.1.6.7 `unsafe.revoke(g)` 凭据撤销（§11.6）：与 unsafe.get 同族，
+        // 凭据无运行时表示 ⇒ 撤销**运行期无操作**（失效跟踪与诊断都在编译期
+        // 语义层完成）。实参仍求值一次，保持"实参表达式都会被生成"的一致语义。
+        var ra = sstate.child(id, 0)
+        if ra >= 0 {
+            var rv = tig_expr(ra)
+            if rv < 0 {
+                return -1
+            }
+        }
+        return tig_int_lit(0)
+    }
     // p.9.10.1 match/switch 表达式：按模式链短路求值各分支表达式 → phi 汇合。
     if tag == N_SWITCH_EXPR {
         return tig_switch_expr(id)

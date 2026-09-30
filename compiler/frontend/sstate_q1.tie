@@ -532,6 +532,60 @@ pub func slot_off(node: i64) -> i64 {
     return 0
 }
 
+// ==================== r.1.6.7 凭据层级与撤销（unsafe.revoke） ====================
+// 凭据是纯编译期概念（guard<cap> 无运行时表示），故撤销也完全是语义层的事：
+// 登记派生关系 + 标记失效集合 + 使用点诊断。
+// 撤销是**流敏感**的（语句按序检查，撤销点之后的才失效）且**单调**的（不回生）。
+
+// 登记派生关系：`var sub = g.delegate(cap)` ⇒ (sub → g)。
+pub func gr_add(child: i64, parent: i64) {
+    table_push(gr_rel, child)
+    table_push(gr_rel, parent)
+}
+
+// 该凭据是否已失效（自身被撤销，或**传递**祖先被撤销）。
+pub func gr_is_dead(nid: i64) -> bool {
+    var i: i64 = 0
+    while i < len(gr_dead) {
+        if gr_dead[i] == nid {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// 标记单个凭据失效；返回 1 = 本次新标记，0 = 本想已失效。
+func gr_kill_one(nid: i64) -> i64 {
+    if gr_is_dead(nid) {
+        return 0
+    }
+    table_push(gr_dead, nid)
+    return 1
+}
+
+// 撤销凭据：自身与其**传递**派生出的凭据一并失效。
+// 只对「本次新标记」的节点继续向下传播 ⇒ 即使派生关系成环也不会死循环。
+pub func gr_revoke(nid: i64) {
+    if gr_kill_one(nid) == 0 {
+        return
+    }
+    var i: i64 = 0
+    while i + 1 < len(gr_rel) {
+        if gr_rel[i + 1] == nid {
+            gr_revoke(gr_rel[i])
+        }
+        i = i + 2
+    }
+}
+
+// 函数边界重置。挂在 lv_moved_reset 内（见该函数）——凭据状态与 moved 状态
+// 同属函数级语义状态，生命周期完全一致，故共用同一个重置点，不另开调用链。
+pub func gr_reset() {
+    gr_rel = []
+    gr_dead = []
+}
+
 // ==================== r.1.6.7 `#[unsafe.lock]` 函数表 ====================
 // 登记（parser 解析到 `#[unsafe.lock] func` 时调用）。
 pub func lock_fn_put(nid: i64) {
@@ -781,6 +835,9 @@ pub func seg_has(seg: table<i64>, off: i64, n: i64, k: i64) -> i64 {
 // 重置 moved 状态（每函数开始时调用）
 pub func lv_moved_reset() {
     lv_moved = table_new_i64()
+    // r.1.6.7：凭据层级/撤销状态与 moved 状态同属函数级语义状态，生命周期一致，
+    // 故共用本重置点（所有既有 moved 重置调用处自动覆盖，无需另开调用链）。
+    gr_reset()
 }
 
 // 标记变量为 moved（有序插入；重复标记幂等）
