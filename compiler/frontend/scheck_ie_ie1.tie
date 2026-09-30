@@ -65,6 +65,13 @@ pub func check_stmt_guard_use(s: i64) -> i64 {
             sm_err_msg = "unsafe use 的 '" + sstate.name_str(s) + "' 必须是 guard<cap> 凭据变量（来自 unsafe.get(share) 等）"
             return -1
         }
+        // r.1.6.7：已撤销（或其祖先被撤销）的凭据不得再用于持证块。
+        if sstate.gr_is_dead(gnid) {
+            sm_err_line = s_lines[s]
+            sm_err_col = s_cols[s]
+            sm_err_msg = "凭据 '" + sstate.name_str(s) + "' 已撤销（或其后代被撤销），不能用于 unsafe use"
+            return -1
+        }
         var saved_u = g_unsafe_depth
         g_unsafe_depth = g_unsafe_depth + 1
         var body_u = sstate.child(s, 0)

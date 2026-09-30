@@ -341,6 +341,54 @@ pub func infer_expr_guard_get(id: i64) -> i64 {
         return gt
 }
 
+// r.1.6.7 `unsafe.revoke(g)` 凭据撤销（§11.6）：撤销该凭据后，由它**传递**派生出的
+// 凭据一并失效；此后使用这些凭据报诊断。纯编译期语义（凭据无运行时表示）。
+// 流敏感且单调：语句按序推断，撤销点之后的才失效。
+pub func infer_expr_guard_revoke(id: i64) -> i64 {
+    var tag = s_tags[id]
+        // 仅 unsafe 上下文合法（安全代码撤销凭据 = 无凭据可撤销 = 门禁机制外）
+        if g_unsafe_depth == 0 {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "unsafe.revoke 只能在 unsafe 上下文使用（unsafe 块或 unsafe 函数内）"
+            return -1
+        }
+        var arg = sstate.child(id, 0)
+        var at = infer_expr(arg)
+        if at < 0 {
+            return -1
+        }
+        if !types.is_guard(at) {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "unsafe.revoke 的实参必须是 guard<cap> 凭据，实际是其它类型"
+            return -1
+        }
+        // 撤销的是「那份凭据」本身，故实参必须是裸变量（不能是表达式/字段/下标）
+        if s_tags[arg] != S_N_VAR {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "unsafe.revoke 的实参必须是凭据变量（不能是表达式、字段或下标）"
+            return -1
+        }
+        var nid = interner.intern(sstate.name_str(arg))
+        if sstate.gr_is_dead(nid) {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "凭据 '" + sstate.name_str(arg) + "' 已被撤销，不能重复撤销"
+            return -1
+        }
+        // 撤销：自身 + 传递派生凭据一并失效
+        sstate.gr_revoke(nid)
+        // 撤销亦消费该凭据：标记 moved，后续使用由既有 moved 检查再兜一层
+        sstate.lv_moved_mark(nid)
+        // 撤销是动作、无值：void（与 println 等语句型内置一致）
+        var vt = types.named(TK_VOID)
+        node_types[id] = vt
+        g_typed = g_typed + 1
+        return vt
+}
+
 pub func infer_expr_try(id: i64) -> i64 {
     var tag = s_tags[id]
         return infer_try_unwrap(id)

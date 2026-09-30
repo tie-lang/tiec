@@ -156,6 +156,9 @@ pub func infer_expr(id: i64) -> i64 {
     // 三期 A 组 `unsafe.get(share)` 凭据获取表达式 → guard<cap> 类型。
     // children[0] = 能力域名（N_NAMED_TYPE name=share/mem/ext），children[1] = 对象
     // 绑定表达式或 -1。仅 unsafe 上下文语义合法（安全代码持证被拦截）。
+    if tag == S_N_GUARD_REVOKE {
+        return infer_expr_guard_revoke(id)
+    }
     if tag == S_N_GUARD_GET {
         return infer_expr_guard_get(id)
     }

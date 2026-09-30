@@ -131,6 +131,14 @@ var lv_dyn: table<i64>;       // 表变量动态标志（0/1）
 // infer_expr S_N_VAR（读取检查）；函数边界（check_fn）重置。独立表的好处：
 // 不依赖 lv_insert 同步（lv_* 并行表由 sinfer 维护，S1.2-1.4 并行会话在改）。
 var lv_moved: table<i64>;     // 已移动变量名 id（升序，二分）
+// r.1.6.7 凭据层级与撤销状态（函数级，随函数边界重置）：
+//   gr_rel      —— 派生关系，交错存 [子凭据名 id, 父凭据名 id, ...]。
+//                  `var sub = g.delegate(mem)` 登记 (sub → g)。
+//   gr_dead     —— 已撤销（失效）的凭据名 id 列表。`unsafe.revoke(g)` 把 g 及其
+//                  **传递**派生出的凭据全部登记进来；此后使用这些凭据报诊断。
+// 撤销是流敏感且单调的：语句按序检查，撤销点之后失效，不回生。
+var gr_rel: table<i64>;
+var gr_dead: table<i64>;
 
 var lp_stack: table<i64>;     // 循环标签栈（break/continue 上下文；-1=无标签）
 var lp_top: i64 = 0;          // lp_stack 逻辑栈顶游标（tie 表无法截断，用游标模拟 pop）
@@ -475,6 +483,8 @@ const S_N_SEM_TYPE: i64 = 163;
 const S_N_GUARD_GET: i64 = 145;     // `unsafe.get(share)` 取得凭据（表达式）
 const S_N_GUARD_USE: i64 = 146;     // `unsafe use g { ... }` 持证越界块
 const S_N_GUARD_WITH: i64 = 147;    // `unsafe with(share) { ... }` 临时凭据块
+// r.1.6.7：`unsafe.revoke(g)` 凭据撤销（与 ast.tie N_GUARD_REVOKE 同号）
+const S_N_GUARD_REVOKE: i64 = 149;
 namespace sstate {
 
 

@@ -19,9 +19,14 @@ func parse_primary() -> i64 {
             if n2 == "get" {
                 return parse_guard_get(line, col)
             }
+            // r.1.6.7 `unsafe.revoke(g)` 凭据撤销（§11.6）：撤销后该凭据及其传递
+            // 派生出的凭据一并失效。
+            if n2 == "revoke" {
+                return parse_guard_revoke(line, col)
+            }
         }
         // 其余 unsafe 上下文（unsafe{}/unsafe goto 等）不在表达式位置出现
-        putil.set_err(line, col, "表达式位置 'unsafe' 仅支持 unsafe.get(share) 凭据获取")
+        putil.set_err(line, col, "表达式位置 'unsafe' 仅支持 unsafe.get(share) / unsafe.revoke(g)")
         return -1
     }
     if tag == lex_asm {
@@ -696,6 +701,32 @@ func parse_guard_get(line: i64, col: i64) -> i64 {
     var kids: table<i64> = table_new_i64()
     table_push(kids, ast.new_node(N_NAMED_TYPE, cap, -1, -1, line, col))
     table_push(kids, bind)
+    ast.set_children(n, kids)
+    return n
+}
+
+// r.1.6.7 `unsafe.revoke(g)` 凭据撤销表达式（§11.6）：
+// unsafe → . → revoke → ( 凭据变量 )。
+// 产出 N_GUARD_REVOKE[children=[凭据表达式]]。实参须为 guard<cap> 变量
+// （语义层校验：类型 + 未失效）；撤销纯编译期生效，无运行时表示。
+// 已探测 unsafe . revoke 三连（当前 peek = '('）。
+func parse_guard_revoke(line: i64, col: i64) -> i64 {
+    putil.advance()   // unsafe
+    putil.advance()   // .
+    putil.advance()   // revoke
+    if !putil.expect(lex_lparen, "'('") {
+        return -1
+    }
+    var arg = parse_expr()
+    if arg < 0 {
+        return -1
+    }
+    if !putil.expect(lex_rparen, "')'") {
+        return -1
+    }
+    var n = ast.new_node(N_GUARD_REVOKE, -1, -1, -1, line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, arg)
     ast.set_children(n, kids)
     return n
 }

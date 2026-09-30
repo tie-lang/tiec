@@ -281,6 +281,16 @@ func infer_guard_method(gty: i64, mname: string, args: table<i64>, id: i64) -> i
         sm_err_msg = "guard.delegate 的能力域必须是 share/mem/ext/lock，实际是 '" + capn + "'"
         return -1
     }
+    // r.1.6.7：已撤销的凭据不能再派生。接收者 = MethodCall 节点自身首个子节点。
+    var recv_gn = sstate.child(id, sstate.slot_off(id))
+    if recv_gn >= 0 && s_tags[recv_gn] == S_N_VAR {
+        if sstate.gr_is_dead(interner.intern(sstate.name_str(recv_gn))) {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "凭据 '" + sstate.name_str(recv_gn) + "' 已撤销，不能再 delegate"
+            return -1
+        }
+    }
     var src = types.guard_cap(gty)
     if src != capidx {
         sm_err_line = s_lines[id]
