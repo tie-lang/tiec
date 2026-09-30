@@ -1,0 +1,10 @@
+type tie<logic>
+// AT&T 立即数写法：`$$1`（转义 $）+ `$0` 占位
+func f(n: i64) -> i64 {
+    var v: i64 = n
+    unsafe {
+        asm!("addq $$1, $0", inout(reg) v)
+    }
+    return v
+}
+func main() { println(to_string(f(7))) }

@@ -1,0 +1,4 @@
+type tie<logic>
+func f(p: ptr<u8>) -> i64 { return 0 }
+func main() { var q: ptr<u8> = ptr_null(); println(to_string(len_marker(q))) }
+func len_marker(x: ptr<u8>) -> i64 { return 0 }

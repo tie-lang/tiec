@@ -1,0 +1,4 @@
+type tie<logic>
+#[repr(C)]
+struct Pod2 { var x: i64 = 0 }
+func main() { var p: Pod2 = Pod2(); println(to_string(p.x)) }

@@ -1,0 +1,3 @@
+type tie<logic>
+func f(p: ptr<u8>) -> i64 { return as_i64(deref(p)) }
+func main() { println("0") }

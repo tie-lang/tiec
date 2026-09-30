@@ -1,0 +1,7 @@
+type tie<logic>
+repr(C) struct Pod { var x: i64 = 0; var y: i64 = 0 }
+func main() {
+    var p: Pod = Pod()
+    p.x = 3; p.y = 4
+    println(to_string(p.x + p.y))
+}

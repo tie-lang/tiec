@@ -1,0 +1,10 @@
+type tie<logic>
+// 单操作数（对照）：测试档案里在用的形式
+func f(n: i64) -> i64 {
+    var v: i64 = 0
+    unsafe {
+        asm!("mov $0, %rax", out(reg) v)
+    }
+    return v
+}
+func main() { println(to_string(f(1))) }

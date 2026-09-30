@@ -1,0 +1,16 @@
+type tie<logic>
+// 规范 §11.6：要执行某域操作必须持有该域凭据。此处持 mem 证做 alloc（mem 域，对）
+// 与持 share 证做 alloc（错域，应拒绝？）分开测 —— 本文件测「错域」
+func f() -> i64 {
+    var r: i64 = 0
+    unsafe {
+        var g: guard<share> = unsafe.get(share)
+        unsafe use g {
+            var p = alloc(8)          // alloc 属 mem 域，凭据是 share 域
+            free(p)
+            r = 1
+        }
+    }
+    return r
+}
+func main() { println(to_string(f())) }

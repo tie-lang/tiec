@@ -1,0 +1,14 @@
+type tie<logic>
+// inout（既读又写）操作数：tie 的 asm 是 **AT&T 方言**（对照 tests/language/
+// atomic_asm.tie 的 `asm!("mov $0, %rax", out(reg) rax)`），故立即数要写 `$$N`
+// （LLVM 中 `$$` 转义为字面 `$`），寄存器操作数用 `$N` 占位。
+// 之前误写 `add $0, 1` ⇒ 被当 AT&T 的内存操作数 `(1)` ⇒ 运行期段错误；
+// 那是**模板写法错误**，不是编译器缺陷。
+func f(n: i64) -> i64 {
+    var v: i64 = n
+    unsafe {
+        asm!("inc $0", inout(reg) v)
+    }
+    return v
+}
+func main() { println(to_string(f(7))) }

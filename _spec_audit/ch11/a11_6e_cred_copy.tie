@@ -1,0 +1,11 @@
+type tie<logic>
+// 规范 §11.6：凭据可以转移、但不能复制
+func f() -> i64 {
+    unsafe {
+        var a: guard<lock> = unsafe.get(lock)
+        var b: guard<lock> = a            // 复制凭据 —— 应拒绝？
+        var c: guard<lock> = a            // 再复制
+    }
+    return 0
+}
+func main() { println(to_string(f())) }

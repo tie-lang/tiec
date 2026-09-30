@@ -1,0 +1,7 @@
+type tie<logic>
+// 规范 §11.6：函数级标注 #[unsafe.域] ⇒ 该函数隐式持证（整函数可用该域操作）
+#[unsafe.share]
+func f(p: ptr<u8>) -> i64 {
+    return as_i64(deref(p))          // 无 unsafe 块，靠函数级标注持证
+}
+func main() { println("0") }

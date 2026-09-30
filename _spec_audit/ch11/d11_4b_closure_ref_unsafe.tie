@@ -1,0 +1,14 @@
+type tie<logic>
+// 11.4-b：不安全区内该限制解除
+func f(ref t: table<i64>) -> i64 {
+    var r: i64 = 0
+    unsafe {
+        var g = func() -> i64 {
+            table_push(t, 1)
+            return len(t)
+        }
+        r = g()
+    }
+    return r
+}
+func main() { var t = table_new_i64(); println(to_string(f(t))) }

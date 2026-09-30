@@ -1,0 +1,9 @@
+type tie<logic>
+unsafe func deref_one(p: ptr<u8>) -> i64 { return as_i64(deref(p)) }
+func main() {
+    unsafe {
+        var p = alloc(8)
+        println(to_string(deref_one(p)))
+        free(p)
+    }
+}

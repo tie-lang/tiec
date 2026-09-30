@@ -1,0 +1,7 @@
+type tie<logic>
+func f() -> i64 {
+    var p = alloc(16)
+    free(p)
+    return 0
+}
+func main() { println(to_string(f())) }

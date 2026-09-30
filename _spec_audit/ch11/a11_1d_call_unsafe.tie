@@ -1,0 +1,7 @@
+type tie<logic>
+unsafe func g(p: ptr<u8>) -> i64 { return as_i64(deref(p)) }
+func f() -> i64 {
+    var p: ptr<u8> = ptr_null()
+    return g(p)
+}
+func main() { println(to_string(f())) }

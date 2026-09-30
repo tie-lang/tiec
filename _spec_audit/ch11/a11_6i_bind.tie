@@ -1,0 +1,10 @@
+type tie<logic>
+func f(t: table<i64>) -> i64 {
+    var r: i64 = 0
+    unsafe {
+        var b = unsafe.get(mem -> t)
+        r = 1
+    }
+    return r
+}
+func main() { var t = table_new_i64(); println(to_string(f(t))) }

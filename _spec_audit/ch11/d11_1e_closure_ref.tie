@@ -1,0 +1,10 @@
+type tie<logic>
+// 11.1-e：安全区不允许「闭包捕获可写借用参数」
+func f(ref t: table<i64>) -> i64 {
+    var g = func() -> i64 {
+        table_push(t, 1)
+        return len(t)
+    }
+    return g()
+}
+func main() { var t = table_new_i64(); println(to_string(f(t))) }

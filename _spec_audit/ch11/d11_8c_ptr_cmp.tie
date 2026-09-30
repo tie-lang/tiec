@@ -1,0 +1,4 @@
+type tie<logic>
+// 11.8-c：ptr 的声明/比较/传参已重分类为安全
+func same(a: ptr<u8>, b: ptr<u8>) -> bool { return a == b }
+func main() { println("0") }

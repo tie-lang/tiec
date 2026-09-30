@@ -1,0 +1,9 @@
+type tie<logic>
+func f(n: i64) -> i64 {
+    var v: i64 = n
+    unsafe {
+        asm!("add {dst}, {src}", dst: out(reg) = v, src: in(reg) = n)
+    }
+    return v
+}
+func main() { println(to_string(f(1))) }

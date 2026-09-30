@@ -1,0 +1,10 @@
+type tie<logic>
+// 实现接受的形式：模板用 $N 占位、方向 out/in/inout、位置 (reg)/(mem)
+func f(n: i64) -> i64 {
+    var v: i64 = 0
+    unsafe {
+        asm!("mov $0, $1", out(reg) v, in(reg) n)
+    }
+    return v
+}
+func main() { println(to_string(f(7))) }

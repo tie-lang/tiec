@@ -50,7 +50,11 @@ func tig_expr_seg2(id: i64) -> i64 {
         var k: i64 = 0
         while k < nc {
             var op0 = sstate.child(id, k)
-            if s_vals[op0] == 1 {  // out
+            // 有**输出**的操作数：out(1) 与 inout(2) 都要承载 call 返回值 ——
+            // 缺陷修复 2026-09-30：原判据只认 out，导致纯 inout 的 asm 生成
+            // `call void asm ..., "+r"(...)`（约束声明有输出却用 void 接收），
+            // LLVM 端类型不匹配 ⇒ 生成坏代码 ⇒ 运行时段错误（实测退出码 139）。
+            if s_vals[op0] == 1 || s_vals[op0] == 2 {  // out / inout
                 var e0 = sstate.child(op0, 0)
                 if s_tags[e0] == 6 {  // Var
                     var nid0 = interner.intern(sstate.name_str(e0))
@@ -63,36 +67,63 @@ func tig_expr_seg2(id: i64) -> i64 {
             }
             k = k + 1
         }
-        var inst = ir.new_inst(g_cur_block, 65, out_ty)  // void（-1）或 out 类型
-        ir.add_operand(inst, tmpl, 0)
+        // ---------------------------------------------------------------------
+        // 两遍法（缺陷修复 2026-09-30）—— **先求值全部入参，再统一 add_operand**。
+        //
+        // 缺陷：只要 asm! 含 in/inout 操作数就报「编译器内部错误: ir.add_operand
+        // 操作数段交错」。根因 = 入参求值 tig_expr(e) 会发射新指令（load/const…），
+        // 而这些新指令的操作数被 push 进**全局操作数段**，恰好插在 inline_asm
+        // 已经 push 的操作数**中间**。add_operand 的契约明确禁止这种交错（错误
+        // 消息自带指引：「常量生成请先存变量」）。
+        //
+        // 与操作数**个数**无关：纯 out 的 `asm!("mov $0, %rax", out(reg) rax)`
+        // 一直正常，只因 out 分支不调用 tig_expr；反例 `asm!("nop", in(reg) n)`
+        // 单个 in 操作数即崩（实测）。
+        // ---------------------------------------------------------------------
+        var op_dirs = table_new_i64()
+        var op_tys = table_new_i64()
+        var op_vals = table_new_i64()
         k = 0
         while k < nc {
-            var op = sstate.child(id, k)
-            var dir = s_vals[op]
-            if dir == 3 {
+            var opv = sstate.child(id, k)
+            var dirv = s_vals[opv]
+            if dirv == 3 {
                 // target("arch") 平台标注（任务17）：不占 asm 操作数，跳过
                 k = k + 1
                 continue
             }
-            var e = sstate.child(op, 0)
-            if dir != 1 {
-                // in/inout：求值入参（类型 IMM + 值）
-                var ev = tig_expr(e)
-                if ev < 0 {
+            table_push(op_dirs, dirv)
+            if dirv != 1 {
+                // in/inout：**在发射 inline_asm 之前**求值入参
+                var ein = sstate.child(opv, 0)
+                var ev0 = tig_expr(ein)
+                if ev0 < 0 {
                     return -1
                 }
-                var et2 = node_types[e]
-                if et2 < 0 {
-                    et2 = types.named(TK_I64)
+                var et0 = node_types[ein]
+                if et0 < 0 {
+                    et0 = types.named(TK_I64)
                 }
-                ir.add_operand(inst, dir, 2)
-                ir.add_operand(inst, et2, 2)
-                ir.add_operand(inst, ev, 0)
+                table_push(op_tys, et0)
+                table_push(op_vals, ev0)
             } else {
                 // out：不占参数（call 返回值承载）；第一版只支持第一个 out
-                ir.add_operand(inst, dir, 2)
-                ir.add_operand(inst, types.named(TK_I64), 2)
+                table_push(op_tys, types.named(TK_I64))
+                table_push(op_vals, 0)
+            }
+            k = k + 1
+        }
+        // 第二遍：纯 add_operand 序列，其间不再触发任何指令生成
+        var inst = ir.new_inst(g_cur_block, 65, out_ty)  // void（-1）或 out 类型
+        ir.add_operand(inst, tmpl, 0)
+        k = 0
+        while k < len(op_dirs) {
+            ir.add_operand(inst, op_dirs[k], 2)
+            ir.add_operand(inst, op_tys[k], 2)
+            if op_dirs[k] == 1 {
                 ir.add_operand(inst, 0, 2)
+            } else {
+                ir.add_operand(inst, op_vals[k], 0)
             }
             k = k + 1
         }

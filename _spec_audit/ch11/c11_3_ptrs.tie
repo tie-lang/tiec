@@ -1,0 +1,11 @@
+type tie<logic>
+unsafe func f() -> i64 {
+    var p = alloc(64)
+    var q = ptr_add(p, 8)
+    deref_write(q, 42)
+    var n = deref(q)
+    var a = ptr_to_int(p)
+    free(p)
+    return n + a
+}
+func main() { unsafe { println(to_string(f())) } }

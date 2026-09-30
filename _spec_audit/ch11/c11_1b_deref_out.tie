@@ -1,0 +1,8 @@
+type tie<logic>
+// 11.1-b：安全区不允许解引用。指针来自 unsafe 函数的返回值。
+unsafe func mk() -> ptr<u8> { return alloc(8) }
+func f() -> i64 {
+    var p = mk()
+    return 0
+}
+func main() { println("0") }

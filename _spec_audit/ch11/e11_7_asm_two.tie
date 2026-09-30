@@ -1,0 +1,9 @@
+type tie<logic>
+func f() -> i64 {
+    var v: i64 = 0
+    unsafe {
+        asm!("mov $0, $1", out(reg) v, in(reg) v)
+    }
+    return v
+}
+func main() { println(to_string(f())) }

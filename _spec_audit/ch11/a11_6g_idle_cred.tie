@@ -1,0 +1,10 @@
+type tie<logic>
+// 规范 §11.6（tie-main 验收）：作用域内未使用对应域构造的凭据 → 编译告警
+func f() -> i64 {
+    unsafe {
+        var g: guard<lock> = unsafe.get(lock)
+        // g 从未用于任何 lock 域操作 —— 应告警？
+    }
+    return 0
+}
+func main() { println(to_string(f())) }
