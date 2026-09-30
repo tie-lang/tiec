@@ -73,12 +73,21 @@ pub func infer_call(id: i64) -> i64 {
     // 内置函数：先校验个数（-2=参数错误已报），通过后逐个推断实参
     var br = sbuiltin.builtin_call(fnm, args, id)
     if br >= -1 && br != -3 {
-        // S1.2 安全边界：unsafe 内置（指针/内存操作）在安全代码中调用 = 编译错误
+        // 安全边界：unsafe 内置（**操作级**危险面）在安全代码中调用 = 编译错误。
+        //
+        // 这是 §11.8 重分类后**唯一**的指针类门禁（类型级门禁已撤销，see
+        // scheck_q3.tie / scollect.tie）：清单只保留「会引发 UB 的操作」。
+        //   移除（→ 安全）：is_null（指针比较，不解引）、slice_of / slice_len /
+        //     slice_index（切片视图与边界检查下标；越界是可捕获 panic，非 UB）。
+        //   保留（维持 unsafe）：解引用 deref/deref_write、指针算术 ptr_add、
+        //     原始分配 alloc/free、取地址 addr_of/addr_of_field、指针↔整数转换
+        //     ptr_to_int/int_to_ptr、原始缓冲 memcpy/memset、易失访存
+        //     volatile_load/volatile_store（设计表逐项裁决，见
+        //     tie-main/docs/designs/safe-unsafe-reclassification.md）。
         if g_unsafe_depth == 0 {
             if fnm == "addr_of" || fnm == "addr_of_field" || fnm == "deref" || fnm == "deref_write" ||
-                fnm == "is_null" || fnm == "ptr_add" || fnm == "ptr_to_int" || fnm == "int_to_ptr" ||
+                fnm == "ptr_add" || fnm == "ptr_to_int" || fnm == "int_to_ptr" ||
                 fnm == "alloc" || fnm == "free" || fnm == "memcpy" || fnm == "memset" ||
-                fnm == "slice_of" || fnm == "slice_len" || fnm == "slice_index" ||
                 fnm == "volatile_load" || fnm == "volatile_store" {
                 sm_err_line = s_lines[id]
                 sm_err_col = s_cols[id]
