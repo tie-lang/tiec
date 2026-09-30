@@ -273,18 +273,12 @@ func infer_guard_method(gty: i64, mname: string, args: table<i64>, id: i64) -> i
     if s_tags[a0] == S_N_VAR {
         capn = sstate.name_str(a0)
     }
-    var capidx: i64 = -1
-    if capn == "share" {
-        capidx = 0
-    } else if capn == "mem" {
-        capidx = 1
-    } else if capn == "ext" {
-        capidx = 2
-    }
+    // r.1.6.7：域映射走 types 层单一事实源（新增 lock 域）
+    var capidx = types.guard_cap_index(capn)
     if capidx < 0 {
         sm_err_line = s_lines[id]
         sm_err_col = s_cols[id]
-        sm_err_msg = "guard.delegate 的能力域必须是 share/mem/ext，实际是 '" + capn + "'"
+        sm_err_msg = "guard.delegate 的能力域必须是 share/mem/ext/lock，实际是 '" + capn + "'"
         return -1
     }
     var src = types.guard_cap(gty)

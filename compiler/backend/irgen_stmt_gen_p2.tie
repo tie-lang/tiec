@@ -171,13 +171,49 @@ pub func tig_stmt_b_146(id: i64) -> i64 {
     var tag = s_tags[id]
         // 三期 A 组 `unsafe use g { ... }` 持证越界块（§7.1.1 + unsafe-model §13.4）：
         // 凭据运行期无操作（编译期门禁已由语义层强制），块体正常生成。
-        return tig_stmtlist_as_stmt(sstate.child(id, 0))
+        // r.1.6.7：若 g 的类型是 `guard<lock>` ⇒ 块内表访问走**免锁**入口（显式凭据
+        // 去锁）。凭据是块的入参身份，退块自动回收（与 guard 生命周期一致）。
+        var is_lock = false
+        if types.is_lock_guard(esc_guard_use_ty(id)) {
+            is_lock = true
+            lock_enter()
+        }
+        var r = tig_stmtlist_as_stmt(sstate.child(id, 0))
+        if is_lock {
+            lock_leave()
+        }
+        return r
+}
+
+// `unsafe use g` 的 g 类型：N_GUARD_USE 的 name 槽已是 intern 池 id（parser 侧约定）。
+// 先查局部作用域，再查全局（凭据可来自文件级/全局声明）。
+func esc_guard_use_ty(id: i64) -> i64 {
+    var gnid = s_names[id]
+    if scope_get(gnid) >= 0 {
+        return g_lookup_ty
+    }
+    var gt = global_ty(gnid)
+    if gt >= 0 {
+        return gt
+    }
+    return 0 - 1
 }
 
 pub func tig_stmt_b_147(id: i64) -> i64 {
     var tag = s_tags[id]
         // 三期 A 组 `unsafe with(share) { ... }` 临时凭据块：同上，块体正常生成。
-        return tig_stmtlist_as_stmt(sstate.child(id, 1))
+        // r.1.6.7：`unsafe with(lock) { ... }` ⇒ 块内表访问走**免锁**入口。
+        // 能力域名在 children[0]（N_NAMED_TYPE，name = 域名词池 id）。
+        var capn = sstate.name_str(sstate.child(id, 0))
+        var is_lock = capn == "lock"
+        if is_lock {
+            lock_enter()
+        }
+        var r = tig_stmtlist_as_stmt(sstate.child(id, 1))
+        if is_lock {
+            lock_leave()
+        }
+        return r
 }
 
 pub func tig_stmt_b_103_Assign(id: i64) -> i64 {

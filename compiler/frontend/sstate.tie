@@ -25,6 +25,16 @@ var s_children: table<i64>;   // 扁平子节点 id 段
 var s_lines: table<i64>;      // 起始行（1-based）
 var s_cols: table<i64>;       // 起始列（1-based）
 var s_n: i64 = 0;             // 节点总数
+// r.1.6.7：带 `#[unsafe.lock]` 属性的函数节点 id 列表。
+// 为什么需要独立表：属性附着原先**只置 val bit3 = has_attr 并丢弃属性名**，
+// 故 `#[unsafe.share]` 与 `#[unsafe.lock]` 无法区分。本表保留「哪些函数持 lock 域」，
+// 供 irgen 把整函数体置于去锁作用域。空表字面量初值 ⇒ 无需显式初始化点。
+var s_lock_fn: table<i64> = []
+// r.1.6.7：本文件（**本次 parser 解析的文件**）是否获 lock 域授权
+//（`type tie<logic, unsafe:lock>`）。driver 在调 parse_ast 前设置。
+// 这是文件级授权能精确限定范围的**关键**：`parse_ast` 只对**主输入文件**调用一次，
+// import 的模块走语义层的另一条解析路径 ⇒ 不会读到本标志 ⇒ 不会被误授权。
+var s_file_lock_auth: bool = false
 
 // ==================== 符号表全局 ====================
 var fn_keys: table<i64>;      // 函数全名 id（升序）

@@ -168,6 +168,13 @@ var g_esc_names: table<i64>;
 var g_esc_live: table<i64>;
 var g_esc_audit: bool = false;
 var g_esc_hits: i64 = 0;
+// r.1.6.7 显式 lock 凭据（语法层去锁）：持 `guard<lock>` 凭据的作用域深度。
+// >0 ⇒ 该作用域内所有表访问走免锁入口（开发者显式声明无并发访问，责任归开发者）。
+var g_lock_depth: i64 = 0;
+// 凭据路径的去锁命中计数（审计/探针断言用）。
+var g_lock_hits: i64 = 0;
+// 文件级授权（`type tie<logic, unsafe:lock>`）：整文件所有函数的 lock 作用域初值。
+var g_file_lock: bool = false;
 // p.6.10.3：函数参数表名集合（intern id → 1）——出口析构跳过参数（借用语义，
 // 所有权在调用方）；参数槽被赋值覆盖也不 release（避免收回调用方所有权）。
 var g_param_nids: table<i64>;

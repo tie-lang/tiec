@@ -507,6 +507,9 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     g_gt_blks = table_new_i64()
     g_tv_keys = table_new_i64()
     g_tv_elems = table_new_i64()
+    // r.1.6.7：显式 lock 凭据深度按函数清零（随后按 `#[unsafe.lock]` 属性或
+    // 文件级授权重新 lock_enter）。命名函数是顶层单元，无需保存/恢复。
+    lock_reset()
     // r.1.6.7：逃逸分析状态同样按「每函数」重置——闭包体/方法体是独立函数，
     // 其内候选集与外层互不串用（外层候选在本函数体内不成立：捕获变量的所有权
     // 可能落在另一执行流）。注意此处是**清空**而非保存/恢复：闭包体生成发生在外层
@@ -712,6 +715,17 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     var body = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + nparams)
     // p.9.11.4 defer：标记正在生成命名函数体（其最外层块末尾跑函数级 defer）
     g_in_fn_body = 1
+    // r.1.6.7：函数级去锁作用域——`#[unsafe.lock] func f`（函数级持证）或
+    // 文件级 `type tie<logic, unsafe:lock>`（整文件授权）⇒ 函数体内表访问走免锁。
+    // 双锁仍成立：`#[unsafe.lock]` 属性本身即「门禁 + 域」的声明；文件级授权同理
+    // （见 unsafe-credential-lock.md §3：函数级/文件级都是「隐式持证」形态）。
+    // 函数级 `#[unsafe.lock]` 与文件级授权都已在 parser 侧登记进该表（文件级按
+    // 「本文件」展开为逐函数登记）。此处**不再**判全局文件标志——用全局标志会把
+    // import 的模块一并去锁，范围过宽且危险。
+    var lock_fn = sstate.lock_fn_is(fn_node)
+    if lock_fn {
+        lock_enter()
+    }
     var r = tig_block_stmts(body)
     if r < 0 {
         return -1

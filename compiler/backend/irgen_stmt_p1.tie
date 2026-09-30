@@ -565,7 +565,7 @@ func tig_index_assign(id: i64) -> i64 {
         ir.add_operand(ok_r, types.named(TK_I8), 2)
         // r.1.6.7 独占免锁：base 裸局部变量且静态证得独占 → 免锁读旧值。
         // 注意此处**只查询不计审计数**（esc_live 直查），避免同一处访问被计两次。
-        var old = s21_table_at_ex(t, iv, ir.get_value(ok_r), pty, esc_var_live(base))
+        var old = s21_table_at_ex(t, iv, ir.get_value(ok_r), pty, esc_live_or_lock(base))
         if old < 0 {
             return -1
         }

@@ -319,17 +319,12 @@ pub func infer_expr_guard_get(id: i64) -> i64 {
             return -1
         }
         var capn = sstate.name_str(sstate.child(id, 0))
-        var cap: i64 = -1
-        if capn == "share" {
-            cap = 0
-        } else if capn == "mem" {
-            cap = 1
-        } else if capn == "ext" {
-            cap = 2
-        } else {
+        // r.1.6.7：域映射走 types 层单一事实源（新增 lock 域）
+        var cap = types.guard_cap_index(capn)
+        if cap < 0 {
             sm_err_line = s_lines[id]
             sm_err_col = s_cols[id]
-            sm_err_msg = "unsafe.get 的能力域必须是 share/mem/ext，实际是 '" + capn + "'"
+            sm_err_msg = "unsafe.get 的能力域必须是 share/mem/ext/lock，实际是 '" + capn + "'"
             return -1
         }
         // 对象绑定表达式推断（凭据绑定的对象必须有类型）

@@ -532,6 +532,47 @@ pub func slot_off(node: i64) -> i64 {
     return 0
 }
 
+// ==================== r.1.6.7 `#[unsafe.lock]` 函数表 ====================
+// 登记（parser 解析到 `#[unsafe.lock] func` 时调用）。
+pub func lock_fn_put(nid: i64) {
+    var i: i64 = 0
+    while i < len(s_lock_fn) {
+        if s_lock_fn[i] == nid {
+            return
+        }
+        i = i + 1
+    }
+    table_push(s_lock_fn, nid)
+}
+
+// 查询：该函数节点是否带 `#[unsafe.lock]`。
+pub func lock_fn_is(nid: i64) -> bool {
+    var i: i64 = 0
+    while i < len(s_lock_fn) {
+        if s_lock_fn[i] == nid {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// 每次解析前重置（跨编译单元不串用）。
+pub func lock_fn_reset() {
+    s_lock_fn = []
+    s_file_lock_auth = false
+}
+
+// 设置「本文件获 lock 域授权」（driver 调 parse_ast 前按头部角色声明调用）。
+pub func set_file_lock_auth(v: bool) {
+    s_file_lock_auth = v
+}
+
+// 本文件是否获 lock 域授权。
+pub func file_lock_auth() -> bool {
+    return s_file_lock_auth
+}
+
 // ==================== 可寻址与可见性辅助 ====================
 // P8 可寻址判定（对齐 Rust is_addressable_expr）：只有变量或字段访问链可寻址。
 pub func is_addressable(id: i64) -> bool {
