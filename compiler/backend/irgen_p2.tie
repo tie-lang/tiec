@@ -507,6 +507,12 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     g_gt_blks = table_new_i64()
     g_tv_keys = table_new_i64()
     g_tv_elems = table_new_i64()
+    // r.1.6.7：逃逸分析状态同样按「每函数」重置——闭包体/方法体是独立函数，
+    // 其内候选集与外层互不串用（外层候选在本函数体内不成立：捕获变量的所有权
+    // 可能落在另一执行流）。注意此处是**清空**而非保存/恢复：闭包体生成发生在外层
+    // 函数的生成过程中，若恢复外层状态会把「已被闭包捕获 ⇒ 可能被并发访问」的表
+    // 重新判为独占 —— 方向必须偏向保守。
+    esc_reset()
     g_param_nids = table_new_i64()
     g_tblcand_allocas = table_new_i64()
     g_sb_keys = table_new_i64()

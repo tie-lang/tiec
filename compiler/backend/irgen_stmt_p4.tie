@@ -186,6 +186,12 @@ func tig_block_stmts(blk: i64) -> i64 {
         if block_terminated() {
             g_cur_block = ir.new_block(g_cur_func, interner.intern("blk.dead"))
         }
+        // r.1.6.7 逃逸分析前置钩子：生成该语句前先扫描其整棵子树，命中「句柄离开
+        // 本次调用」的泄漏点即把相关候选表**立即置死**（单调）。一并覆盖：
+        //   · 顺序语句 → 流敏感（泄漏点之前的访问仍享免锁快路径）；
+        //   · 循环语句 → 子树里的泄漏点被**提前**置死（循环体只生成一次，
+        //     「本轮泄漏 / 下一轮误用」必须提前堵住）。
+        esc_stmt_pre(s)
         var r = tig_stmt(s)
         if r < 0 {
             return -1
