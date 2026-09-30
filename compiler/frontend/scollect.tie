@@ -128,9 +128,15 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
     }
     var nparams = s_aux[fn_node]
     var is_pub = s_vals[fn_node]
-    // S1.2：函数 unsafe 标志（val bit1）。参数/返回含指针类型的函数必须是
-    // unsafe fn（安全函数不能触碰指针）。
-    var is_unsafe = (is_pub >> 1) & 1
+    // S1.2 的「参数/返回含指针类型 ⇒ 必须 unsafe fn」两条门禁已随安全边界
+    // 重分类（§11.8，2026-10-01）撤销，故原先在此取出的函数 unsafe 标志
+    //（val bit1）在本函数内不再被消费。`is_pub` 保留：下文 reg_fn 传的是整个
+    // val（含各标志位），不只是 pub。
+    //
+    // `unsafe fn` 仍是**有意义的声明**：函数体因此获得不安全上下文
+    //（see check_fn：sig_unsafe(sig) == 1 ⇒ g_unsafe_depth + 1），体内仍可做
+    // 解引用/分配等操作级门禁保护的动作。变的只是「签名里出现指针类型」不再是
+    // 判定函数是否必须 unsafe 的依据。
     // 返回类型：FnDef children[slot_off]（新布局 children[0]=泛型槽→偏移 1；
     // 旧布局无槽→children[0]=返回类型。slot_off 统一判定保证自举双兼容）
     var rt_node = sstate.child(fn_node, sstate.slot_off(fn_node))
@@ -138,12 +144,9 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
     if ret_ty < 0 {
         return -1
     }
-    if types.is_unsafe_ty(ret_ty) && is_unsafe == 0 {
-        sm_err_line = s_lines[fn_node]
-        sm_err_col = s_cols[fn_node]
-        sm_err_msg = "返回指针/切片/原子类型 '" + types.type_name(ret_ty) + "' 的函数必须标注 unsafe（`unsafe fn`）"
-        return -1
-    }
+    // §11.8 重分类（2026-10-01）：返回指针/切片/原子类型不再要求 unsafe fn ——
+    // 返回值是一个值，持有它不引发 UB；解引用才是危险面，由调用点的操作级
+    // 门禁（sinfer_ret_q2.tie 的 unsafe 内置清单）拦截。
     // p.9.11.15 生成器检测：函数体含 N_YIELD → 生成器函数。语言侧定稿——
     // 生成器必须声明返回类型（= 元素类型，非 void），签名返回类型登记为
     // table<elem>（调用方 gen() 得表，for/推导式直接消费）；运行期惰性
@@ -191,13 +194,9 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
         if pt < 0 {
             return -1
         }
-        // S1.2：安全函数参数不能是指针/切片/原子类型
-        if types.is_unsafe_ty(pt) && is_unsafe == 0 {
-            sm_err_line = s_lines[p]
-            sm_err_col = s_cols[p]
-            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的指针/切片/原子类型 '" + types.type_name(pt) + "' 只能在 unsafe 函数中使用"
-            return -1
-        }
+        // §11.8 重分类（2026-10-01）：参数为指针/切片/原子类型不再要求 unsafe fn
+        // —— 传参只是复制一个值，不引发 UB。「安全切片 vs 裸指针」的两层门禁
+        // 由此合到操作一层（见 sinfer_ret_q2.tie）。
         var is_ref = s_vals[p] & 1   // by_ref（p.9.11.11 immut 存 bit1，掩码 & 1）
         // p.9.11.26 四约定矩阵：统一声明面 + 互斥诊断。
         //   bit0=ref（可写借用）· bit1=immut（只读借用）· bit2=move（所有权转移）

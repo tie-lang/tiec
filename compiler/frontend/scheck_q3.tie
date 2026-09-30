@@ -93,13 +93,20 @@ pub func check_var_decl(s: i64) -> i64 {
             sinfer.lv_insert(nid, ty, is_const, -1, 0)
             return 0
         }
-        // S1.2 S1 指针全归 unsafe：安全代码不能声明指针/切片/原子类型变量
-        if types.is_unsafe_ty(ty) && g_unsafe_depth == 0 {
-            sm_err_line = s_lines[s]
-            sm_err_col = s_cols[s]
-            sm_err_msg = "变量 '" + nm + "' 的指针/切片/原子类型 '" + types.type_name(ty) + "' 只能在 unsafe 代码中使用"
-            return -1
-        }
+        // 安全边界重分类（§11.8，2026-10-01）：**类型本身不再是危险面** ——
+        // `ptr<T>` / `slice<T>` / `atomic<T>` 的声明在安全代码中合法。
+        //
+        // 判据（设计定稿）：「构造安全 ⟺ 不可能引发 UB」——持有/声明/比较/传递
+        // 一个指针值不会引发 UB，只有**解引用、指针算术、原始分配、取地址、
+        // 易失访存**才会。故危险面从「类型」下移到「操作」，由内置调用门禁
+        // （sinfer_ret_q2.tie 的 unsafe 内置清单）与「必须处于 unsafe 上下文」
+        // 共同承担；此处原先的 `types.is_unsafe_ty(ty) && g_unsafe_depth == 0`
+        // 整段拦截把「安全切片 vs 裸指针」两层混成一层，现改为只留操作级门禁。
+        //
+        // 注意：**不能**改 `types.is_unsafe_ty` 本身去实现本重分类 —— 该谓词在
+        // irgen 侧还承担「指针/切片/原子类型的槽型推断」（irgen_stmt_gen_p1.tie、
+        // irgen_expr.tie、irgen_closure.tie 三处），改它会让这些类型的变量生成
+        // 错误槽型。类型分类照旧，只撤掉前端这条按类型拒绝的门禁。
         // S3.3：code 类型只能在宏函数体内使用（编译期值，运行期无表示）。
         // 宏体不经过语义检查（interp 编译期执行），此检查拦截普通函数里的
         // code 变量/参数（含展开残留的准引用）。
