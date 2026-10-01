@@ -39,11 +39,16 @@ func check_stmt(s: i64) -> i64 {
     if tag == S_N_VAR_DECL {
         var init = sstate.child(s, 1)
         if init >= 0 {
-            // 直接变量初值 + 堆类型 + 非 const → 源移动
+            // 直接变量初值 + 堆类型 + 非 const → 源移动。
+            // ★ 必须走 move_var（检查 + 标记）：此处曾只 mark 不检查，导致
+            // `var b = a; var c = a` 编译通过——同一份所有权两个持有者。
             var nid = var_nid(init)
             if nid >= 0 {
                 if var_is_const(nid) == 0 && is_move_src(init) {
-                    sstate.lv_moved_mark(nid)
+                    var mv = move_var(nid, init)
+                    if mv < 0 {
+                        return -1
+                    }
                 }
             } else {
                 // 复杂初值：递归读取检查
@@ -66,7 +71,11 @@ func check_stmt(s: i64) -> i64 {
             var nid = var_nid(val)
             if nid >= 0 && nid != tgt {
                 if var_is_const(nid) == 0 && is_move_src(val) {
-                    sstate.lv_moved_mark(nid)
+                    // ★ 走 move_var：`b = a; c = a` 的第二次必须报「已移动」
+                    var mv = move_var(nid, val)
+                    if mv < 0 {
+                        return -1
+                    }
                 }
             } else {
                 // 复杂表达式或 a = a：读取检查（moved 则报错）
@@ -93,7 +102,10 @@ func check_stmt(s: i64) -> i64 {
             var nid = var_nid(v)
             if nid >= 0 {
                 if var_is_const(nid) == 0 && is_move_src(v) {
-                    sstate.lv_moved_mark(nid)
+                    var mv = move_var(nid, v)
+                    if mv < 0 {
+                        return -1
+                    }
                 }
             } else {
                 var r = check_expr_read(v)
@@ -285,7 +297,10 @@ func check_stmt(s: i64) -> i64 {
         var nid2 = var_nid(val2)
         if nid2 >= 0 {
             if var_is_const(nid2) == 0 && is_move_src(val2) {
-                sstate.lv_moved_mark(nid2)
+                var mv2 = move_var(nid2, val2)
+                if mv2 < 0 {
+                    return -1
+                }
             }
         } else {
             var r10 = check_expr_read(val2)
@@ -306,7 +321,10 @@ func check_stmt(s: i64) -> i64 {
         var nid3 = var_nid(val3)
         if nid3 >= 0 {
             if var_is_const(nid3) == 0 && is_move_src(val3) {
-                sstate.lv_moved_mark(nid3)
+                var mv3 = move_var(nid3, val3)
+                if mv3 < 0 {
+                    return -1
+                }
             }
         } else {
             var r12 = check_expr_read(val3)
