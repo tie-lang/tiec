@@ -35,7 +35,7 @@ namespace cfgpre {
 // ---------- 字节级工具（自包含） ----------
 
 // 子串 [a, b)（字节级）。
-func cp_slice(s: string, a: i64, b: i64) -> string {
+func cp_slice(immut s: string, a: i64, b: i64) -> string {
     var sb = string_builder()
     var i: i64 = a
     while i < b {
@@ -91,7 +91,7 @@ func cp_contains(s: string, needle: string) -> bool {
 }
 
 // 去首尾空白（空格/制表）。
-func cp_trim(s: string) -> string {
+func cp_trim(immut s: string) -> string {
     var n = len(s)
     var a: i64 = 0
     var b: i64 = n

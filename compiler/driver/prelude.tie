@@ -22,7 +22,7 @@ type tie<class>
 // 由 std/string.tie 与 std/math.tie 的既有编译承担（二者是常用库，本身多被引用）。
 
 // 是否需要前置（应用代码角色）。
-func prelude_role_ok(r: string) -> bool {
+func prelude_role_ok(immut r: string) -> bool {
     if r == "logic" {
         return true
     }
@@ -37,7 +37,7 @@ func prelude_role_ok(r: string) -> bool {
 // （头部 `type tie<class>` 未进入角色识别的判定路径），故不能只靠 role 判断；
 // 直接看原始源里的 `<class>` 声明，可靠排除编译器与库文件，避免前置的 using
 // 引入与编译器源码里既有裸名 helper 的冲突。
-func prelude_is_lib(raw: string) -> bool {
+func prelude_is_lib(immut raw: string) -> bool {
     if str.find(raw, "<class>") >= 0 {
         return true
     }
@@ -75,7 +75,7 @@ func prelude_path() -> string {
 //   ② 自行定义了同名枚举（`enum Result` / `enum Option`）。
 // 判定用源文本扫描（与 prelude_is_lib 的 `<class>` 扫描同款做法）；
 // 文本命中宁可保守跳过注入，也不冒重复定义的风险。
-func prelude_needs_result(raw: string) -> bool {
+func prelude_needs_result(immut raw: string) -> bool {
     if str.find(raw, "std/result.tie") >= 0 {
         return false
     }

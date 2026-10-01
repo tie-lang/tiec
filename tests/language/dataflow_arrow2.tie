@@ -36,7 +36,7 @@ namespace Box {
 }
 
 // 尾随闭包 + 管道组合载体：闭包（fn()->void）形参在前、管道数据追加为末参（D4）
-func consume(cb: fn() -> void, xs: table<i64>) -> i64 {
+func consume(cb: fn() -> void, immut xs: table<i64>) -> i64 {
     cb()
     return len(xs)
 }
