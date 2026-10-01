@@ -239,11 +239,13 @@ func parse_generic_attr() -> i64 {
         putil.set_err(line, col, "未知属性 '#[" + full + "]'（属性命名空间仅支持 unsafe，如 #[unsafe.share]）")
         return -1
     }
-    // r.1.6.7：新增 lock 域（去锁访问）。trm/raw 保持属性形态专属，lock 为第五个可标注域。
+    // 域白名单与能力域归类保持一致（tie-main/docs/designs/domain-classification.md）：
+    // mem / ext / share / raw / lock 五域。`trm` 已随归类删除（无门禁承载、引擎已废弃），
+    // 故不再接受 `#[unsafe.trm]`。
     var subn = interner.lookup(sub)
-    if subn != "share" && subn != "trm" && subn != "mem" &&
-        subn != "ext" && subn != "lock" {
-        putil.set_err(line, col, "未知 unsafe 属性 '#[" + full + "]'（支持 share/trm/mem/ext/lock 五域）")
+    if subn != "share" && subn != "mem" && subn != "ext" &&
+        subn != "raw" && subn != "lock" {
+        putil.set_err(line, col, "未知 unsafe 属性 '#[" + full + "]'（支持 share/mem/ext/raw/lock 五域）")
         return -1
     }
     putil.eat(lex_semi)   // 吃掉 ASI 补分号（属性后无分号语义）
