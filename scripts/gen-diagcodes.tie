@@ -457,9 +457,11 @@ func gn_scan_file(path: string, rel: string) {
     }
     var n: i64 = len(src_txt)
     // 1) 赋值语句锚点
+    //    2026-10-01 补 `w_err`：interp 侧错误变量（实测 232 处 `w_err = "..."`），
+    //    此前不在名单 → 136 条消息重建时漏抽、运行时落 E00000 兜底。
     var names: table<string> = [
         "sm_err_msg", "g_err", "c_err_msg", "g_role_err", "err_msg", "tc_err_msg",
-        "errtxt", "p_err_msg", "role_err", "e_msg", "msg_err"
+        "errtxt", "p_err_msg", "role_err", "e_msg", "msg_err", "w_err"
     ]
     var pos: i64 = 0
     while pos < n {
@@ -648,16 +650,157 @@ func gn_sort() {
 }
 
 // 分配五位标号 + 前缀规则表。
+// ---------- 码号稳定性（2026-10-01）：沿用既有分配，新增才取新号 ----------
+// 规范 §16.7：「编号一经分配即不再变动，新增诊断取新号、不复用旧号」，且重排
+// 会同时破坏编辑器 / CI / 回归语料。旧行为按**排序后序号**分配（第 i 个 key 拿
+// E(i+1)），源码消息集合一变（如文件拆分后漏抽锚点被补回）全部码号平移——
+// 这正是目录与源码脱节后无法重建的根因。
+// 现改为：启动时读入现有目录（diagcode_cat.gen.tie），已有码号的 key 沿用，
+// 新 key 从「历史最大号 + 1」起连续分配；源码里已消失的 key 其码号**保留占用**
+//（不回填新消息），保证「永不复用」。
+
+var g_prev_keys: table<string>;
+var g_prev_codes: table<string>;
+
+// 提取一行里第一个 "..." 字面量的**值**（处理 \" \\ \n \t 转义）；无 → ""
+func gn_extract_lit(ln: string) -> string {
+    var n = len(ln)
+    var s = gn_find(ln, "\"", 0)
+    if s < 0 {
+        return ""
+    }
+    var sb = string_builder()
+    var i = s + 1
+    while i < n {
+        var c = str_byte(ln, i)
+        if c == 34 {
+            break
+        }
+        if c == 92 {
+            i = i + 1
+            if i >= n {
+                break
+            }
+            var e = str_byte(ln, i)
+            if e == 110 {
+                sb_append_byte(sb, 10)
+            } else if e == 116 {
+                sb_append_byte(sb, 9)
+            } else {
+                sb_append_byte(sb, e)
+            }
+        } else {
+            sb_append_byte(sb, c)
+        }
+        i = i + 1
+    }
+    return sb_build(sb)
+}
+
+// "E00648" → 648
+func gn_code_num(cd: string) -> i64 {
+    var v: i64 = 0
+    var i: i64 = 1
+    while i < len(cd) {
+        v = v * 10 + (str_byte(cd, i) - 48)
+        i = i + 1
+    }
+    return v
+}
+
+func gn_pad5(n: i64) -> string {
+    var s = to_string(n)
+    while len(s) < 5 {
+        s = "0" + s
+    }
+    return s
+}
+
+// 按 \n 分割（tie 无 split_lines 内建；不保留行尾 \r）
+func gn_split_nl(s: string) -> table<string> {
+    var out = table_new_string()
+    var n = len(s)
+    var start: i64 = 0
+    var i: i64 = 0
+    while i < n {
+        if str_byte(s, i) == 10 {
+            var end = i
+            if end > start && str_byte(s, end - 1) == 13 {
+                end = end - 1
+            }
+            table_push(out, gn_slice(s, start, end))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if start < n {
+        var end = n
+        if end > start && str_byte(s, end - 1) == 13 {
+            end = end - 1
+        }
+        table_push(out, gn_slice(s, start, end))
+    }
+    return out
+}
+
+func gn_load_prev() {
+    g_prev_keys = table_new_string()
+    g_prev_codes = table_new_string()
+    var p = g_root + "\\compiler\\frontend\\diagcode_cat.gen.tie"
+    if !file_exists(p) {
+        return
+    }
+    var txt = file_read(p)
+    var lines = gn_split_nl(txt)
+    var pending = ""
+    var i: i64 = 0
+    while i < len(lines) {
+        var ln = lines[i]
+        if gn_contains(ln, "table_push(cat_keys, ") {
+            pending = gn_extract_lit(ln)
+        } else if gn_contains(ln, "table_push(cat_codes, ") && len(pending) > 0 {
+            table_push(g_prev_keys, pending)
+            table_push(g_prev_codes, gn_extract_lit(ln))
+            pending = ""
+        }
+        i = i + 1
+    }
+    println("[gen] prev catalog loaded: " + to_string(len(g_prev_keys)) + " keys from " + p)
+}
+
+// 已登记 key 的旧码号；无 → ""
+func gn_prev_code(key: string) -> string {
+    var i: i64 = 0
+    while i < len(g_prev_keys) {
+        if g_prev_keys[i] == key {
+            return g_prev_codes[i]
+        }
+        i = i + 1
+    }
+    return ""
+}
+
 func gn_assign() {
     g_code = table_new_string()
+    // 码号稳定性：沿用旧号（见上方注释块）。next 从历史最大号 + 1 起——
+    // 源码里已消失的消息其码号仍被占用（不复用）。
+    var next_num: i64 = 1
+    var pi: i64 = 0
+    while pi < len(g_prev_codes) {
+        var nn = gn_code_num(g_prev_codes[pi])
+        if nn >= next_num {
+            next_num = nn + 1
+        }
+        pi = pi + 1
+    }
     var i: i64 = 0
     while i < len(g_key) {
-        var ord = i + 1
-        var s = to_string(ord)
-        while len(s) < 5 {
-            s = "0" + s
+        var cd = gn_prev_code(g_key[i])
+        if len(cd) == 0 {
+            cd = "E" + gn_pad5(next_num)
+            next_num = next_num + 1
         }
-        table_push(g_code, "E" + s)
+        table_push(g_code, cd)
         i = i + 1
     }
     // 前缀规则：前 1~2 字面段（折叠后）；最长命中由运行时完成。
@@ -903,6 +1046,7 @@ func main() -> i64 {
 
     gn_manual()
     gn_sort()
+    gn_load_prev()
     gn_assign()
 
     // 写目录 + td 清单

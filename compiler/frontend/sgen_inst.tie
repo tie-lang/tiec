@@ -220,12 +220,21 @@ pub func instantiate_fn(gti: i64, args: table<i64>, line: i64, col: i64) -> i64 
 // 缺失"。优先级：显式 > 推断 > 默认（缺失才补默认）。
 func fill_missing_defaults(gti: i64, args: table<i64>, line: i64, col: i64) -> table<i64> {
     var n_tp = gtyp_nparams[gti]
-    var out = args
     if len(args) > n_tp {
         sm_err_line = line
         sm_err_col = col
         sm_err_msg = "泛型模板需要 " + to_string(n_tp) + " 个类型参数，实际 " + to_string(len(args)) + " 个"
         return table_new_i64()
+    }
+    // 显式复制入参：表的赋值是**浅拷贝共享**（实测 `var b = a; b[0]=99` 会改到
+    // `a[0]`），若直接 `var out = args` 再 push，就会**就地污染调用方的表**。
+    // 本函数契约是「返回补充后的 args（新表）」（见上方注释），故此处按契约复制。
+    // 副作用：`args` 全程只被读（len / 下标），移动检查不再把它当已移交。
+    var out = table_new_i64()
+    var i: i64 = 0
+    while i < len(args) {
+        table_push(out, args[i])
+        i = i + 1
     }
     if len(args) < n_tp {
         var defaults = sstate.gt_defaults(gti)
