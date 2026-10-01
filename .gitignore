@@ -34,8 +34,8 @@ opencode.json
 .omo/
 .superpowers/
 _tiec_verify/esc_safety_out/
+_tiec_verify/fp/
 compiler/_*.txt
-_tiec_verify/esc_safety_out/
 tests/language/_*.tie
 tests/_*_probe/_*
 tests/_*/_*
