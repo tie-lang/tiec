@@ -135,14 +135,25 @@ func call_builtin_seg2(name: string, args: table<Value>) -> Value {
             w_err = "load_library 需要一个字符串参数"
             return Value.Nil
         }
-        return vval.new_int(load_library(vval.str_val(args[0])))
+        // 归类后 load_library 属 ext 域（装载任意动态代码）⇒ 须不安全上下文。
+        // 用变量中转而非 `return unsafe { ... }`：表达式位置不接受 unsafe 块，
+        // 且这样只把真正危险的一句圈进去，分派逻辑的其余部分仍受检查。
+        var h_lib: i64 = 0
+        unsafe {
+            h_lib = load_library(vval.str_val(args[0]))
+        }
+        return vval.new_int(h_lib)
     }
     if name == "get_proc" {
         if len(args) != 2 || vval.type_of(args[0]) != W_INT || vval.type_of(args[1]) != W_STR {
             w_err = "get_proc 需要整数句柄与字符串符号名两个参数"
             return Value.Nil
         }
-        return vval.new_int(get_proc(vval.int_val(args[0]), vval.str_val(args[1])))
+        var h_proc: i64 = 0
+        unsafe {
+            h_proc = get_proc(vval.int_val(args[0]), vval.str_val(args[1]))
+        }
+        return vval.new_int(h_proc)
     }
     if name == "dyn_call" || name == "dyn_call_p" {
         // 签名：addr + 至多 5 个 i64 实参（缺位补 0，对齐编译端 op73）。
@@ -174,16 +185,28 @@ func call_builtin_seg2(name: string, args: table<Value>) -> Value {
         if len(args) >= 6 { a5 = vval.int_val(args[5]) }
         var addr = vval.int_val(args[0])
         if name == "dyn_call" {
-            return vval.new_int(dyn_call(addr, a1, a2, a3, a4, a5))
+            var d_ret: i64 = 0
+            unsafe {
+                d_ret = dyn_call(addr, a1, a2, a3, a4, a5)
+            }
+            return vval.new_int(d_ret)
         }
-        return vval.new_int(dyn_call_p(addr, a1, a2, a3, a4, a5))
+        var d_ret_p: i64 = 0
+        unsafe {
+            d_ret_p = dyn_call_p(addr, a1, a2, a3, a4, a5)
+        }
+        return vval.new_int(d_ret_p)
     }
     if name == "cstr_to_string" {
         if len(args) != 1 || vval.type_of(args[0]) != W_INT {
             w_err = "cstr_to_string 需要一个地址参数（整数）"
             return Value.Nil
         }
-        return vval.new_str(cstr_to_string(vval.int_val(args[0])))
+        var s_c: string = ""
+        unsafe {
+            s_c = cstr_to_string(vval.int_val(args[0]))
+        }
+        return vval.new_str(s_c)
     }
     if name == "exec_output" {
         return vval.new_str(exec_output(vval.str_val(args[0])))
