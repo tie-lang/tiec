@@ -1,4 +1,4 @@
-type tie<logic>
+type tie<logic, unsafe:ext, unsafe:mem>
 // ffi_cred_probe.tie —— C 互操作边界（ext 域）与 cstr_to_string（mem）的门禁回归
 // ============================================================================
 // 归类（tie-main/docs/designs/domain-classification.md）把下面六项归为**须持证**：

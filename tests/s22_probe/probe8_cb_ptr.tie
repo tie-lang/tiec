@@ -1,4 +1,4 @@
-type tie<logic>
+type tie<logic, unsafe:ext>
 // S2.2 闭包探针 8：闭包作 extern 回调（任务 23）——cb_ptr(f) 生成 C 兼容
 // 回调 thunk，供 extern 函数指针参数（string/ptr 槽）使用。libc atexit 注册
 // 无捕获闭包回调，进程退出时由 C 运行时调用（验证闭包 → C 函数指针全链路）。

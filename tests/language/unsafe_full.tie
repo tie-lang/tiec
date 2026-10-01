@@ -1,4 +1,4 @@
-type tie<logic>
+type tie<logic, unsafe:mem>
 // S1.2 验收：unsafe 语法 + 指针操作 + alloc/free + slice
 unsafe fn addr_roundtrip(x: i64) -> i64 {
     var p = addr_of(x)

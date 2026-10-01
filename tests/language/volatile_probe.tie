@@ -1,4 +1,4 @@
-type tie<logic>
+type tie<logic, unsafe:raw>
 // 任务15 探针：volatile 读写（MMIO/硬件寄存器语义——禁止优化删除/合并/重排）。
 // 用法：tiec volatile_probe.tie 编译运行输出 "PASS batch6-volatile"；
 //       tiec volatile_probe.tie --emit-ir 检查 IR 含 load volatile / store volatile

@@ -377,7 +377,95 @@ pub func guard_cap_index(name: string) -> i64 {
     if name == "lock" {
         return 3
     }
+    if name == "raw" {
+        return 4
+    }
     return 0 - 1
+}
+
+// ---- 能力域**位集**（2026-10-01，为「域匹配」引入）----
+// 域匹配要判「当前作用域是否持有 X 域凭据」，而作用域可能同时持多域
+// （文件级授权可一次授权多域）⇒ 用位集比集合查询更直接。
+// 位序与 guard_cap_index 一致：0=share 1=mem 2=ext 3=lock 4=raw。
+pub func cap_bit(idx: i64) -> i64 {
+    if idx < 0 {
+        return 0
+    }
+    return 1 << idx
+}
+
+// 域名 → 位（未知域 → 0）
+pub func cap_bit_of(name: string) -> i64 {
+    return cap_bit(guard_cap_index(name))
+}
+
+// 域位 → 名（诊断消息用；0 位 → ""）
+pub func cap_name_of_bit(b: i64) -> string {
+    if b == 1 {
+        return "share"
+    }
+    if b == 2 {
+        return "mem"
+    }
+    if b == 4 {
+        return "ext"
+    }
+    if b == 8 {
+        return "lock"
+    }
+    if b == 16 {
+        return "raw"
+    }
+    return ""
+}
+
+// ---- 受门禁内建 → 所属能力域（2026-10-01「域匹配」的查表依据）----
+// 与 domain-classification.md 的承载表**逐项对应**；改归类时同步改这里。
+//   返回 0 = 该内建**不受门禁**（安全内置，不进清单）。
+// 归类的判据是「该操作一旦误用引发哪一种 UB」，不是「看起来是否底层」。
+pub func builtin_domain(fnm: string) -> i64 {
+    // mem：悬垂 / 越界 / 未初始化
+    if fnm == "deref" || fnm == "deref_write" {
+        return 2
+    }
+    if fnm == "alloc" || fnm == "free" {
+        return 2
+    }
+    if fnm == "memcpy" || fnm == "memset" {
+        return 2
+    }
+    if fnm == "cstr_to_string" {
+        return 2
+    }
+    // raw：绕过编译器对代码的假设
+    if fnm == "volatile_load" || fnm == "volatile_store" {
+        return 16
+    }
+    // ext：语言无法核对的外部代码
+    if fnm == "cb_ptr" || fnm == "load_library" {
+        return 4
+    }
+    if fnm == "get_proc" || fnm == "dyn_call" || fnm == "dyn_call_p" {
+        return 4
+    }
+    return 0
+}
+
+// 位集 → 可读的域名列表（诊断消息用，如 "mem, ext"）
+pub func cap_set_name(bits: i64) -> string {
+    var out: string = ""
+    var i: i64 = 0
+    while i < 5 {
+        var b = cap_bit(i)
+        if (bits & b) != 0 {
+            if str_len(out) > 0 {
+                out = out + ", "
+            }
+            out = out + cap_name_of_bit(b)
+        }
+        i = i + 1
+    }
+    return out
 }
 
 // 该 guard 类型是否 lock 域（irgen 表访问去锁判定用）。
@@ -412,6 +500,9 @@ pub func guard_cap_name(t: i64) -> string {
     }
     if c == 3 {
         return "lock"
+    }
+    if c == 4 {
+        return "raw"
     }
     return "ext"
 }
