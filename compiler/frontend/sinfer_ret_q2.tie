@@ -75,18 +75,31 @@ pub func infer_call(id: i64) -> i64 {
     if br >= -1 && br != -3 {
         // 安全边界：unsafe 内置（**操作级**危险面）在安全代码中调用 = 编译错误。
         //
-        // 这是 §11.8 重分类后**唯一**的指针类门禁（类型级门禁已撤销，see
-        // scheck_q3.tie / scollect.tie）：清单只保留「会引发 UB 的操作」。
-        //   移除（→ 安全）：is_null（指针比较，不解引）、slice_of / slice_len /
-        //     slice_index（切片视图与边界检查下标；越界是可捕获 panic，非 UB）。
-        //   保留（维持 unsafe）：解引用 deref/deref_write、指针算术 ptr_add、
-        //     原始分配 alloc/free、取地址 addr_of/addr_of_field、指针↔整数转换
-        //     ptr_to_int/int_to_ptr、原始缓冲 memcpy/memset、易失访存
-        //     volatile_load/volatile_store（设计表逐项裁决，见
-        //     tie-main/docs/designs/safe-unsafe-reclassification.md）。
+        // 这是重分类后**唯一**的指针类门禁（类型级门禁已撤销，see scheck_q3.tie /
+        // scollect.tie）。清单的判据 = **「带安全前提」**（借用 Rust 的表述）：
+        // 一个操作是 unsafe 的，当且仅当它要求调用方先满足某个安全前提——前提可以是
+        // 「指针有效」也可以是「内存已初始化 / 未释放」。
+        //
+        //   保留（带安全前提，维持 unsafe）：
+        //     deref / deref_write —— 前提：指针有效、在界内、所指已初始化
+        //     alloc / free        —— 前提：返回的缓冲未初始化（读前须写）；
+        //                            free 的指针须来自 alloc 且未释放过
+        //     memcpy / memset     —— 前提：目标区间有效（长度不越界）
+        //     volatile_load/store —— 对内存的读写（须有效地址），且语义为「不可优化」
+        //   已移出（无任何安全前提，→ 安全）：
+        //     is_null（指针比较）· slice_of / slice_len / slice_index（切片视图与
+        //       带边界检查的下标，越界是可捕获失败）
+        //     addr_of / addr_of_field · ptr_add · ptr_to_int / int_to_ptr ——
+        //       **产出/计算指针值**：纯值运算，不触碰内存，结果即便无效也只在
+        //       被解引用时才成为问题，而解引用另有门禁 ⇒ 无独立危害面。
+        //     边界因此一句话：**产出指针值安全，用指针触碰内存须 unsafe**。
+        //
+        // 与 Rust 判法一致：`addr_of!` / `ptr as usize` / `without_provenance` /
+        // `wrapping_offset` 都是安全函数，只有 read/write/alloc 因带前提而 unsafe。
+        // 设计背景见 tie-main/docs/designs/domain-classification.md 与
+        // safe-unsafe-reclassification.md。
         if g_unsafe_depth == 0 {
-            if fnm == "addr_of" || fnm == "addr_of_field" || fnm == "deref" || fnm == "deref_write" ||
-                fnm == "ptr_add" || fnm == "ptr_to_int" || fnm == "int_to_ptr" ||
+            if fnm == "deref" || fnm == "deref_write" ||
                 fnm == "alloc" || fnm == "free" || fnm == "memcpy" || fnm == "memset" ||
                 fnm == "volatile_load" || fnm == "volatile_store" {
                 sm_err_line = s_lines[id]
