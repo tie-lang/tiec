@@ -98,10 +98,18 @@ pub func infer_call(id: i64) -> i64 {
         // `wrapping_offset` 都是安全函数，只有 read/write/alloc 因带前提而 unsafe。
         // 设计背景见 tie-main/docs/designs/domain-classification.md 与
         // safe-unsafe-reclassification.md。
+        // 每项后面的括号是它的**能力域**（归类见
+        // tie-main/docs/designs/domain-classification.md），也是将来「域匹配」
+        // 判定的依据——现在只标不判。
         if g_unsafe_depth == 0 {
-            if fnm == "deref" || fnm == "deref_write" ||
-                fnm == "alloc" || fnm == "free" || fnm == "memcpy" || fnm == "memset" ||
-                fnm == "volatile_load" || fnm == "volatile_store" {
+            if fnm == "deref" || fnm == "deref_write" ||                    // mem
+                fnm == "alloc" || fnm == "free" ||                          // mem
+                fnm == "memcpy" || fnm == "memset" ||                       // mem
+                fnm == "cstr_to_string" ||                                  // mem（沿 C 指针走到 NUL ＝ 解引用）
+                fnm == "volatile_load" || fnm == "volatile_store" ||        // raw
+                fnm == "cb_ptr" ||                                          // ext
+                fnm == "load_library" || fnm == "get_proc" ||               // ext
+                fnm == "dyn_call" || fnm == "dyn_call_p" {                  // ext
                 sm_err_line = s_lines[id]
                 sm_err_col = s_cols[id]
                 sm_err_msg = "调用 unsafe 内置 '" + fnm + "' 必须在 unsafe 块或 unsafe 函数中（安全代码禁止触底）"
