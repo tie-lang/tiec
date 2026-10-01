@@ -8,7 +8,7 @@ type tie<class>
 // consteval.tie 等 12+ 处裸调 slice/trim/split_lines…），收进 ns 会切断
 // 这些调用；待语言层 L1 可见性梯度落地后再收敛进 driver ns。
 // 在 s 中查找子串 needle 首次出现位置（0 起字符索引）；未找到返回 -1。
-func find_str(s: string, needle: string) -> i64 {
+func find_str(immut s: string, immut needle: string) -> i64 {
     var n = str_len(s)
     var m = str_len(needle)
     if m == 0 {
@@ -140,7 +140,10 @@ func split_lines(s: string) -> table<string> {
 }
 
 // 判断 s 是否以 prefix 开头。
-func has_prefix(s: string, prefix: string) -> bool {
+// `immut` = 只读借用（规范 §13.4：调用方继续用、只读取 ⇒ 声明 immut）。
+// 不写修饰符时形参按「值传递」处理，移动检查会认为调用方把值交了出去，
+// 于是调用方再用同一个变量就被判「已移动」——只读函数必须显式声明 immut。
+func has_prefix(immut s: string, immut prefix: string) -> bool {
     var n: i64 = str_len(s)
     var m: i64 = str_len(prefix)
     if n < m {
@@ -157,7 +160,7 @@ func has_prefix(s: string, prefix: string) -> bool {
 }
 
 // 找字符串中首个 ch 的位置；未找到 -1。
-func find_char(s: string, ch: string) -> i64 {
+func find_char(immut s: string, immut ch: string) -> i64 {
     var n: i64 = str_len(s)
     var i: i64 = 0
     while i < n {
@@ -170,7 +173,7 @@ func find_char(s: string, ch: string) -> i64 {
 }
 
 // 取字符串 [start, end) 子串（码点级）。
-func slice(s: string, start: i64, end: i64) -> string {
+func slice(immut s: string, start: i64, end: i64) -> string {
     var sb = string_builder()
     var i: i64 = start
     while i < end {
@@ -181,7 +184,7 @@ func slice(s: string, start: i64, end: i64) -> string {
 }
 
 // 去除字符串首尾空白（空格/制表）。
-func trim(s: string) -> string {
+func trim(immut s: string) -> string {
     var n: i64 = str_len(s)
     var start: i64 = 0
     var end: i64 = n

@@ -39,12 +39,22 @@ func check_stmt(s: i64) -> i64 {
     if tag == S_N_VAR_DECL {
         var init = sstate.child(s, 1)
         if init >= 0 {
+            // **any 装箱不消耗源**：目标槽类型为 any 时（如 `var y: any = tbl`），
+            // any 是类型擦除的值单元——不提供修改原对象的途径（取出必须经显式
+            // as_*），装箱本身不增加别名风险。实测语料 table_coll_p2d 把同一表
+            // 装箱两处（x_i/y_i 中转）是合法写法，若在此 mark 会误伤。
+            // 判据：类型节点是 NAMED_TYPE 且名为 "any"。
+            var boxed_to_any: bool = false
+            var tyn = sstate.child(s, 0)
+            if tyn >= 0 && s_tags[tyn] == S_N_NAMED_TYPE && intern.lookup(s_names[tyn]) == "any" {
+                boxed_to_any = true
+            }
             // 直接变量初值 + 堆类型 + 非 const → 源移动。
             // ★ 必须走 move_var（检查 + 标记）：此处曾只 mark 不检查，导致
             // `var b = a; var c = a` 编译通过——同一份所有权两个持有者。
             var nid = var_nid(init)
             if nid >= 0 {
-                if var_is_const(nid) == 0 && is_move_src(init) {
+                if var_is_const(nid) == 0 && !boxed_to_any && is_move_src(init) {
                     var mv = move_var(nid, init)
                     if mv < 0 {
                         return -1

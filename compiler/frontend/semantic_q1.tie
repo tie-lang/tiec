@@ -354,13 +354,9 @@ pub func check_impl(ast_text: string, base_dir: string) -> string {
                 }
                 // S1.5 移动语义独立 pass：类型检查后遍历函数体，跟踪 live/moved
                 // （复用已重置的 lv_moved；内置/原语调用借用，用户函数按值堆参数移动）。
-                // **门控分两层**（r.1.6.7，下沉在 smove 内部）：
-                //   · guard<cap> 凭据 —— **始终检查**。规范 §11.6「凭据可以转移，
-                //     但不能复制」⇒ 同一时刻只能有一处持有。既有代码零违规
-                //     （tiec 自举可通过），故可立即强制，无迁移成本。
-                //   · 堆类型（string/table/map…）—— 仍由 TIE_MOVE_CHECK 控制，默认关；
-                //     全库尚有约 85 处「按值传参后又复用实参」的写法待迁移
-                //     （规模用 TIE_MOVE_AUDIT=1 审计）。
+                // 门控全在 smove 内部：凭据（§11.6）**始终检查**；堆类型**默认开**
+                // （2026-10-01 迁移完成：tiec 自举审计 85 → 0，string 已因
+                // 「不可变值」移出跟踪范围），`TIE_MOVE_CHECK=0` 可显式关闭。
                 var r_mv = smove.check_fn_walk(fname)
                 if r_mv < 0 {
                     return "ERR:" + to_string(sm_err_line) + " " + to_string(sm_err_col) + " " + sm_err_msg
