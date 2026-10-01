@@ -253,6 +253,19 @@ func expand_one_import(imp_node: i64) -> i64 {
     var tt4: i64 = 0
     var tt5: i64 = 0
     unsafe { tt0 = GetTickCount() }
+    // 2026-10-01 逐模块授权（两件事一起修）：
+    //   ① **越权**：原先 import 解析期间 s_file_caps 仍是**主文件**的值 ⇒ 主文件
+    //      若声明了 `unsafe:mem`，被导入的模块会**白拿**这份授权。必须先切到
+    //      被导入文件**自己的**头部声明。
+    //   ② **失效**：被导入文件自己的 `type tie<..., unsafe:ext>` 原先被完全丢弃
+    //      （strip_type_decl 只剥行不解读）⇒ 库文件无法按模块授权。
+    // 父模块授权**不继承**（与「文件级授权不随 import 扩散」同一规则，方向相反
+    // 的那一半）：子模块要什么域，自己头部声明。
+    var saved_imp_fc = sstate.file_caps()
+    // 用 defer 覆盖本函数的**全部** return 路径：本函数 return 点多（文件不存在、
+    // 解析失败、别名重复、append 失败…），逐点恢复必漏。
+    defer { sstate.set_file_caps(saved_imp_fc) }
+    sstate.set_file_caps(sstate.scan_file_caps(src))
     var src2 = strip_type_decl(src)
     unsafe { tt1 = GetTickCount() }
     sm_t_imp_strip = sm_t_imp_strip + (tt1 - tt0)
@@ -283,6 +296,9 @@ func expand_one_import(imp_node: i64) -> i64 {
         return -1
     }
     var base = append_ast_mem()
+    // 本模块装载完毕 ⇒ 按其基址提交域信息（文件级授权 + 函数级属性）。
+    // 此时 s_file_caps 仍是**本模块的**（defer 尚未触发）。
+    sstate.cap_apply_file(base)
     unsafe { tt5 = GetTickCount() }
     sm_t_imp_append = sm_t_imp_append + (tt5 - tt4)
     if base < 0 {
@@ -538,6 +554,9 @@ func copy_ast_tables() -> i64 {
         table_push(node_types, -1)
         k = k + 1
     }
+    // 主文件装载完毕（基址 0）⇒ 提交其域信息。主文件与 import 模块共用同一套
+    // 提交逻辑，差别只在基址（0 vs g_file_base[k]）。
+    sstate.cap_apply_file(0)
     // 第二遍：前缀和计算子段偏移（与 sstate.load_ast 相同的 s_coff 布局）
     var off: i64 = 0
     var j: i64 = 0

@@ -98,21 +98,32 @@ pub func infer_call(id: i64) -> i64 {
         // `wrapping_offset` 都是安全函数，只有 read/write/alloc 因带前提而 unsafe。
         // 设计背景见 tie-main/docs/designs/domain-classification.md 与
         // safe-unsafe-reclassification.md。
-        // 每项后面的括号是它的**能力域**（归类见
-        // tie-main/docs/designs/domain-classification.md），也是将来「域匹配」
-        // 判定的依据——现在只标不判。
-        if g_unsafe_depth == 0 {
-            if fnm == "deref" || fnm == "deref_write" ||                    // mem
-                fnm == "alloc" || fnm == "free" ||                          // mem
-                fnm == "memcpy" || fnm == "memset" ||                       // mem
-                fnm == "cstr_to_string" ||                                  // mem（沿 C 指针走到 NUL ＝ 解引用）
-                fnm == "volatile_load" || fnm == "volatile_store" ||        // raw
-                fnm == "cb_ptr" ||                                          // ext
-                fnm == "load_library" || fnm == "get_proc" ||               // ext
-                fnm == "dyn_call" || fnm == "dyn_call_p" {                  // ext
+        // ---- 双锁判定（2026-10-01 起完整）----
+        // 归属查表：`types.builtin_domain`（与 domain-classification.md 的承载表
+        // 逐项对应）。返回 0 = 不在清单内（安全内置，直接放行）。
+        var need = types.builtin_domain(fnm)
+        if need != 0 {
+            // 锁一：门禁上下文
+            if g_unsafe_depth == 0 {
                 sm_err_line = s_lines[id]
                 sm_err_col = s_cols[id]
                 sm_err_msg = "调用 unsafe 内置 '" + fnm + "' 必须在 unsafe 块或 unsafe 函数中（安全代码禁止触底）"
+                return -1
+            }
+            // 锁二：域凭据 —— 与锁一相互独立：进了门不等于拿到了该域的钥匙。
+            // 凭据来源见 sstate.g_held_caps 的说明（文件级授权 / 函数级属性 /
+            // 块级 unsafe.with / unsafe use）。
+            if (g_held_caps & need) == 0 {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                var held = types.cap_set_name(g_held_caps)
+                if str_len(held) == 0 {
+                    held = "无"
+                }
+                sm_err_msg = "调用 '" + fnm + "' 需要 " + types.cap_name_of_bit(need) +
+                    " 域凭据（当前作用域持：" + held + "）。持证方式：文件头 `type tie<角色, unsafe:" +
+                    types.cap_name_of_bit(need) + ">`、函数级 `#[unsafe." + types.cap_name_of_bit(need) +
+                    "]`、或块级 `unsafe.with(" + types.cap_name_of_bit(need) + ") { }` / `unsafe use g { }`"
                 return -1
             }
         }

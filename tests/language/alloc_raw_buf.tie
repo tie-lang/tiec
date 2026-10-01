@@ -1,4 +1,4 @@
-type tie<logic>
+type tie<logic, unsafe:mem>
 // alloc(n) 原始缓冲回归（漏洞 A 类修复，S10e）：修复前 alloc 的 malloc 结果标 TK_STR，
 // llvmgen op36 对「返回 TK_STR 的 extern 调用」自动字符串补头扫描（strlen + tie_sso_alloc
 // + memcpy）——对**未初始化**堆缓冲 strlen 读的是垃圾，返回缓冲实际容量 = 垃圾长度：

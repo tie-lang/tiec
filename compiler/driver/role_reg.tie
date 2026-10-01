@@ -306,15 +306,18 @@ pub func is_valid_mod_role(name: string) -> bool {
     return false
 }
 
-// r.1.6.7：修饰角色的**域参数**校验（`type tie<logic, unsafe:lock>`）。
-// unsafe 修饰角色的参数 = 能力域，取值与 guard<cap> 的域一致：
-//   share / mem / ext / trm / lock —— 其中 lock 域 = **去锁访问**（绕过运行时表锁），
-//   是本文件级形态唯一驱动 irgen 行为的域。其余域为语法预留（与 guard<cap> 对齐）。
+// 修饰角色的**域参数**校验（`type tie<logic, unsafe:mem, unsafe:ext>`）。
+// unsafe 修饰角色的参数 = 能力域，取值与 guard<cap> 的域一致，且**与能力域归类
+// 定案保持同步**（tie-main/docs/designs/domain-classification.md 的五域）：
+//   share / mem / ext / raw / lock
+//   · lock  = 去锁访问（绕过运行时表锁）—— 唯一驱动 irgen 的域；
+//   · 其余四域 = 域匹配时的「本文件隐式持证」声明。
+// `trm` 已随归类删除（无门禁承载、引擎废弃），故不再接受。
 // 其他修饰角色（owned/embedded）不接受参数。
 pub func is_valid_mod_param(mod: string, param: string) -> bool {
     if mod == "unsafe" {
         if param == "share" || param == "mem" || param == "ext" ||
-            param == "trm" || param == "lock" {
+            param == "raw" || param == "lock" {
             return true
         }
         return false
@@ -324,6 +327,45 @@ pub func is_valid_mod_param(mod: string, param: string) -> bool {
 
 // 该文件是否获得 **lock 域**授权（`type tie<logic, unsafe:lock>`）——
 // driver 据此把整文件的表访问置于去锁作用域（文件级持证形态）。
+// 2026-10-01 泛化为**域位集**：本文件的头部角色声明里出现过哪些
+// `unsafe:<域>` 修饰，就返回对应位（share=1 mem=2 ext=4 lock=8 raw=16）。
+// 位序与 `types.guard_cap_index` 一致 —— 经 types.cap_bit_of 取值，保持单一事实源。
+// 供两处消费：irgen 判「本文件是否持 lock」（去锁 codegen）、
+// 语义层判「本文件各函数隐式持哪些域」（域匹配）。
+// 保存/恢复角色修饰表。用途：import 展开时要临时把「当前文件的角色」切到被导入
+// 文件上（以取该文件自己的 `unsafe:<域>` 授权），扫完必须还原主文件的角色表。
+pub func role_mods_save() -> table<string> {
+    var out: table<string> = []
+    var i: i64 = 0
+    while i < len(g_role_mods) {
+        table_push(out, g_role_mods[i])
+        i = i + 1
+    }
+    return out
+}
+
+pub func role_mods_restore(t: table<string>) {
+    g_role_mods = []
+    var i: i64 = 0
+    while i < len(t) {
+        table_push(g_role_mods, t[i])
+        i = i + 1
+    }
+}
+
+pub func role_unsafe_caps() -> i64 {
+    var out: i64 = 0
+    var i: i64 = 0
+    while i < len(g_role_mods) {
+        var m = g_role_mods[i]
+        if has_prefix(str.clone(m), "unsafe:") && str_len(m) > 7 {
+            out = out | types.cap_bit_of(slice(str.clone(m), 7, str_len(m)))
+        }
+        i = i + 1
+    }
+    return out
+}
+
 pub func role_has_lock() -> bool {
     var i: i64 = 0
     while i < len(g_role_mods) {
@@ -422,7 +464,7 @@ pub func parse_role_decl(sub: string) -> i64 {
             if is_valid_mod_role(str.clone(base)) {
                 if !is_valid_mod_param(str.clone(base), str.clone(param)) {
                     g_role_err = "修饰角色 '" + base + "' 不支持参数 '" + param +
-                        "'（unsafe 支持 share/mem/ext/trm/lock）"
+                        "（unsafe 支持 share/mem/ext/raw/lock）"
                     return -1
                 }
                 var full = base + ":" + param

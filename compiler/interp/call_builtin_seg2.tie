@@ -1,4 +1,4 @@
-type tie<class>
+type tie<class, unsafe:ext, unsafe:mem>
 // compiler/interp/call_builtin_seg2.tie —— call_builtin 分派链分段 2（p.9.21 G2 单函数 ≤300 行）
 // ============================================================
 // 只含函数与注释：import 树与顶层全局 var 仍留在原主文件；
