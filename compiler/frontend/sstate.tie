@@ -25,16 +25,26 @@ var s_children: table<i64>;   // 扁平子节点 id 段
 var s_lines: table<i64>;      // 起始行（1-based）
 var s_cols: table<i64>;       // 起始列（1-based）
 var s_n: i64 = 0;             // 节点总数
-// r.1.6.7：带 `#[unsafe.lock]` 属性的函数节点 id 列表。
-// 为什么需要独立表：属性附着原先**只置 val bit3 = has_attr 并丢弃属性名**，
-// 故 `#[unsafe.share]` 与 `#[unsafe.lock]` 无法区分。本表保留「哪些函数持 lock 域」，
-// 供 irgen 把整函数体置于去锁作用域。空表字面量初值 ⇒ 无需显式初始化点。
-var s_lock_fn: table<i64> = []
-// r.1.6.7：本文件（**本次 parser 解析的文件**）是否获 lock 域授权
-//（`type tie<logic, unsafe:lock>`）。driver 在调 parse_ast 前设置。
+// r.1.6.7 → 2026-10-01 泛化：带 `#[unsafe.<域>]` 属性的函数节点及其**域位集**。
+// 为什么需要：属性附着原先**只置 val bit3 = has_attr 并丢弃属性名**，故各域无法区分。
+// 两个并行表（节点 id → 域位集）保留「哪些函数持哪些域」，供两处消费：
+//   · irgen 把持 lock 的函数体置于去锁作用域（codegen 语义）；
+//   · 语义层做**域匹配**判定（2026-10-01 起）。
+var s_fn_cap_nodes: table<i64> = []
+var s_fn_cap_vals: table<i64> = []
+// 2026-10-01：**本模块的待提交登记**（交错存 [parser 局部 id, 域位集, ...]）。
+// 为什么必须分两步：parser 侧的节点 id 是**本模块内部**的（0 起），而 semantic 侧
+// 的 s_* 池在 import 场景下从 g_file_base[k] 起 —— 两者相差一个基址。若 parser 直接
+// 登记（`fn_cap_put`），id 会错位，域信息落在**别的节点**上。故 parser 只记局部表，
+// 由 `cap_apply_file(from_nid)` 在装载完成后统一 +from_nid 提交。
+// 主文件基址是 0（+0 即恒等），故同一套逻辑同时服务两条路径。
+var s_imp_cap_nodes: table<i64> = []
+var s_imp_cap_vals: table<i64> = []
+// 2026-10-01：本文件（**本次 parser 解析的文件**）获授权的**域位集**。
+// driver 在调 parse_ast 前按头部角色声明（`type tie<role, unsafe:mem, unsafe:ext>`）设置。
 // 这是文件级授权能精确限定范围的**关键**：`parse_ast` 只对**主输入文件**调用一次，
-// import 的模块走语义层的另一条解析路径 ⇒ 不会读到本标志 ⇒ 不会被误授权。
-var s_file_lock_auth: bool = false
+// import 的模块走语义层的另一条解析路径 ⇒ 不会读到 ⇒ 不会被误授权。
+var s_file_caps: i64 = 0
 
 // ==================== 符号表全局 ====================
 var fn_keys: table<i64>;      // 函数全名 id（升序）
@@ -103,6 +113,15 @@ var ext_keys: table<i64>;     // extern 函数名 id（升序）
 // S1.2：unsafe 上下文深度（0 = 安全代码）。unsafe fn 体 / unsafe 块 /
 // 文件级 type tie<unsafe> 各 +1；语义层触底操作检查 g_unsafe_depth == 0 报错。
 var g_unsafe_depth: i64 = 0;
+// 2026-10-01「域匹配」：当前作用域**持有的域位集**（0=share 1=mem 2=ext 3=lock 4=raw）。
+// 与 g_unsafe_depth 的分工正是双锁：
+//   · g_unsafe_depth  = 锁一「门禁上下文」（unsafe 块 / unsafe fn）
+//   · g_held_caps     = 锁二「域凭据」（文件级授权 / 函数级属性 / 块级持证）
+// 二者都满足才放行受门禁的构造。凭据来源：
+//   函数级 = 文件级授权位集 | 该函数的属性位集（check_fn 入口设置）
+//   块级   = `unsafe.with(域) { }` 与 `unsafe use g`（g: guard<域>）临时并入，退块恢复
+// 凭据**不跨函数继承**（闭包体/方法体独立清零），与 lock 域的去锁作用域同规则。
+var g_held_caps: i64 = 0;
 
 var tre_keys: table<i64>;     // 返回表的函数名 id（升序）
 var tre_vals: table<i64>;     // 元素类型 id

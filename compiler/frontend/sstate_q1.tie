@@ -586,45 +586,157 @@ pub func gr_reset() {
     gr_dead = []
 }
 
-// ==================== r.1.6.7 `#[unsafe.lock]` 函数表 ====================
-// 登记（parser 解析到 `#[unsafe.lock] func` 时调用）。
-pub func lock_fn_put(nid: i64) {
+// ==================== 能力域位集：函数级 / 文件级（2026-10-01 泛化） ====================
+// 域位：0=share 1=mem 2=ext 3=lock 4=raw（与 types.guard_cap_index 同序）。
+// 锁位单列常量，供 irgen 的「持 lock ⇒ 去锁」判定直接用。
+const CAP_LOCK_BIT: i64 = 8;   // 1 << 3
+
+// parser 侧登记（记**本模块局部 id**，待装载后由 cap_apply_file 提交）。
+pub func imp_cap_put(local_id: i64, bits: i64) {
+    if bits == 0 {
+        return
+    }
+    table_push(s_imp_cap_nodes, local_id)
+    table_push(s_imp_cap_vals, bits)
+}
+
+// 装载完成后按文件基址提交域信息（主文件 from_nid = 0；import 模块 = g_file_base[k]）。
+// 做两件事：
+//   ① 把本模块**每个** FnDef 登记为「持该文件的文件级授权域」；
+//   ② 把 parser 侧记下的函数级属性（局部 id）平移 from_nid 后登记。
+// 之所以放在装载**之后**而不是 parser 里：只有装载完成才知道本模块的基址，
+// 而 parser 无法预知（import 的基址由 append 决定）。
+pub func cap_apply_file(from_nid: i64) {
+    // ① 文件级授权 → 本模块所有函数
+    var fc = s_file_caps
+    var i: i64 = from_nid
+    if from_nid >= 0 {
+        while i < len(s_tags) {
+            if s_tags[i] == 101 {   // S_N_FN_DEF
+                if fc != 0 {
+                    fn_cap_put(i, fc)
+                }
+            }
+            i = i + 1
+        }
+    }
+    // ② 函数级属性（parser 侧局部 id → 全局 id）
+    var j: i64 = 0
+    while j < len(s_imp_cap_nodes) {
+        fn_cap_put(from_nid + s_imp_cap_nodes[j], s_imp_cap_vals[j])
+        j = j + 1
+    }
+    s_imp_cap_nodes = []
+    s_imp_cap_vals = []
+}
+
+// 登记函数的域位集（叠加：同一函数可因文件级 + 属性同时持多域）。
+pub func fn_cap_put(nid: i64, bits: i64) {
+    if bits == 0 {
+        return
+    }
     var i: i64 = 0
-    while i < len(s_lock_fn) {
-        if s_lock_fn[i] == nid {
+    while i < len(s_fn_cap_nodes) {
+        if s_fn_cap_nodes[i] == nid {
+            s_fn_cap_vals[i] = s_fn_cap_vals[i] | bits
             return
         }
         i = i + 1
     }
-    table_push(s_lock_fn, nid)
+    table_push(s_fn_cap_nodes, nid)
+    table_push(s_fn_cap_vals, bits)
 }
 
-// 查询：该函数节点是否带 `#[unsafe.lock]`。
-pub func lock_fn_is(nid: i64) -> bool {
+// 查询：该函数持哪些域（位集；未登记 = 0）。
+pub func fn_caps(nid: i64) -> i64 {
     var i: i64 = 0
-    while i < len(s_lock_fn) {
-        if s_lock_fn[i] == nid {
-            return true
+    while i < len(s_fn_cap_nodes) {
+        if s_fn_cap_nodes[i] == nid {
+            return s_fn_cap_vals[i]
         }
         i = i + 1
     }
-    return false
+    return 0
+}
+
+// 该函数是否持 lock 域（irgen 去锁判定用）。
+pub func lock_fn_is(nid: i64) -> bool {
+    return (fn_caps(nid) & CAP_LOCK_BIT) != 0
 }
 
 // 每次解析前重置（跨编译单元不串用）。
-pub func lock_fn_reset() {
-    s_lock_fn = []
-    s_file_lock_auth = false
+pub func fn_cap_reset() {
+    s_fn_cap_nodes = []
+    s_fn_cap_vals = []
+    s_file_caps = 0
 }
 
-// 设置「本文件获 lock 域授权」（driver 调 parse_ast 前按头部角色声明调用）。
-pub func set_file_lock_auth(v: bool) {
-    s_file_lock_auth = v
+// 设置「本文件获授权的域位集」（driver 调 parse_ast 前按头部角色声明调用）。
+// 设置当前**正在解析的那个文件**的域位集。
+// 只赋值、不清空函数表 —— 因为 import 展开会**逐模块**切换它（切到被导入文件的
+// 授权、扫完还原），清空会把主文件已登记的函数级属性抹掉。
+// 函数表的清空由 fn_cap_reset 在**编译单元起点**显式做。
+pub func set_file_caps(v: i64) {
+    s_file_caps = v
 }
 
-// 本文件是否获 lock 域授权。
-pub func file_lock_auth() -> bool {
-    return s_file_lock_auth
+// 从**源码头部**取 `unsafe:<域>` 授权位集（供 import 逐模块授权用）。
+// 为什么不复用 driver 的角色注册表：frontend 不能反向依赖 driver（driver 已
+// import frontend，再反向就成环）。故此处只做**一件事**——认出头部
+// `type tie<角色, unsafe:X, ...>` 里的 `unsafe:X` 段并折算成位集；其余角色语义
+// （基础角色、参数、修饰白名单）仍由 driver 的角色机负责，两边职责不重叠。
+// 扫描口径与 driver.scan_header 一致：只看前 20 行，遇第一个非空非声明行即停。
+pub func scan_file_caps(src: string) -> i64 {
+    var n = str_len(src)
+    var pos: i64 = 0
+    var line_no: i64 = 1
+    var out: i64 = 0
+    var done: bool = false
+    while pos < n && line_no <= 20 && !done {
+        var ln_e = pos
+        while ln_e < n && str_char(src, ln_e) != "\n" {
+            ln_e = ln_e + 1
+        }
+        var ln = trim(str.slice(src, pos, ln_e))
+        if str_len(ln) > 0 {
+            if has_prefix(str.clone(ln), "type tie") {
+                // 取尖括号内的角色列表
+                var lt = find_char(str.clone(ln), "<")
+                var gt = find_char(str.clone(ln), ">")
+                if lt >= 0 && gt > lt {
+                    var inner = slice(str.clone(ln), lt + 1, gt)
+                    var parts = split_char(inner, ",")
+                    var i: i64 = 0
+                    while i < len(parts) {
+                        var it = trim(parts[i])
+                        if has_prefix(str.clone(it), "unsafe:") && str_len(it) > 7 {
+                            out = out | types.cap_bit_of(slice(str.clone(it), 7, str_len(it)))
+                        }
+                        i = i + 1
+                    }
+                }
+                done = true
+            } else {
+                done = true   // 头部区结束（首个非空非声明行）
+            }
+        }
+        pos = ln_e + 1
+        line_no = line_no + 1
+    }
+    return out
+}
+
+// 编译单元起点调用：清空函数级域表与文件级位集，避免同一进程连续编译多个文件时
+// 旧节点 id 残留（节点池 id 在新 AST 里会重用 ⇒ 会串到新文件的函数上）。
+pub func compile_unit_reset() {
+    s_fn_cap_nodes = []
+    s_fn_cap_vals = []
+    s_file_caps = 0
+}
+
+// 本文件获授权的域位集。
+pub func file_caps() -> i64 {
+    return s_file_caps
 }
 
 // ==================== 可寻址与可见性辅助 ====================

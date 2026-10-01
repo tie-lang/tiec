@@ -37,3 +37,5 @@ _tiec_verify/esc_safety_out/
 compiler/_*.txt
 _tiec_verify/esc_safety_out/
 tests/language/_*.tie
+tests/_*_probe/_*
+tests/_*/_*
