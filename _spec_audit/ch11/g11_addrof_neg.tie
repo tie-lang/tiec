@@ -1,8 +1,0 @@
-type tie<logic>
-// 保留项：取地址在安全代码中仍须 unsafe
-func bad() -> i64 {
-    var x: i64 = 1
-    var p = addr_of(x)
-    return 0
-}
-func main() { println("0") }

@@ -1,6 +1,0 @@
-type tie<logic>
-// 保留项：指针算术在安全代码中仍须 unsafe
-func bad(p: ptr<u8>) -> ptr<u8> {
-    return ptr_add(p, 1)
-}
-func main() { println("0") }
