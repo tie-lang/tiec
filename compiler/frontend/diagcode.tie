@@ -212,7 +212,11 @@ pub func tail_of(msg: string) -> string {
     }
     p = dg_find(msg, "：")
     if p > 0 {
-        return tail_fix(dg_slice(msg, p + 1, len(msg)))
+        // ★ 全角冒号是 **3 字节**（EF BC 9A），必须整体跳过。
+        // 曾误写 `p + 1`：切片落在字符中间，丢掉首字节 EF、留下 BC 9A 非法
+        // 残片——渲染出的错误消息后半段**乱码**（实测 2026-10-01）。
+        // 半角 ": "（下方）是 2 字节故用 p+2，那条是对的。
+        return tail_fix(dg_slice(msg, p + 3, len(msg)))
     }
     p = dg_find(msg, ": ")
     if p > 1 {
