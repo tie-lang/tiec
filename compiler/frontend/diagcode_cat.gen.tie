@@ -1,6 +1,6 @@
 type tie<class>
 // compiler/frontend/diagcode_cat.gen.tie —— 诊断标号目录（p.6.9.15 生成文件，勿手改）
-// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 886 条 + prefix 862 条。
+// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 887 条 + prefix 863 条。
 // 标号规范：五位纯序号 E+5 位（E00001 起全局连续）；家族仅记 JSON/td family 字段，不编码进标号。
 var cat_keys: table<string>;
 var cat_codes: table<string>;
@@ -585,8 +585,6 @@ pub func ensure() {
     table_push(cat_codes, "E00202")
     table_push(cat_keys, "%第一参数必须是模板字符串")
     table_push(cat_codes, "E00790")
-    table_push(cat_keys, "%第一版只支持%约束（%）")
-    table_push(cat_codes, "E00791")
     table_push(cat_keys, "%第一版只支持字符串或动态表（函数%）")
     table_push(cat_codes, "E00203")
     table_push(cat_keys, "%类型不匹配：函数返回%，实际返回%")
@@ -599,6 +597,10 @@ pub func ensure() {
     table_push(cat_codes, "E00207")
     table_push(cat_keys, "%类型匹配（%）仅支持%动态类型，当前%对象是%")
     table_push(cat_codes, "E00208")
+    table_push(cat_keys, "%约束位置必须是%或%，实际不是标识符")
+    table_push(cat_codes, "E00897")
+    table_push(cat_keys, "%约束位置必须是%或%，实际是%")
+    table_push(cat_codes, "E00898")
     table_push(cat_keys, "%继承形成环（含%）")
     table_push(cat_codes, "E00209")
     table_push(cat_keys, "%缺少方法%（%方法必须全部实现）")
@@ -2351,8 +2353,6 @@ pub func ensure() {
     table_push(pfx_codes, "E00202")
     table_push(pfx_keys, "%第一参数必须是模板字符串")
     table_push(pfx_codes, "E00790")
-    table_push(pfx_keys, "%第一版只支持%约束（%）")
-    table_push(pfx_codes, "E00791")
     table_push(pfx_keys, "%第一版只支持字符串或动态表（函数%）")
     table_push(pfx_codes, "E00203")
     table_push(pfx_keys, "%类型不匹配：函数返回%，实际返回%")
@@ -2365,6 +2365,10 @@ pub func ensure() {
     table_push(pfx_codes, "E00207")
     table_push(pfx_keys, "%类型匹配（%）仅支持%动态类型，当前%对象是%")
     table_push(pfx_codes, "E00208")
+    table_push(pfx_keys, "%约束位置必须是%或%，实际不是标识符")
+    table_push(pfx_codes, "E00897")
+    table_push(pfx_keys, "%约束位置必须是%或%，实际是%")
+    table_push(pfx_codes, "E00898")
     table_push(pfx_keys, "%继承形成环（含%）")
     table_push(pfx_codes, "E00209")
     table_push(pfx_keys, "%能力域必须是%，实际是%")

@@ -4,6 +4,43 @@ type tie<class>
 // 只含函数与注释：import 树与顶层全局 var 仍留在原主文件；
 // 与原函数同 namespace，跨文件裸名互调；段尾 return <sentinel> = 本段未命中。
 namespace irgen {
+// asm 内存约束操作数的**地址**（S1.2 I1，2026-10-02 补 (mem) 约束）。
+// 变量（局部/全局）→ 该变量**真实的槽地址**：asm 直接读/写槽本身，故
+// out(mem)/inout(mem) 天然写回变量，无需额外 load/store 回写。
+// 其它表达式 → 求值后落临时 alloca，返回该 alloca 地址（只读用途；写回无意义）。
+// 与 bi_addr_of 的差别正在此处：addr_of 连局部变量也只给临时副本地址，
+// 而 asm 的 out(mem) 必须落到真槽上才有意义。
+// 返回 (槽引用, ir 操作数种类)：局部槽 kind=0（值 id）、全局槽 kind=3
+// （符号引用）—— 种类由 llvmgen 的 opnd_ref 渲染成 `%N` / `@name`，
+// 与 irgen_arith_p2 的 load/store 处同约定。
+func asm_mem_addr(e: i64) -> (a: i64, k: i64) {
+    var et = node_types[e]
+    if et < 0 {
+        et = types.named(TK_I64)
+    }
+    if s_tags[e] == 6 {   // Var
+        var nid = interner.intern(sstate.name_str(e))
+        if scope_get_global(nid) >= 0 {
+            if g_lookup_is_global > 0 {
+                return (g_lookup_alloca, 3)
+            }
+            return (g_lookup_alloca, 0)
+        }
+    }
+    var v = tig_expr(e)
+    if v < 0 {
+        return (-1, 0)
+    }
+    var alloca = ir.new_inst(g_cur_block, 20, et)
+    ir.add_operand(alloca, et, 2)
+    var ap = ir.get_value(alloca)
+    var st = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(st, et, 2)
+    ir.add_operand(st, v, 0)
+    ir.add_operand(st, ap, 0)
+    return (ap, 0)
+}
+
 func tig_expr_seg2(id: i64) -> i64 {
     var tag = s_tags[id]
     if tag == 131 {
@@ -54,7 +91,9 @@ func tig_expr_seg2(id: i64) -> i64 {
             // 缺陷修复 2026-09-30：原判据只认 out，导致纯 inout 的 asm 生成
             // `call void asm ..., "+r"(...)`（约束声明有输出却用 void 接收），
             // LLVM 端类型不匹配 ⇒ 生成坏代码 ⇒ 运行时段错误（实测退出码 139）。
-            if s_vals[op0] == 1 || s_vals[op0] == 2 {  // out / inout
+            // 只有 **reg** 约束的 out/inout 由 call 返回值承载；mem 约束的
+            // out/inout 直接写内存（指针经参数传入），不占返回值。
+            if s_vals[op0] < 4 && (s_vals[op0] == 1 || s_vals[op0] == 2) {
                 var e0 = sstate.child(op0, 0)
                 if s_tags[e0] == 6 {  // Var
                     var nid0 = interner.intern(sstate.name_str(e0))
@@ -83,6 +122,7 @@ func tig_expr_seg2(id: i64) -> i64 {
         var op_dirs = table_new_i64()
         var op_tys = table_new_i64()
         var op_vals = table_new_i64()
+        var op_kinds = table_new_i64()   // ir 操作数种类（mem 槽：0=局部值 / 3=全局符号）
         k = 0
         while k < nc {
             var opv = sstate.child(id, k)
@@ -92,9 +132,38 @@ func tig_expr_seg2(id: i64) -> i64 {
                 k = k + 1
                 continue
             }
+            // val 低 2 位 = 方向，bit2 = mem 约束（+4）。见 pexpr_p3 的编码说明。
+            var dir_b = dirv % 4
+            var is_mem: bool = false
+            if dirv >= 4 {
+                is_mem = true
+            }
             table_push(op_dirs, dirv)
-            if dirv != 1 {
-                // in/inout：**在发射 inline_asm 之前**求值入参
+            // ★ is_mem 必须先于方向判据：out(mem) 的 dir_b 也是 1，若先判
+            // dir_b==1 会把它当成 out(reg)（不占参数）⇒ 约束串出现 `=*m` 却
+            // 没有对应参数，生成 `... "=*m"(ptr elementtype(i64) 0)` 这种坏码。
+            if is_mem {
+                // in/out/inout + mem：**在发射 inline_asm 之前**取地址（同两遍法
+                // 约束：其间可能发射 alloca/store 指令，不能与 add_operand 交错）。
+                var em = sstate.child(opv, 0)
+                var (am, ak) = asm_mem_addr(em)
+                if am < 0 {
+                    return -1
+                }
+                var etm = node_types[em]
+                if etm < 0 {
+                    etm = types.named(TK_I64)
+                }
+                table_push(op_tys, types.ptr_of(etm))   // mem 操作数的参数是指针
+                table_push(op_vals, am)
+                table_push(op_kinds, ak)
+            } else if dir_b == 1 {
+                // out(reg)：不占参数（call 返回值承载）；第一版只支持第一个 out
+                table_push(op_tys, types.named(TK_I64))
+                table_push(op_vals, 0)
+                table_push(op_kinds, 2)
+            } else {
+                // in/inout + reg：**在发射 inline_asm 之前**求值入参
                 var ein = sstate.child(opv, 0)
                 var ev0 = tig_expr(ein)
                 if ev0 < 0 {
@@ -106,10 +175,7 @@ func tig_expr_seg2(id: i64) -> i64 {
                 }
                 table_push(op_tys, et0)
                 table_push(op_vals, ev0)
-            } else {
-                // out：不占参数（call 返回值承载）；第一版只支持第一个 out
-                table_push(op_tys, types.named(TK_I64))
-                table_push(op_vals, 0)
+                table_push(op_kinds, 0)
             }
             k = k + 1
         }
@@ -120,10 +186,13 @@ func tig_expr_seg2(id: i64) -> i64 {
         while k < len(op_dirs) {
             ir.add_operand(inst, op_dirs[k], 2)
             ir.add_operand(inst, op_tys[k], 2)
-            if op_dirs[k] == 1 {
+            if op_dirs[k] % 4 == 1 && op_dirs[k] < 4 {
+                // out(reg)：值由 call 返回值承载，不占参数
                 ir.add_operand(inst, 0, 2)
             } else {
-                ir.add_operand(inst, op_vals[k], 0)
+                // in/inout(reg)：值；out/inout(mem)：指针（mem 的 indirect
+                // 操作数必须各占一个参数，见 llvmgen 侧 asm_mem_arg_ty 说明）
+                ir.add_operand(inst, op_vals[k], op_kinds[k])
             }
             k = k + 1
         }

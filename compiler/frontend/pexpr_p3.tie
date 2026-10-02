@@ -6,8 +6,11 @@ type tie<class>
 namespace pexpr {
 // S1.2 I1 内联汇编：`asm!("template", in(reg) expr, out(reg) expr, ...)`
 // 产出 N_ASM（name = 模板串池 id；children = 操作数节点——复用 N_PARAM：
-// val = 0=in 1=out 2=inout，children[0] = 表达式）。
-// 约束固定 "reg"（第一版；扩展约束语法后续）。
+// children[0] = 表达式。
+// **操作数 val 编码**：低 2 位 = 方向（0=in 1=out 2=inout 3=target 平台标注），
+// bit2 = 内存约束标志（+4）。故 val ∈ {0,1,2,3} = reg 约束，
+// {4,5,6} = mem 约束（传地址而非值）；3/7 是 target 平台标注（无约束位置）。
+// 详见规范 §11.7「操作数方向…约束位置：寄存器 / 内存」。
 func parse_asm_expr(line: i64, col: i64) -> i64 {
     putil.advance()   // asm
     if !putil.expect(lex_bang, "'!'") {
@@ -51,7 +54,7 @@ func parse_asm_expr(line: i64, col: i64) -> i64 {
                     return -1
                 }
             } else {
-                putil.set_err(putil.peek_line(), putil.peek_col(), "asm! 操作数必须形如 in(reg) 表达式 / out(reg) 表达式 / target(\"arch\")")
+                putil.set_err(putil.peek_line(), putil.peek_col(), "asm! 操作数必须形如 in(reg|mem) 表达式 / out(reg|mem) 表达式 / target(\"arch\")")
                 return -1
             }
             putil.advance()
@@ -78,8 +81,21 @@ func parse_asm_expr(line: i64, col: i64) -> i64 {
                 if !putil.expect(lex_lparen, "'('") {
                     return -1
                 }
-                if putil.peek_tag() != lex_ident || putil.peek_lexeme() != "reg" {
-                    putil.set_err(putil.peek_line(), putil.peek_col(), "asm! 第一版只支持 reg 约束（in/out/inout(reg)）")
+                // 约束位置：`reg`（占寄存器）或 `mem`（占内存，传的是地址）。
+                // 编码进操作数的 val：低 2 位 = 方向（0=in/1=out/2=inout），
+                // bit2 = 内存标志 ⇒ val = 方向 + 4。target(3) 无约束位置。
+                if putil.peek_tag() != lex_ident {
+                    putil.set_err(putil.peek_line(), putil.peek_col(), "asm! 约束位置必须是 reg 或 mem，实际不是标识符")
+                    return -1
+                }
+                var cons_kind = putil.peek_lexeme()
+                var cons_mem: i64 = 0
+                if cons_kind == "reg" {
+                    cons_mem = 0
+                } else if cons_kind == "mem" {
+                    cons_mem = 4
+                } else {
+                    putil.set_err(putil.peek_line(), putil.peek_col(), "asm! 约束位置必须是 reg 或 mem，实际是 '" + cons_kind + "'")
                     return -1
                 }
                 putil.advance()
@@ -90,7 +106,7 @@ func parse_asm_expr(line: i64, col: i64) -> i64 {
                 if e < 0 {
                     return -1
                 }
-                var p = ast.new_node(N_PARAM, -1, kind_v, -1, putil.peek_line(), putil.peek_col())
+                var p = ast.new_node(N_PARAM, -1, kind_v + cons_mem, -1, putil.peek_line(), putil.peek_col())
                 var pkids: table<i64> = table_new_i64()
                 table_push(pkids, e)
                 ast.set_children(p, pkids)
