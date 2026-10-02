@@ -416,6 +416,85 @@ func tig_closure_lit(id: i64) -> i64 {
     return make_tuple2(env_v, types.named(TK_STR), entry_v, types.named(TK_STR), fnty)
 }
 
+// ==================== 闭包 env 释放（A 方案，2026-10-02）====================
+// 闭包捕获数（0 = 无捕获 ⇒ env = null ⇒ 无需释放）
+func clo_cap_count(id: i64) -> i64 {
+    var ci = closure_index(id)
+    if ci < 0 {
+        return 0
+    }
+    var off = cl_capoff[ci]
+    var end = len(cl_capkeys)
+    if ci + 1 < len(cl_capoff) {
+        end = cl_capoff[ci + 1]
+    }
+    return end - off
+}
+
+// 释放一个闭包值槽：load fn 值 → load env 字段 → load env 首字段（drop 入口）
+// → 间接调用 drop(env)。**首字段在偏移 0** ⇒ 无需知道 env 的具体聚合类型即可
+// 取入口（直接 load ptr），故释放点能在"不知道布局"的地方发起（A 方案的要点）。
+func tig_closure_release_slot(slot: i64, fv_ty: i64, drop_nm: string) -> i64 {
+    // ★ agg_gep 作用于**槽地址**（指针），不是 load 出来的聚合值——对值取字段
+    // 会生成 `getelementptr %fn.0, ptr %57`（%57 是 %fn.0 值）类型不匹配而被拒。
+    var g0 = ir.new_inst(g_cur_block, 27, fv_ty)  // agg_gep 槽字段 0 = env
+    ir.add_operand(g0, slot, 0)
+    ir.add_operand(g0, 0, 2)
+    var envl = ir.new_inst(g_cur_block, 21, types.named(TK_STR))  // load env
+    ir.add_operand(envl, ir.get_value(g0), 0)
+    var envv = ir.get_value(envl)
+    // ★ 直接调用 drop_<闭包>，**不解引用 env**：回边首次进入时槽为零值（env = null），
+    // 解引用会崩；而 drop 自带 null 守卫，故「无条件调用 + 函数内守卫」是最省且
+    // 不在调用方分裂控制流块的做法（函数出口处分裂块历史上导致过支配关系违规）。
+    // 注：env 首字段（析构入口）为本机制留位——将来覆盖「跨函数返回的闭包」时，
+    // 编译器不知 drop 名，那时才必须从 env 首字段读取（见 §6 的落地方案）。
+    // ★ 两遍法：先求值（tig_func_addr 会发射 const_global，不能写在 add_operand 实参位）
+    var daddr_i = tig_func_addr(drop_nm)
+    var daddr = ir.new_inst(g_cur_block, 25, types.named(TK_STR))  // inttoptr：i64 → ptr
+    ir.add_operand(daddr, daddr_i, 0)
+    var ci70 = ir.new_inst(g_cur_block, 70, -1)  // call_indirect（drop 返回 void）
+    ir.add_operand(ci70, ir.get_value(daddr), 0)
+    ir.add_operand(ci70, types.named(TK_VOID), 2)
+    ir.add_operand(ci70, envv, 0)
+    return 0
+}
+
+// 带守卫的释放（回边场景）：槽可能是「首次进入」的零值，故用哨兵条件把 env
+// 归零——drop 内守卫随即返回。**只对指针做 select**：聚合 fn 值的 select 需要
+// 聚合零值常量，LLVM 指令里不便表达。
+func tig_closure_release_slot_guarded(slot: i64, fv_ty: i64, condv: i64, drop_nm: string) -> i64 {
+    var g0 = ir.new_inst(g_cur_block, 27, fv_ty)  // agg_gep 槽字段 0 = env（同上：作用在槽地址）
+    ir.add_operand(g0, slot, 0)
+    ir.add_operand(g0, 0, 2)
+    var envl = ir.new_inst(g_cur_block, 21, types.named(TK_STR))  // load env
+    ir.add_operand(envl, ir.get_value(g0), 0)
+    var nvp = tig_null_ptr()
+    var safe = tig_select_i(condv, ir.get_value(envl), nvp, types.named(TK_STR))
+    var daddr_i2 = tig_func_addr(drop_nm)   // ★ 两遍法
+    var daddr2 = ir.new_inst(g_cur_block, 25, types.named(TK_STR))  // inttoptr：i64 → ptr
+    ir.add_operand(daddr2, daddr_i2, 0)
+    var ci70 = ir.new_inst(g_cur_block, 70, -1)  // call_indirect（void）
+    ir.add_operand(ci70, ir.get_value(daddr2), 0)
+    ir.add_operand(ci70, types.named(TK_VOID), 2)
+    ir.add_operand(ci70, safe, 0)
+    return 0
+}
+
+// 函数出口：对登记的闭包值候选，未逃逸者发射释放。
+// 不逃逸判据**复用 esc 分析**——esc 的 kill 条件覆盖全部逃逸形态（赋值给别的
+// 变量/传参/存入容器/被闭包捕获）；而 `f()` 调用的 callee 存在节点的 name 字段
+// 而非子节点，esc_scan_call 只扫实参 ⇒ 正常调用不会被误判为逃逸（已核）。
+func clo_exit_release() {
+    var i: i64 = 0
+    while i < len(g_clov_nids) {
+        if esc_is_live(g_clov_nids[i]) {
+            var cid_i = g_clov_cids[i]
+            tig_closure_release_slot(g_clov_slots[i], node_types[cid_i], "drop_" + to_string(cid_i))
+        }
+        i = i + 1
+    }
+}
+
 // 闭包 env 析构入口生成（A 方案，2026-10-02）：`drop_<节点id>(env)`。
 // 职责：逐捕获字段释放**引用类型**（table/map），再 free(env)。
 // 标量与字符串字段无需释放（字符串无引用计数，标量无所有权）。
@@ -434,6 +513,27 @@ func tig_closure_drop_fn(ci: i64, id: i64, cap_ty: i64, ncap: i64, capoff: i64) 
     g_cur_ret_ty = types.named(TK_VOID)
     g_cur_fn_name = "drop_" + to_string(id)
     var env_v = ir.param_val(fid, 0)
+    // null 守卫：回边首次进入时槽为零值（env = null），且无捕获闭包 env 亦为 null。
+    // 有守卫后调用方可以**无条件调用**，无需在调用点分裂控制流块。
+    // 比较前先 ptrtoint：icmp 的两操作数须同类型，而 env 是 ptr、零值是 i64
+    // （直接 icmp ptr, i64 会生成 `icmp eq i64 %0, %3` 而被 LLVM 拒）。同
+    // tig_tbl_release_call 的处理。
+    var env64 = ir.new_inst(g_cur_block, 24, types.named(TK_I64))  // ptrtoint
+    ir.add_operand(env64, env_v, 0)
+    var zero64 = tig_int_lit(0)
+    var cmp0 = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp eq
+    ir.add_operand(cmp0, ir.get_value(env64), 0)
+    ir.add_operand(cmp0, zero64, 0)
+    ir.add_operand(cmp0, 0, 2)
+    var rblk0 = ir.new_block(fid, interner.intern("dnone"))
+    var bblk0 = ir.new_block(fid, interner.intern("dbody"))
+    var cb0 = ir.new_inst(g_cur_block, 31, -1)  // cond_br
+    ir.add_operand(cb0, ir.get_value(cmp0), 0)
+    ir.add_operand(cb0, rblk0, 1)
+    ir.add_operand(cb0, bblk0, 1)
+    g_cur_block = rblk0
+    ir.new_inst(g_cur_block, 32, -1)  // ret void
+    g_cur_block = bblk0
     var j: i64 = 0
     while j < ncap {
         var cty = cl_capvals[capoff + j]
@@ -519,6 +619,9 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
     lock_reset()
     g_param_nids = table_new_i64()
     g_tblcand_allocas = table_new_i64()
+    g_clov_nids = table_new_i64()
+    g_clov_slots = table_new_i64()
+    g_clov_cids = table_new_i64()
     g_sb_keys = table_new_i64()
     g_sb_hv = table_new_i64()
     g_cbs_keys = table_new_i64()

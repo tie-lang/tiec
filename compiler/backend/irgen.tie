@@ -183,6 +183,12 @@ var g_param_nids: table<i64>;
 // 在非 entry 块，排除以避免 LLVM「instruction does not dominate」）。
 var g_entry_block: i64 = 0;
 var g_tblcand_allocas: table<i64>;
+// 闭包 env 释放候选（A 方案，2026-10-02）：初值为**闭包字面量**、且该闭包确有捕获的
+// 局部变量。三张平行表：变量名 id（查 esc 不逃逸）/ fn 值槽地址 / fn 类型 id。
+// 出口按 esc_is_live 判定——未逃逸才发 drop（保守：逃逸者不释放，残余泄漏但安全）。
+var g_clov_nids: table<i64>;
+var g_clov_slots: table<i64>;
+var g_clov_cids: table<i64>;   // 闭包字面量节点 id ⇒ drop 名("drop_"+id) 与 fn 类型(node_types)
 // p.9.12.6 行池（table<R>，R 为 struct）登记表：name 池 id → 结构化行池。
 // 行池变量降为 R 各字段的平行列（每字段一根 table<fld>）+ 共享行数（各列恒齐平，
 // len 取第 0 列句柄长度）。rp_keys/rp_si/rp_ncol 并行；rp_allocas[r] = 该行池各
