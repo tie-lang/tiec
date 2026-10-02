@@ -237,6 +237,19 @@ pub func tig_stmt_b_100_VarDecl(id: i64) -> i64 {
             if cand_tbl {
                 table_push(g_tblcand_allocas, av)
             }
+            // 闭包 env 释放候选（A 方案）：init 是**闭包字面量**且确有捕获 ⇒ 登记。
+            // 只收字面量形态——编译器由此**确知 env 非 null**（无捕获则 env = null，
+            // 盲目释放会解引用空指针），故无需运行时守卫、零分支。跨函数返回的闭包
+            // （`var f = mk()`）编译器不知其捕获情况，本版不释放（保守：残余泄漏但安全）。
+            if init >= 0 && s_tags[init] == 132 && types.is_fn(node_types[init]) {
+                if clo_cap_count(init) > 0 {
+                    var cnid_c = interner.intern(sstate.name_str(id))
+                    esc_cand(cnid_c)
+                    table_push(g_clov_nids, cnid_c)
+                    table_push(g_clov_slots, av)
+                    table_push(g_clov_cids, init)
+                }
+            }
             // p.6.10.4：循环/分支内表变量自遮蔽——非 entry 块声明的表变量，槽在回边
             // 重执行时被 `store 新表` 覆盖旧值 → 旧表引用丢失泄漏。store 前须 release
             // 槽内当前持有，但**首次**进入该声明时槽未初始化（load 即崩）。用零值全局
@@ -245,6 +258,14 @@ pub func tig_stmt_b_100_VarDecl(id: i64) -> i64 {
             // r.1.4.2：槽类型为 any（盒值）不入回边 release——load ptr 对聚合槽类型
             // 错；盒内表引用在装箱前 retain 守恒（与出口不析构的约定一致）。
             var ivla = node_types[init]
+            // 闭包值的回边释放（A 方案）：与表变量同构——非 entry 块声明 + 初值是
+            // 闭包字面量（编译器由此确知 drop 名）⇒ 覆盖前释放上一轮的 env。
+            // 复用 tig_loopvar_crelease 的哨兵：首次进入槽为零值 ⇒ env = null ⇒
+            // drop 内守卫直接返回，故这里无需额外判空。
+            if g_cur_block != g_entry_block && init >= 0 && s_tags[init] == 132 &&
+                types.is_fn(node_types[init]) && clo_cap_count(init) > 0 {
+                tig_loopvar_crelease(av, node_types[init], "drop_" + to_string(init))
+            }
             if g_cur_block != g_entry_block && ivla >= 0 && types.is_table(ivla) && ty != types.named(TK_ANY) && !types.is_array(ty) {
                 // p.6.1.7-RCA-6【2026-09-06】：回边重写前 **release 旧值**（原 p.6.10.4
                 // 哨兵语义）。p.6.1.8-RCA 的「先 store null 再 loopvar_release」在**非提升
