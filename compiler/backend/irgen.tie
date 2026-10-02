@@ -189,6 +189,11 @@ var g_tblcand_allocas: table<i64>;
 var g_clov_nids: table<i64>;
 var g_clov_slots: table<i64>;
 var g_clov_cids: table<i64>;   // 闭包字面量节点 id ⇒ drop 名("drop_"+id) 与 fn 类型(node_types)
+// (b) 静态空闭包 env（2026-10-02）：每函数一份，**单元级缓存**（按函数名），
+// 故不参与按函数的重置——重置会导致同一函数重复生成符号 ⇒ 链接冲突。
+var g_eenv_fns: table<i64>;
+var g_eenv_refs: table<i64>;
+var g_eenv_ready: i64 = 0;
 // p.9.12.6 行池（table<R>，R 为 struct）登记表：name 池 id → 结构化行池。
 // 行池变量降为 R 各字段的平行列（每字段一根 table<fld>）+ 共享行数（各列恒齐平，
 // len 取第 0 列句柄长度）。rp_keys/rp_si/rp_ncol 并行；rp_allocas[r] = 该行池各

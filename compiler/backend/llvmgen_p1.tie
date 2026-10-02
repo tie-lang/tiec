@@ -177,6 +177,13 @@ func emit_globals() {
                 }
             }
             if ty == "ptr" {
+                // 函数地址初值（(b) 方案静态空闭包 env）：直接写 `@fn`——LLVM 允许
+                // 以函数名作指针常量，故无运行期初始化。
+                if i < len(g_global_fns) && g_global_fns[i] >= 0 {
+                    line("@" + lv_nm + " = global ptr @" + ns_replace(intern.lookup(g_global_fns[i])))
+                    i = i + 1
+                    continue
+                }
                 // string 全局默认空串常量（null 会被 strcmp 段错误）；
                 // const 字符串全局有初始字面量 → 指向该字面量常量
                 if g_global_tys[i] == TK_STR {
