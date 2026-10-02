@@ -126,6 +126,8 @@ pub func infer_call(id: i64) -> i64 {
                     "]`、或块级 `unsafe.with(" + types.cap_name_of_bit(need) + ") { }` / `unsafe use g { }`"
                 return -1
             }
+            // 双锁通过 ⇒ 记「本域在作用域内被真正使用」（W00030 凭据挂空告警的判据）。
+            g_used_caps = g_used_caps | need
         }
         // 实参类型推断（未声明变量/类型错误在此暴露；只做检查不改结果）
         var ka: i64 = 0

@@ -624,10 +624,48 @@ pub func cap_apply_file(from_nid: i64) {
     var j: i64 = 0
     while j < len(s_imp_cap_nodes) {
         fn_cap_put(from_nid + s_imp_cap_nodes[j], s_imp_cap_vals[j])
+        fn_attr_put(from_nid + s_imp_cap_nodes[j], s_imp_cap_vals[j])
         j = j + 1
     }
     s_imp_cap_nodes = []
     s_imp_cap_vals = []
+    // ③ W00030：记本模块的文件级授权位集（按模块序号），供文件粒度挂空判定。
+    //    模块序号 = file_id_of_node(base)。表按需增长（模块装载顺序 = 序号顺序）。
+    var fi = file_id_of_node(from_nid)
+    while len(g_file_idle_auth) <= fi {
+        table_push(g_file_idle_auth, 0)
+        table_push(g_file_idle_used, 0)
+    }
+    g_file_idle_auth[fi] = g_file_idle_auth[fi] | fc
+}
+
+// 函数级**属性**位集（`#[unsafe.域]`）单独登记 —— 与 fn_caps 的合并表分开，
+// 供 W00030 逐函数挂空判定用（文件级授权按文件粒度另判，见 cap_apply_file ③）。
+pub func fn_attr_put(nid: i64, bits: i64) {
+    if bits == 0 {
+        return
+    }
+    var i: i64 = 0
+    while i < len(s_fn_attr_nodes) {
+        if s_fn_attr_nodes[i] == nid {
+            s_fn_attr_vals[i] = s_fn_attr_vals[i] | bits
+            return
+        }
+        i = i + 1
+    }
+    table_push(s_fn_attr_nodes, nid)
+    table_push(s_fn_attr_vals, bits)
+}
+
+pub func fn_attr_caps(nid: i64) -> i64 {
+    var i: i64 = 0
+    while i < len(s_fn_attr_nodes) {
+        if s_fn_attr_nodes[i] == nid {
+            return s_fn_attr_vals[i]
+        }
+        i = i + 1
+    }
+    return 0
 }
 
 // 登记函数的域位集（叠加：同一函数可因文件级 + 属性同时持多域）。
