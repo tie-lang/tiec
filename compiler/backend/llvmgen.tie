@@ -76,6 +76,10 @@ var g_global_tys: table<i64>;     // 标量类型 id（表全局 -1）
 var g_global_inits: table<i64>;   // 标量初始值（-1 = 无折叠值；i64 字面量/字符码点/bool 0-1）
 var g_global_inits_ok: table<i64>; // 标量初值是否已折叠登记（0/1；区分"折叠出 -1"与"无初值"，r.1.1.2）
 var g_global_fps: table<i64>;     // 浮点初始值（浮点文本池 id；-1 = 无，r.1.1.2）
+// 函数地址初始值（函数名池 id；-1 = 无）。用于 (b) 方案的**静态空闭包 env**：
+// `@clo_eenv_X = global ptr @clo_edrop_X`——它的析构入口是 no-op（且不 free，
+// 因为槽是静态的），使「无捕获闭包」也有一个有效 env，释放点因此**无需判空**。
+var g_global_fns: table<i64>;
 var g_global_strs: table<i64>;    // 顶层字符串 const 初始值（字符串池 id；-1 = 无）
 // 阶段 A：用户函数调用（call 35）的符号名池 id（去重，与 ext_syms 平行收集；
 // 命名空间函数全名经 ns_symbol 转 $，无需 declare）
@@ -174,6 +178,7 @@ pub func global_table_reg(nm: string) {
     table_push(g_global_inits_ok, 0)
     table_push(g_global_fps, -1)
     table_push(g_global_strs, -1)
+    table_push(g_global_fns, -1)
 }
 
 pub func global_scalar_reg(nm: string, ty: i64) {
@@ -185,6 +190,21 @@ pub func global_scalar_reg(nm: string, ty: i64) {
     table_push(g_global_inits_ok, 0)
     table_push(g_global_fps, -1)
     table_push(g_global_strs, -1)
+    table_push(g_global_fns, -1)
+}
+
+// 登记一个「全局 ptr，初值 = 某函数地址」（(b) 方案：静态空闭包 env 槽）。
+// 发射形态 `@nm = global ptr @fn_nm`——函数地址作指针常量，无需运行期初始化。
+pub func global_ptr_fn_reg(nm: string, fn_nm: string) {
+    var nid = interner.intern(nm)
+    table_push(g_global_names, nid)
+    table_push(g_global_is_table, 0)
+    table_push(g_global_tys, types.named(TK_STR))
+    table_push(g_global_inits, -1)
+    table_push(g_global_inits_ok, 0)
+    table_push(g_global_fps, -1)
+    table_push(g_global_strs, -1)
+    table_push(g_global_fns, interner.intern(fn_nm))
 }
 
 // r.1.6.3：注入编译目标是否 Linux（入口侧 driver/pipeline.tie 同步调用；幂等）。
