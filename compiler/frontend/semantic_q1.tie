@@ -371,6 +371,8 @@ pub func check_impl(ast_text: string, base_dir: string) -> string {
     if rc < 0 {
         return "ERR:" + to_string(sm_err_line) + " " + to_string(sm_err_col) + " " + sm_err_msg
     }
+    // W00030 文件粒度收尾：整个文件都没用到文件级授权的域 ⇒ 挂空告警。
+    scheck.cap_idle_flush()
     return sm_ok_protocol()
 }
 
@@ -673,6 +675,8 @@ pub func check_ast(base_dir: string) -> string {
     if rc < 0 {
         return "ERR:" + to_string(sm_err_line) + " " + to_string(sm_err_col) + " " + sm_err_msg
     }
+    // W00030 文件粒度收尾：整个文件都没用到文件级授权的域 ⇒ 挂空告警。
+    scheck.cap_idle_flush()
     unsafe {
         var smc9 = GetTickCount()
     }
