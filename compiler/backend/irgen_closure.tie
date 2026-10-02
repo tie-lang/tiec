@@ -55,10 +55,176 @@ func closure_cap_slot_ty(t: i64) -> i64 {
         return t
     }
     var k = types.kind(t)
-    if k == K_TUPLE || k == K_STRUCT || k == K_ENUM || k == K_FN || k == K_ACTOR {
+    if k == K_TUPLE || k == K_STRUCT || k == K_ENUM || k == K_FN || k == K_ACTOR ||
+        k == K_ARRAY || k == K_PORT || k == K_GUARD {
         return t
     }
     return types.named(TK_I64)
+}
+
+// ==================== 聚合的 LLVM 尺寸/对齐（x86_64 SysV，2026-10-02）====================
+// 为什么需要：闭包 env 的字段访问走 `agg_gep`
+//（`getelementptr T, ptr, i32 0, i32 j`，**按 LLVM 聚合布局**算偏移），
+// 故 env 的**分配字节数必须等于该布局的真实尺寸**。原实现按「每字段 8 字节」
+// 分配（`malloc(8 * ncap)`），字段为聚合（struct / tuple / 数组）时其值大于
+// 8 字节 ⇒ **堆越界写**。实测：捕获 `struct Point { i64, i64 }` 的闭包段错误，
+// IR 证据 `%9 = call ptr @malloc(i64 8)` 后紧跟 `store %struct.Point %12`（16 字节）。
+//
+// 布局规则（对齐 LLVM LangRef 默认 DataLayout，x86_64）：
+//   · 标量：i1/i8=1，i16=2，i32/float=4，i64/double/ptr=8，i128=16
+//   · 数组 [N x T]：N * size(T)（size(T) 已含尾部填充到 align(T)），align = align(T)
+//   · 聚合 {T0..Tn}：逐字段按各自对齐放置，整体按**最大字段对齐**向上取整
+// 校验手段：LLVM 把 `getelementptr T, ptr null, i32 1` 常量折叠出的值即 size(T)。
+
+// 标量（Named，TyKw 索引 < 100）的 LLVM 尺寸
+func agg_scalar_size(t: i64) -> i64 {
+    if t == TK_I8 || t == TK_U8 || t == TK_BOOL || t == TK_TRIT {
+        return 1
+    }
+    if t == TK_I16 || t == TK_U16 {
+        return 2
+    }
+    if t == TK_I32 || t == TK_U32 || t == TK_CHAR || t == TK_F32 {
+        return 4
+    }
+    if t == TK_I128 || t == TK_U128 {
+        return 16
+    }
+    if t == TK_ANY {
+        return 16               // 异构动态元素 = {tag, payload}
+    }
+    if t == TK_VOID {
+        return 0
+    }
+    return 8                    // i64/u64/f64/ptr 族（含 str/table/map 引用）
+}
+
+func agg_scalar_align(t: i64) -> i64 {
+    var s = agg_scalar_size(t)
+    if s == 0 {
+        return 1
+    }
+    if s > 8 {
+        return 16
+    }
+    return s
+}
+
+func agg_align_up(v: i64, a: i64) -> i64 {
+    if a <= 1 {
+        return v
+    }
+    var r = v % a
+    if r == 0 {
+        return v
+    }
+    return v + (a - r)
+}
+
+// 序列（tuple / struct）的字段数 / 第 j 个字段类型；is_struct = 1 → struct 表
+func agg_seq_n(t: i64, is_struct: i64) -> i64 {
+    if is_struct == 1 {
+        return cls_nfld[t - BASE_STRUCT]
+    }
+    return tup_n[t - BASE_TUPLE]
+}
+
+func agg_seq_ty(t: i64, j: i64, is_struct: i64) -> i64 {
+    if is_struct == 1 {
+        var si = t - BASE_STRUCT
+        return fld_tys[cls_fldoff[si] + j]
+    }
+    var ti = t - BASE_TUPLE
+    return tup_tys[tup_offs[ti] + j]
+}
+
+// 聚合的对齐：数组取元素对齐；序列取最大字段对齐
+func agg_ty_align(t: i64) -> i64 {
+    if t < 0 {
+        return 8
+    }
+    if t < 100 {
+        return agg_scalar_align(t)
+    }
+    var k = types.kind(t)
+    if k == K_ARRAY {
+        return agg_ty_align(types.array_elem(t))
+    }
+    if k == K_ATOMIC {
+        return agg_ty_align(types.table_elem(t))
+    }
+    if k == K_TUPLE {
+        return agg_seq_align(t, 0)
+    }
+    if k == K_STRUCT {
+        return agg_seq_align(t, 1)
+    }
+    return 8                    // fn/slice/pt 族/enum/port/actor/guard 均 8 或 8 对齐
+}
+
+func agg_seq_align(t: i64, is_struct: i64) -> i64 {
+    var n = agg_seq_n(t, is_struct)
+    var mx: i64 = 1
+    var j: i64 = 0
+    while j < n {
+        var fa = agg_ty_align(agg_seq_ty(t, j, is_struct))
+        if fa > mx {
+            mx = fa
+        }
+        j = j + 1
+    }
+    return mx
+}
+
+// 聚合的 LLVM 尺寸（字节）
+func agg_ty_size(t: i64) -> i64 {
+    if t < 0 {
+        return 8
+    }
+    if t < 100 {
+        return agg_scalar_size(t)
+    }
+    var k = types.kind(t)
+    if k == K_ARRAY {
+        return types.array_len(t) * agg_ty_size(types.array_elem(t))
+    }
+    if k == K_TUPLE {
+        return agg_seq_size(t, 0)
+    }
+    if k == K_STRUCT {
+        return agg_seq_size(t, 1)
+    }
+    if k == K_ENUM {
+        // %enum.X = { i64 tag, i64 × K }（K = en_nslot）
+        return 8 * (1 + en_nslot[t - BASE_ENUM])
+    }
+    if k == K_FN {
+        return 16               // { ptr env, ptr entry }
+    }
+    if k == K_SLICE {
+        return 16               // { ptr, i64 }
+    }
+    if k == K_ATOMIC {
+        return agg_ty_size(types.table_elem(t))
+    }
+    return 8                    // ptr / port / actor / guard / string / table / map
+}
+
+func agg_seq_size(t: i64, is_struct: i64) -> i64 {
+    var n = agg_seq_n(t, is_struct)
+    var off: i64 = 0
+    var mx: i64 = 1
+    var j: i64 = 0
+    while j < n {
+        var ft = agg_seq_ty(t, j, is_struct)
+        var fa = agg_ty_align(ft)
+        if fa > mx {
+            mx = fa
+        }
+        off = agg_align_up(off, fa) + agg_ty_size(ft)
+        j = j + 1
+    }
+    return agg_align_up(off, mx)
 }
 
 // N 字段 tuple 类型构造（查重登记，仿 sinfer.tuple2_of；环境结构体用）：
@@ -187,8 +353,10 @@ func tig_closure_lit(id: i64) -> i64 {
     // 构造闭包值 {env, entry}
     var env_v: i64 = -1
     if ncap > 0 {
-        // malloc(8 * ncap)：所有环境字段 8 字节（ptr/i64/聚合地址）
-        var sz = tig_int_lit_ty(8 * ncap, types.named(TK_I64))
+        // env 尺寸 = cap_ty 的**真实 LLVM 布局尺寸**（agg_ty_size）。
+        // 不能按「每字段 8 字节」算：聚合字段（struct/tuple/数组）大于 8 字节，
+        // 而字段访问走 agg_gep（按 LLVM 布局）——尺寸不符即堆越界写（实测段错误）。
+        var sz = tig_int_lit_ty(agg_ty_size(cap_ty), types.named(TK_I64))
         env_v = s21_raw_alloc_str(sz)  // 原始缓冲：绕开 TK_STR 补头扫描（漏洞 A 类）
         // 逐字段 store 捕获值（load 外层槽 → store env 字段 j）
         var j: i64 = 0
@@ -197,6 +365,19 @@ func tig_closure_lit(id: i64) -> i64 {
             var cv = tig_var_ref(cnid)
             if cv < 0 {
                 return -1
+            }
+            // 捕获**引用类型**（表 / 映射）须 retain：env 里存的是表**句柄**
+            // （共享而非副本），而外层函数退出时按其作用域释放表
+            // （tig_tbl_exit_release）——若不在此 +1，闭包将持有已释放的表，
+            // 调用即段错误（实测：闭包捕获 table<i64> 后调用崩 139，IR 证据
+            // `load ptr %t` → `store` 进 env，随后 `call tl_tbl$tbl_release`）。
+            // 与 `return 表` 的处理对称（irgen_stmt_gen_p1 的 ret_needs_retain）。
+            // 字符串无需处理（无引用计数/无释放）。
+            // 注：返回值是指令值 id（void 调用固定返回 -1），**不是错误码**
+            // —— 与既有调用点（irgen_stmt_gen_p1 的 return 表）一致，不检查。
+            var cty = cl_capvals[capoff + j]
+            if types.is_table(cty) || types.is_map(cty) {
+                tig_tbl_retain_call(cv)
             }
             var gp = ir.new_inst(g_cur_block, 27, cap_ty)  // agg_gep 字段 j
             ir.add_operand(gp, env_v, 0)
