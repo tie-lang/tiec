@@ -296,7 +296,13 @@ func check_stmt(s: i64) -> i64 {
         // 实参的类型/定义有效性由 sinfer 的 infer_expr 保证。
         return 0
     }
-    // FieldAssign：children=[基址, 值]（基址按引用；值 = 读取/移动）
+    // FieldAssign：children=[基址, 值]（基址按引用；值 = **复制**入字段）
+    // ★ 值位置**不消耗**来源（2026-10-02）：`c.conn = sc` 之后继续读 `sc`
+    // 是 tie 的惯用写法（实测 tlib 的 sse::connect / httpc::open_stream 均如此）。
+    // 依据与「any 装箱不消耗源」同一条：赋值把**值的一份句柄**存进字段，tie 无
+    // 析构器 ⇒ 源依然有效，不存在「已释放仍可用」的危险；把它判成移动会让
+    // 「先存字段、再从局部继续用」这一自然写法全部报错。
+    // 基址仍需 check_expr_read（读它本身要合法）。
     if tag == S_N_FIELD_ASSIGN {
         var base = sstate.child(s, 0)
         var r9 = check_expr_read(base)
@@ -304,23 +310,14 @@ func check_stmt(s: i64) -> i64 {
             return -1
         }
         var val2 = sstate.child(s, 1)
-        var nid2 = var_nid(val2)
-        if nid2 >= 0 {
-            if var_is_const(nid2) == 0 && is_move_src(val2) {
-                var mv2 = move_var(nid2, val2)
-                if mv2 < 0 {
-                    return -1
-                }
-            }
-        } else {
-            var r10 = check_expr_read(val2)
-            if r10 < 0 {
-                return -1
-            }
+        var r10 = check_expr_read(val2)
+        if r10 < 0 {
+            return -1
         }
         return 0
     }
-    // IndexAssign：children=[目标, 值]（目标按引用；值 = 读取/移动）
+    // IndexAssign：children=[目标, 值]（目标按引用；值 = **复制**入元素）
+    // ★ 同 FieldAssign：值位置不消耗来源。
     if tag == S_N_INDEX_ASSIGN {
         var tgt2 = sstate.child(s, 0)
         var r11 = check_expr_read(tgt2)
@@ -328,19 +325,9 @@ func check_stmt(s: i64) -> i64 {
             return -1
         }
         var val3 = sstate.child(s, 1)
-        var nid3 = var_nid(val3)
-        if nid3 >= 0 {
-            if var_is_const(nid3) == 0 && is_move_src(val3) {
-                var mv3 = move_var(nid3, val3)
-                if mv3 < 0 {
-                    return -1
-                }
-            }
-        } else {
-            var r12 = check_expr_read(val3)
-            if r12 < 0 {
-                return -1
-            }
+        var r12 = check_expr_read(val3)
+        if r12 < 0 {
+            return -1
         }
         return 0
     }
