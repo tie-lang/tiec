@@ -200,6 +200,16 @@ func is_move_src(e: i64) -> bool {
     if is_global_var(nid) {
         return false
     }
+    // ★ immut 形参是**只读借用**，没有所有权可转移：把借用赋给局部变量
+    // （`var x = u`）只是复制引用，不消耗来源（对照 Rust：`&T` 是 Copy）。
+    // 缺这条判据时，`var x1 = u; var x3 = u` 会把形参 u 标记为「已移动」，
+    // 于是只读形参在函数体内只能用一次——实测 tlib 的 x25519::ladder 正是
+    // 这个形态（一个函数连带报 15 处）。
+    // im_* 集合由 scheck 逐函数登记（im_reset/im_insert），与 smove 的逐函数
+    // 检查同生命周期，故此处直接查询安全。
+    if sstate.im_is(nid) {
+        return false
+    }
     var ty: i64 = -1
     var lt = lv_find(nid)
     if lt >= 0 {
