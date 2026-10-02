@@ -31,7 +31,7 @@ var g_pk: table<string>;     // 前缀表（升序）
 var g_pc: table<string>;
 
 // ---------- 字节级工具（leaf，自包含） ----------
-func gn_slice(s: string, a: i64, b: i64) -> string {
+func gn_slice(immut s: string, a: i64, b: i64) -> string {
     var sb = string_builder()
     var i: i64 = a
     while i < b {
@@ -42,7 +42,7 @@ func gn_slice(s: string, a: i64, b: i64) -> string {
 }
 
 // sub 在 s 中 from 起的字节偏移；未找到 -1。
-func gn_find(s: string, sub: string, from: i64) -> i64 {
+func gn_find(immut s: string, immut sub: string, from: i64) -> i64 {
     var n: i64 = len(s)
     var m: i64 = len(sub)
     if m == 0 {
@@ -66,7 +66,7 @@ func gn_find(s: string, sub: string, from: i64) -> i64 {
     return -1
 }
 
-func gn_starts(s: string, pre: string) -> bool {
+func gn_starts(immut s: string, immut pre: string) -> bool {
     var n: i64 = len(s)
     var m: i64 = len(pre)
     if n < m {
@@ -82,7 +82,7 @@ func gn_starts(s: string, pre: string) -> bool {
     return true
 }
 
-func gn_ends(s: string, suf: string) -> bool {
+func gn_ends(immut s: string, immut suf: string) -> bool {
     var n: i64 = len(s)
     var m: i64 = len(suf)
     if n < m {
@@ -98,12 +98,12 @@ func gn_ends(s: string, suf: string) -> bool {
     return true
 }
 
-func gn_contains(s: string, sub: string) -> bool {
+func gn_contains(immut s: string, immut sub: string) -> bool {
     return gn_find(s, sub, 0) >= 0
 }
 
 // 去首尾空白（空格/制表/换行/回车）。
-func gn_trim(s: string) -> string {
+func gn_trim(immut s: string) -> string {
     var n: i64 = len(s)
     var a: i64 = 0
     var b: i64 = n
@@ -132,7 +132,7 @@ func gn_ws(b: i64) -> bool {
 }
 
 // ---------- 归一化折叠：ASCII(0x20..0x7E) 运行 → '%' ----------
-func gn_fold(s: string) -> string {
+func gn_fold(immut s: string) -> string {
     var sb = string_builder()
     var n: i64 = len(s)
     var i: i64 = 0
@@ -154,7 +154,7 @@ func gn_fold(s: string) -> string {
 }
 
 // 表以 sep 连接，再折叠 + 合并连续 '%'。
-func gn_join_key(lits: table<string>, sep: string) -> string {
+func gn_join_key(immut lits: table<string>, immut sep: string) -> string {
     var sb = string_builder()
     var i: i64 = 0
     while i < len(lits) {
@@ -185,7 +185,7 @@ func gn_join_key(lits: table<string>, sep: string) -> string {
 }
 
 // 字符串以 '?' 连接并合并（ShortName 用）。
-func gn_join_q(lits: table<string>) -> string {
+func gn_join_q(immut lits: table<string>) -> string {
     var sb = string_builder()
     var i: i64 = 0
     while i < len(lits) {
@@ -214,7 +214,7 @@ func gn_join_q(lits: table<string>) -> string {
 }
 
 // ---------- 拼接语句解析（字面段数组；失败返回空表） ----------
-func gn_concat(src_txt: string, start: i64) -> table<string> {
+func gn_concat(immut src_txt: string, start: i64) -> table<string> {
     var lits = table_new_string()
     var n: i64 = len(src_txt)
     var i: i64 = start
@@ -339,7 +339,7 @@ func gn_concat(src_txt: string, start: i64) -> table<string> {
 }
 
 // ---------- 消息名（文档/目录 name 用；首个「期望 」/「：」前截断） ----------
-func gn_trim_colon(s: string) -> string {
+func gn_trim_colon(immut s: string) -> string {
     var n: i64 = len(s)
     var e: i64 = n
     while e > 0 {
@@ -362,7 +362,7 @@ func gn_trim_colon(s: string) -> string {
     return gn_slice(s, 0, e)
 }
 
-func gn_short_name(lits: table<string>) -> string {
+func gn_short_name(immut lits: table<string>) -> string {
     var k = gn_trim(gn_join_q(lits))
     var p = gn_find(k, "期望 ", 0)
     if p > 0 {
@@ -376,7 +376,7 @@ func gn_short_name(lits: table<string>) -> string {
 }
 
 // ---------- 家族（仅登记；不编码进标号） ----------
-func gn_family(rel: string, key: string) -> i64 {
+func gn_family(immut rel: string, immut key: string) -> i64 {
     if gn_starts(key, "内部错误") || gn_contains(key, "编译器内部错误") {
         return 9
     }
@@ -421,7 +421,7 @@ func gn_family(rel: string, key: string) -> i64 {
 }
 
 // ---------- 登记 ----------
-func gn_add(key: string, fam: i64, name: string, src: string, tpl: string, lits: table<string>) {
+func gn_add(immut key: string, fam: i64, immut name: string, immut src: string, immut tpl: string, immut lits: table<string>) {
     if len(key) == 0 {
         return
     }
@@ -450,7 +450,7 @@ func gn_add(key: string, fam: i64, name: string, src: string, tpl: string, lits:
 }
 
 // 从文件扫描锚点并登记。
-func gn_scan_file(path: string, rel: string) {
+func gn_scan_file(immut path: string, immut rel: string) {
     var src_txt = file_read(path)
     if len(src_txt) == 0 {
         return
@@ -597,6 +597,60 @@ func gn_scan_file(path: string, rel: string) {
             pos = tp + 17
         }
     }
+    // 5) set_err 三参形式的**实参**消息（行, 列, 消息）。
+    //    此前无任何锚点覆盖这种形态（上面第 1 条锚点只认 `名字 = "..."` 的
+    //    赋值形态），于是全库 84 处解析器诊断消息漏抽、运行时落 E00000 兜底。
+    //    签名前两参是行列号（i64），故该调用参数表内**第一个**字符串字面量必为
+    //    消息；用括号配平限制扫描范围，避免越出本次调用。
+    pos = 0
+    while pos < n {
+        var sp = gn_find(src_txt, "set_err", pos)
+        if sp < 0 {
+            break
+        }
+        // 其后须紧跟 '('（排除把 set_err 当普通标识符引用的场合）
+        var q = sp + 7
+        while q < n && gn_ws(str_byte(src_txt, q)) {
+            q = q + 1
+        }
+        if q >= n || str_byte(src_txt, q) != 40 {
+            pos = sp + 7
+            continue
+        }
+        var j5 = q + 1
+        var depth5: i64 = 1
+        while j5 < n && depth5 > 0 {
+            var c5 = str_byte(src_txt, j5)
+            if c5 == 34 {
+                var lits5 = gn_concat(src_txt, j5)
+                if len(lits5) > 0 {
+                    // 连接词片段排除：`msg + "，实际是 " + describe(tag)` 这类写法里
+                    // 第一个字面量只是连接词，不是消息本体（本体由运行时拼接，
+                    // 靠现有 `%…，实际是%` 前缀条目命中）。登记它会产生永不命中的
+                    // 死条目，故跳过以标点/空白开头的字面量。
+                    var f5 = lits5[0]
+                    var punct5: bool = gn_starts(f5, "，") || gn_starts(f5, "、") ||
+                        gn_starts(f5, "；") || gn_starts(f5, "：") ||
+                        gn_starts(f5, "。") || gn_starts(f5, "！") ||
+                        gn_starts(f5, "？") || gn_starts(f5, " ")
+                    if !punct5 {
+                        var key5 = gn_join_key(lits5, "%")
+                        var fam5 = gn_family(rel, key5)
+                        var nm5 = gn_short_name(lits5)
+                        var tpl5 = gn_join_q(lits5)
+                        gn_add(key5, fam5, nm5, rel, tpl5, lits5)
+                    }
+                }
+                depth5 = 0   // 只取第一个字面量（= 消息），随即结束本调用扫描
+            } else if c5 == 40 {
+                depth5 = depth5 + 1
+            } else if c5 == 41 {
+                depth5 = depth5 - 1
+            }
+            j5 = j5 + 1
+        }
+        pos = q + 1
+    }
 }
 
 // 手工补充（静态 CLI 消息）。
@@ -609,7 +663,7 @@ func gn_manual() {
     gn_add("动态库模式错误", 5, "动态库模式错误", "(manual)", "动态库模式错误", tb1("动态库模式错误"))
 }
 
-func tb1(s: string) -> table<string> {
+func tb1(immut s: string) -> table<string> {
     var t = table_new_string()
     table_push(t, s)
     return t
@@ -663,7 +717,7 @@ var g_prev_keys: table<string>;
 var g_prev_codes: table<string>;
 
 // 提取一行里第一个 "..." 字面量的**值**（处理 \" \\ \n \t 转义）；无 → ""
-func gn_extract_lit(ln: string) -> string {
+func gn_extract_lit(immut ln: string) -> string {
     var n = len(ln)
     var s = gn_find(ln, "\"", 0)
     if s < 0 {
@@ -698,7 +752,7 @@ func gn_extract_lit(ln: string) -> string {
 }
 
 // "E00648" → 648
-func gn_code_num(cd: string) -> i64 {
+func gn_code_num(immut cd: string) -> i64 {
     var v: i64 = 0
     var i: i64 = 1
     while i < len(cd) {
@@ -717,7 +771,7 @@ func gn_pad5(n: i64) -> string {
 }
 
 // 按 \n 分割（tie 无 split_lines 内建；不保留行尾 \r）
-func gn_split_nl(s: string) -> table<string> {
+func gn_split_nl(immut s: string) -> table<string> {
     var out = table_new_string()
     var n = len(s)
     var start: i64 = 0
@@ -769,7 +823,7 @@ func gn_load_prev() {
 }
 
 // 已登记 key 的旧码号；无 → ""
-func gn_prev_code(key: string) -> string {
+func gn_prev_code(immut key: string) -> string {
     var i: i64 = 0
     while i < len(g_prev_keys) {
         if g_prev_keys[i] == key {
@@ -865,7 +919,7 @@ func gn_assign() {
 }
 
 // td 转义（反斜杠/引号/换行/制表/回车）。
-func gn_esc_td(s: string) -> string {
+func gn_esc_td(immut s: string) -> string {
     var sb = string_builder()
     var i: i64 = 0
     while i < len(s) {
@@ -965,7 +1019,7 @@ func compiler_dir() -> string {
 
 // 文件列表按字节序原地排序（去重「先到先得」依赖确定扫描序：frontend 先于
 // proto/backend，与 PS 生成器的注册顺序一致）。
-func gn_sort_files(t: table<string>) {
+func gn_sort_files(ref t: table<string>) {
     var n: i64 = len(t)
     var i: i64 = 1
     while i < n {
@@ -982,7 +1036,7 @@ func gn_sort_files(t: table<string>) {
 
 // 规范化 rel：\ → /，并以 "/" 开头（"./compiler/a" → "/compiler/a"；
 // 与 PS 版 Substring 后的 rel 形态一致，保证 parser/backend 等段匹配）。
-func gn_norm_rel(p: string) -> string {
+func gn_norm_rel(immut p: string) -> string {
     var sb = string_builder()
     var kk: i64 = 0
     while kk < len(p) {
