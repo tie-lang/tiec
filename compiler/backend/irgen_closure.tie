@@ -329,9 +329,14 @@ func tig_closure_lit(id: i64) -> i64 {
         ncap = cap_end - capoff
     }
     // 环境类型（捕获空 → -1：env = null）
+    // env 布局 = { drop, cap0, cap1, ... }（A 方案，2026-10-02）
+    // **首字段是析构入口**：持有方可能完全不知道 env 布局（`var f = mk()` 只拿到
+    // {env, entry}），读 env 首字段再间接调用即可归还全部捕获引用 —— 释放动作
+    // 因此可以在"不知道布局"的地方发起。捕获字段由此整体后移一位（索引 j+1）。
     var cap_ty: i64 = -1
     if ncap > 0 {
         var cts: table<i64> = table_new_i64()
+        table_push(cts, types.named(TK_STR))   // 字段 0 = drop 入口（ptr）
         var j: i64 = 0
         while j < ncap {
             table_push(cts, closure_cap_slot_ty(cl_capvals[capoff + j]))
@@ -358,7 +363,23 @@ func tig_closure_lit(id: i64) -> i64 {
         // 而字段访问走 agg_gep（按 LLVM 布局）——尺寸不符即堆越界写（实测段错误）。
         var sz = tig_int_lit_ty(agg_ty_size(cap_ty), types.named(TK_I64))
         env_v = s21_raw_alloc_str(sz)  // 原始缓冲：绕开 TK_STR 补头扫描（漏洞 A 类）
-        // 逐字段 store 捕获值（load 外层槽 → store env 字段 j）
+        // 生成析构入口并写入 env 首字段（字段 0）
+        var dfid = tig_closure_drop_fn(ci, id, cap_ty, ncap, capoff)
+        if dfid < 0 {
+            return -1
+        }
+        // ★ 两遍法：`tig_func_addr` 会发射 const_global 指令，**不能**写在 add_operand
+        // 的实参位置——那会把新指令的操作数插进本指令的操作数段中间，报
+        // 「ir.add_operand 操作数段交错」（实测）。故先求值到局部变量，再开始序列。
+        var daddr = tig_func_addr("drop_" + to_string(id))
+        var dgp = ir.new_inst(g_cur_block, 27, cap_ty)  // agg_gep 字段 0
+        ir.add_operand(dgp, env_v, 0)
+        ir.add_operand(dgp, 0, 2)
+        var dst = ir.new_inst(g_cur_block, 22, -1)  // store drop 入口
+        ir.add_operand(dst, types.named(TK_STR), 2)
+        ir.add_operand(dst, daddr, 0)
+        ir.add_operand(dst, ir.get_value(dgp), 0)
+        // 逐字段 store 捕获值（load 外层槽 → store env 字段 j+1）
         var j: i64 = 0
         while j < ncap {
             var cnid = cl_capkeys[capoff + j]
@@ -379,9 +400,9 @@ func tig_closure_lit(id: i64) -> i64 {
             if types.is_table(cty) || types.is_map(cty) {
                 tig_tbl_retain_call(cv)
             }
-            var gp = ir.new_inst(g_cur_block, 27, cap_ty)  // agg_gep 字段 j
+            var gp = ir.new_inst(g_cur_block, 27, cap_ty)  // agg_gep 字段 j+1（0 是 drop）
             ir.add_operand(gp, env_v, 0)
-            ir.add_operand(gp, j, 2)
+            ir.add_operand(gp, j + 1, 2)
             var st = ir.new_inst(g_cur_block, 22, -1)  // store 捕获值
             ir.add_operand(st, closure_cap_slot_ty(cl_capvals[capoff + j]), 2)
             ir.add_operand(st, cv, 0)
@@ -393,6 +414,49 @@ func tig_closure_lit(id: i64) -> i64 {
     }
     var entry_v = tig_func_addr("clos_" + to_string(id))
     return make_tuple2(env_v, types.named(TK_STR), entry_v, types.named(TK_STR), fnty)
+}
+
+// 闭包 env 析构入口生成（A 方案，2026-10-02）：`drop_<节点id>(env)`。
+// 职责：逐捕获字段释放**引用类型**（table/map），再 free(env)。
+// 标量与字符串字段无需释放（字符串无引用计数，标量无所有权）。
+// 释放点由持有方在闭包值消亡处发起——见 irgen_stmt_gen_p1 的出口析构。
+func tig_closure_drop_fn(ci: i64, id: i64, cap_ty: i64, ncap: i64, capoff: i64) -> i64 {
+    var s_func = g_cur_func
+    var s_block = g_cur_block
+    var s_ret = g_cur_ret_ty
+    var s_nm = g_cur_fn_name
+    var params: table<i64> = table_new_i64()
+    table_push(params, types.named(TK_STR))   // env（ptr 占位，同 entry_fn 的参数 0）
+    var fid = ir.new_func(interner.intern("drop_" + to_string(id)), types.named(TK_VOID), params)
+    g_cur_func = fid
+    var eb = ir.new_block(fid, interner.intern("entry"))
+    g_cur_block = eb
+    g_cur_ret_ty = types.named(TK_VOID)
+    g_cur_fn_name = "drop_" + to_string(id)
+    var env_v = ir.param_val(fid, 0)
+    var j: i64 = 0
+    while j < ncap {
+        var cty = cl_capvals[capoff + j]
+        if types.is_table(cty) || types.is_map(cty) {
+            var gp = ir.new_inst(g_cur_block, 27, cap_ty)  // agg_gep 字段 j+1
+            ir.add_operand(gp, env_v, 0)
+            ir.add_operand(gp, j + 1, 2)
+            var ld = ir.new_inst(g_cur_block, 21, types.named(TK_STR))  // load 句柄
+            ir.add_operand(ld, ir.get_value(gp), 0)
+            tig_tbl_release_call(ir.get_value(ld))
+        }
+        j = j + 1
+    }
+    // env 本体回收
+    tig_ext_call1("free", env_v, types.named(TK_STR), -1)
+    if !block_terminated() {
+        ir.new_inst(g_cur_block, 32, -1)  // ret void
+    }
+    g_cur_func = s_func
+    g_cur_block = s_block
+    g_cur_ret_ty = s_ret
+    g_cur_fn_name = s_nm
+    return fid
 }
 
 // 闭包入口函数生成：clos_<节点id>，签名 fn(ptr env, A...) -> R。
@@ -481,9 +545,9 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
         var j: i64 = 0
         while j < ncap {
             var cnid = cl_capkeys[cl_capoff[ci] + j]
-            var gp = ir.new_inst(g_cur_block, 27, cap_ty)  // agg_gep 字段 j
+            var gp = ir.new_inst(g_cur_block, 27, cap_ty)  // agg_gep 字段 j+1（0 是 drop）
             ir.add_operand(gp, env_v, 0)
-            ir.add_operand(gp, j, 2)
+            ir.add_operand(gp, j + 1, 2)
             var faddr = ir.get_value(gp)
             scope_put(cnid, faddr, closure_cap_slot_ty(cl_capvals[cl_capoff[ci] + j]))
             j = j + 1
