@@ -65,6 +65,8 @@ pub func check_var_decl(s: i64) -> i64 {
                         "）。持证方式：文件头 `type tie<角色, unsafe:mem>`、函数级 `#[unsafe.mem]`、或块级 `unsafe with(mem) { }` / `unsafe use g { }`"
                     return -1
                 }
+                // 双锁通过 ⇒ 记 mem 域在作用域内被使用（W00030 判据）。
+                g_used_caps = g_used_caps | 2
                 var pi_l = types.low(ty)
                 if !stype.impl_has_ty(pi_l, it_p) {
                     sm_err_line = s_lines[s]
@@ -401,6 +403,8 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     // 这是「域匹配」的锁二来源之一（另两个是块级 unsafe.with / unsafe use）。
     var saved_caps = g_held_caps
     g_held_caps = sstate.fn_caps(fn_node)
+    // W00030：函数是**全新的凭据作用域**（凭据不跨函数继承），已用域从零记账。
+    g_used_caps = 0
     // W00012（收窄版）：同一函数内同一整数字面量出现 >= 3 次才报——单次或两次
     // 出现属正常写法，只有反复出现的无名常量才对应「局部修改易遗漏」。
     // p.9.14.2：lit_scan 是全函数子树遍历，仅当警告 pass 启用才执行。
@@ -420,6 +424,14 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     }
     var r = check_block(body)
     g_unsafe_depth = saved_depth
+    // W00030：函数持有的域在函数体内一次未用 ⇒ 凭据挂空。**逐函数判定只针对
+    // 函数级属性位**（`#[unsafe.域]`）——文件级授权是规范明文认可的粗粒度授权，
+    // 逐函数比对会退化成「授权文件里每个不碰该域的函数都告警」的噪声。
+    // 凭据**不跨函数继承**，函数是全新作用域：基准是属性位本身，而非外层的
+    // g_held_caps（闭包体不继承外层凭据，与 lock 去锁作用域同规则）。
+    cap_idle_check(sstate.fn_attr_caps(fn_node), body, s_lines[fn_node], s_cols[fn_node])
+    // 文件级授权按文件粒度另判：并入本模块累计用量。
+    cap_file_note(fn_node, body)
     g_held_caps = saved_caps
     if r < 0 {
         return -1

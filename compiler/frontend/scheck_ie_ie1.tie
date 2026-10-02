@@ -42,6 +42,123 @@ pub func check_stmt_unsafe_block(s: i64) -> i64 {
         return r2
 }
 
+// ============================================================
+// 2026-10-02「凭据挂空」告警（W00030）
+// 设计依据：tie-main/docs/designs/unsafe-credential-lock.md §3「凭据规则」——
+// 「作用域内未使用对应域构造的凭据 → 编译告警（凭据挂空）」。
+//
+// 判据：作用域**新持**的域位集里，有哪几位在作用域内一次都没被用到。
+//   · mem/ext/raw —— 由 g_used_caps 记录（双锁通过时置位：内建承载调用、
+//     port 提升）。这三域的承载清单是 types.builtin_domain，单一事实源。
+//   · lock —— 承载是「绕过运行时表锁」的表访问（下标读/写、表增删、for 遍历），
+//     它们是运算符而非门禁清单项，故不看 g_used_caps，改子树扫描。
+//   · share —— **跳过**：share 域在实现里暂无承载（归类文档 §6），任何作用域
+//     都不可能「用到」它，报挂空只会是噪声。
+//
+// lock 扫描判据取**宽**（字符串下标、任意 for 都算命中）：告警宁可漏报不可误报，
+// 把「用过」判成「没用过」会给出错误的挂空提示，比不提示更糟。
+func cap_lock_used(node: i64) -> bool {
+    if node < 0 {
+        return false
+    }
+    var tg = s_tags[node]
+    if tg == S_N_INDEX || tg == S_N_FOR {
+        return true
+    }
+    if tg == S_N_CALL || tg == S_N_METHOD_CALL {
+        var fnm = sstate.name_str(node)
+        if fnm == "table_push" || fnm == "table_pop" || fnm == "table_remove" ||
+            fnm == "table_clear" || fnm == "table_insert" || fnm == "table_set" {
+            return true
+        }
+    }
+    var n = sstate.nchild(node)
+    var k: i64 = 0
+    while k < n {
+        if cap_lock_used(sstate.child(node, k)) {
+            return true
+        }
+        k = k + 1
+    }
+    return false
+}
+
+// 本作用域实际用到的域位集：g_used_caps 再加 lock 域的子树扫描。
+func cap_used_of(acquired: i64, body: i64) -> i64 {
+    var used = g_used_caps
+    if (acquired & 8) != 0 && cap_lock_used(body) {
+        used = used | 8
+    }
+    return used
+}
+
+// 退域时比对「本域新持」与「本域已用」，逐个挂空域发告警。
+// acquired = 本作用域新持的域位集（进入时 saved 与退出时 g_held_caps 的差）。
+// body     = 作用域体节点（仅 lock 需要；<0 表示无体）。
+// 仅在警告 pass 开启时工作（与既有警告同纪律：默认零额外成本）。
+pub func cap_idle_check(acquired: i64, body: i64, line: i64, col: i64) {
+    if acquired == 0 {
+        return
+    }
+    if !semantic.sm_warn_enabled() {
+        return
+    }
+    var idle = acquired & ~cap_used_of(acquired, body)
+    var i: i64 = 0
+    while i < 5 {
+        var bit = types.cap_bit(i)
+        if (idle & bit) != 0 && bit != 1 {   // bit1 = share：无承载，跳过
+            sm_warn_add(line, col, "持有的 " + types.cap_name_of_bit(bit) +
+                " 域凭据在本作用域内未使用（凭据挂空）")
+        }
+        i = i + 1
+    }
+}
+
+// 文件粒度挂空：把本函数用到的域并入所属模块的累计集，供 cap_idle_flush 比对。
+// 逐函数判定不适用于文件级授权（粗粒度，规范明文认可），故单列。
+pub func cap_file_note(fn_node: i64, body: i64) {
+    if !semantic.sm_warn_enabled() {
+        return
+    }
+    var fi = sstate.file_id_of_node(fn_node)
+    if fi < 0 || fi >= len(g_file_idle_used) {
+        return
+    }
+    g_file_idle_used[fi] = g_file_idle_used[fi] | cap_used_of(g_file_idle_auth[fi], body)
+}
+
+// 语义主流程末尾：逐文件比对「文件级授权」与「该文件用过的域」——
+// 整个文件都没用到授权域 ⇒ 文件级授权是空授权，报 W00030。
+pub func cap_idle_flush() {
+        if !semantic.sm_warn_enabled() {
+        g_file_idle_auth = []
+        g_file_idle_used = []
+        return
+    }
+    var i: i64 = 0
+    // 只判**主输入文件**（模块序号 0）。库文件的文件级授权服务于它自身的实现，
+    // 「引用方有没有用到该域」不是它的判据——把库算进来会对着 std/process.tie
+    // 这类「声明 unsafe:mem、但本次编译只用到其中非 mem 函数」的模块报挂空，
+    // 那是纯粹的噪声（tiec 自举实测 2 条全属此类）。直接编译库文件时它自己就是
+    // 主输入文件（序号 0），照常受判。
+    while i < 1 && i < len(g_file_idle_auth) {
+                var idle = g_file_idle_auth[i] & ~g_file_idle_used[i]
+        var b: i64 = 0
+        while b < 5 {
+            var bit = types.cap_bit(b)
+            if (idle & bit) != 0 && bit != 1 {   // share 无承载，跳过
+                                sm_warn_add(1, 1, "文件级授权持有的 " + types.cap_name_of_bit(bit) +
+                    " 域凭据在全文件内未使用（凭据挂空）")
+            }
+            b = b + 1
+        }
+        i = i + 1
+    }
+    g_file_idle_auth = []
+    g_file_idle_used = []
+}
+
 pub func check_stmt_guard_use(s: i64) -> i64 {
     var tag = s_tags[s]
         // 三期 A 组 `unsafe use g { ... }` 持证越界块（§7.1.1 + unsafe-model §13.4）：
@@ -79,6 +196,10 @@ pub func check_stmt_guard_use(s: i64) -> i64 {
         var gcap_u = types.cap_bit(types.guard_cap(gty))
         var saved_cu = g_held_caps
         g_held_caps = g_held_caps | gcap_u
+        // W00030：本作用域的「已用域」独立记账（退出时并回外层）。必须配对
+        // 进出，否则会跨作用域累积——前一处用过的域会掩盖本处的挂空。
+        var saved_used_u = g_used_caps
+        g_used_caps = 0
         var body_u = sstate.child(s, 0)
         var r_u: i64 = 0
         if body_u >= 0 {
@@ -86,6 +207,9 @@ pub func check_stmt_guard_use(s: i64) -> i64 {
             r_u = check_cf_block(body_u, s)
         }
         g_unsafe_depth = saved_u
+        // W00030：本块声明持 gcap_u 域，块内一次未用 ⇒ 凭据挂空。
+        cap_idle_check(gcap_u, body_u, s_lines[s], s_cols[s])
+        g_used_caps = saved_used_u | g_used_caps   // 并回外层作用域
         g_held_caps = saved_cu
         return r_u
 }
@@ -113,6 +237,8 @@ pub func check_stmt_guard_with(s: i64) -> i64 {
         // 2026-10-01「域匹配」：声明的域即块内持有的凭据（块级临时持证，退块回收）。
         var saved_cw = g_held_caps
         g_held_caps = g_held_caps | types.cap_bit_of(capn)
+        var saved_used_w = g_used_caps
+        g_used_caps = 0
         var body_w = sstate.child(s, 1)
         var r_w: i64 = 0
         if body_w >= 0 {
@@ -120,6 +246,9 @@ pub func check_stmt_guard_with(s: i64) -> i64 {
             r_w = check_cf_block(body_w, s)
         }
         g_unsafe_depth = saved_w
+        // W00030：声明 with(域) 即持该域，块内一次未用 ⇒ 凭据挂空。
+        cap_idle_check(types.cap_bit_of(capn), body_w, s_lines[s], s_cols[s])
+        g_used_caps = saved_used_w | g_used_caps
         g_held_caps = saved_cw
         return r_w
 }

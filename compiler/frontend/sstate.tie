@@ -45,6 +45,16 @@ var s_imp_cap_vals: table<i64> = []
 // 这是文件级授权能精确限定范围的**关键**：`parse_ast` 只对**主输入文件**调用一次，
 // import 的模块走语义层的另一条解析路径 ⇒ 不会读到 ⇒ 不会被误授权。
 var s_file_caps: i64 = 0
+// 2026-10-02 W00030 凭据挂空告警：
+//   · s_fn_attr_* —— 函数级**属性**位集（`#[unsafe.域]`），与合并表分开存。
+//     逐函数判定只针对属性位：文件级授权是规范明文认可的**粗粒度**授权
+//     （「适用范围是整块代码都属同一域的场合」），逐函数比对会产生大量噪声
+//     （tlib 实测 12 个模块 68 条全属此类），故文件级按**文件**粒度单独判定。
+//   · g_file_idle_* —— 按模块序号的「文件级授权位集 / 该文件内实际用到的域位集」。
+var s_fn_attr_nodes: table<i64> = []
+var s_fn_attr_vals: table<i64> = []
+var g_file_idle_auth: table<i64> = []
+var g_file_idle_used: table<i64> = []
 
 // ==================== 符号表全局 ====================
 var fn_keys: table<i64>;      // 函数全名 id（升序）
@@ -122,6 +132,11 @@ var g_unsafe_depth: i64 = 0;
 //   块级   = `unsafe.with(域) { }` 与 `unsafe use g`（g: guard<域>）临时并入，退块恢复
 // 凭据**不跨函数继承**（闭包体/方法体独立清零），与 lock 域的去锁作用域同规则。
 var g_held_caps: i64 = 0;
+// 2026-10-02「凭据挂空」告警：当前作用域内**实际用到的域位集**。
+// 与 g_held_caps 配对进出每一个持证作用域（块级 unsafe.with / unsafe use、
+// 函数级），退域时比对：本域新持、却一次未用 ⇒ 该凭据挂空，报 W00030。
+// 累加而非清零：作用域内任意深处（含嵌套普通块）命中的域都算本作用域用过。
+var g_used_caps: i64 = 0;
 
 var tre_keys: table<i64>;     // 返回表的函数名 id（升序）
 var tre_vals: table<i64>;     // 元素类型 id
