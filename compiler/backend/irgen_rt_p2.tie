@@ -434,7 +434,16 @@ func tig_mq_publish(rec_ptr: i64, slot: i64, mi: i64, args: table<i64>, argtys: 
             // 的偏移，与已用参数不重叠——否则多个槽会写同一地址）。
             byte_off = k * 8
         }
-        var dst_addr = s21_gep(argp, byte_off, true)            // ★ 常量偏移
+        // ★★ `argp` 是 `rec+680` 的**段基址**，不是槽基址 ⇒ 必须先加 `slot*64`
+        //    定位到本消息槽（漏掉会导致**所有消息都写槽 0**：单参数恰好对、
+        //    多参数互相覆盖 ⇒ 参数值变随机垃圾。实测 two(3,4) 返回
+        //    60799222049276106，而旧编译器返回 7）。
+        // 两遍法：mul 与 gep 都发射指令 ⇒ 先求值到局部。
+        var slot_k = ir.new_inst(g_cur_block, 2, T64)          // mul slot*64
+        ir.add_operand(slot_k, slot, 0)
+        ir.add_operand(slot_k, c64, 0)
+        var slot_base = s21_gep(argp, ir.get_value(slot_k), false)   // 运行期槽基址
+        var dst_addr = s21_gep(slot_base, byte_off, true)            // 槽内常量偏移
         if used == 1 {
             // 按**参数自身类型**写（架构增强）：原硬编码 T64 ⇒ 只能传 i64。
             s21_store(dst_addr, args[k], pty_k)

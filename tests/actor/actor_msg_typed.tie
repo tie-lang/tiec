@@ -40,7 +40,12 @@ func main() {
     if r == 115 {
         println("PASS actor-msg-typed apply=" + to_string(r))
     } else {
-        println("WARN actor-msg-typed apply=" + to_string(r) + " 期望 115（actor 消息需多轮 yield，"
-            + "若只打印 WARN 说明消息投递链路未完成，属 actor 运行时既有问题）")
+        // 已知限制（2026-03-03 查实）：**编译期完全正确**（IR 已核对：dispatch 侧
+        // `load %fn.0 @32` + `load i64 @48`，handler 签名 `(i64, %fn.0, i64)`），
+        // 但**运行期返回 0**。隔离实验排除了捕获来源（不捕获/捕获全局都返回 0），
+        // 指向「在 actor 内调用一个由别的执行流创建的闭包」这条路径本身，
+        // 与本次消息 ABI 增强无关（i64 多参数已验证正确：two(3,4)=7）。
+        println("WARN actor-msg-typed apply=" + to_string(r) + " 期望 115"
+            + "（已知限制：跨执行流调用外部创建的闭包返回 0，编译期 IR 正确，待查）")
     }
 }
