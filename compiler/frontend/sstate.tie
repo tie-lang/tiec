@@ -368,6 +368,14 @@ var ac_fnames: table<i64>;   // 字段名 id 扁平段（声明顺序）
 var ac_ftys: table<i64>;     // 字段类型扁平段
 var ac_fdefs: table<i64>;    // 字段显式初值节点（-1 = 零值）
 var ac_foffs: table<i64>;    // 字段在记录内的字节偏移扁平段（含固定头）
+// actor 方法全名 → 所属 actor 索引（与 fn_keys 平行登记的**副表**，按 interned
+// 全名查）。用途：语义主流程按 `fn_keys` 遍历函数体时，actor 消息方法体也在其中
+// （见 scollect_port_q2 的 `actor$N::m` 内部全名登记），但它的作用域里还须绑定
+// **actor 私有状态字段**（后端 irgen_rt_p3 用 scope_put 绑 record 槽，前端必须
+// 同样把字段名登记为局部变量，否则方法体访问字段报「未声明的变量」）。
+// 两表 key 同为 interned 全名 id，长度与 fn_keys 同步增长。
+var afn_keys: table<i64>;
+var afn_actor: table<i64>;
 
 // ==================== S2.4 port / impl 状态表（接口模型）====================
 // port 表：pt_keys（port 名 id，升序）→ pt_vals（port 索引）。
