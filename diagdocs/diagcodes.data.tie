@@ -4,6 +4,8 @@ type tie<data>
 diagcodes = [
     [ "code": "E00001", "key": "%", "name": "ERR:? ?", "family": 2, "src": "/compiler/frontend/errors.tie", "template": "ERR:? ? " ],
     [ "code": "E00002", "key": "%\n", "name": "?:", "family": 2, "src": "/compiler/proto/parser.tie", "template": "?:\n" ],
+    [ "code": "E00899", "key": "%一个引用全局可变容器的闭包必须在%块或%函数中（闭包与执行流共享同一份底层数据，并发写入由书写者负责排除）", "name": "spawn 一个引用全局可变容器的闭包必须在 unsafe 块或 unsafe 函数中（闭包与执行流共享同一份底层数据，并发写入由书写者负责排除）", "family": 3, "src": "/compiler/frontend/scheck_p2.tie", "template": "spawn 一个引用全局可变容器的闭包必须在 unsafe 块或 unsafe 函数中（闭包与执行流共享同一份底层数据，并发写入由书写者负责排除）" ],
+    [ "code": "E00900", "key": "%一个引用全局可变容器的闭包需要%域凭据（当前作用域持：%）。持证方式：文件头%角色%、函数级%、或块级%", "name": "spawn 一个引用全局可变容器的闭包需要 share 域凭据（当前作用域持", "family": 3, "src": "/compiler/frontend/scheck_p2.tie", "template": "spawn 一个引用全局可变容器的闭包需要 share 域凭据（当前作用域持：?）。持证方式：文件头 `type tie<角色, unsafe:share>`、函数级 `#[unsafe.share]`、或块级 `unsafe with(share) { }` / `unsafe use g { }`" ],
     [ "code": "E00003", "key": "%下标必须是整数，实际是%", "name": "table_at() 下标必须是整数，实际是", "family": 3, "src": "/compiler/frontend/sinfer_ret_q2.tie", "template": "table_at() 下标必须是整数，实际是 " ],
     [ "code": "E00004", "key": "%下标越界：索引%超出长度%", "name": "token_tag_at 下标越界", "family": 4, "src": "/compiler/interp/call_builtin_seg2.tie", "template": "token_tag_at 下标越界：索引 ? 超出长度 " ],
     [ "code": "E00005", "key": "%不接受类型参数（第一版%不支持泛型）", "name": "port '?' 不接受类型参数（第一版 port 不支持泛型）", "family": 3, "src": "/compiler/frontend/sgen.tie", "template": "port '?' 不接受类型参数（第一版 port 不支持泛型）" ],
