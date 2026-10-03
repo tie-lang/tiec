@@ -203,6 +203,18 @@ pub func infer_expr_var(id: i64) -> i64 {
         }
         // p.9.21.5 II2 A2b：裸名经前缀补全命中 ns 常量时同样跟随 L1 梯度
         var gkey = gb_find_ns_key(nid)
+        // share 门禁判据打点：闭包体内引用**全局可变容器** ⇒ 该闭包一旦交给执行流，
+        // 就是跨执行流共享同一份底层数据（规范 §10.5）。全局不在捕获集里（§5.10），
+        // 故在此解析处打点。标量全局（i64/string）不共享底层容器 ⇒ 不算。
+        if gkey >= 0 && g_clo_depth > 0 && g_clo_cur >= 0 {
+            var gt_g = gb_find(gkey)
+            if types.is_table(gt_g) || types.is_map(gt_g) {
+                while len(cl_grefs) <= g_clo_cur {
+                    table_push(cl_grefs, 0)
+                }
+                cl_grefs[g_clo_cur] = 1
+            }
+        }
         if gkey >= 0 {
             var vc = sstate.check_const_visibility_nid(gkey, id)
             if vc < 0 {
