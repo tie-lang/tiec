@@ -177,7 +177,7 @@ func agg_seq_align(t: i64, is_struct: i64) -> i64 {
 }
 
 // 聚合的 LLVM 尺寸（字节）
-func agg_ty_size(t: i64) -> i64 {
+pub func agg_ty_size(t: i64) -> i64 {
     if t < 0 {
         return 8
     }

@@ -181,11 +181,30 @@ func gen_actor_dispatch(aidx: i64, anode: i64) -> i64 {
         // 再建 call。call 必须排在所有 gep/load 之后——否则 llvmgen 发射 call
         // 时实参 SSA 尚未定值，会误输出错误常量（如 @f(ptr 80)）。
         var argvals: table<i64> = table_new_i64()
+        // ★ 架构增强：消息参数区是**类型化打包**的 64 字节缓冲（见 irgen_rt_p2 的
+        // actor_arg_byte_off）⇒ 按参数自身类型取偏移与 load，不再固定 8 字节 i64。
+        // 偏移与发送侧共用同一函数，保证读写一致。
+        var hargtys: table<i64> = table_new_i64()
+        // ★ 段偏移用 **ac_paroff**（ac_mptys 扁平段），不是 ac_mpar（那是 ac_mnpars
+        //   的段偏移）——与本函数 20 行的既有算法一致，再按前序方法参数数累加。
+        var hpstart = ac_paroff[aidx]
+        var hpk: i64 = 0
+        while hpk < mi {
+            hpstart = hpstart + ac_mnpars[ac_mpar[aidx] + hpk]
+            hpk = hpk + 1
+        }
         var ak0: i64 = 0
         while ak0 < hnpar {
-            var argslot = s21_gep(env_p, 32 + ak0 * 8, true)
-            table_push(argvals, s21_load(argslot, T64))
+            table_push(hargtys, ac_mptys[hpstart + ak0])
             ak0 = ak0 + 1
+        }
+        var ak1: i64 = 0
+        while ak1 < hnpar {
+            var pty_a1 = ac_mptys[hpstart + ak1]
+            var boff_a1 = actor_arg_byte_off(hargtys, hnpar, ak1)
+            var argslot2 = s21_gep(env_p, 32 + boff_a1, true)   // ★ 常量偏移
+            table_push(argvals, s21_load(argslot2, pty_a1))      // 按类型 load（聚合可整体 load）
+            ak1 = ak1 + 1
         }
         var ty35: i64 = hret
         if is_void {
@@ -198,7 +217,13 @@ func gen_actor_dispatch(aidx: i64, anode: i64) -> i64 {
         ir.add_operand(inst, rec_i64, 0)  // rec（i64）
         var ak1: i64 = 0
         while ak1 < len(argvals) {
-            ir.add_operand(inst, T64, 2)
+            // ★ 架构增强：实参**类型**取自 hargtys（原来硬编码 T64 ⇒ 只能传 i64；
+            //   传 fn（%fn.0 聚合）会报「expected 'i64'」）。
+            var pty_call = T64
+            if ak1 < len(hargtys) {
+                pty_call = hargtys[ak1]
+            }
+            ir.add_operand(inst, pty_call, 2)
             ir.add_operand(inst, argvals[ak1], 0)
             ak1 = ak1 + 1
         }
@@ -606,7 +631,7 @@ func tig_actor_wait(ptr: i64, cond_eq: bool) {
 // 消费者任务（actor_task）→ async 即返回（fire-and-forget，不依赖 pending 不
 // 等待）/ 同步等 done@104（tig_actor_wait）→ 读 result/fail → 清门闩（读完结果
 // 后释放）→ fail≠0 → raise。状态零锁：串行 dispatch 由单消费者保证。
-func gen_actor_sync_call(rech: i64, mi: i64, args: table<i64>, ret_ty: i64, is_async: bool) -> i64 {
+func gen_actor_sync_call(rech: i64, mi: i64, args: table<i64>, argtys: table<i64>, ret_ty: i64, is_async: bool) -> i64 {
     g_used_trmlite = true
     var T64 = types.named(TK_I64)
     var P = types.named(TK_STR)
@@ -630,7 +655,18 @@ func gen_actor_sync_call(rech: i64, mi: i64, args: table<i64>, ret_ty: i64, is_a
     if !is_async {
         syncf = 1
     }
-    tig_mq_publish(rec_ptr, slot, mi, args, syncf)
+    // 架构增强：把**实参类型**一并传给 publish（发送侧要按类型写入类型化参数区）
+    var margtys: table<i64> = table_new_i64()
+    var mp0: i64 = 0
+    while mp0 < len(args) {
+        var aty_m = types.named(TK_I64)
+        if mp0 < len(argtys) {
+            aty_m = argtys[mp0]
+        }
+        table_push(margtys, aty_m)
+        mp0 = mp0 + 1
+    }
+    tig_mq_publish(rec_ptr, slot, mi, args, margtys, syncf)
     // async：投递即返回（fire-and-forget，不阻塞等 done）
     if is_async {
         return tig_int_lit_ty(0, T64)
