@@ -63,6 +63,7 @@ pub func esc_hits() -> i64 {
 func esc_reset() {
     g_esc_names = table_new_i64()
     g_esc_live = table_new_i64()
+    g_esc_depth = 0
 }
 
 // 名 → 下标；未登记 -1。
@@ -292,40 +293,63 @@ func esc_container_builtin(nm: string) -> bool {
 // 树遍历：未知构造一律按「泄漏」递归（保守默认），只有明确认识的只读结构
 // （下标读的 base / 调用实参的容器位）才降级为保留。
 func esc_scan(n: i64, mode: i64) {
-    if n < 0 {
+    if n < 0 || n >= len(s_tags) {
         return
     }
+    // ★ 递归深度上限（2026-10-03）：逃逸扫描是**无 visited 集**的纯递归，遇到
+    // 畸形 AST（子树里出现 id 越界的槽位被当节点、进而读出垃圾 tag 再递归）会
+    // 无限递归爆栈 ⇒ 编译器段错误、零输出。上限只是**兜底**：正常 AST 深度远小于
+    // 此值；触到即停止该子树扫描（方向保守——少优化，不影响正确性）。
+    if g_esc_depth > 4000 {
+        return
+    }
+    g_esc_depth = g_esc_depth + 1
+    esc_scan_dispatch(n, mode)
+    g_esc_depth = g_esc_depth - 1
+}
+
+func esc_scan_dispatch(n: i64, mode: i64) -> i64 {
     var tg = s_tags[n]
+    // N_CASE_BIND（`case Ok(v)` 解构，tag 140）：children = [变体引用**节点**,
+    // 绑定名 intern id, 绑定名 intern id, ...]（见 pstmt_flow_p2 的 bkids 构造）。
+    // ★ 第 1 个之后的槽**不是 AST 节点**——必须只扫 child(0)。此前缺本分支，
+    //   落到末尾的 esc_scan_children 默认兜底 ⇒ 把 interned 名 id 当节点 id 递归
+    //   ⇒ 读出垃圾 tag ⇒ 无限递归爆栈。症状：`if let N(x) = o { }`（p.9.10.2 脱糖
+    //   成 switch + N_CASE_BIND）编译 tiec 时段错误、**零输出**（连诊断都来不及写）。
+    if tg == N_CASE_BIND {
+        esc_scan(sstate.child(n, 0), mode)
+        return 0
+    }
     // 裸变量
     if tg == S_N_VAR {
         if mode != 1 {
             esc_kill(interner.intern(sstate.name_str(n)))
         }
-        return
+        return 0
     }
     // 闭包体内（mode 2）：**一切**变量引用都是捕获 ⇒ 统统置死，不再区分只读位。
     // （必须置于位置规则之前：否则 `len(t)` 这类「容器内建只读位」会把捕获漏掉 ——
     //  实测就是这条漏洞让被闭包捕获的表仍被判定为独占。）
     if mode == 2 {
         esc_kill_vars_in(n)
-        return
+        return 0
     }
     // 闭包字面量：children 里含**闭包体**（child(slot_off+1+nparams)，见
     // irgen_closure.tig_closure_entry_fn）⇒ 按其体内引用做捕获置死。
     if tg == S_N_FN_LIT {
         esc_scan_children(n, 2)
-        return
+        return 0
     }
     // 调用（tag 7）：实参一律按泄漏处理，唯一例外是容器内建的第 0 实参。
     if tg == S_N_CALL {
         esc_scan_call(n)
-        return
+        return 0
     }
     // 方法调用（tag 18）/ P2a 调用表达式（148）：布局不由本处假设 ——
     // 一律按「全部子节点皆泄漏」处理（保守方向；只会少优化）。
     if tg == S_N_METHOD_CALL || tg == S_N_CALL_EXPR {
         esc_scan_children(n, 0)
-        return
+        return 0
     }
     // for 迭代：children=[iter, body]。iter 是**只读**位置（遍历读 len/元素，
     // 不会把表的句柄存到别处）；body 按传入模式。
@@ -337,18 +361,18 @@ func esc_scan(n: i64, mode: i64) {
             esc_scan(it0, 1)
         }
         esc_scan(sstate.child(n, 1), mode)
-        return
+        return 0
     }
     // 下标读 t[i]：base 只读（保留）；下标按泄漏。
     if tg == S_N_INDEX {
         esc_scan(sstate.child(n, 0), 1)
         esc_scan(sstate.child(n, 1), 0)
-        return
+        return 0
     }
     // 表/元组字面量：元素被**存入新容器** ⇒ 泄漏
     if tg == S_N_TABLE_LIT || tg == S_N_TUPLE_LIT {
         esc_scan_children(n, 0)
-        return
+        return 0
     }
     // 语句级：目标名被重新赋值 ⇒ 该名状态重置（非新鲜即死）
     if tg == S_N_ASSIGN {
@@ -359,7 +383,7 @@ func esc_scan(n: i64, mode: i64) {
             esc_kill(interner.intern(sstate.name_str(n)))
         }
         esc_scan(val, 0)
-        return
+        return 0
     }
     // 下标写 t[i] = v：base 只读（保留，写容器自身不泄漏容器）；下标与右值泄漏
     if tg == S_N_INDEX_ASSIGN {
@@ -367,7 +391,7 @@ func esc_scan(n: i64, mode: i64) {
         esc_scan(sstate.child(tgt, 0), 1)
         esc_scan(sstate.child(tgt, 1), 0)
         esc_scan(sstate.child(n, 1), 0)
-        return
+        return 0
     }
     // 变量声明：初值新鲜 ⇒ 登记候选；否则该名立即置死（覆盖同名外层候选）。
     if tg == S_N_VAR_DECL {
@@ -378,7 +402,7 @@ func esc_scan(n: i64, mode: i64) {
             esc_kill(interner.intern(sstate.name_str(n)))
         }
         esc_scan(init, 0)
-        return
+        return 0
     }
     // 其余（含 return / 表达式语句 / 二元 / 一元 / 三元 / 字段访问 / 分支 / 循环…）
     // 一律按泄漏递归 —— 保守默认，未知构造不会放过泄漏点。
@@ -388,9 +412,11 @@ func esc_scan(n: i64, mode: i64) {
 // 把子树里出现的**每一个**变量名都置死（闭包捕获 / 无法判定时的兜底）。
 // 不看位置语义——捕获与位置无关：闭包体内读到的任何外部变量都会被装入闭包环境。
 func esc_kill_vars_in(n: i64) {
-    if n < 0 {
+    // 同 esc_scan：越界 id 与深度上限兜底（该函数同样是无 visited 集递归）。
+    if n < 0 || n >= len(s_tags) || g_esc_depth > 4000 {
         return
     }
+    g_esc_depth = g_esc_depth + 1
     if s_tags[n] == S_N_VAR {
         esc_kill(interner.intern(sstate.name_str(n)))
     }
@@ -400,6 +426,7 @@ func esc_kill_vars_in(n: i64) {
         esc_kill_vars_in(sstate.child(n, i))
         i = i + 1
     }
+    g_esc_depth = g_esc_depth - 1
 }
 
 // 把所有当前候选一律置死（用于「无法判定」的保守兜底，只损失优化、不影响正确性）。

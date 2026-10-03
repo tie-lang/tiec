@@ -418,6 +418,13 @@ func tig_mq_publish(rec_ptr: i64, slot: i64, mi: i64, args: table<i64>, argtys: 
     //   只发一条 GEP，可安全作实参；`s21_store` 的地址实参也必须先求值。
     var argp = s21_gep(rec_ptr, 680, true)
     var nargs = len(args)
+    // ★★ 未用尾字的起点 = **已用区末尾**（按 8 对齐），不是 `k*8`。
+    // 错用 `k*8` 会与已用参数区**重叠**：fn 参数占 16 字节（offset 0..15），第 1 个
+    // 未用尾字写到 offset 8 ⇒ 把闭包聚合的后半段（**env 指针**）覆盖成 0 ⇒ actor
+    // 内 `call_indirect` 拿到 entry 正常但 env=null ⇒ 调用返回 0（任务 A 症状）；
+    // env 为 nil 时更会直接段错误（实测 `w.b1(fnlit)` 崩在投递这一步）。
+    // 每次写 8 字节 ⇒ 尾字起点必须按 8 递增，最后不足 8 字节的残余也不写。
+    var tail_base = actor_arg_byte_off(argtys, nargs, nargs)   // 已用区末尾（8 对齐）
     var k: i64 = 0
     while k < 8 {
         var pty_k = types.named(TK_I64)
@@ -430,9 +437,7 @@ func tig_mq_publish(rec_ptr: i64, slot: i64, mi: i64, args: table<i64>, argtys: 
             byte_off = actor_arg_byte_off(argtys, nargs, k)   // 纯常量计算
             used = 1
         } else {
-            // 未用尾区：按 8 字节逐字填零（从参数区末尾起，k*8 是**第 k 个 8 字节字**
-            // 的偏移，与已用参数不重叠——否则多个槽会写同一地址）。
-            byte_off = k * 8
+            byte_off = tail_base + (k - nargs) * 8
         }
         // ★★ `argp` 是 `rec+680` 的**段基址**，不是槽基址 ⇒ 必须先加 `slot*64`
         //    定位到本消息槽（漏掉会导致**所有消息都写槽 0**：单参数恰好对、
@@ -443,12 +448,16 @@ func tig_mq_publish(rec_ptr: i64, slot: i64, mi: i64, args: table<i64>, argtys: 
         ir.add_operand(slot_k, slot, 0)
         ir.add_operand(slot_k, c64, 0)
         var slot_base = s21_gep(argp, ir.get_value(slot_k), false)   // 运行期槽基址
-        var dst_addr = s21_gep(slot_base, byte_off, true)            // 槽内常量偏移
-        if used == 1 {
-            // 按**参数自身类型**写（架构增强）：原硬编码 T64 ⇒ 只能传 i64。
-            s21_store(dst_addr, args[k], pty_k)
-        } else {
-            s21_store(dst_addr, c0, T64)                       // 未用尾字填零
+        // 槽只有 64 字节 ⇒ 尾字越界时不写（否则踩到下一消息槽的参数区）。
+        // 已用区已由前端 `argsz_total > 64` 检查挡住。
+        if byte_off >= 0 && byte_off + 8 <= 64 {
+            var dst_addr = s21_gep(slot_base, byte_off, true)            // 槽内常量偏移
+            if used == 1 {
+                // 按**参数自身类型**写（架构增强）：原硬编码 T64 ⇒ 只能传 i64。
+                s21_store(dst_addr, args[k], pty_k)
+            } else {
+                s21_store(dst_addr, c0, T64)                       // 未用尾字填零
+            }
         }
         k = k + 1
     }

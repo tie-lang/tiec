@@ -40,12 +40,13 @@ func main() {
     if r == 115 {
         println("PASS actor-msg-typed apply=" + to_string(r))
     } else {
-        // 已知限制（2026-03-03 查实）：**编译期完全正确**（IR 已核对：dispatch 侧
-        // `load %fn.0 @32` + `load i64 @48`，handler 签名 `(i64, %fn.0, i64)`），
-        // 但**运行期返回 0**。隔离实验排除了捕获来源（不捕获/捕获全局都返回 0），
-        // 指向「在 actor 内调用一个由别的执行流创建的闭包」这条路径本身，
-        // 与本次消息 ABI 增强无关（i64 多参数已验证正确：two(3,4)=7）。
-        println("WARN actor-msg-typed apply=" + to_string(r) + " 期望 115"
-            + "（已知限制：跨执行流调用外部创建的闭包返回 0，编译期 IR 正确，待查）")
+        // 历史缺陷（2026-10-03 修复）：曾返回 0（编译期 IR 正确、运行期错）。
+        // 根因 = 消息参数区「未用尾字填零」的偏移写成 `k*8`（槽内第 k 个字），
+        // 与已用参数区**重叠**：fn 参数占 16 字节（offset 0..15），第 1 个未用尾字
+        // 写到 offset 8 ⇒ 覆盖闭包聚合的后半段（env 指针）⇒ env 变 null。
+        // 修复：尾字起点改为「已用区末尾（8 对齐）」，并加 64 字节槽边界守卫
+        // （backend/irgen_rt_p2.tie `tig_mq_publish`）。
+        println("FAIL actor-msg-typed apply=" + to_string(r) + " 期望 115"
+            + "（消息参数区尾字覆盖了 fn 聚合的 env 指针；不应再出现）")
     }
 }
