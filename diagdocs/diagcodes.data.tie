@@ -240,6 +240,7 @@ diagcodes = [
     [ "code": "E00176", "key": "%消息必须是%，实际是%", "name": "panic 消息必须是 string，实际是", "family": 3, "src": "/compiler/frontend/scheck_ie_ie1.tie", "template": "panic 消息必须是 string，实际是 " ],
     [ "code": "E00177", "key": "%消息方法%必须声明为%", "name": "actor 消息方法 '?' 必须声明为 pub", "family": 3, "src": "/compiler/frontend/scollect_port_q2.tie", "template": "actor 消息方法 '?' 必须声明为 pub" ],
     [ "code": "E00178", "key": "%消息方法%必须返回%（异步投递无返回值）", "name": "async 消息方法 '?' 必须返回 void（异步投递无返回值）", "family": 3, "src": "/compiler/frontend/scollect_port_q2.tie", "template": "async 消息方法 '?' 必须返回 void（异步投递无返回值）" ],
+    [ "code": "E00901", "key": "%消息方法%的参数类型是%，但%消息参数目前只支持%（消息参数槽按%字节定址，见%消息%）", "name": "actor 消息方法 '?' 的参数类型是 ?，但 actor 消息参数目前只支持 i64（消息参数槽按 8 字节定址，见 actor 消息 ABI）", "family": 3, "src": "/compiler/frontend/sinfer_p1.tie", "template": "actor 消息方法 '?' 的参数类型是 ?，但 actor 消息参数目前只支持 i64（消息参数槽按 8 字节定址，见 actor 消息 ABI）" ],
     [ "code": "E00179", "key": "%源文件不存在%", "name": "registry publish: 源文件不存在: ?\\?\\?\\pkg.zd", "family": 5, "src": "/compiler/keel/keel_registry_cli.tie", "template": "registry publish: 源文件不存在: ?\\?\\?\\pkg.zd" ],
     [ "code": "E00180", "key": "%源码语法错误%", "name": "eval_code 源码语法错误:", "family": 4, "src": "/compiler/interp/call_builtin_seg1.tie", "template": "eval_code 源码语法错误: " ],
     [ "code": "E00771", "key": "%片段依赖数非法（%）", "name": "asm: 片段依赖数非法（?）", "family": 6, "src": "/compiler/middle/tieir_asm_parse.tie", "template": "asm: 片段依赖数非法（?）" ],

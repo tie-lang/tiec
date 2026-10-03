@@ -1,6 +1,6 @@
 type tie<class>
 // compiler/frontend/diagcode_cat.gen.tie —— 诊断标号目录（p.6.9.15 生成文件，勿手改）
-// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 889 条 + prefix 865 条。
+// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 890 条 + prefix 866 条。
 // 标号规范：五位纯序号 E+5 位（E00001 起全局连续）；家族仅记 JSON/td family 字段，不编码进标号。
 var cat_keys: table<string>;
 var cat_codes: table<string>;
@@ -491,6 +491,8 @@ pub func ensure() {
     table_push(cat_codes, "E00177")
     table_push(cat_keys, "%消息方法%必须返回%（异步投递无返回值）")
     table_push(cat_codes, "E00178")
+    table_push(cat_keys, "%消息方法%的参数类型是%，但%消息参数目前只支持%（消息参数槽按%字节定址，见%消息%）")
+    table_push(cat_codes, "E00901")
     table_push(cat_keys, "%源文件不存在%")
     table_push(cat_codes, "E00179")
     table_push(cat_keys, "%源码语法错误%")
@@ -2265,6 +2267,8 @@ pub func ensure() {
     table_push(pfx_codes, "E00177")
     table_push(pfx_keys, "%消息方法%必须返回%（异步投递无返回值）")
     table_push(pfx_codes, "E00178")
+    table_push(pfx_keys, "%消息方法%的参数类型是%")
+    table_push(pfx_codes, "E00901")
     table_push(pfx_keys, "%源文件不存在%")
     table_push(pfx_codes, "E00179")
     table_push(pfx_keys, "%源码语法错误%")

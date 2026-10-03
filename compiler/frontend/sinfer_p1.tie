@@ -529,39 +529,20 @@ func infer_actor_method(aty: i64, mname: string, args: table<i64>, id: i64) -> i
         if at < 0 {
             return -1
         }
-        // share 门禁 · actor 消息投递（B 方案补充 2026-03-03）
-        // 实参是 **fn 值** ⇒ 这个闭包被投递进 actor 的执行流 ⇒ 若它捕获了全局可变
-        // 容器（cl_grefs），就是跨执行流共享同一份底层数据 ⇒ 需 share 域凭据。
-        // ★ 闭包字面量 ⇒ 精确判 `cl_grefs`（此刻 `infer_expr` 刚把它 infer 完，
-        //   打点已完成；子闭包传播在 scheck 末段做，这里看直接引用，方向偏保守）。
-        //   其它形态（变量转递 / 来源不明）⇒ 判「可能共享」。
-        // ★ 注意 `run Counter()`（建 actor）**不需要**凭据：actor 状态独占、经消息交互，
-        //   不是共享内存（规范 §10.2/10.3）。要拦的只是「把闭包投进去」。
-        if types.is_fn(at) {
-            var sh_a = 1
-            if s_tags[args[j]] == 132 {
-                var ci_a: i64 = -1
-                var q: i64 = 0
-                while q < len(g_clo_pending) {
-                    if g_clo_pending[q] == args[j] {
-                        ci_a = q
-                        break
-                    }
-                    q = q + 1
-                }
-                if ci_a >= 0 && ci_a < len(cl_grefs) && cl_grefs[ci_a] == 0 {
-                    sh_a = 0
-                }
-            }
-            if sh_a == 1 {
-                table_push(g_spawn_nodes, id)
-                table_push(g_spawn_args, args[j])
-                table_push(g_spawn_caps, g_held_caps)
-                table_push(g_spawn_unsafe, g_unsafe_depth)
-                table_push(g_spawn_force, 1)
-            }
-        }
         var want = sstate.actor_method_param(ai, mname, j)
+        // actor 消息参数**目前只支持 i64**（架构限制，非缺陷）：消息参数区按
+        // `s21_gep(env, 32 + k*8)` 定址——**每参数固定 8 字节槽**（irgen_rt_p3 的
+        // dispatch 侧 `s21_load(argslot, T64)` 亦硬编码 i64）。传 16 字节的 fn 值
+        // 会同时触发类型不匹配与越界，后端表现为难以理解的 opt 报错
+        // （`'%fn.0' defined with type '{ ptr, ptr }' but expected 'i64'`）。
+        // ⇒ 在此给出清晰诊断，把「不可用」显式化而不是让用户撞 IR 崩溃。
+        if want != types.named(TK_I64) {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "actor 消息方法 '" + mname + "' 的参数类型是 " + types.type_name(want) +
+                "，但 actor 消息参数目前只支持 i64（消息参数槽按 8 字节定址，见 actor 消息 ABI）"
+            return -1
+        }
         if !stype.types_compatible(want, at) && !stype.types_match(want, at, args[j]) &&
             !stype.types_narrow_int(want, at, args[j]) {
             sm_err_line = s_lines[id]
