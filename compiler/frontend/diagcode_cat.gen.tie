@@ -1,6 +1,6 @@
 type tie<class>
 // compiler/frontend/diagcode_cat.gen.tie —— 诊断标号目录（p.6.9.15 生成文件，勿手改）
-// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 887 条 + prefix 863 条。
+// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 889 条 + prefix 865 条。
 // 标号规范：五位纯序号 E+5 位（E00001 起全局连续）；家族仅记 JSON/td family 字段，不编码进标号。
 var cat_keys: table<string>;
 var cat_codes: table<string>;
@@ -19,6 +19,10 @@ pub func ensure() {
     table_push(cat_codes, "E00001")
     table_push(cat_keys, "%\n")
     table_push(cat_codes, "E00002")
+    table_push(cat_keys, "%一个引用全局可变容器的闭包必须在%块或%函数中（闭包与执行流共享同一份底层数据，并发写入由书写者负责排除）")
+    table_push(cat_codes, "E00899")
+    table_push(cat_keys, "%一个引用全局可变容器的闭包需要%域凭据（当前作用域持：%）。持证方式：文件头%角色%、函数级%、或块级%")
+    table_push(cat_codes, "E00900")
     table_push(cat_keys, "%下标必须是整数，实际是%")
     table_push(cat_codes, "E00003")
     table_push(cat_keys, "%下标越界：索引%超出长度%")
@@ -1793,6 +1797,10 @@ pub func ensure() {
     table_push(pfx_codes, "E00001")
     table_push(pfx_keys, "%\n")
     table_push(pfx_codes, "E00002")
+    table_push(pfx_keys, "%一个引用全局可变容器的闭包必须在%块或%函数中（闭包与执行流共享同一份底层数据，并发写入由书写者负责排除）")
+    table_push(pfx_codes, "E00899")
+    table_push(pfx_keys, "%一个引用全局可变容器的闭包需要%域凭据（当前作用域持：%）。持证方式：文件头%角色%、函数级%、或块级%")
+    table_push(pfx_codes, "E00900")
     table_push(pfx_keys, "%下标必须是整数，实际是%")
     table_push(pfx_codes, "E00003")
     table_push(pfx_keys, "%下标越界：索引%超出长度%")

@@ -366,6 +366,23 @@ func propagate_captures() -> i64 {
         eff_len[c] = len(eff_keys) - eff_start[c]
         c = c - 1
     }
+    // ===== share 域门禁 · ⑤子闭包传播 =====
+    // 闭包引用全局可变容器 ⇒ 其**嵌套子闭包**同样携带该引用（闭包返回值时子闭包被带出，
+    // 交给执行流后同样是那份全局数据）。沿 cl_parent 上溯：c 从 n-1 递减，子闭包（索引大）
+    // 已处理完，故一次遍历即闭合。
+    var gc: i64 = n - 1
+    while gc >= 0 {
+        if gc < len(cl_grefs) {
+            var gch: i64 = gc + 1
+            while gch < n {
+                if cl_parent[gch] == gc && gch < len(cl_grefs) && cl_grefs[gch] == 1 {
+                    cl_grefs[gc] = 1
+                }
+                gch = gch + 1
+            }
+        }
+        gc = gc - 1
+    }
     // 重建 cl_capoff/cl_capkeys/cl_capvals（闭包索引升序布局，后端 gen_closure_lit
     // 按 [cl_capoff[c], cl_capoff[c+1]) 读段）
     cl_capoff = table_new_i64()
@@ -381,6 +398,52 @@ func propagate_captures() -> i64 {
             j2 = j2 + 1
         }
         i2 = i2 + 1
+    }
+    // ===== share 域门禁 · ⑥末段判定 =====
+    // 时机：打点（infer 阶段）与子闭包传播（上方）此刻都已完成。
+    // 凭据用 infer 时**快照**（`g_spawn_caps`/`g_spawn_unsafe`）——此刻作用域已出栈。
+    var sp: i64 = 0
+    while sp < len(g_spawn_nodes) {
+        var sarg = g_spawn_args[sp]
+        var shares = 1
+        if sarg >= 0 && s_tags[sarg] == 132 {
+            // 闭包字面量 ⇒ 精确判（含嵌套子闭包传播结果）
+            var sci: i64 = -1
+            var sidx: i64 = 0
+            while sidx < len(g_clo_pending) {
+                if g_clo_pending[sidx] == sarg {
+                    sci = sidx
+                    break
+                }
+                sidx = sidx + 1
+            }
+            if sci >= 0 && sci < len(cl_grefs) {
+                shares = cl_grefs[sci]
+            }
+        }
+        // shares = 1 ⇒ 可能（确证引用全局可变容器，或形态无法证明不共享）
+        if shares == 1 {
+            var snode = g_spawn_nodes[sp]
+            if g_spawn_unsafe[sp] == 0 {
+                sm_err_line = s_lines[snode]
+                sm_err_col = s_cols[snode]
+                sm_err_msg = "spawn 一个引用全局可变容器的闭包必须在 unsafe 块或 unsafe 函数中（闭包与执行流共享同一份底层数据，并发写入由书写者负责排除）"
+                return -1
+            }
+            // 域位：1 = share（0=share 1=mem 2=ext 3=lock 4=raw）
+            if (g_spawn_caps[sp] & 1) == 0 {
+                sm_err_line = s_lines[snode]
+                sm_err_col = s_cols[snode]
+                var held_sp = types.cap_set_name(g_spawn_caps[sp])
+                if str_len(held_sp) == 0 {
+                    held_sp = "无"
+                }
+                sm_err_msg = "spawn 一个引用全局可变容器的闭包需要 share 域凭据（当前作用域持：" + held_sp +
+                    "）。持证方式：文件头 `type tie<角色, unsafe:share>`、函数级 `#[unsafe.share]`、或块级 `unsafe with(share) { }` / `unsafe use g { }`"
+                return -1
+            }
+        }
+        sp = sp + 1
     }
     return 0
 }

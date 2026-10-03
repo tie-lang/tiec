@@ -252,6 +252,11 @@ pub func infer_expr_fn_lit(id: i64) -> i64 {
         table_push(cl_locloff, len(cl_locals))
         // 捕获段起点（S_N_VAR 捕获登记时动态追加）
         table_push(cl_capoff, len(cl_capkeys))
+        // share 门禁判据：本闭包是否引用全局可变容器（0 = 否；infer 时打点为 1，
+        // scheck 阶段再沿 cl_parent 上溯传播）
+        while len(cl_grefs) <= ci {
+            table_push(cl_grefs, 0)
+        }
         return fnty
 }
 

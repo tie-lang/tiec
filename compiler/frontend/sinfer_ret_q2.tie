@@ -70,6 +70,25 @@ pub func infer_call(id: i64) -> i64 {
         g_typed = g_typed + 1
         return rt
     }
+    // share 域门禁 · ④记录 spawn 调用点（B 方案，2026-10-03）
+    // 判定**不在此处**：全局引用的打点发生在闭包体 infer 时，而 spawn 的实参需要
+    // 先 infer 才登记闭包 ⇒ 同一时刻判据尚不完整。故此处只**登记调用点 + 快照凭据**，
+    // 判定延到 scheck 末段（`scheck_p2` 的 `check_spawn_share_gate`）——那时打点与
+    // 子闭包传播都已完成，而凭据状态已随作用域出栈，只能靠快照。
+    if fnm == "spawn" && len(args) == 1 {
+        // 主动 infer 实参：spawn 的返回类型由符号表/后端给（实测 builtin_call 对它是
+        // 死代码），实参**不经前端 infer** ⇒ 闭包不登记、全局引用不打点。
+        if node_types[args[0]] < 0 {
+            var at_s = infer_expr(args[0])
+            if at_s < 0 {
+                return -1
+            }
+        }
+        table_push(g_spawn_nodes, id)
+        table_push(g_spawn_args, args[0])
+        table_push(g_spawn_caps, g_held_caps)
+        table_push(g_spawn_unsafe, g_unsafe_depth)
+    }
     // 内置函数：先校验个数（-2=参数错误已报），通过后逐个推断实参
     var br = sbuiltin.builtin_call(fnm, args, id)
     if br >= -1 && br != -3 {

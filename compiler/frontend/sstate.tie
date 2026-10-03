@@ -300,7 +300,19 @@ var cl_paramoff: table<i64>;    // 闭包索引 -> 参数名段偏移（cl_param
 var cl_params: table<i64>;      // 闭包参数名 id（扁平段；捕获遮蔽判定）
 var cl_locloff: table<i64>;     // 闭包索引 -> 局部名段偏移（cl_locals）
 var cl_locals: table<i64>;      // 闭包内声明局部名 id（扁平段；捕获遮蔽判定）
-var cl_capoff: table<i64>;      // 闭包索引 -> 捕获段偏移（cl_capkeys/cl_capvals）
+var cl_capoff: table<i64>;      // 闭包索引 -> 捕获段偏移（cl_capkeys/cl_capvals)
+// ===== share 域门禁（B 方案，2026-10-03）：闭包跨执行流共享可变数据 =====
+// cl_grefs[ci]：闭包 ci（含其嵌套子闭包）是否引用了**全局可变容器**（table/map）。
+// ★ 打点位置 = 全局引用的解析处（infer_expr_var 的 gb_find_ns_key 分支）——全局变量
+// **不经捕获通道**（规范 §5.10：全局始终可见），故 `cl_capkeys` 里**永远没有**全局
+// （实测 ncap=0），判据只能在这里打点。
+var cl_grefs: table<i64>;
+// spawn 调用点记录（infer 阶段登记，判定延到 scheck 末段——那时判据与传播都已完成）。
+// 凭据状态一并**快照**：末段时作用域已出栈，`g_held_caps`/`g_unsafe_depth` 不可再读。
+var g_spawn_nodes: table<i64>;    // 调用节点（诊断行列）
+var g_spawn_args: table<i64>;     // 实参节点（判据用）
+var g_spawn_caps: table<i64>;     // 当时的 g_held_caps 快照
+var g_spawn_unsafe: table<i64>;   // 当时是否在 unsafe 上下文（g_unsafe_depth > 0）
 var cl_capkeys: table<i64>;     // 捕获变量名 id（扁平段）
 var cl_capvals: table<i64>;     // 捕获变量类型 id（扁平段）
 var g_clo_depth: i64 = 0;       // 闭包体检查深度（>0 = 在闭包体内）
