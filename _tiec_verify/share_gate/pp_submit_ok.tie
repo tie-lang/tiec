@@ -1,0 +1,16 @@
+type tie<logic, unsafe:mem>
+import "../../trm-lite/core/mnn/sched.tie"
+var g_rec: table<i64> = []
+unsafe func main() {
+    var fs: table<fn() -> i64> = []
+    var n: i64 = 0
+    while n < 2 {
+        table_push(fs, func() -> i64 { table_push(g_rec, n); return n })
+        n = n + 1
+    }
+    unsafe with(share) {
+        var res: table<i64> = table_new_i64()
+        var r = trm_lite_ppool.pp_submit(fs, 2, res)
+        println(to_string(r))
+    }
+}
