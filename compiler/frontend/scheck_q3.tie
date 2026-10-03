@@ -384,6 +384,33 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
         }
         i = i + 1
     }
+    // actor 消息方法体（内部全名 `actor$N::m`，见 scollect_port_q2 的登记）：
+    // 把该 actor 的**私有状态字段**绑进局部作用域。后端 irgen_rt_p3 用
+    // `scope_put(字段 → gep(rec, foff))` 绑到 record 槽；前端必须同样登记，
+    // 否则方法体访问字段报「未声明的变量」（2026-10-03 实测）。
+    // 非 actor 函数查表 miss → 不做任何事。
+    var afi = sstate.bs_find(afn_keys, intern.intern(full))
+    if afi >= 0 {
+        var aidx2 = afn_actor[afi]
+        var fbase2 = ac_fnoff[aidx2]
+        var fcnt2 = ac_fncnt[aidx2]
+        var ftyoff2 = ac_ftyoff[aidx2]
+        var fk2: i64 = 0
+        while fk2 < fcnt2 {
+            var fty2 = ac_ftys[ftyoff2 + fk2]
+            var ftelem2: i64 = -1
+            var fdyn2: i64 = 0
+            if types.is_table(fty2) {
+                ftelem2 = types.table_elem(fty2)
+                if ftelem2 < 0 {
+                    ftelem2 = types.named(TK_STR)
+                }
+                fdyn2 = 1
+            }
+            sinfer.lv_insert(ac_fnames[fbase2 + fk2], fty2, 0, ftelem2, fdyn2)
+            fk2 = fk2 + 1
+        }
+    }
     // 函数体：children[slot_off + 1 + nparams]
     var body = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + nparams)
     // 无函数体声明（如 extern 声明）：body 子节点不存在（index == nchild），

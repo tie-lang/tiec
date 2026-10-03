@@ -168,6 +168,9 @@ var g_esc_names: table<i64>;
 var g_esc_live: table<i64>;
 var g_esc_audit: bool = false;
 var g_esc_hits: i64 = 0;
+// esc_scan 递归深度计数（2026-10-03）：逃逸扫描无 visited 集，畸形 AST 会无限
+// 递归爆栈。上限兜底用，正常 AST 深度远小于 4000。
+var g_esc_depth: i64 = 0;
 // r.1.6.7 显式 lock 凭据（语法层去锁）：持 `guard<lock>` 凭据的作用域深度。
 // >0 ⇒ 该作用域内所有表访问走免锁入口（开发者显式声明无并发访问，责任归开发者）。
 var g_lock_depth: i64 = 0;

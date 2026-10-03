@@ -230,6 +230,45 @@ pub func collect_actor_decl(s: i64) -> i64 {
                 sm_err_col = s_cols[item]
                 return -1
             }
+            // ★★ actor 方法体也必须进**正常前端流水线**（2026-10-03）。
+            // 语义主流程按 `fn_keys` 逐个 `check_fn_walk` 检查函数体（类型推断 +
+            // 门禁）；`reg_actor_method` 只登记**消息方法签名**（ac_* 表，供
+            // 句柄转发的类型匹配用），方法体从未被登记 ⇒ 前端从未 infer 过它。
+            // 后果（实测）：方法体内的闭包字面量 `node_types = -1`，后端
+            // `tig_stmt_b_100_VarDecl` 按默认 **i64** 开槽，而闭包字面量值是
+            // `%fn.0 = {ptr,ptr}` 聚合 ⇒ `store i64 %12` 类型错 ⇒ opt 阶段
+            // E00883「'%12' defined with type '%fn.0' but expected 'i64'」。
+            // 修法：以内部全名 `actor$<aidx>::<mname>` 再登记一份函数签名，
+            // 让方法体随主流程一起被 check_fn_walk 遍历（该名字用户不可见、
+            // 不与任何用户标识符冲突；`$` 与 ns 名非法字符一致，不可能被写出）。
+            // sp_defs/sp_vars 填 -1（无默认值/无可变参数）：actor 方法不经裸名
+            // 调用（只能经句柄转发），故这些列不会被 call site 消费。
+            var mfull = "actor$" + to_string(aidx) + "::" + mname
+            var p_refs2: table<i64> = table_new_i64()
+            var p_defs2: table<i64> = table_new_i64()
+            var p_vars2: table<i64> = table_new_i64()
+            var k3: i64 = 0
+            while k3 < nparams {
+                // sp_refs 只取 bit0（by_ref）——其余位在 collect_fn 里也不是这么传的，
+                // 混传整个 s_vals 会把 immut 等声明位误当 by_ref。
+                table_push(p_refs2, s_vals[sstate.child(item, sstate.slot_off(item) + 1 + k3)] % 2)
+                table_push(p_defs2, -1)
+                table_push(p_vars2, -1)
+                k3 = k3 + 1
+            }
+            // is_pub 传 s_vals[item] 原值（含各标志位，与 collect_fn 一致）。
+            // 生成器方法（体内 yield）不在此路径：collect_fn 会登记
+            // gen_marks=1 并把返回类型改写为 table<elem>；actor 消息方法两侧
+            // （ac_mrets 与此处）保持同一 ret_ty，不做改写。
+            if sstate.reg_fn(mfull, s_vals[item], nparams, nparams, ret_ty, ptys, p_refs2, p_defs2, p_vars2, item) < 0 {
+                sm_err_line = s_lines[item]
+                sm_err_col = s_cols[item]
+                return -1
+            }
+            // 副表登记：内部全名 → actor 索引，供 check_fn 把该 actor 的私有字段
+            // 绑进方法体作用域（见 sstate.afn_keys 注释）。
+            table_push(afn_keys, intern.intern(mfull))
+            table_push(afn_actor, aidx)
             // 登记 async 标志（与 ac_mrets 同位对齐；s_vals bit2 = async）
             if s_vals[item] / 4 % 2 == 1 {
                 table_push(ac_masync, 1)

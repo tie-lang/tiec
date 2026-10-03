@@ -454,7 +454,19 @@ pub func actor_method_param(ai: i64, mname: string, k: i64) -> i64 {
     if k < 0 || k >= np {
         return -1
     }
-    return ac_mptys[ac_paroff[ai] + mi + k]
+    // ★ 段偏移必须**累积前序方法的参数个数**（ac_mptys 是所有方法参数类型的扁平段）：
+    //   方法 mi 的第 k 个参数 = ac_mptys[ac_paroff[ai] + Σ_{p<mi} npars(p) + k]。
+    // 曾经误写成 `ac_paroff[ai] + mi + k`（把**方法序号**当成**参数偏移**）⇒ 只有
+    // 「每个方法都恰好 1 个参数」时才偶然正确。actor 内方法参数个数不等时
+    // （如 `a(f,x)` 后跟 `b(f)`）会取到**别的方法**的参数类型，报假
+    // E00469「参数类型不匹配」。后端 irgen_rt_p3.tie 的 pstart 累积是正确写法。
+    var pstart = ac_paroff[ai]
+    var pk: i64 = 0
+    while pk < mi {
+        pstart = pstart + ac_mnpars[ac_mpar[ai] + pk]
+        pk = pk + 1
+    }
+    return ac_mptys[pstart + k]
 }
 
 // actor 方法返回类型（-1 = 非该 actor 方法；void → TK_VOID）
