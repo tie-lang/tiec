@@ -406,7 +406,9 @@ func propagate_captures() -> i64 {
     while sp < len(g_spawn_nodes) {
         var sarg = g_spawn_args[sp]
         var shares = 1
-        if sarg >= 0 && s_tags[sarg] == 132 {
+        if sp < len(g_spawn_force) && g_spawn_force[sp] == 1 {
+            shares = 1
+        } else if sarg >= 0 && s_tags[sarg] == 132 {
             // 闭包字面量 ⇒ 精确判（含嵌套子闭包传播结果）
             var sci: i64 = -1
             var sidx: i64 = 0
