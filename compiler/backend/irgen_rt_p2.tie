@@ -385,7 +385,21 @@ func tig_mq_reserve(rec_ptr: i64) -> i64 {
 // 消息写入 + 发布 + 单飞激活（发送方公共尾部）：写 mq_mid/mq_arg/mq_syncf →
 // atomicrmw 发布 mq_pub → CAS 激活 mq_act(0→1)，成功才 spawn 消费者任务。
 // is_sync：1 = 同步 RPC（消费者处理完写 done@104），0 = async。
-func tig_mq_publish(rec_ptr: i64, slot: i64, mi: i64, args: table<i64>, is_sync: i64) {
+// actor 消息参数区布局（2026-03-03 架构增强）：每槽 64 字节**字节缓冲**，参数按自身
+// 类型打包、8 字节对齐。发送侧与 dispatch 侧**必须共用**本函数，否则读写错位。
+// 增强前是固定 8 字节 i64 槽 ⇒ 只能传 i64；传 16 字节的 fn 会同时类型不匹配 + 越界。
+func actor_arg_byte_off(tys: table<i64>, nargs: i64, k: i64) -> i64 {
+    var off: i64 = 0
+    var j: i64 = 0
+    while j < k && j < nargs {
+        var sz = types.actor_param_bytes(tys[j])
+        off = off + (sz + 7) / 8 * 8      // 向上取整到 8
+        j = j + 1
+    }
+    return off
+}
+
+func tig_mq_publish(rec_ptr: i64, slot: i64, mi: i64, args: table<i64>, argtys: table<i64>, is_sync: i64) {
     var T64 = types.named(TK_I64)
     var c8 = tig_int_lit_ty(8, T64)
     var c64 = tig_int_lit_ty(64, T64)
@@ -398,23 +412,35 @@ func tig_mq_publish(rec_ptr: i64, slot: i64, mi: i64, args: table<i64>, is_sync:
     ir.add_operand(mid_off, slot, 0)
     ir.add_operand(mid_off, c8, 0)
     s21_store(s21_gep(midp, ir.get_value(mid_off), false), cmi, T64)
-    // 参数段（8 槽；真实 nargs 写实参，其余写 0——消费者恒拷 8 槽）
+    // 参数段：**64 字节字节缓冲**（每槽）。参数按自身类型打包、8 字节对齐写入；
+    // 未用尾区填零（消费者整体拷 64 字节，填零避免残留旧值）。
+    // ★ 两遍法：`s21_gep(基址, 偏移, true)` 第三参 true ⇒ 偏移是编译期常量，
+    //   只发一条 GEP，可安全作实参；`s21_store` 的地址实参也必须先求值。
     var argp = s21_gep(rec_ptr, 680, true)
     var nargs = len(args)
     var k: i64 = 0
     while k < 8 {
-        var c_k8 = tig_int_lit_ty(k * 8, T64)
-        var off_v = ir.new_inst(g_cur_block, 2, T64)  // mul slot*64
-        ir.add_operand(off_v, slot, 0)
-        ir.add_operand(off_v, c64, 0)
-        var off_k = ir.new_inst(g_cur_block, 0, T64)  // add +k*8
-        ir.add_operand(off_k, ir.get_value(off_v), 0)
-        ir.add_operand(off_k, c_k8, 0)
-        var v: i64 = c0
-        if k < nargs {
-            v = args[k]
+        var pty_k = types.named(TK_I64)
+        if k < len(argtys) {
+            pty_k = argtys[k]
         }
-        s21_store(s21_gep(argp, ir.get_value(off_k), false), v, T64)
+        var byte_off = 0
+        var used = 0
+        if k < nargs {
+            byte_off = actor_arg_byte_off(argtys, nargs, k)   // 纯常量计算
+            used = 1
+        } else {
+            // 未用尾区：按 8 字节逐字填零（从参数区末尾起，k*8 是**第 k 个 8 字节字**
+            // 的偏移，与已用参数不重叠——否则多个槽会写同一地址）。
+            byte_off = k * 8
+        }
+        var dst_addr = s21_gep(argp, byte_off, true)            // ★ 常量偏移
+        if used == 1 {
+            // 按**参数自身类型**写（架构增强）：原硬编码 T64 ⇒ 只能传 i64。
+            s21_store(dst_addr, args[k], pty_k)
+        } else {
+            s21_store(dst_addr, c0, T64)                       // 未用尾字填零
+        }
         k = k + 1
     }
     // 同步标志槽
@@ -559,20 +585,21 @@ func gen_actor_task_eager() {
     ir.add_operand(mid_off, c8b, 0)
     var midv = s21_load(s21_gep(mq_midp, ir.get_value(mid_off), false), T64)
     var sfv = s21_load(s21_gep(mq_syncfp, ir.get_value(mid_off), false), T64)
-    // 拷贝参数段 mq_arg[slot][0..7] → 当前消息槽 rec@32+k*8（dispatch 读此）
-    var ak: i64 = 0
-    while ak < 8 {
-        var c_k8b = tig_int_lit_ty(ak * 8, T64)
-        var off_v = ir.new_inst(g_cur_block, 2, T64)  // mul slot*64
-        ir.add_operand(off_v, slotv, 0)
-        ir.add_operand(off_v, c64b, 0)
-        var off_k = ir.new_inst(g_cur_block, 0, T64)  // add +k*8
-        ir.add_operand(off_k, ir.get_value(off_v), 0)
-        ir.add_operand(off_k, c_k8b, 0)
-        var av = s21_load(s21_gep(mq_argp, ir.get_value(off_k), false), T64)
-        s21_store(s21_gep(recp, 32 + ak * 8, true), av, T64)
-        ak = ak + 1
-    }
+    // 参数段 mq_arg[slot]（64 字节字节缓冲）→ 当前消息槽 rec@32（dispatch 按类型读）。
+    // ★ 参数是**类型化打包**的，不能再逐 i64 搬运（那会打散聚合体）⇒ 整段 memcpy 64 字节，
+    //   顺带把 8 次 load+store 简化成一次调用。
+    // ★ `mq_argp` 已经是 `rec+680` 的**基址指针**（见上方定义）⇒ 此处只加
+    //   `slot*64`，**不能再加 680**（加了会越界读到垃圾 ⇒ 参数值变随机数）。
+    var cslot64b = tig_int_lit_ty(64, T64)
+    var src_arg = ir.new_inst(g_cur_block, 2, T64)  // mul slot*64
+    ir.add_operand(src_arg, slotv, 0)
+    ir.add_operand(src_arg, cslot64b, 0)
+    var src_off = src_arg
+    // ★ 两遍法：s21_gep / tig_int_lit_ty 都发射指令 ⇒ 先求值再传参
+    var src_addr = s21_gep(mq_argp, ir.get_value(src_off), false)
+    var dst_arg2 = s21_gep(recp, 32, true)
+    var n64b = tig_int_lit_ty(64, T64)
+    s21_memcpy(dst_arg2, src_addr, n64b)
     // 释放槽：mq_head = h+1（原子；参数已拷出，dispatch 不再读队列槽）
     var h1 = ir.new_inst(g_cur_block, 0, T64)  // add h+1
     ir.add_operand(h1, h, 0)

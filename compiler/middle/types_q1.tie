@@ -9,6 +9,37 @@ pub func named(kw: i64) -> i64 {
     return kw
 }
 
+// 消息参数区等「按类型打包」场景用的类型字节大小（2026-03-03 actor 消息 ABI 增强）。
+// 放 types namespace ⇒ 前端（sinfer）与后端（irgen）都能调，避免跨 namespace 不可见。
+// ★ 只覆盖 actor 消息参数可能用到的类型：标量宽度 + fn 聚合（{ptr,ptr}=16）；
+//   其它（table/map/struct/array…）按 8 字节起的保守值——消息参数区有 64 字节上限，
+//   超出会在 infer_actor_method 报清晰诊断，不会静默写坏。
+pub func actor_param_bytes(t: i64) -> i64 {
+    if t < 0 {
+        return 8
+    }
+    if t < 100 {
+        if t == TK_I8 || t == TK_U8 || t == TK_BOOL || t == TK_TRIT {
+            return 1
+        }
+        if t == TK_I16 || t == TK_U16 {
+            return 2
+        }
+        if t == TK_I32 || t == TK_U32 || t == TK_CHAR || t == TK_F32 {
+            return 4
+        }
+        if t == TK_I128 || t == TK_U128 || t == TK_ANY {
+            return 16
+        }
+        return 8
+    }
+    // fn 值 = { ptr env, ptr entry } = 16 字节
+    if types.kind(t) == K_FN {
+        return 16
+    }
+    return 8
+}
+
 // table<T>：id = 1<<40 | T（T 为任意 type id，含嵌套）。
 // 嵌套聚合元素（T ≥ 100）查/登记序号表，负载 = 100 + 序号——防止
 // BASE_TABLE + 聚合进位碰撞 map 段（历史 bug：table<table<i64>> == map<i64>）。

@@ -523,6 +523,11 @@ func infer_actor_method(aty: i64, mname: string, args: table<i64>, id: i64) -> i
         sm_err_msg = "方法 '" + mname + "' 期望 " + to_string(np) + " 个参数，实际 " + to_string(n_args) + " 个"
         return -1
     }
+    // 架构增强（2026-03-03）：消息参数区是每槽 **64 字节字节缓冲**，参数按自身类型
+    // 打包、8 字节对齐（后端 `actor_arg_byte_off` 两侧共用）。单个参数可以是任意类型
+    // （含 16 字节的 fn 聚合）——**唯一约束是全部参数总字节 ≤ 64**。增强前是固定
+    // 8 字节 i64 槽 ⇒ 只能传 i64（此限制已解除，见 E00901 的替代）。
+    var argsz_total: i64 = 0
     var j: i64 = 0
     while j < n_args {
         var at = infer_expr(args[j])
@@ -530,19 +535,8 @@ func infer_actor_method(aty: i64, mname: string, args: table<i64>, id: i64) -> i
             return -1
         }
         var want = sstate.actor_method_param(ai, mname, j)
-        // actor 消息参数**目前只支持 i64**（架构限制，非缺陷）：消息参数区按
-        // `s21_gep(env, 32 + k*8)` 定址——**每参数固定 8 字节槽**（irgen_rt_p3 的
-        // dispatch 侧 `s21_load(argslot, T64)` 亦硬编码 i64）。传 16 字节的 fn 值
-        // 会同时触发类型不匹配与越界，后端表现为难以理解的 opt 报错
-        // （`'%fn.0' defined with type '{ ptr, ptr }' but expected 'i64'`）。
-        // ⇒ 在此给出清晰诊断，把「不可用」显式化而不是让用户撞 IR 崩溃。
-        if want != types.named(TK_I64) {
-            sm_err_line = s_lines[id]
-            sm_err_col = s_cols[id]
-            sm_err_msg = "actor 消息方法 '" + mname + "' 的参数类型是 " + types.type_name(want) +
-                "，但 actor 消息参数目前只支持 i64（消息参数槽按 8 字节定址，见 actor 消息 ABI）"
-            return -1
-        }
+        argsz_total = argsz_total + (types.actor_param_bytes(want) + 7) / 8 * 8
+
         if !stype.types_compatible(want, at) && !stype.types_match(want, at, args[j]) &&
             !stype.types_narrow_int(want, at, args[j]) {
             sm_err_line = s_lines[id]
@@ -551,6 +545,13 @@ func infer_actor_method(aty: i64, mname: string, args: table<i64>, id: i64) -> i
             return -1
         }
         j = j + 1
+    }
+    if argsz_total > 64 {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "actor 消息方法 '" + mname + "' 的参数总大小 " + to_string(argsz_total) +
+            " 字节，超过消息参数区的 64 字节上限（参数按类型打包，见 actor 消息 ABI）"
+        return -1
     }
     var rt = sstate.actor_method_ret(ai, mname)
     node_types[id] = rt
