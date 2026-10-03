@@ -161,6 +161,20 @@ pub func infer_method_call(id: i64) -> i64 {
     // 旧布局无槽→children[0]=接收者。slot_off 统一判定保证自举双兼容）
     var recv = sstate.child(id, sstate.slot_off(id))
     var mname = sstate.name_str(id)
+    // share 门禁 · 并行池批量提交（trm-lite 库函数入口，B 方案补充 2026-10-03）
+    // ★ `trm_lite_ppool.pp_submit(fs, n, res)` 在前端被解析为**方法调用**（tag 18
+    //   S_N_METHOD_CALL），**不是** Call(tag 7) 也不是调用表达式 ⇒ 走本函数而非
+    //   infer_call / infer_call_expr。实测：全节点扫描只在此命中 `t18:pp_submit`。
+    //   接收者 `trm_lite_ppool` 在 recv 节点；方法名在 `mname`。
+    // ★ `fs` 是运行期 `table_push(fs, f)` 组装的批量任务表 ⇒ 编译期看不到池里有哪些
+    //   闭包 ⇒ 无法像 spawn 那样逐个判 ⇒ 按 share 域语义**一律判「共享」**。
+    if mname == "pp_submit" {
+        table_push(g_spawn_nodes, id)
+        table_push(g_spawn_args, -1)        // 任务集运行期组装，无编译期实参可判
+        table_push(g_spawn_caps, g_held_caps)
+        table_push(g_spawn_unsafe, g_unsafe_depth)
+        table_push(g_spawn_force, 1)
+    }
     var args: table<i64> = table_new_i64()
     var nc = sstate.nchild(id)
     var off = sstate.slot_off(id)  // 泛型槽偏移（新布局恒 1，旧布局 0）

@@ -88,6 +88,7 @@ pub func infer_call(id: i64) -> i64 {
         table_push(g_spawn_args, args[0])
         table_push(g_spawn_caps, g_held_caps)
         table_push(g_spawn_unsafe, g_unsafe_depth)
+        table_push(g_spawn_force, 0)
     }
     // 内置函数：先校验个数（-2=参数错误已报），通过后逐个推断实参
     var br = sbuiltin.builtin_call(fnm, args, id)

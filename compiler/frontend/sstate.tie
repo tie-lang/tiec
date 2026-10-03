@@ -313,6 +313,10 @@ var g_spawn_nodes: table<i64>;    // 调用节点（诊断行列）
 var g_spawn_args: table<i64>;     // 实参节点（判据用）
 var g_spawn_caps: table<i64>;     // 当时的 g_held_caps 快照
 var g_spawn_unsafe: table<i64>;   // 当时是否在 unsafe 上下文（g_unsafe_depth > 0）
+// g_spawn_force[i]：该投递点**必定共享**（1）。并行池的 `fs` 是运行期
+// `table_push(fs, f)` 组装的批量任务表，编译期看不到池里有哪些闭包 ⇒ 无法逐个判；
+// 按 share 域语义（批量投递的并发写入责任在书写者）一律判「共享」。
+var g_spawn_force: table<i64>;
 var cl_capkeys: table<i64>;     // 捕获变量名 id（扁平段）
 var cl_capvals: table<i64>;     // 捕获变量类型 id（扁平段）
 var g_clo_depth: i64 = 0;       // 闭包体检查深度（>0 = 在闭包体内）
