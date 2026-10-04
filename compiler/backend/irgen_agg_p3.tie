@@ -513,13 +513,6 @@ func tig_lit_elem_prep(elem: i64, val: i64, v: i64) -> (i64, i64) {
             tig_tbl_retain_call(v)
         }
     }
-    if types.is_table(elem) && pty != types.named(TK_ANY) {
-        var vte = node_types[val]
-        var vte_tag = s_tags[val]
-        if vte >= 0 && types.is_table(vte) && vte_tag != 7 && vte_tag != 12 {
-            tig_tbl_retain_call(v)
-        }
-    }
     return (pty, v)
 }
 
