@@ -1,0 +1,18 @@
+type tie<logic>
+// 12.6 模板宏（声明式宏）：裸形参 + $形参代换槽 + __ 卫生临时名
+macro twice(stmt) {
+    var __t = $stmt
+    $stmt
+    $stmt
+}
+
+func bump() -> i64 {
+    return 7
+}
+
+func main() -> i64 {
+    var acc = 0
+    twice(bump())
+    println(to_string(acc))
+    return 0
+}

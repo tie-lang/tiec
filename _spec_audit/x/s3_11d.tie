@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var n = 4
+    var r = n -> { v -> v * 2 + 1 }
+    println(to_string(r))
+    return 0
+}

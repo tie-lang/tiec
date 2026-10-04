@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    var x = 3.14159
+    var id = 255
+    println(h"plain {x}")
+    println(h"{{literal}}")
+    println(h"{x:08.2f}")
+    return 0
+}

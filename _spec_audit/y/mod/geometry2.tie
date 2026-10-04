@@ -1,0 +1,9 @@
+type tie<class>
+namespace geo {
+    pub func distance(a: i64, b: i64) -> i64 {
+        return a * a + b * b
+    }
+    func helper() -> i64 {
+        return 999
+    }
+}

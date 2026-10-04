@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    var cfg: map<i64> = ["port": 8080]
+    var port = cfg["port"] ?: 9090
+    println(to_string(port))
+    var missing = cfg["nope"] ?: 9090
+    println(to_string(missing))
+    return 0
+}

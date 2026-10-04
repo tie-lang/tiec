@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var m: misc = true
+    var n: misc = 3
+    return 0
+}

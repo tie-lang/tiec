@@ -1,0 +1,10 @@
+type tie<logic>
+// ch09 §9.1 导入：别名 / 无别名 / 两种路径写法
+import "./mod/geometry.tie" as geo
+import "./mod/format.tie"
+
+func main() -> i64 {
+    println(to_string(geo.distance(3, 4)))
+    println(shout("hi"))
+    return 0
+}

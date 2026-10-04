@@ -1,0 +1,21 @@
+type tie<logic>
+port Focusable {
+    pub func focus(self) -> bool
+}
+port Control {
+    pub func draw(self, ctx: i64) -> string
+    pub func focus(self) -> bool
+}
+struct Button {
+    var label: string = ""
+}
+impl Control for Button {
+    pub func draw(self, ctx: i64) -> string { return "B" }
+    pub func focus(self) -> bool { return true }
+}
+func use_focusable<T: Focusable>(x: T) -> bool { return x.focus() }
+func main() -> i64 {
+    var b = Button("b")
+    println(to_string(use_focusable(b)))
+    return 0
+}

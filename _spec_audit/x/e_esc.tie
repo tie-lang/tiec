@@ -1,0 +1,8 @@
+type tie<logic>
+func main() -> i64 {
+    var a = "tab:/t nl:/n q:/" bs:// nul-ish:/0"
+    println(a)
+    var raw = r"C:/path/to/file /n not-escaped"
+    println(raw)
+    return 0
+}

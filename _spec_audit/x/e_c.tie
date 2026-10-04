@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var a = "ab\"cd"
+    println(a)
+    return 0
+}

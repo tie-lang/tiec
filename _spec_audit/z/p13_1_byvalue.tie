@@ -1,0 +1,25 @@
+type tie<logic>
+// 13.1 默认按值（标量）；13.5 clone 独立副本
+func id(m move s: string) -> string { return s }
+
+func main() -> i64 {
+    var a: i64 = 1
+    var b = a
+    b = 2
+    println(to_string(a))   // 期望1
+
+    var xs: table<i64> = []
+    table_push(xs, 1)
+    table_push(xs, 2)
+    var ys = xs.clone()
+    ys[0] = 99
+    println(to_string(xs[0]))  // 期望1（clone 独立）
+    println(to_string(ys[0]))  // 期望99
+
+    var z: table<i64> = []
+    table_push(z, 1)
+    var w = z// 13.1：普通赋值
+    w[0] = 42
+    println(to_string(z[0]))   // 实测：共享 or 独立
+    return 0
+}

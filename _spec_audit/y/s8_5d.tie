@@ -1,0 +1,23 @@
+type tie<logic>
+// ch08 §8.5 捕获 panic（实现的真实签名 catch_panic(f) -> bool）
+func risky() -> i64 {
+    var buf: table<i64> = []
+    if len(buf) == 0 {
+        panic("缓冲区不应为空")
+    }
+    return 1
+}
+func safe() -> i64 { return 2 }
+func main() -> i64 {
+    if catch_panic(risky) {
+        println("caught")
+    } else {
+        println("ok " + to_string(risky()))
+    }
+    if catch_panic(safe) {
+        println("caught")
+    } else {
+        println("ok " + to_string(safe()))
+    }
+    return 0
+}

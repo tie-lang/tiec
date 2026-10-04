@@ -1,0 +1,11 @@
+type tie<logic>
+#cfg(os=windows)
+func f() -> i64 { return 1 }
+#end
+#cfg(os=linux)
+func g() -> i64 { return 2 }
+#end
+func main() -> i64 {
+ println(to_string(f()))
+ return 0
+}

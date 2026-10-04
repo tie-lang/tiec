@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var n = 5
+    var msg = "n = " + n
+    println(msg)
+    return 0
+}

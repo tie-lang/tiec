@@ -1,0 +1,19 @@
+type tie<logic>
+// 15.5 文档注释：三条斜线，紧接声明之前
+/// 求两数的最大公约数。
+///
+/// 示例：
+///gcd(12, 18)   // 6
+///
+/// > 入参为零时返回另一数。
+pub func gcd(a: i64, b: i64) -> i64 {
+    if b == 0 {
+        return a
+    }
+    return gcd(b, a % b)
+}
+
+func main() -> i64 {
+    println(to_string(gcd(12, 18)))
+    return 0
+}

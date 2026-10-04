@@ -1,0 +1,30 @@
+type tie<logic>
+// 16.2/16.3 声明形态与参数约定速查
+struct S { var n: i64 = 0; }
+enum E { A  B(x: i64) }
+namespace ns { pub func helper() -> i64 { return 1 } }
+
+alias M = table<f64>
+
+// extern func e(a: i64) -> i64
+
+actor A { var n: i64 = 0; pub func m() -> i64 { return n } }
+
+func fv(a: i64, b: i64 = 10) -> i64 { return a + b }
+func fr(ref t: table<i64>) -> i64 { return len(t) }
+func fi(immut t: table<i64>) -> i64 { return len(t) }
+func fm(move t: table<i64>) -> i64 { return len(t) }
+func frest(rest: ...i64) -> i64 { return len(rest) }
+
+func main() -> i64 {
+    var s = S()
+    s.n = 1
+    println(to_string(s.n))
+    println(to_string(ns.helper()))
+    println(to_string(fv(1)))
+    println(to_string(fv(1, b: 5)))
+    var xs: table<i64> = []
+    println(to_string(fi(xs)))
+    println(to_string(frest(1, 2, 3)))
+    return 0
+}

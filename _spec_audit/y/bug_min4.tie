@@ -1,0 +1,8 @@
+type tie<logic>
+// 最小复现：函数返回 Result<i64,string>，Ok 载荷为 to_i64(s) 调用
+import "/std/result.tie"
+func parse_port(s: string) -> Result<i64, string> {
+    if len(s) == 0 { return Result.Err("empty") }
+    return Result.Ok(to_i64(s))
+}
+func main() -> i64 { return 0 }

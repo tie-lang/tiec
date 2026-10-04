@@ -1,0 +1,20 @@
+type tie<logic>
+// 16.6 常用内建（自由函数形态）
+func main() -> i64 {
+    var t: table<i64> = [3, 1, 2]
+    sort(t)
+    println(to_string(t[0]))
+    var s = "a,b,c"
+    var parts = split(s, ",")
+    println(to_string(len(parts)))
+    println(to_string(contains(s, "b")))
+    println(to_string(len(trim("  x  "))))
+    println(to_string(len([1,2] + [3])))
+    var u: table<i64> = [1, 1, 2]
+    distinct(u)
+    println(to_string(len(u)))
+    reverse(t)
+    println(to_string(t[0]))
+    println(to_string(len("héllo")))
+    return 0
+}

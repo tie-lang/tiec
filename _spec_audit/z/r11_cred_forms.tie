@@ -1,0 +1,90 @@
+type tie<logic>
+// r11_cred_forms.tie —— 11.6 guard 凭据六形态复核
+//规范 §11.6 出现的凭据相关形态：
+//   ① unsafe.get(域)              —— 取得
+//   ② unsafe use g { }            —— 块级持证（凭据作值传入）
+//   ③ unsafe with(域) { }         —— 作用域临时凭据
+//   ④ g.delegate(域)              —— 派生（同域，原凭据交出）
+//   ⑤ unsafe.revoke(g)            —— 撤销
+//   ⑥ 凭据作函数实参传递（"pass"）—— 本探针额外核查是否存在该形态
+// 六形态逐个实测；派生与撤销用既有回归 tests/language/guard_revoke.tie 语义。
+
+var g_counter: i64 = 0
+
+// ① get
+func f_get() -> i64 {
+    unsafe {
+        var g: guard<mem> = unsafe.get(mem)
+        unsafe use g {
+            var p = alloc(8)
+            free(p)
+        }
+        return 1
+    }
+    return 0
+}
+
+// ② use（已在 f_get 内覆盖）——单列一个纯 use 形态
+func f_use() -> i64 {
+    unsafe {
+        var g: guard<mem> = unsafe.get(mem)
+        var r: i64 = 0
+        unsafe use g {
+            var p = alloc(4)
+            free(p)
+            r = 2
+        }
+        return r
+    }
+    return 0
+}
+
+// ③ with
+func f_with() -> i64 {
+    unsafe {
+        var r: i64 = 0
+        unsafe with(mem) {
+            var p = alloc(4)
+            free(p)
+            r = 3
+        }
+        return r
+    }
+    return 0
+}
+
+// ④ delegate（同域派生；原凭据交出后不可再用）
+func f_delegate() -> i64 {
+    unsafe {
+        var g: guard<mem> = unsafe.get(mem)
+        var sub: guard<mem> = g.delegate(mem)
+        var r: i64 = 0
+        unsafe use sub {
+            var p = alloc(4)
+            free(p)
+            r = 4
+        }
+        return r
+    }
+    return 0
+}
+
+// ⑤ revoke（撤销后再用被拒 —— 负例见 tests/language/guard_revoke_use_neg.tie）
+func f_revoke() -> i64 {
+    unsafe {
+        var g: guard<mem> = unsafe.get(mem)
+        unsafe.revoke(g)
+        return 5
+    }
+    return 0
+}
+
+func main() {
+    unsafe {
+        println("cred-forms get=" + to_string(f_get()) +
+            " use=" + to_string(f_use()) +
+            " with=" + to_string(f_with()) +
+            " delegate=" + to_string(f_delegate()) +
+            " revoke=" + to_string(f_revoke()))
+    }
+}

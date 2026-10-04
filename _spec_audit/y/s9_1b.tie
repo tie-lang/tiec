@@ -1,0 +1,8 @@
+type tie<logic>
+// ch09 §9.1 变体：被导入方用 namespace 包裹
+import "./mod/geometry2.tie" as geo
+
+func main() -> i64 {
+    println(to_string(geo.distance(3, 4)))
+    return 0
+}

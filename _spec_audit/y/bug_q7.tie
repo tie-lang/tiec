@@ -1,0 +1,12 @@
+type tie<logic>
+// 收窄：Ok 载荷改为字面量（不用 to_i64 调用）
+import "/std/result.tie"
+func parse_port(s: string) -> Result<i64, string> {
+    if len(s) == 0 { return Result.Err("empty") }
+    return Result.Ok(1)
+}
+func config_port(raw: string) -> Result<i64, string> {
+    var port_no = parse_port(raw)?
+    return Result.Ok(port_no)
+}
+func main() -> i64 { return 0 }

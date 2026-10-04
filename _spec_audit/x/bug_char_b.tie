@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var t: table<char> = ['a', 'b']
+    var c = t[0]
+    println(to_i64(c))
+    return 0
+}

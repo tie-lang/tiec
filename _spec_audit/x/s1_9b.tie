@@ -1,0 +1,14 @@
+type tie<logic>
+func main() -> i64 {
+    var s = """
+        line1
+          line2
+        """
+    println(s)
+    var t = h"""
+        a={1+1}
+        b={2*3}
+        """
+    println(t)
+    return 0
+}

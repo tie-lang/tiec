@@ -1,0 +1,20 @@
+type tie<logic>
+// 收窄：Err 在函数体首行用 if 包裹，Ok 用 to_i64
+import "/std/result.tie"
+func parse_port(s: string) -> Result<i64, string> {
+    if len(s) == 0 { return Result.Err("空输入") }
+    return Result.Ok(to_i64(s))
+}
+func config_port(raw: string) -> Result<i64, string> {
+    var port_no = parse_port(raw)?
+    return Result.Ok(port_no)
+}
+func main() -> i64 {
+    switch config_port("8080") {
+        case Ok(v):
+            println("port " + to_string(v))
+        case Err(m):
+            println("err " + m)
+    }
+    return 0
+}

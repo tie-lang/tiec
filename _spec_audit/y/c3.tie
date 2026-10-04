@@ -1,0 +1,7 @@
+type tie<logic>
+// 隔离：Result<i64,string>，Ok 载荷字面量
+import "/std/result.tie"
+func f() -> Result<i64, string> {
+    return Result.Ok(1)
+}
+func main() -> i64 { return 0 }

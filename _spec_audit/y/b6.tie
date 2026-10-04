@@ -1,0 +1,7 @@
+type tie<logic>
+// 确认：to_i64 在泛型枚举载荷位置（Result<i64,i64>）——换 to_f64
+import "/std/result.tie"
+func f(s: string) -> Result<i64, string> {
+    return Result.Ok(to_f64(s))
+}
+func main() -> i64 { return 0 }

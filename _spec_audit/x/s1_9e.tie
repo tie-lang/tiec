@@ -1,0 +1,10 @@
+type tie<logic>
+func main() -> i64 {
+    var a = "tab:/t"
+    println(a)
+    var b = "quote:/""
+    println(b)
+    var c = "backslash://"
+    println(c)
+    return 0
+}

@@ -1,0 +1,5 @@
+type tie<class>
+// 宏库：跨文件 pub macro
+pub macro twice(x: code) -> code {
+    return `(($x) + ($x))
+}

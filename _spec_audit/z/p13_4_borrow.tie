@@ -1,0 +1,23 @@
+type tie<logic>
+// 13.1 string 按值传不消耗源（用户已知事实：string 移出移动跟踪）
+func byval(s: string) -> i64 { return len(s) }
+
+func ro(immut t: table<i64>) -> i64 { return len(t) }
+func rw(ref t: table<i64>) -> i64 {
+    table_push(t, 99)
+    return len(t)
+}
+
+func main() -> i64 {
+    var s = "hello"
+    println(to_string(byval(s)))
+    println(s)                 // 期望可用
+
+    var xs: table<i64> = []
+    table_push(xs, 1)
+    println(to_string(ro(xs)))  // immut 不消耗
+    println(to_string(len(xs)))
+    println(to_string(rw(xs)))  // ref 写回原对象
+    println(to_string(len(xs)))
+    return 0
+}

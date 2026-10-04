@@ -1,0 +1,23 @@
+type tie<logic>
+// 16.4/16.10 表达式与运算符速览
+func double(x: i64) -> i64 { return x * 2 }
+
+func main() -> i64 {
+    println(to_string(7 \ 2))
+    println(to_string(7 %% 2))
+    println(to_string(2 ** 10))
+    println(to_string(2 **? 10))
+    println(to_string(1 +? 2))
+    println(to_string(7 -> double))
+    var t: table<i64> = [1, 2, 3]
+    println(to_string(t -> [0]))
+    println(to_string(3 in t))
+    println(to_string(9 not in t))
+    var n: i64 = 7
+    n %%= 2
+    println(to_string(n))
+    println(to_string(1 < 2))
+    var r = 0..10
+    println(to_string(len(r)))
+    return 0
+}

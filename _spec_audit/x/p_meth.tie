@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var t: table<i64> = [3, 1, 2]
+    t.sort()
+    return 0
+}

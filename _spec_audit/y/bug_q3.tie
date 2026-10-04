@@ -1,0 +1,14 @@
+type tie<logic>
+import "/std/result.tie"
+func inner(x: i64) -> Result<i64, string> {
+    if x < 0 { return Result.Err("neg") }
+    return Result.Ok(x)
+}
+func outer(x: i64) -> Result<i64, string> {
+    var v = inner(x)?
+    return Result.Ok(v + 1)
+}
+func main() -> i64 {
+    var r = outer(1)
+    return 0
+}

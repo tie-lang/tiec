@@ -1,0 +1,8 @@
+type tie<logic>
+import "./mod/math_a.tie"
+
+func main() -> i64 {
+    println(to_string(math.gcd(12, 18)))
+    println(to_string(math.lcm(4, 6)))
+    return 0
+}

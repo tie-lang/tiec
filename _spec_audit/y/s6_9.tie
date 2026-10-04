@@ -1,0 +1,22 @@
+type tie<logic>
+// ch06 §6.9 计算属性：getter 读 + _set 写
+struct Circle {
+    var r: f64 = 0.0
+    var name: string = ""
+}
+
+namespace Circle {
+    pub func area(c: Circle) -> f64 { return 3.14159 * c.r * c.r }
+    pub func label(c: Circle) -> string { return "圆 " + to_string(c.r) }
+    pub func label_set(ref c: Circle, v: string) { c.name = v }
+}
+
+func main() -> i64 {
+    var c = Circle(2.0, "x")
+    var a = c.area          // 读：调用计算
+    println(to_string(a))
+    println(c.label)
+    c.label = "hello"       // 写：命中 setter
+    println(c.name)
+    return 0
+}

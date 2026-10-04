@@ -1,0 +1,9 @@
+type tie<logic>
+enum R3 {
+    Ok3(i64)
+    Err3(i64)
+}
+func f() -> R3 {
+    return R3.Ok3(1)
+}
+func main() -> i64 { return 0 }

@@ -1,0 +1,35 @@
+type tie<logic, unsafe:mem>
+// ch07 §7.4 变体：单端口对象变量直接调用方法（不装表）
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+}
+
+struct Button {
+    var label: string = ""
+}
+
+impl Drawable for Button {
+    pub func draw(self, ctx: i64) -> string { return "Button(" + self.label + ")" }
+}
+
+struct Panel {
+    var tag: string = ""
+}
+
+impl Drawable for Panel {
+    pub func draw(self, ctx: i64) -> string { return "Panel(" + self.tag + ")" }
+}
+
+unsafe func build() -> i64 {
+    var b: Drawable = Button("b")
+    println(b.draw(0))
+    var p: Drawable = Panel("p")
+    println(p.draw(1))
+    var b2: Drawable = b
+    println(b2.draw(2))
+    return 0
+}
+
+unsafe func main() -> i64 {
+    return build()
+}

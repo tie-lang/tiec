@@ -1,0 +1,15 @@
+type tie<logic>
+// 14.8 修饰链与事件箭头
+@theme dark {
+    表面色 = 深灰900
+}
+
+@layer base, components, overrides
+
+@scope Card {
+    .title { 前景: 表面色 }
+}
+
+func main() -> i64 {
+    return 0
+}

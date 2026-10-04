@@ -1,0 +1,19 @@
+type tie<logic>
+func may_fail(x: i64) -> Result<i64, string> {
+    if x > 0 { return Result.Ok(x) }
+    return Result.Err("neg")
+}
+func compute() -> Result<i64, string> {
+    var r = try {
+        var a = may_fail(1) ?
+        var b = may_fail(2) ?
+        a + b
+    }
+    return Result.Ok(r)
+}
+func main() -> i64 {
+    if let Ok(v) = compute() {
+        println(to_string(v))
+    }
+    return 0
+}

@@ -1,0 +1,15 @@
+type tie<logic>
+// 13.2 显式移动：参数声明 move 时调用即转移
+func take(move t: table<i64>) -> i64 {
+    return len(t)
+}
+
+func main() -> i64 {
+    var xs: table<i64> = []
+    xs <- 1
+    xs <- 2
+    var n = take(xs)
+    println(to_string(n))
+    println(to_string(len(xs)))   // 13.3：应报错「变量已移出」
+    return 0
+}

@@ -1,0 +1,8 @@
+type tie<logic>
+// 16.12 选择性导入（顶层名）+ using 命名空间
+import "F:/Projects/tie-repo/tiec/_spec_audit/z/p16_import_lib.tie".{ top_fn }
+
+func main() -> i64 {
+    println(to_string(top_fn()))
+    return 0
+}

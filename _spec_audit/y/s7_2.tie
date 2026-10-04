@@ -1,0 +1,28 @@
+type tie<logic>
+// ch07 §7.1/7.2 port 声明 + impl 块
+port Drawable {
+    pub func draw(ctx: i64) -> string
+    pub func bounds() -> i64
+}
+
+struct Button {
+    var label: string = ""
+    var w: i64 = 0
+    var h: i64 = 0
+}
+
+impl Drawable for Button {
+    pub func draw(ctx: i64) -> string {
+        return "Button(" + label + ")"
+    }
+    pub func bounds() -> i64 {
+        return w * h
+    }
+}
+
+func main() -> i64 {
+    var b = Button("ok", 3, 4)
+    println(b.draw(0))
+    println(to_string(b.bounds()))
+    return 0
+}

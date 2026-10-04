@@ -1,0 +1,19 @@
+type tie<logic>
+// ch06 §6.1/6.2 字段默认值生效 + 结构按值传参
+struct Big {
+    var a: i64 = 7
+    var b: string = "def"
+}
+
+func by_val(x: Big) -> i64 { return x.a }
+
+func main() -> i64 {
+    var v = Big()
+    println(to_string(v.a))
+    println(v.b)
+    println(to_string(by_val(v)))
+    var v2 = Big(9, "x")
+    println(to_string(v2.a))
+    println(v2.b)
+    return 0
+}

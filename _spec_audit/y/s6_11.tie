@@ -1,0 +1,12 @@
+type tie<logic>
+// ch06 §6.11 迭代器适配：iter_map / iter_filter / iter_take / iter_zip / iter_chain / table_from
+func main() -> i64 {
+    var xs = [1, 2, 3, 4]
+    var top = xs -> iter_map(v -> v * 2) -> iter_filter(v -> v > 0)
+    println(to_string(top))
+    var ys = [10, 20]
+    for (name, score) in iter_zip(ys, ys) {
+        println(to_string(name) + ":" + to_string(score))
+    }
+    return 0
+}

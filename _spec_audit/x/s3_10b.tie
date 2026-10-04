@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var grid3 = [0] * 3
+    println(to_string(len(grid3)))
+    return 0
+}

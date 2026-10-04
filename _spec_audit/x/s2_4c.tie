@@ -1,0 +1,8 @@
+type tie<logic>
+func main() -> i64 {
+    var t: table<i64> = []
+    table_push(t, 1)
+    table_push(t, 2)
+    println(to_string(len(t)))
+    return 0
+}

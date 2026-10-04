@@ -1,0 +1,10 @@
+type tie<logic>
+// ch09 §9.2 跨文件同名 namespace 合并（主文件须显式导入分片）
+import "./mod/math_a.tie"
+import "./mod/math_b.tie"
+
+func main() -> i64 {
+    println(to_string(math.gcd(12, 18)))
+    println(to_string(math.lcm(4, 6)))
+    return 0
+}

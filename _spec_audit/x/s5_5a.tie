@@ -1,0 +1,21 @@
+type tie<logic>
+func sum(rest: ...i64) -> i64 {
+    var total = 0
+    for x in rest {
+        total += x
+    }
+    return total
+}
+func cat(first: i64, rest: ...i64) -> i64 {
+    var t = first
+    for x in rest { t = t + x }
+    return t
+}
+func main() -> i64 {
+    println(to_string(sum()))
+    println(to_string(sum(1, 2, 3)))
+    var xs: table<i64> = [4, 5]
+    println(to_string(sum(xs...)))
+    println(to_string(cat(1, xs..., 100)))
+    return 0
+}

@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var e = 0t12
+    var f = 0t102
+    return 0
+}

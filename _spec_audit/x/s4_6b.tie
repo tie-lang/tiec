@@ -1,0 +1,9 @@
+type tie<unsafe>
+func main() -> i64 {
+    var a = 1
+    unsafe goto #skip
+    a = 99
+    #[tag.skip]
+    println("a=" + to_string(a))
+    return 0
+}

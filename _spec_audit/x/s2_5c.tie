@@ -1,0 +1,12 @@
+type tie<logic>
+func main() -> i64 {
+    var m: map<i64> = ["a": 1, "b": 2]
+    println(to_string(m["a"]))
+    var e: map<i64> = [:]
+    println(to_string(len(e)))
+    m["c"] = 3
+    if "a" in m {
+        println("yes")
+    }
+    return 0
+}

@@ -1,0 +1,23 @@
+type tie<logic>
+func add2(a: i64, b: i64) -> i64 { return a + b }
+func dbl(x: i64) -> i64 { return x * 2 }
+struct User {
+    var name: string = ""
+    var age: i64 = 0
+}
+func main() -> i64 {
+    println(to_string(10 -> add2(5)))
+    println(to_string(3 -> dbl))
+    var t2: table<i64> = [1]
+    var first = t2[0]
+    println(to_string(first))
+    var u = User("ann", 3)
+    println(u.name)
+    var grown = t2 + [3]
+    println(to_string(len(grown)))
+    var sep = "-" * 3
+    println(sep)
+    var grid3 = [0] * 3
+    println(to_string(len(grid3)))
+    return 0
+}

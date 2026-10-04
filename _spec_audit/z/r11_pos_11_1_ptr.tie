@@ -1,0 +1,15 @@
+type tie<logic>
+// r11_pos_11_1_ptr.tie —— 11.1 正例：指针类型的声明/比较/传递在安全区可用
+// 复核 2026-10-03：11.1 该两条已随 §11.8 撤销（类型本身不在危险清单）。
+// 本探针确认「安全代码可持有、比较、传递 ptr<u8>，只有解引用被拦」。
+func is_null(p: ptr<u8>) -> bool {
+    return is_null(p)
+}
+func main() -> i64 {
+    var x: i64 = 7
+    var p: ptr<i64> = addr_of(x)
+    var q: ptr<i64> = ptr_add(p, 0)
+    var same: bool = (p == q)
+    println("ptr-safe same=" + to_string(same) + " isnull=" + to_string(is_null(p)))
+    return 0
+}

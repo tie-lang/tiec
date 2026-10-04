@@ -1,0 +1,33 @@
+type tie<logic, unsafe:mem>
+// ch07 §7.4 接口作为运行期对象类型（提升需 unsafe:mem）
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+}
+
+struct Button {
+    var label: string = ""
+}
+
+impl Drawable for Button {
+    pub func draw(self, ctx: i64) -> string { return "Button(" + self.label + ")" }
+}
+
+struct Panel {
+    var tag: string = ""
+}
+
+impl Drawable for Panel {
+    pub func draw(self, ctx: i64) -> string { return "Panel(" + self.tag + ")" }
+}
+
+func main() -> i64 {
+    var items: table<Drawable> = []
+    var b: Drawable = Button("b")
+    items <- b
+    var p: Drawable = Panel("p")
+    items <- p
+    for it in items {
+        println(it.draw(0))
+    }
+    return 0
+}

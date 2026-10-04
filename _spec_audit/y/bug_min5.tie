@@ -1,0 +1,7 @@
+type tie<logic>
+import "/std/result.tie"
+func f(s: string) -> Result<i64, i64> {
+    if len(s) == 0 { return Result.Err(0) }
+    return Result.Ok(to_i64(s))
+}
+func main() -> i64 { return 0 }

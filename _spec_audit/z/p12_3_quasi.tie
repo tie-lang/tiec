@@ -1,0 +1,18 @@
+type tie<logic>
+// 12.3 准引用 + 插值（函数式宏内）
+macro unless(cond: code, body: code) -> code {
+    return `{ if !($cond) { $body } }
+}
+
+func cleanup() -> i64 {
+    println("cleanup")
+    return 1
+}
+
+func main() -> i64 {
+    var done: bool = true
+    unless(done, cleanup())
+    var notdone: bool = false
+    unless(notdone, cleanup())
+    return 0
+}

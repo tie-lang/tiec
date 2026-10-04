@@ -1,0 +1,24 @@
+type tie<logic>
+// 12.8 条件编译：键求值语义探针
+#cfg(debug)
+func which() -> string { return "debug-true" }
+#end
+#cfg(release)
+func which2() -> string { return "release-true" }
+#end
+#cfg(os = windows)
+func os_is_windows() -> i64 { return 1 }
+#end
+#cfg(os = linux)
+func os_is_linux() -> i64 { return 2 }
+#end
+#cfg(target = windows)
+func tgt_windows() -> i64 { return 3 }
+#end
+
+func main() -> i64 {
+    println(which())
+    println(os_is_windows())
+    println(tgt_windows())
+    return 0
+}

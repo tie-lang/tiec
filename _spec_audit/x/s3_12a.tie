@@ -1,0 +1,14 @@
+type tie<logic>
+struct P {
+    var x: i64 = 0
+    var y: i64 = 0
+}
+func main() -> i64 {
+    var p = P(1, 2)
+    var p2 = p with { x: 9 }
+    println(to_string(p2.x) + to_string(p2.y))
+    var t1: map<i64> = ["k": 1]
+    var t2 = t1 with { k: 5 }
+    println(to_string(t2["k"]))
+    return 0
+}

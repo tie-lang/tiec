@@ -1,0 +1,31 @@
+type tie<logic>
+// ch08 §8.1 Option / Result 基本形态
+func find(xs: table<i64>, target: i64) -> Option<i64> {
+    for x in xs {
+        if x == target { return Some(x) }
+    }
+    return None
+}
+
+func parse_port(s: string) -> Result<i64, string> {
+    if s.len() == 0 { return Err("空输入") }
+    return Ok(to_i64(s))
+}
+
+func main() -> i64 {
+    var r = find([1, 2, 3], 2)
+    switch r {
+        case Some(v):
+            println("found " + to_string(v))
+        case None:
+            println("none")
+    }
+    var p = parse_port("42")
+    switch p {
+        case Ok(v):
+            println("ok " + to_string(v))
+        case Err(msg):
+            println("fail " + msg)
+    }
+    return 0
+}

@@ -1,0 +1,43 @@
+type tie<logic>
+// ch06 §6.3/6.4 逻辑与数据分离 + 方法调用转发（含内建类型、默认参数、命名实参）
+struct Point {
+    var x: f64 = 0.0
+    var y: f64 = 0.0
+}
+
+namespace Point {
+    pub func dist(p: Point) -> f64 {
+        return sqrt(p.x * p.x + p.y * p.y)
+    }
+
+    pub func move_by(ref p: Point, dx: f64, dy: f64) {
+        p.x += dx
+        p.y += dy
+    }
+
+    pub func bump(c: Point, step: f64 = 1.0) -> f64 {
+        return c.x + step
+    }
+}
+
+struct Counter {
+    var n: i64 = 0
+}
+
+namespace Counter {
+    pub func bump(c: Counter, step: i64 = 1) -> i64 {
+        return c.n + step
+    }
+}
+
+func main() -> i64 {
+    var p = Point(3.0, 4.0)
+    println(to_string(p.dist()))          // 方法形态
+    p.move_by(1.0, 1.0)                  // ref 接收者
+    println(to_string(Point.dist(p)))     // 自由函数形态
+    var c = Counter()
+    println(to_string(c.bump()))// step 取默认
+    println(to_string(c.bump(step: 4)))   // 命名实参
+    println(to_string("abc".len()))       // 内建类型的方法形态
+    return 0
+}

@@ -1,0 +1,14 @@
+type tie<logic>
+// ch10 §10.4 任务与依赖：graph() / g.add / g.run
+func fetch_a() -> i64 { return 1 }
+func fetch_b() -> i64 { return 2 }
+func merge(a: i64, b: i64) -> i64 { return a + b }
+
+func main() -> i64 {
+    var g = graph()
+    var a = g.add(fetch_a)
+    var b = g.add(fetch_b)
+    var c = g.add(merge, a, b)
+    g.run()
+    return 0
+}

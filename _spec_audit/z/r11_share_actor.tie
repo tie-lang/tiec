@@ -1,0 +1,27 @@
+type tie<logic>
+// r11_share_actor.tie —— 11.6 share 域第三处承载：actor 消息投递闭包
+// 提交 9823257：infer_actor_method 的实参循环里，fn 型实参 = 闭包被投进actor
+// 自己的执行流；引用全局可变容器 ⇒ 需share 凭据。
+// 负例：消息方法收一个 fn 形参，传入捕获全局表的闭包，无share 凭据 ⇒应拒。
+var g_tab: table<i64> = []
+
+actor Runner {
+    var hits: i64 = 0
+    pub func run_it(f: fn() -> i64) -> i64 {
+        return f()
+    }
+}
+
+func no_cred() -> i64 {
+    var r = run Runner()
+    return r.run_it(func() -> i64 {
+        table_push(g_tab, 1)
+        return len(g_tab)
+    })
+}
+
+func main() {
+    unsafe {
+        println(to_string(no_cred()))
+    }
+}

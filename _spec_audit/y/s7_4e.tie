@@ -1,0 +1,39 @@
+type tie<logic, unsafe:mem>
+// ch07 §7.4 变体：文件头 unsafe:mem 持证 + unsafe func
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+}
+
+struct Button {
+    var label: string = ""
+}
+
+impl Drawable for Button {
+    pub func draw(self, ctx: i64) -> string { return "Button(" + self.label + ")" }
+}
+
+struct Panel {
+    var tag: string = ""
+}
+
+impl Drawable for Panel {
+    pub func draw(self, ctx: i64) -> string { return "Panel(" + self.tag + ")" }
+}
+
+func build() -> i64 {
+    var items: table<Drawable> = []
+    var b: Drawable = Button("b")
+    items <- b
+    var p: Drawable = Panel("p")
+    items <- p
+    var n: i64 = 0
+    for it in items {
+        println(it.draw(0))
+        n = n + 1
+    }
+    return n
+}
+
+func main() -> i64 {
+    return build()
+}

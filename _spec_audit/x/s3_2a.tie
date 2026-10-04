@@ -1,0 +1,20 @@
+type tie<logic>
+func main() -> i64 {
+    var a = 7
+    var b = 3
+    println(to_string(-2 ** 2))
+    println(to_string(2 ** 3 ** 2))
+    println(to_string(-7 \ 3))
+    println(to_string(-7 %% 3))
+    var q = 7 \ 3
+    q \= 2
+    println(to_string(q))
+    if 0 <= b && b < 10 {
+        println("in range")
+    }
+    if 0 <= b < 10 {
+        println("chained")
+    }
+    println(to_string("abc" < "abd"))
+    return 0
+}

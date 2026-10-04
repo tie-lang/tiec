@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var t: table<i64> = [1, 2, 3]
+    var arr: array<i64, 3> = [1, 2, 3]
+    println(to_string(len(arr)))
+    return 0
+}

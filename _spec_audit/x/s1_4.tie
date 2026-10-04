@@ -1,0 +1,9 @@
+type tie<logic>
+/// 文档注释：附着到紧随其后的声明
+func documented() -> i64 {
+    /// 函数体内的文档注释退化为普通注释
+    return 1
+}
+/* 块
+   注释 */
+func main() -> i64 { return documented() }

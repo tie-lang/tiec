@@ -1,0 +1,16 @@
+type tie<logic>
+// ch08 §8.3 ?: 在 Option 上（实现真实语义）
+import "/std/result.tie"
+func find(xs: table<i64>, target: i64) -> Option<i64> {
+    for x in xs {
+        if x == target { return Some(x) }
+    }
+    return None
+}
+func main() -> i64 {
+    var a = find([1, 2, 3], 2) ?: 0
+    println(to_string(a))
+    var b = find([1, 2, 3], 9) ?: -1
+    println(to_string(b))
+    return 0
+}

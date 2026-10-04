@@ -1,0 +1,12 @@
+type tie<logic>
+// ch09 §9.2 嵌套命名空间专项验证
+namespace outer {
+    pub func f() -> i64 { return 1 }
+    namespace inner {
+        pub func g() -> i64 { return 2 }
+    }
+}
+func main() -> i64 {
+    println(to_string(outer.f()))
+    return 0
+}

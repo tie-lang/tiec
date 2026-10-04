@@ -1,0 +1,21 @@
+type tie<logic>
+interface Drawable {
+    pub func draw(self)
+}
+struct Circle {
+    var r: i64 = 0
+}
+namespace Circle {
+    pub func draw(self: Circle) {
+        println(to_string(self.r))
+    }
+}
+func render_all<T: Drawable>(items: table<T>) {
+    for it in items {
+        it.draw()
+    }
+}
+func main() -> i64 {
+    render_all([Circle(1), Circle(2)])
+    return 0
+}

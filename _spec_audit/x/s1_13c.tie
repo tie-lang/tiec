@@ -1,0 +1,10 @@
+type tie<logic>
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3]
+    var total = 0
+    for v in xs {
+        total += v
+    }
+    println(to_string(total))
+    return 0
+}

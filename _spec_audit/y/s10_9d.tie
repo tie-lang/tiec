@@ -1,0 +1,23 @@
+type tie<logic, unsafe:share>
+// ch10 §10.9 对照：dataflow + share 域持证
+import "/std/dataflow.tie" as df
+
+func plus1(v: i64) -> i64 { return v + 1 }
+func times2(v: i64) -> i64 { return v * 2 }
+func plus100(v: i64) -> i64 { return v + 100 }
+
+unsafe func main() -> i64 {
+    var g = df.new_g()
+    var a = df.node(plus1)
+    var b = df.node(times2)
+    var c = df.node(plus100)
+    df.link(a, b)
+    df.link(b, c)
+    println(to_string(df.node_count()))
+    println(to_string(df.edge_count()))
+    var out = df.run(1)
+    for v in out {
+        println(to_string(v))
+    }
+    return 0
+}

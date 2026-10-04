@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var s = "a,b,c"
+    var f = s.split(",")
+    return 0
+}

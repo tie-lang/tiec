@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    var (sum, ok) = checked_add(9223372036854775807, 1)
+    if !ok {
+        println("overflow")
+    }
+    println(to_string(sum))
+    return 0
+}

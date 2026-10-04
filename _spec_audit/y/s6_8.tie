@@ -1,0 +1,34 @@
+type tie<logic>
+// ch06 §6.8 运算符约定：add/eq/index/index_set/neg/to_string/cmp/sub/mul/div
+struct Vec2 {
+    var x: f64 = 0.0
+    var y: f64 = 0.0
+}
+
+namespace Vec2 {
+    pub func add(a: Vec2, b: Vec2) -> Vec2 { return Vec2(a.x + b.x, a.y + b.y) }
+    pub func sub(a: Vec2, b: Vec2) -> Vec2 { return Vec2(a.x - b.x, a.y - b.y) }
+    pub func mul(a: Vec2, k: f64) -> Vec2 { return Vec2(a.x * k, a.y * k) }
+    pub func eq(a: Vec2, b: Vec2) -> bool { return a.x == b.x && a.y == b.y }
+    pub func neg(a: Vec2) -> Vec2 { return Vec2(-a.x, -a.y) }
+    pub func to_string(a: Vec2) -> string { return "(" + to_string(a.x) + "," + to_string(a.y) + ")" }
+    pub func index(a: Vec2, i: i64) -> f64 { if i == 0 { return a.x } return a.y }
+    pub func index_set(ref a: Vec2, i: i64, v: f64) { if i == 0 { a.x = v } else { a.y = v } }
+}
+
+func main() -> i64 {
+    var p = Vec2(1.0, 2.0)
+    var q = Vec2(3.0, 4.0)
+    var s = p + q
+    println(to_string(s))
+    var d = q - p
+    println(to_string(d))
+    println(to_string(p == q))
+    var n = -p
+    println(to_string(n))
+    println(to_string(p[0]))
+    p[1] = 9.0
+    println(to_string(p))
+    println(p)              // to_string 约定
+    return 0
+}

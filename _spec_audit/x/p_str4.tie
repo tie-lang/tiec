@@ -1,0 +1,8 @@
+type tie<logic>
+import "/std/string.tie" as st
+func main() -> i64 {
+    var s = "你好A"
+    println(st.slice(s, 0, 1))
+    println(s[0])
+    return 0
+}

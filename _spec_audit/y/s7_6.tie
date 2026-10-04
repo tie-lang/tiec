@@ -1,0 +1,23 @@
+type tie<logic>
+// ch07 §7.6 结构接口（interface）：具备方法即可，无需 impl
+interface Named {
+    pub func name(self) -> string
+}
+
+struct Thing {
+    var n: string = ""
+}
+
+namespace Thing {
+    pub func name(t: Thing) -> string { return t.n }
+}
+
+func show<T: Named>(x: T) -> string {
+    return x.name()
+}
+
+func main() -> i64 {
+    var t = Thing("abc")
+    println(show(t))
+    return 0
+}

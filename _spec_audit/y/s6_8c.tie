@@ -1,0 +1,31 @@
+type tie<logic>
+// ch06 §6.8 运算符约定：cmp / index / index_set（index_set 接收者自动 ref）
+struct Vec2 {
+    var x: f64 = 0.0
+    var y: f64 = 0.0
+}
+
+namespace Vec2 {
+    pub func cmp(a: Vec2, b: Vec2) -> i64 {
+        if a.x < b.x { return -1 }
+        if a.x > b.x { return 1 }
+        return 0
+    }
+    pub func index(a: Vec2, i: i64) -> f64 {
+        if i == 0 { return a.x }
+        return a.y
+    }
+    pub func index_set(a: Vec2, i: i64, v: f64) {
+        if i == 0 { a.x = v } else { a.y = v }
+    }
+}
+
+func main() -> i64 {
+    var p = Vec2(1.0, 2.0)
+    var q = Vec2(3.0, 4.0)
+    println(to_string(p < q))
+    println(to_string(p[0]))
+    p[1] = 9.0
+    println(to_string(p.y))
+    return 0
+}

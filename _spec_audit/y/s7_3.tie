@@ -1,0 +1,40 @@
+type tie<logic>
+// ch07 §7.3 泛型接口约束
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+    pub func bounds(self) -> i64
+}
+
+struct Button {
+    var label: string = ""
+    var w: i64 = 0
+    var h: i64 = 0
+}
+
+impl Drawable for Button {
+    pub func draw(self, ctx: i64) -> string { return "Button(" + self.label + ")" }
+    pub func bounds(self) -> i64 { return self.w * self.h }
+}
+
+struct Panel {
+    var tag: string = ""
+}
+
+impl Drawable for Panel {
+    pub func draw(self, ctx: i64) -> string { return "Panel(" + self.tag + ")" }
+    pub func bounds(self) -> i64 { return 99 }
+}
+
+func render_all<T: Drawable>(items: table<T>, ctx: i64) {
+    for it in items {
+        println(it.draw(ctx))
+    }
+}
+
+func main() -> i64 {
+    var bs = [Button("b", 1, 2)]
+    render_all(bs, 0)
+    var ps = [Panel("p")]
+    render_all(ps, 1)
+    return 0
+}

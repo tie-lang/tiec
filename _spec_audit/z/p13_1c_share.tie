@@ -1,0 +1,11 @@
+type tie<logic>
+// 13.1 关键核验：table 普通赋值（按值语义）是否独立
+func main() -> i64 {
+    var z: table<i64> = []
+    table_push(z, 1)
+    var w = z
+    w[0] = 42
+    println(to_string(z[0]))
+    println(to_string(w[0]))
+    return 0
+}

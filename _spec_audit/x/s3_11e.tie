@@ -1,0 +1,23 @@
+type tie<logic>
+struct User {
+    var name: string = ""
+}
+func main() -> i64 {
+    var x: i64 = 0
+    x <- 42
+    println(to_string(x))
+    var arr: table<i64> = [1, 2]
+    arr[0] = 9
+    println(to_string(arr[0]))
+    var u = User("bob")
+    u.name <- "ann"
+    println(u.name)
+    var t: table<i64> = []
+    table_push(t, 1)
+    table_push(t, 2)
+    println(to_string(len(t)))
+    var (lo, hi) = pair()
+    println(to_string(lo + hi))
+    return 0
+}
+func pair() -> (i64, i64) { return (3, 4) }

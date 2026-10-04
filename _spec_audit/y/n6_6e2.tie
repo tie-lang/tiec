@@ -1,0 +1,10 @@
+type tie<logic>
+// ch06 §6.6-5 负例：结构参数隐式窄化 f64 -> i64（构造实参）
+struct P {
+    var x: i64 = 0
+}
+func f(p: P) -> i64 { return p.x }
+func main() -> i64 {
+    var d: f64 = 3.9
+    return f(P(d))
+}

@@ -1,0 +1,12 @@
+type tie<logic>
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3]
+    var squares = [x * x for x in xs]
+    println(to_string(squares[2]))
+    var big = [x for x in xs if x > 1]
+    println(to_string(big[0]))
+    var cfg: map<i64> = ["a": 1, "b": 2]
+    var pairs = [k for k in cfg]
+    println(to_string(len(pairs)))
+    return 0
+}

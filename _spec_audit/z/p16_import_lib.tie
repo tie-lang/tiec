@@ -1,0 +1,7 @@
+type tie<class>
+// 16.12 选择性导入测试库：顶层 pub func + namespace
+pub func top_fn() -> i64 { return 7 }
+
+namespace nsx {
+    pub func deep_fn() -> i64 { return 8 }
+}

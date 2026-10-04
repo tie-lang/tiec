@@ -1,0 +1,20 @@
+type tie<logic>
+struct Addr {
+    var city: string = ""
+}
+struct User2 {
+    var addr: Option<Addr> = Option.None
+}
+func main() -> i64 {
+    var u = User2(Option.Some(Addr("NY")))
+    if let Option.Some(a) = u.addr?.city {
+        println(a)
+    }
+    var t: table<i64> = [1, 2]
+    if let Option.Some(x) = t?[5] {
+        println(to_string(x))
+    } else {
+        println("none")
+    }
+    return 0
+}

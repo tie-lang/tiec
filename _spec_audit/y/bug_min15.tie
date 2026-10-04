@@ -1,0 +1,5 @@
+type tie<logic>
+func f() -> Result<i64, string> {
+    return Ok(1)
+}
+func main() -> i64 { return 0 }

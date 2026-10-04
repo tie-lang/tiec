@@ -1,0 +1,11 @@
+type tie<logic>
+// 13.5note：可写借用 ref 不能被闭包捕获带走
+func main() -> i64 {
+    var xs: table<i64> = []
+    table_push(xs, 1)
+    var f = func() -> i64 {
+        return len(xs)
+    }
+    println(to_string(f()))
+    return 0
+}

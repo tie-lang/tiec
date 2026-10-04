@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var t: table<i64> = [1]
+    var r = t[0] ?: 9
+    println(to_string(r))
+    return 0
+}

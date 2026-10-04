@@ -1,0 +1,8 @@
+type tie<logic>
+// 对照：n \= 2（整除复合赋值）之后是否正常
+func main() -> i64 {
+    var n: i64 = 7
+    n \= 2
+    println(to_string(n))
+    return 0
+}

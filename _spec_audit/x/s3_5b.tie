@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    var (sum, ok) = checked_add(9223372036854775807, 1)
+    println("ok=" + to_string(ok))
+    println("sum=" + to_string(sum))
+    var (p, ok2) = checked_mul(9223372036854775807, 2)
+    println("ok2=" + to_string(ok2))
+    return 0
+}

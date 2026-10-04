@@ -1,0 +1,17 @@
+type tie<logic>
+func main() -> i64 {
+    var t: table<i64> = [1, 2]
+    if let Option.Some(x) = t?[0] {
+        println(to_string(x))
+    }
+    if let Option.Some(y) = t?[5] {
+        println(to_string(y))
+    } else {
+        println("oob-none")
+    }
+    var o: Option<i64> = Option.Some(9)
+    if let Option.Some(z) = o?.value {
+        println("never")
+    }
+    return 0
+}

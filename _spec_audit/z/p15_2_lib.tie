@@ -1,0 +1,5 @@
+type tie<class>
+// 15.2 编译为静态库 -o lib.a（class 角色）
+pub func add1(a: i64) -> i64 {
+    return a + 1
+}

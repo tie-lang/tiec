@@ -1,0 +1,19 @@
+type tie<logic>
+// 12.8 条件编译 #cfg / #else / #end：未选中分支不参与检查（内含非法语法）
+#cfg(os = windows)
+pub func path_sep() -> string { return "\\" }
+#end
+#cfg(os = totally_unknown_os)
+this is not even valid tie syntax ((((
+#end
+#cfg(os = linux)
+pub func other_sep() -> string { return "nope" }
+#else
+pub func cfg_else_taken() -> i64 { return 7 }
+#end
+
+func main() -> i64 {
+    println(path_sep())
+    println(to_string(cfg_else_taken()))
+    return 0
+}

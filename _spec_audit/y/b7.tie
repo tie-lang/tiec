@@ -1,0 +1,7 @@
+type tie<logic>
+// 最小复现：to_i64(string) 单独使用
+func main() -> i64 {
+    var n = to_i64("7")
+    println(to_string(n))
+    return n
+}

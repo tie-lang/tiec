@@ -1,0 +1,8 @@
+type tie<logic>
+func main() -> i64 {
+    var s = "a,b,c"
+    var f = split(s, ",")
+    println(f[0])
+    println(join(f, " | "))
+    return 0
+}

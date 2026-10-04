@@ -1,0 +1,18 @@
+type tie<logic>
+// 16.6 常用内建（str 命名空间 + prelude 裸名）
+import "/std/sort.tie" as srt
+import "/std/string.tie" as str
+
+func main() -> i64 {
+    var t: table<i64> = [3, 1, 2]
+    srt.sort_i64(t)
+    println(to_string(t[0]))
+    var s = "a,b,c"
+    println(to_string(len(str.split(s, ","))))
+    println(to_string(str.contains(s, "b")))
+    println(to_string(len(trim("  x  "))))
+    println(to_string(len([1,2] + [3])))
+    println(to_string(len("héllo")))          // 码点数
+    println(to_string(len(str.join(["a","b"], "-"))))
+    return 0
+}

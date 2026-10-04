@@ -1,0 +1,8 @@
+type tie<logic>
+struct Repr1 {
+    repr("C")
+    var x: i64 = 0
+}
+func main() -> i64 {
+    return 0
+}

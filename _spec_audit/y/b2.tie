@@ -1,0 +1,8 @@
+type tie<logic>
+// 隔离：E=string, 载荷是自定义 g(s) 调用
+import "/std/result.tie"
+func g(x: string) -> i64 { return 1 }
+func f(s: string) -> Result<i64, string> {
+    return Result.Ok(g(s))
+}
+func main() -> i64 { return 0 }

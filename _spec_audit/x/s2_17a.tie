@@ -1,0 +1,12 @@
+type tie<logic>
+alias Matrix = table<f64>
+alias Pair<T> = (T, T)
+alias Handler = fn(i64) -> i64
+func double(x: i64) -> i64 { return x * 2 }
+func main() -> i64 {
+    var m: Matrix = [1.0, 2.0]
+    println(to_string(len(m)))
+    var h: Handler = double
+    println(to_string(h(3)))
+    return 0
+}

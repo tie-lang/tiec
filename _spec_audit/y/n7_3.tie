@@ -1,0 +1,15 @@
+type tie<logic>
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+}
+struct Nope {
+    var x: i64 = 0
+}
+func render_one<T: Drawable>(it: T, ctx: i64) -> string {
+    return it.draw(ctx)
+}
+func main() -> i64 {
+    var n = Nope(1)
+    println(render_one(n, 0))
+    return 0
+}

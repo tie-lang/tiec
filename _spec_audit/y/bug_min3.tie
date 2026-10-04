@@ -1,0 +1,9 @@
+type tie<logic>
+enum R2 {
+    Ok2(i64)
+    Err2(string)
+}
+func main() -> i64 {
+    var r = R2.Ok2(to_i64("7"))
+    return 0
+}

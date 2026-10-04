@@ -1,0 +1,7 @@
+type tie<logic>
+// ch06 §6.6-1 负例：结构体内定义函数
+struct Bad {
+    var x: i64 = 0
+    func helper() -> i64 { return 1 }
+}
+func main() -> i64 { var b = Bad(1); return b.x }

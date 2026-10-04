@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    var x = 3.14159
+    var id = 255
+    var ratio = 0.25
+    var name = "ab"
+    println(h"{x:08}")
+    return 0
+}

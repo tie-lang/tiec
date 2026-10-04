@@ -1,0 +1,12 @@
+type tie<logic>
+// ch06 §6.11 对照：collection.tie 的 map_i64/filter_i64（实现侧等价物，非惰性）
+import "/std/collection.tie" as col
+
+func main() -> i64 {
+    var xs = [1, 2, 3, 4]
+    var m = col.map_i64(func(v: i64) -> i64 { return v * 2 }, xs)
+    var f = col.filter_i64(func(v: i64) -> bool { return v > 4 }, m)
+    println(to_string(len(f)))
+    println(to_string(f[0]))
+    return 0
+}

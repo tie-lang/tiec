@@ -1,0 +1,8 @@
+type tie<logic>
+// ch08 §8.3 ?: 安全默认值
+func main() -> i64 {
+    var cfg = ["port": "9090"]
+    var port_no = cfg["port"] ?: 8080
+    println(to_string(port_no))
+    return 0
+}

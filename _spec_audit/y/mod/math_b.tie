@@ -1,0 +1,6 @@
+type tie<class>
+namespace math {
+    pub func lcm(a: i64, b: i64) -> i64 {
+        return a * b
+    }
+}

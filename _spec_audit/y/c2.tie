@@ -1,0 +1,11 @@
+type tie<logic>
+// 隔离：自定义双参枚举，E=string，Ok 载荷 i64 变量
+enum MR<T, E> {
+    Ok(T)
+    Err(E)
+}
+func f(s: string) -> MR<i64, string> {
+    var n: i64 = to_i64(s)
+    return MR.Ok(n)
+}
+func main() -> i64 { return 0 }

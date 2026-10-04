@@ -1,0 +1,21 @@
+type tie<logic>
+// ch06 §6.10 遍历约定（实现口径：首参自动 ref，不写 ref 修饰）
+struct Ring {
+    var buf: table<i64> = []
+    var i: i64 = 0
+    var n: i64 = 0
+}
+
+namespace Ring {
+    pub func has_next(r: Ring) -> bool { return r.i < r.n }
+    pub func next(r: Ring) -> i64 { r.i += 1; return r.buf[r.i - 1] }
+}
+
+func main() -> i64 {
+    var ring = Ring([10, 20, 30], 0, 3)
+    for v in ring {
+        println(to_string(v))
+    }
+    println(to_string(ring.i))
+    return 0
+}

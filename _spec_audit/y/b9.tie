@@ -1,0 +1,7 @@
+type tie<logic>
+// 确认：to_i64(string) 只在被“需要 i64”的位置才对
+func take(x: i64) -> i64 { return x }
+func main() -> i64 {
+    var n = to_i64("7")      // 推导类型可能取了别的
+    return take(n)
+}

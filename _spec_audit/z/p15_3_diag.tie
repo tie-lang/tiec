@@ -1,0 +1,7 @@
+type tie<logic>
+func f(a: i64) -> i64 { return a }
+func main() -> i64 {
+ var unused: i64 = 3
+ var y: i64 = 4
+ return f(b: 1)
+}

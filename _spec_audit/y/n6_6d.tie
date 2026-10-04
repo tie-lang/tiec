@@ -1,0 +1,7 @@
+type tie<logic>
+// ch06 §6.6-4 负例：字段默认值非常量表达式
+func g() -> i64 { return 7 }
+struct Bad {
+    var x: i64 = g()
+}
+func main() -> i64 { return Bad(1).x }

@@ -1,0 +1,15 @@
+type tie<logic>
+// ch10 §10.8 字段初值：字面量（数字/布尔/字符/字符串/空表）
+actor Cache {
+    var hits: i64 = 0
+    var name: string = ""
+    var items: table<i64> = []
+    var ok: bool = true
+    var ch: char = 'a'
+}
+
+func main() -> i64 {
+    var c = run Cache()
+    println("ok")
+    return 0
+}

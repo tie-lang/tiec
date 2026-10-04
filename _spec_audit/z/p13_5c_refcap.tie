@@ -1,0 +1,24 @@
+type tie<logic>
+// 13.1 标量按值；13.5 note：ref 借用不能被闭包捕获带走
+func main() -> i64 {
+    var a: i64 = 1
+    var b = a
+    b = 2
+    println(to_string(a))   // 期望 1
+
+    // ref 形参在函数内被闭包捕获 → 应被拦截
+    return 0
+}
+
+func make() -> i64 {
+    var xs = table_new_i64()
+    table_push(xs, 1)
+    return len(xs)
+}
+
+func cap_ref(ref t: table<i64>) -> i64 {
+    var f = func() -> i64 {
+        return len(t)      // 13.5 note：期望报错（ref 不可被闭包捕获）
+    }
+    return f()
+}

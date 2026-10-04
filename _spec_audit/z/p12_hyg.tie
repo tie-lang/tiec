@@ -1,0 +1,16 @@
+type tie<logic>
+// 12.6 模板宏卫生：__ 前缀临时名唯一化，不遮蔽使用处变量
+macro swap(a, b) {
+    var __t = a
+    a = b
+    b = __t
+}
+
+func main() -> i64 {
+    var x: i64 = 1
+    var y: i64 = 2
+    swap(x, y)
+    println(to_string(x))
+    println(to_string(y))
+    return 0
+}

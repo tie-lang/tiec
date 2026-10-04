@@ -1,0 +1,7 @@
+type tie<big>
+import "/std/big.tie" as bg
+func main() -> i64 {
+    var b = bg.parse("123456789012345678901234567890")
+    println(bg.to_str(bg.op_add(b, b)))
+    return 0
+}

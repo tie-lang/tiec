@@ -1,0 +1,13 @@
+type tie<logic>
+// 12.6 模板宏（声明式宏）：裸形参 + @stmt 卫生临时名
+macro twice(stmt) {
+    @stmt
+    @stmt
+}
+
+func main() -> i64 {
+    var acc = 0
+    twice(acc = acc + 1)
+    println(to_string(acc))
+    return 0
+}

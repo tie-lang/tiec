@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var a = "q:/""
+    println(a)
+    return 0
+}

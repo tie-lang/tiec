@@ -1,0 +1,5 @@
+type tie<logic>
+func main() -> i64 {
+    var s: text = "hi"
+    return 0
+}

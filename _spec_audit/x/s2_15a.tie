@@ -1,0 +1,14 @@
+type tie<logic>
+struct Entity {
+    var id: i64 = 0
+    var nm: string = ""
+}
+func main() -> i64 {
+    var rows: table<Entity> = []
+    var e = Entity(7, "x")
+    rows[7] = e
+    var r = rows[7]
+    println(r.nm)
+    println(to_string(len(rows)))
+    return 0
+}

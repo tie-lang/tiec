@@ -1,0 +1,7 @@
+type tie<logic>
+// 最小复现：Result.Ok(payload) 的 payload 是函数调用结果
+import "/std/result.tie"
+func main() -> i64 {
+    var r = Result.Ok(to_i64("7"))
+    return 0
+}

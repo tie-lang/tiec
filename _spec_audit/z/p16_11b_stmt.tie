@@ -1,0 +1,32 @@
+type tie<logic>
+// 16.5/16.11 语句速览
+func main() -> i64 {
+    var acc: i64 = 0
+    defer { println("deferred") }
+    switch acc {
+        case 0: println("zero")
+        default: println("other")
+    }
+    var x = switch acc { 0 -> 1, _ -> 2 }
+    println(to_string(x))
+    for i in 0..3 {
+        if i == 1 { continue }
+        acc = acc + i
+    }
+    println(to_string(acc))
+    lbl: for i in 0..3 {
+        for j in 0..3 {
+            if j == 1 { break lbl }
+        }
+    }
+    var s = "abc"
+    var cnt: i64 = 0
+    for c in s.chars() {
+        cnt = cnt + 1
+    }
+    println(to_string(cnt))
+    var (p, q) = (1, 2)
+    println(to_string(p + q))
+    println(to_string([1, 2, 3][0]))
+    return 0
+}

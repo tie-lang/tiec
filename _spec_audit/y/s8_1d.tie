@@ -1,0 +1,24 @@
+type tie<logic>
+// ch08 §8.1 全名构造 + switch case 用裸变体名
+import "/std/result.tie"
+
+func parse_port(s: string) -> Result<i64, string> {
+    if s.len() == 0 { return Result.Err("空输入") }
+    return Result.Ok(to_i64(s))
+}
+
+func main() -> i64 {
+    switch parse_port("42") {
+        case Ok(v):
+            println("ok " + to_string(v))
+        case Err(msg):
+            println("fail " + msg)
+    }
+    switch parse_port("") {
+        case Ok(v):
+            println("ok " + to_string(v))
+        case Err(msg):
+            println("fail " + msg)
+    }
+    return 0
+}

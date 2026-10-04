@@ -1,0 +1,11 @@
+type tie<logic>
+func main() -> i64 {
+    var a: table<i64> = [1, 2, 3]
+    var b: table<i64> = [2, 3, 4]
+    var both = a | b
+    var core = a & b
+    var diff = a - b
+    var flip = a ^ b
+    println(to_string(len(both)) + to_string(len(core)) + to_string(len(diff)) + to_string(len(flip)))
+    return 0
+}

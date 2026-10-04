@@ -1,0 +1,21 @@
+type tie<logic>
+// ch06 §6.5 继承：struct Circle extends Shape，子类型传给期望父类型的参数
+struct Shape {
+    var name: string = ""
+}
+
+struct Circle extends Shape {
+    var r: f64 = 0.0
+}
+
+func area(s: Shape) -> f64 {
+    return 1.0
+}
+
+func main() -> i64 {
+    var c = Circle("circle", 2.0)
+    println(c.name)
+    println(to_string(c.r))
+    println(to_string(area(c)))   // 子类型传给父类型参数
+    return 0
+}

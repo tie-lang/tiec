@@ -1,0 +1,14 @@
+type tie<unsafe>
+// r11_raw_goto.tie —— 11.6 raw 域承载：非结构化跳转（unsafe goto）是否要求 raw 凭据
+// 规范 §11.6 raw 行：「内联汇编、易失访存、非结构化跳转」。
+// builtin_domain 只覆盖 volatile_load/store（raw 位）；asm! 走 E00035（要unsafe 上下文）。
+// 本探针：文件级 `type tie<unsafe>` 只给unsafe 上下文，**不给 raw 凭据**。
+// 若goto 也要 raw 凭据，这里应被拒。
+func main() -> i64 {
+    var a: i64 = 1
+    unsafe goto #skip
+    a = 99
+    #[tag.skip]
+    println("goto raw-nocred a=" + to_string(a))
+    return 0
+}

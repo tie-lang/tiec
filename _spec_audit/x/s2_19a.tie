@@ -1,0 +1,15 @@
+type tie<logic>
+func main() -> i64 {
+    var s = "a,b,c"
+    var f = s.split(",")
+    println(f[0])
+    println(f.join(" | "))
+    println(to_string(s.contains("b")))
+    println(to_string(s.starts("a")))
+    println(to_string(s.ends("c")))
+    println(s.replace("b", "X"))
+    println("[" + s.trim() + "]")
+    println(s.reverse())
+    println(s.upper())
+    return 0
+}

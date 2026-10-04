@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var m: map<i64> = ["a": 1]
+    println(to_string(m_has(m, "a")))
+    return 0
+}

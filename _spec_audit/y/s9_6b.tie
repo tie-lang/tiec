@@ -1,0 +1,8 @@
+type tie<logic>
+// ch09 §9.6 pub import 重导出
+import "./mod/entry.tie"
+
+func main() -> i64 {
+    println(repeat("y", 2))
+    return 0
+}

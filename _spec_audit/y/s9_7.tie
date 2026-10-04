@@ -1,0 +1,9 @@
+type tie<logic>
+// ch09 §9.7 using 把命名空间名字引入当前作用域
+import "./mod/math_a.tie"
+using math
+
+func main() -> i64 {
+    println(to_string(gcd(12, 18)))
+    return 0
+}

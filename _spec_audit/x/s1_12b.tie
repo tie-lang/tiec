@@ -1,0 +1,16 @@
+type tie<logic>
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3]
+    var m: map<i64> = ["a": 1]
+    println(to_string(1 in m))
+    println(to_string(2 in xs))
+    println(to_string("ell" in "hello"))
+    println(to_string(9 not in m))
+    var p = m["a"] ?: 99
+    println(to_string(p))
+    println(to_string(m["zz"] ?: 99))
+    var s: string = "x"
+    println(s ?: "dflt")
+    var r = 0..3
+    return 0
+}

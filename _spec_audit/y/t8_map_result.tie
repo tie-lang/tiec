@@ -1,0 +1,6 @@
+type tie<logic>
+import "/std/result.tie"
+func f() -> i64 {
+    var r = map_result
+    return 0
+}

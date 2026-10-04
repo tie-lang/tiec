@@ -1,0 +1,15 @@
+type tie<logic>
+struct Point {
+    var x: i64 = 0
+    var y: i64 = 0
+}
+func main() -> i64 {
+    var p = Point(1, 2)
+    var f: fn() -> i64 = func() -> i64 { return p.x }
+    p = Point(9, 9)
+    println("struct-after=" + to_string(f()))
+    var arr: array<i64, 3> = [1, 2, 3]
+    var h: fn() -> i64 = func() -> i64 { return arr[0] }
+    println("array=" + to_string(h()))
+    return 0
+}

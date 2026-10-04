@@ -1,0 +1,10 @@
+type tie<logic>
+// 12.4 编译期常量计算：const 折叠
+const TABLE_SIZE: i64 = 1 << 10
+const MASK: i64 = TABLE_SIZE - 1
+
+func main() -> i64 {
+    println(to_string(TABLE_SIZE))
+    println(to_string(MASK))
+    return 0
+}

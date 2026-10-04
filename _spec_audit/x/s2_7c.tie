@@ -1,0 +1,7 @@
+type tie<logic>
+pub func pub_no_param_type(x) -> i64 {
+    return x
+}
+func main() -> i64 {
+    return 0
+}

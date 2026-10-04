@@ -1,0 +1,15 @@
+type tie<logic>
+func main() -> i64 {
+    for i in 0..3 {
+        println(to_string(i))
+    }
+    for i in 0..=3 {
+        println("e" + to_string(i))
+    }
+    var xs: table<i64> = [1, 2, 3, 4, 5]
+    println(to_string(len(xs[0..3])))
+    println(to_string(len(xs[3..])))
+    println(to_string(len(xs[..2])))
+    println(to_string(len(xs[..])))
+    return 0
+}

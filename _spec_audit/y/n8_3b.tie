@@ -1,0 +1,14 @@
+type tie<logic>
+// ch08 §8.3穷尽性专项：switch 只写 case Ok（漏 Err），用全名构造避开裸名问题
+import "/std/result.tie"
+func parse_port(s: string) -> Result<i64, string> {
+    if len(s) == 0 { return Result.Err("empty") }
+    return Result.Ok(parse_int(s))
+}
+func main() -> i64 {
+    switch parse_port("1") {
+        case Ok(v):
+            println("端口 " + to_string(v))
+    }
+    return 0
+}

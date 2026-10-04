@@ -1,0 +1,19 @@
+type tie<logic>
+// r11_cred_pass.tie —— 11.6 核查「凭据能否作函数实参传递」（pass 形态）
+// 规范 §11.6 未明写此形态；任务书要求查清，故实测。
+// callee 须是 unsafe func —— 凭据不进入函数体内部（§11.6「凭据不进入函数体」），
+// 故 callee 自身的 unsafe 上下文是必需的。
+unsafe func consume(g: guard<mem>) -> i64 {
+    unsafe use g {
+        var p = alloc(4)
+        free(p)
+    }
+    return 7
+}
+
+func main() {
+    unsafe {
+        var g: guard<mem> = unsafe.get(mem)
+        println("cred-pass " + to_string(consume(g)))
+    }
+}

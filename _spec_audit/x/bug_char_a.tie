@@ -1,0 +1,9 @@
+type tie<logic>
+func f(s: string) -> char {
+    return s[0]
+}
+func main() -> i64 {
+    var c = f("abc")
+    println(to_i64(c))
+    return 0
+}

@@ -1,0 +1,24 @@
+type tie<logic>
+func may_fail(x: i64) -> Result<i64, string> {
+    if x > 0 { return Result.Ok(x) }
+    return Result.Err("neg")
+}
+func lookup(x: i64) -> Option<i64> {
+    if x > 0 { return Option.Some(x) }
+    return Option.None
+}
+func main() -> i64 {
+    var cfg: map<i64> = ["port": 8080]
+    var port = cfg["port"] ?: 9090
+    println(to_string(port))
+    var missing = cfg["nope"] ?: 9090
+    println(to_string(missing))
+    if let Some(v) = lookup(2) {
+        println(to_string(v))
+    }
+    return 0
+}
+func probe() -> Result<i64, string> {
+    var x = may_fail(1) ?
+    return Result.Ok(x)
+}

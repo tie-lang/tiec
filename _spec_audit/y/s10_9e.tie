@@ -1,0 +1,12 @@
+type tie<logic>
+// ch10 §10.9 图查询：三态标记随图传播 + 拓扑序（对照 graph.tie 图论库）
+import "/std/graph.tie" as gr
+
+func main() -> i64 {
+    // 邻接表：0->1, 0->2, 1->2
+    var adj = [1, 2, 2]
+    var d = gr.dijkstra(adj, 3, 0)
+    println(to_string(d[1]))
+    println(to_string(d[2]))
+    return 0
+}

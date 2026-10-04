@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var s: string = "x"
+    var r = s ?: "d"
+    println(r)
+    return 0
+}

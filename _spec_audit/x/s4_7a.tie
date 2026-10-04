@@ -1,0 +1,27 @@
+type tie<logic>
+func read_first() -> Result<i64, string> { return Result.Ok(1) }
+func read_second() -> Result<i64, string> { return Result.Ok(2) }
+func find(xs: table<i64>, target: i64) -> Option<i64> {
+    if target > 0 { return Option.Some(target) }
+    return Option.None
+}
+func total() -> Result<i64, string> {
+    var t = try {
+        var a = read_first() ?
+        var b = read_second() ?
+        a + b
+    }
+    return Result.Ok(t)
+}
+func main() -> i64 {
+    println("hello")
+    if let Option.Some(v) = find([1], 1) {
+        println("found " + to_string(v))
+    } else {
+        println("none")
+    }
+    if let Result.Ok(x) = total() {
+        println(to_string(x))
+    }
+    return 0
+}

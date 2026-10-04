@@ -1,0 +1,14 @@
+type tie<logic>
+// ch06 §6.6-5 负例：结构参数隐式窄化 f64 -> i64
+struct P {
+    var x: f64 = 0.0
+}
+func f(p: P) -> i64 { return 1 }
+func main() -> i64 {
+    var q = P(3.9)
+    var i: i64 = 7
+    q.x = 3.9
+    // 试图把 f64 字段的结构传给期望 i64 字段的结构参数：需显式构造，不应隐式
+    println(to_string(f(P(i64(3)))))
+    return 0
+}

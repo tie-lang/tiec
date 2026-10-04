@@ -1,0 +1,11 @@
+type tie<logic>
+func main() -> i64 {
+    outer: for a in 0..3 {
+        for b in 0..3 {
+            if b == 1 { break outer }
+            if b == 5 { continue outer }
+        }
+    }
+    println("done")
+    return 0
+}

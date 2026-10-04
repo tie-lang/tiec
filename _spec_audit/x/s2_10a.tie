@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    var v: any = 42
+    var n = as_i64(v)
+    println(to_string(n))
+    var w: any = "text"
+    println(as_string(w))
+    return 0
+}

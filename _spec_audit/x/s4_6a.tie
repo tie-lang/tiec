@@ -1,0 +1,19 @@
+type tie<unsafe>
+func open_a() -> i64 { return 1 }
+func open_b() -> i64 { return 0 }
+func close_a() {}
+func close_b() {}
+func transfer() -> i64 {
+    if open_a() != 0 { unsafe goto #done }
+    if open_b() != 0 { unsafe goto #after_b }
+    close_b()
+    #[tag.after_b]
+    close_b()
+    #[tag.done]
+    close_a()
+    return 0
+}
+func main() -> i64 {
+    println(to_string(transfer()))
+    return 0
+}

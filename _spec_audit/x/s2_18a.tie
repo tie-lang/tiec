@@ -1,0 +1,9 @@
+type tie<logic>
+func zeros<N: i64>() -> array<f64, N> {
+    return array_init(0.0)
+}
+func main() -> i64 {
+    var w = zeros<4>()
+    println(to_string(len(w)))
+    return 0
+}

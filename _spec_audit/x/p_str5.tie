@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var s = "你好A"
+    var c: char = s[0]
+    println(to_i64(c))
+    return 0
+}

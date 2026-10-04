@@ -1,0 +1,20 @@
+type tie<logic>
+// ch10 §10.2 状态单元：actor 声明 + 方法调用即发消息
+actor Counter {
+    var n: i64 = 0
+
+pub func inc(step: i64) {
+        n += step
+    }
+
+pub func value() -> i64 {
+        return n
+    }
+}
+
+func main() -> i64 {
+    var c = Counter()
+    c.inc(5)
+    println(to_string(c.value()))
+    return 0
+}

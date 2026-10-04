@@ -1,0 +1,31 @@
+type tie<logic>
+// ch06 §6.4变体：方法接收者不写 ref 修饰（验证「首参自动 ref」口径）
+struct Point {
+    var x: f64 = 0.0
+    var y: f64 = 0.0
+}
+
+namespace Point {
+    pub func move_by(p: Point, dx: f64, dy: f64) {
+        p.x += dx
+        p.y += dy
+    }
+}
+
+struct Counter {
+    var n: i64 = 0
+}
+
+namespace Counter {
+    pub func bump(c: Counter, step: i64 = 1) -> i64 { return c.n + step }
+}
+
+func main() -> i64 {
+    var p = Point(3.0, 4.0)
+    p.move_by(1.0, 1.0)
+    println(to_string(p.x))
+    var c = Counter()
+    println(to_string(c.bump()))
+    println(to_string(c.bump(step: 4)))
+    return 0
+}

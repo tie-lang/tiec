@@ -1,0 +1,8 @@
+type tie<logic>
+func main() -> i64 {
+    var m: map<i64> = ["a": 1, "b": 2]
+    var m2: map<i64> = ["a": 1; "b": 2]
+    println(to_string(m["a"]))
+    println(to_string(m2["b"]))
+    return 0
+}

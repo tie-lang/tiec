@@ -1,0 +1,18 @@
+type tie<logic>
+func main() -> i64 {
+    var fixed: table<i64> = [1, 2, 3]
+    var dyn: table<i64> = []
+    var grown = [1, 2]
+    dyn <- 1
+    dyn <- 2 <- 30
+    println(to_string(len(fixed)) + to_string(len(dyn)) + to_string(len(grown)))
+    var grid: table<table<i64>> = [[1, 2], [3, 4]]
+    var s = 0
+    for row in grid {
+        for cell in row {
+            s = s + cell
+        }
+    }
+    println(to_string(s))
+    return 0
+}

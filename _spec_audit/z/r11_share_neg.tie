@@ -1,0 +1,20 @@
+type tie<logic>
+// r11_share_neg.tie —— 11.6 负例：无 share 凭据时spawn 全局容器闭包应被拒
+var g_tab: table<i64> = []
+
+func no_cred() -> i64 {
+    unsafe {
+        var t = spawn(func() -> i64 {
+            table_push(g_tab, 1)
+            return 0
+        })
+        return t
+    }
+    return 0
+}
+
+func main() {
+    unsafe {
+        println(to_string(no_cred()))
+    }
+}

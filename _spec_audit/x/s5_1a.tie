@@ -1,0 +1,12 @@
+type tie<logic>
+pub func pub_no_ret(x: i64) {
+    println(to_string(x))
+}
+func priv_no_ret(x: i64) {
+    println(to_string(x))
+}
+func main() -> i64 {
+    pub_no_ret(1)
+    priv_no_ret(2)
+    return 0
+}

@@ -1,0 +1,10 @@
+type tie<logic>
+// 最小复现：泛型枚举载荷位置上的 to_i64(string)
+enum MR<T, E> {
+    Ok(T)
+    Err(E)
+}
+func f(s: string) -> MR<i64, string> {
+    return MR.Ok(to_i64(s))
+}
+func main() -> i64 { return 0 }

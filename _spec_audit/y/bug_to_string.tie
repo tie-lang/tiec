@@ -1,0 +1,15 @@
+type tie<logic>
+// 最小复现：namespace 内自定义 to_string 后，println(struct) 生成错类型 IR
+struct V {
+    var x: i64 = 1
+}
+
+namespace V {
+    pub func to_string(a: V) -> string { return "V" }
+}
+
+func main() -> i64 {
+    var v = V(1)
+    println(v)
+    return 0
+}

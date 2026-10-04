@@ -1,0 +1,7 @@
+type tie<logic>
+// 收窄：不import，只用隐式 prelude
+func g(x: i64) -> i64 { return x }
+func f() -> Result<i64, string> {
+    return Result.Ok(g(1))
+}
+func main() -> i64 { return 0 }

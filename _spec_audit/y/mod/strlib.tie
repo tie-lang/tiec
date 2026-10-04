@@ -1,0 +1,10 @@
+type tie<class>
+pub func join(xs: table<string>, sep: string) -> string {
+    return sep
+}
+pub func repeat(s: string, n: i64) -> string {
+    return s
+}
+pub func unused() -> string {
+    return "u"
+}

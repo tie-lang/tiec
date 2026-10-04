@@ -1,0 +1,14 @@
+type tie<logic>
+// r11_share_nounsafe.tie —— 11.6 负例②：缺 unsafe 上下文（应报另一条诊断）
+var g_tab: table<i64> = []
+
+func no_unsafe() -> i64 {
+    return spawn(func() -> i64 {
+        table_push(g_tab, 1)
+        return 0
+    })
+}
+
+func main() {
+    println(to_string(no_unsafe()))
+}

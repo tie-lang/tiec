@@ -1,0 +1,52 @@
+type tie<logic>
+// r11_share_pos.tie —— 11.6 正例：持share 凭据时同一 spawn 应放行
+// 三种持证形态各覆盖一个 spawn 调用点。
+var g_tab: table<i64> = []
+var g_tab2: table<i64> = []
+var g_tab3: table<i64> = []
+
+// ① 函数级属性
+#[unsafe.share]
+func by_attr() -> i64 {
+    unsafe {
+        return spawn(func() -> i64 {
+            table_push(g_tab, 1)
+            return 0
+        })
+    }
+    return 0
+}
+
+// ② 块级 unsafe with(share)
+unsafe func by_with() -> i64 {
+    unsafe with(share) {
+        return spawn(func() -> i64 {
+            table_push(g_tab2, 1)
+            return 0
+        })
+    }
+    return 0
+}
+
+// ③ 块级 unsafe use g
+func by_use() -> i64 {
+    unsafe {
+        var g: guard<share> = unsafe.get(share)
+        var r: i64 = 0
+        unsafe use g {
+            r = spawn(func() -> i64 {
+                table_push(g_tab3, 1)
+                return 0
+            })
+        }
+        return r
+    }
+    return 0
+}
+
+func main() {
+    unsafe {
+        println("share-pos " + to_string(by_attr()) + " " + to_string(by_with()) +
+            " " + to_string(by_use()))
+    }
+}

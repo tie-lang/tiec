@@ -1,0 +1,11 @@
+type tie<logic>
+// 12.6 模板宏（声明式宏）：裸形参 + 裸名代换槽 + __ 卫生临时名
+macro twice(stmt) {
+    println(stmt)
+    println(stmt)
+}
+
+func main() -> i64 {
+    twice(42)
+    return 0
+}

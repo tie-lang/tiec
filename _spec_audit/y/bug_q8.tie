@@ -1,0 +1,15 @@
+type tie<logic>
+import "/std/result.tie"
+func parse_port(s: string) -> Result<i64, string> {
+    if len(s) == 0 { return Result.Err("empty") }
+    return Result.Ok(to_i64(s))
+}
+func main() -> i64 {
+    switch parse_port("8080") {
+        case Ok(v):
+            println("port " + to_string(v))
+        case Err(m):
+            println("err " + m)
+    }
+    return 0
+}

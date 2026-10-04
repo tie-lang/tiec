@@ -1,0 +1,14 @@
+type tie<logic>
+func boxed() -> any { var v: any = 42
+    return v
+}
+func main() -> i64 {
+    var a: i64 = 1000
+    var b = to_i32(a)
+    var c: f64 = to_f64(a)
+    var d = to_string(a)
+    var e = to_i64("4096")
+    var m = as_i64(boxed())
+    println(to_string(b) + to_string(c) + d + to_string(e) + to_string(m))
+    return 0
+}

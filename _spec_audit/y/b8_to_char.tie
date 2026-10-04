@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var v = to_char("7")
+    println(to_string(v))
+    return 0
+}

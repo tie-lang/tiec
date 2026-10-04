@@ -1,0 +1,28 @@
+type tie<logic>
+// 13.4 借用与转移的取舍：ref / immut / move
+func ro(immut t: table<i64>) -> i64 { return len(t) }
+func rw(ref t: table<i64>) -> i64 {
+    table_push(t, 99)
+    return len(t)
+}
+func consume(move t: table<i64>) -> i64 { return len(t) }
+
+func main() -> i64 {
+    var s = "hello"
+    println(s)
+
+    var xs = table_new_i64()
+    table_push(xs, 1)
+    println(to_string(ro(xs)))  // immut 不消耗
+    println(to_string(len(xs)))
+
+    var ys = table_new_i64()
+    table_push(ys, 1)
+    println(to_string(rw(ys)))  // ref 写回原对象
+    println(to_string(len(ys))) // 期望 2
+
+    var zs = table_new_i64()
+    table_push(zs, 1)
+    println(to_string(consume(zs)))
+    return 0
+}

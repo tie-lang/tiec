@@ -1,0 +1,31 @@
+type tie<logic>
+// 16.5/16.11 语句速览：if let / guard / defer / try / switch / yield
+func pick(opt: i64) -> i64 {
+    if let Some(v) = opt {
+        return v
+    }
+    return 0
+}
+
+func main() -> i64 {
+    var acc: i64 = 0
+    defer { println("deferred") }
+    switch acc {
+        case 0: println("zero")
+        default: println("other")
+    }
+    var x = switch acc { 0 -> 1, _ -> 2 }
+    println(to_string(x))
+    for i in 0..3 {
+        if i == 1 { continue }
+        acc = acc + i
+    }
+    println(to_string(acc))
+    lbl: for i in 0..3 {
+        for j in 0..3 {
+            if j == 1 { break lbl }
+        }
+    }
+    println(to_string(len("abc".chars())))
+    return 0
+}

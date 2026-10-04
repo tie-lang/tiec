@@ -1,0 +1,22 @@
+type tie<logic>
+// ch10 §10.6 建立与调用：run 建立执行体 + 同步/异步方法
+actor Counter {
+    var n: i64 = 0
+
+    pub func inc(step: i64) -> i64 {
+        n += step
+        return n
+    }
+
+    pub async func reset() {
+        n = 0
+    }
+}
+
+func main() -> i64 {
+    var c = run Counter()
+    var v = c.inc(5)
+    println(to_string(v))
+    c.reset()
+    return 0
+}

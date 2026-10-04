@@ -1,0 +1,9 @@
+type tie<logic>
+// ch09 §9.6 选择性导入 .{ join, repeat }
+import "./mod/strlib.tie".{ join, repeat }
+
+func main() -> i64 {
+    println(join(["a", "b"], "-"))
+    println(repeat("x", 3))
+    return 0
+}

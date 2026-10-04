@@ -1,0 +1,22 @@
+type tie<logic>
+func apply(g: fn(i64) -> i64) -> i64 { return g(1) }
+func mk() -> fn() -> i64 {
+    var t = 5
+    return func() -> i64 { return t }
+}
+func find(x: i64) -> Option<i64> {
+    if x > 0 { return Option.Some(x) }
+    return Option.None
+}
+func main() -> i64 {
+    var cl = mk()
+    var not1 = 1
+    var fn1 = 2
+    var out = 0
+    var acc = apply(fn1) + cl() + not1 + out
+    if let Some(v) = find(3) {
+        acc = acc + v
+    }
+    println(to_string(acc))
+    return 0
+}

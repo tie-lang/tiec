@@ -1,0 +1,9 @@
+type tie<logic>
+// ch08 §8.5 panic 终止
+func main() -> i64 {
+    var buf = []
+    if len(buf) == 0 {
+        panic("缓冲区不应为空")
+    }
+    return 0
+}

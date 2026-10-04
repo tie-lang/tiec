@@ -1,0 +1,7 @@
+type tie<logic>
+// 收窄：无 if，只有单条 return
+import "/std/result.tie"
+func f(s: string) -> Result<i64, i64> {
+    return Result.Ok(to_i64(s))
+}
+func main() -> i64 { return 0 }

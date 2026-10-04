@@ -1,0 +1,10 @@
+type tie<logic>
+func g() -> i64 { return 7 }
+actor Bad {
+    var n: i64 = g()
+    pub func get() -> i64 { return n }
+}
+func main() -> i64 {
+    var b = run Bad()
+    return 0
+}

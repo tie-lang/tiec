@@ -1,0 +1,49 @@
+type tie<logic>
+// ch07 §7.3 变体：约束泛型 + 定长数组形参（绕开行池表限制）
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+    pub func bounds(self) -> i64
+}
+
+struct Button {
+    var label: string = ""
+    var w: i64 = 0
+    var h: i64 = 0
+}
+
+impl Drawable for Button {
+    pub func draw(self, ctx: i64) -> string { return "Button(" + self.label + ")" }
+    pub func bounds(self) -> i64 { return self.w * self.h }
+}
+
+struct Panel {
+    var tag: string = ""
+}
+
+impl Drawable for Panel {
+    pub func draw(self, ctx: i64) -> string { return "Panel(" + self.tag + ")" }
+    pub func bounds(self) -> i64 { return 99 }
+}
+
+func render_one<T: Drawable>(it: T, ctx: i64) -> string {
+    return it.draw(ctx)
+}
+
+func render_arr<T: Drawable>(items: array<T, 2>, ctx: i64) -> i64 {
+    var n: i64 = 0
+    for it in items {
+        println(it.draw(ctx))
+        n = n + 1
+    }
+    return n
+}
+
+func main() -> i64 {
+    var b = Button("b", 1, 2)
+    println(render_one(b, 0))
+    var p = Panel("p")
+    println(render_one(p, 1))
+    var bs = [Button("x", 1, 1), Button("y", 2, 2)]
+    println(to_string(render_arr<Button>(bs, 0)))
+    return 0
+}

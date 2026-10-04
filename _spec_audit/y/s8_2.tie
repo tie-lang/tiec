@@ -1,0 +1,29 @@
+type tie<logic>
+// ch08 §8.2 传播：? 后缀
+import "/std/result.tie"
+
+func parse_port(s: string) -> Result<i64, string> {
+    if len(s) == 0 { return Result.Err("空输入") }
+    return Result.Ok(to_i64(s))
+}
+
+func config_port(raw: string) -> Result<i64, string> {
+    var port_no = parse_port(raw)?
+    return Result.Ok(port_no)
+}
+
+func main() -> i64 {
+    switch config_port("8080") {
+        case Ok(v):
+            println("port " + to_string(v))
+        case Err(m):
+            println("err " + m)
+    }
+    switch config_port("") {
+        case Ok(v):
+            println("port " + to_string(v))
+        case Err(m):
+            println("err " + m)
+    }
+    return 0
+}

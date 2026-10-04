@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var s = "你好A"
+    println(to_string(char_code(s, 0)))
+    return 0
+}

@@ -1,0 +1,9 @@
+type tie<logic>
+// r11_asm_nocred.tie —— 11.6/11.7 asm! 是否要求 raw 凭据
+// 无任何 unsafe 上下文与凭据，直接写 asm! ⇒ 观察门禁。
+func main() -> i64 {
+    var n: i64 = 7
+    var r: i64 = asm!("mov $0, $1", out(reg) n)
+    println(to_string(r))
+    return 0
+}

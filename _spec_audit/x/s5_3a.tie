@@ -1,0 +1,12 @@
+type tie<logic>
+func connect(host: string, port_no: i64 = 8080, timeout: i64 = 30) -> i64 {
+    return port_no + timeout
+}
+func main() -> i64 {
+    println(to_string(connect("localhost")))
+    println(to_string(connect("localhost", 9090)))
+    println(to_string(connect("localhost", 9090, 60)))
+    println(to_string(connect(host: "localhost", timeout: 60)))
+    println(to_string(connect("localhost", timeout: 60)))
+    return 0
+}

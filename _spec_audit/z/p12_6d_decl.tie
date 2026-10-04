@@ -1,0 +1,11 @@
+type tie<logic>
+// 12.6 模板宏（声明式宏）：裸形参 + $形参代换槽
+macro twice(stmt) {
+    println($stmt)
+    println($stmt)
+}
+
+func main() -> i64 {
+    twice(42)
+    return 0
+}

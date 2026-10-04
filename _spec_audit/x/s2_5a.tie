@@ -1,0 +1,11 @@
+type tie<logic>
+func main() -> i64 {
+    var age: map<i64> = ["alice": 3, "bob": 5]
+    var empty: map<i64> = [:]
+    age["carol"] = 7
+    if "alice" in age {
+        println("known " + to_string(age["alice"]))
+    }
+    println(to_string(len(empty)))
+    return 0
+}

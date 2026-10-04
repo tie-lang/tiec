@@ -1,0 +1,25 @@
+type tie<logic>
+// ch06 §6.8 运算符约定：实现侧实际约定的 op_* 命名（对照探针）
+struct Vec2 {
+    var x: f64 = 0.0
+    var y: f64 = 0.0
+}
+
+namespace Vec2 {
+    pub func op_add(a: Vec2, b: Vec2) -> Vec2 { return Vec2(a.x + b.x, a.y + b.y) }
+    pub func op_eq(a: Vec2, b: Vec2) -> bool { return a.x == b.x && a.y == b.y }
+    pub func op_neg(a: Vec2) -> Vec2 { return Vec2(-a.x, -a.y) }
+    pub func op_lt(a: Vec2, b: Vec2) -> bool { return a.x < b.x }
+}
+
+func main() -> i64 {
+    var p = Vec2(1.0, 2.0)
+    var q = Vec2(3.0, 4.0)
+    var s = p + q
+    println(to_string(s.x) + "," + to_string(s.y))
+    println(to_string(p == q))
+    println(to_string(p < q))
+    var n = -p
+    println(to_string(n.x))
+    return 0
+}

@@ -1,0 +1,13 @@
+type tie<logic>
+namespace outer {
+    pub func f() -> i64 { return 1 }
+    namespace inner {
+        pub func g() -> i64 { return 2 }
+    }
+}
+using outer
+func main() -> i64 {
+    println(to_string(f()))
+    println(to_string(inner.g()))
+    return 0
+}

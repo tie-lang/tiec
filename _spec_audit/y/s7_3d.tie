@@ -1,0 +1,38 @@
+type tie<logic>
+// ch07 §7.3 核心：约束泛型的单值分派（不迭代容器）
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+    pub func bounds(self) -> i64
+}
+
+struct Button {
+    var label: string = ""
+    var w: i64 = 0
+    var h: i64 = 0
+}
+
+impl Drawable for Button {
+    pub func draw(self, ctx: i64) -> string { return "Button(" + self.label + ")" }
+    pub func bounds(self) -> i64 { return self.w * self.h }
+}
+
+struct Panel {
+    var tag: string = ""
+}
+
+impl Drawable for Panel {
+    pub func draw(self, ctx: i64) -> string { return "Panel(" + self.tag + ")" }
+    pub func bounds(self) -> i64 { return 99 }
+}
+
+func render_one<T: Drawable>(it: T, ctx: i64) -> string {
+    return it.draw(ctx)
+}
+
+func main() -> i64 {
+    var b = Button("b", 3, 4)
+    println(render_one(b, 0))
+    var p = Panel("p")
+    println(render_one(p, 1))
+    return 0
+}

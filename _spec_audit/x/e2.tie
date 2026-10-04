@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var b = "a\\b"
+    println(b)
+    return 0
+}

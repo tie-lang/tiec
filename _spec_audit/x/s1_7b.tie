@@ -1,0 +1,8 @@
+type tie<logic>
+func main() -> i64 {
+    var a: trit = -1t
+    var z: trit = 0t
+    var o: trit = 1t
+    println(to_string(a) + to_string(z) + to_string(o))
+    return 0
+}

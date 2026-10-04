@@ -1,0 +1,17 @@
+type tie<logic>
+// 16.6 常用内建（std 库形态：sort_i64(ref t)）
+import "/std/sort.tie" as srt
+
+func main() -> i64 {
+    var t: table<i64> = [3, 1, 2]
+    srt.sort_i64(ref t)
+    println(to_string(t[0]))
+    var s = "a,b,c"
+    var parts = split(s, ",")
+    println(to_string(len(parts)))
+    println(to_string(contains(s, "b")))
+    println(to_string(len(trim("  x  "))))
+    println(to_string(len([1,2] + [3])))
+    println(to_string(len("héllo")))
+    return 0
+}

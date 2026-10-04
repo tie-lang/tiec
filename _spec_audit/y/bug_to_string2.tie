@@ -1,0 +1,15 @@
+type tie<logic>
+// 变体：显式调用 v.to_string()（不经 println）
+struct V {
+    var x: i64 = 1
+}
+
+namespace V {
+    pub func to_string(a: V) -> string { return "V" }
+}
+
+func main() -> i64 {
+    var v = V(1)
+    println(v.to_string())
+    return 0
+}

@@ -1,0 +1,11 @@
+type tie<logic>
+// ch06 §6.6-4 负例4：字段默认值 = 函数调用，且实际取值验证
+func g() -> i64 { return 7 }
+struct Bad {
+    var x: i64 = g()
+}
+func main() -> i64 {
+    var b = Bad()
+    println(to_string(b.x))
+    return 0
+}

@@ -1,0 +1,12 @@
+type tie<logic>
+func main() -> i64 {
+    var a: num = 42
+    var b: num = 3.14
+    var s: text = "hi"
+    var m: misc = true
+    println(to_string(a))
+    println(to_string(b))
+    println(s)
+    println(to_string(m))
+    return 0
+}

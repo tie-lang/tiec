@@ -1,0 +1,10 @@
+type tie<logic>
+// 12.1 code 值不能存进变量跨阶段使用（规范要求 code 仅限宏上下文）
+func stash(x: code) -> i64 {
+    var v = x
+    return 0
+}
+
+func main() -> i64 {
+    return 0
+}

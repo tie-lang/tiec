@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var x = 3.14159
+    println(h"plain {x}")
+    println(h"{{literal}}")
+    return 0
+}

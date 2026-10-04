@@ -1,0 +1,31 @@
+type tie<logic>
+// ch08 §8.1 用全名 Result.Some / Option.None 构造
+import "/std/result.tie"
+
+func find(xs: table<i64>, target: i64) -> Option<i64> {
+    for x in xs {
+        if x == target { return Option.Some(x) }
+    }
+    return Option.None
+}
+
+func parse_port(s: string) -> Result<i64, string> {
+    if s.len() == 0 { return Result.Err("空输入") }
+    return Result.Ok(to_i64(s))
+}
+
+func main() -> i64 {
+    switch find([1, 2, 3], 2) {
+        case Option.Some(v):
+            println("found " + to_string(v))
+        case Option.None:
+            println("none")
+    }
+    switch parse_port("42") {
+        case Result.Ok(v):
+            println("ok " + to_string(v))
+        case Result.Err(msg):
+            println("fail " + msg)
+    }
+    return 0
+}

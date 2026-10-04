@@ -1,0 +1,9 @@
+type tie<logic>
+func main() -> i64 {
+    var s = "你好"
+    var a = s.len()
+    var b = len(s)
+    var c = s.char(0)
+    println("a=" + to_string(a) + " b=" + to_string(b) + " c=" + c)
+    return 0
+}

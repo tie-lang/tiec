@@ -1,0 +1,4 @@
+type tie<class>
+pub func shout(s: string) -> string {
+    return s
+}

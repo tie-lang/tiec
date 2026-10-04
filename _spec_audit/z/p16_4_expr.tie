@@ -1,0 +1,23 @@
+type tie<logic>
+// 16.4/16.10 表达式与运算符速览
+func double(x: i64) -> i64 { return x * 2 }
+
+func main() -> i64 {
+    println(to_string(7 \ 2))          // 整除
+    println(to_string(7 %% 2))         // 成对取余
+    println(to_string(2 ** 10))        // 幂
+    println(to_string(2 **? 10))       // 带检查幂
+    println(to_string(1 +? 2))         // 带检查加
+    println(to_string(7 -> double))    // 管道
+    var t: table<i64> = [1, 2, 3]
+    println(to_string(t -> [0]))       // 管道进下标
+    println(to_string(3 in t))         // 成员判定
+    println(to_string(9 not in t))     // 成员取反
+    var n: i64 = 7
+    println(to_string(n %%= 2))        // 原地取余写回
+    println(to_string(n))
+    println(to_string(1 < 2 < 3))      // 链式比较
+    var r = 0..10
+    println(to_string(len(r)))
+    return 0
+}

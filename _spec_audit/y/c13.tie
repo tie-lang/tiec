@@ -1,0 +1,6 @@
+type tie<logic>
+func f(s: string) -> i64 {
+    var n: i64 = to_i64(s)
+    return 42
+}
+func main() -> i64 { return 0 }

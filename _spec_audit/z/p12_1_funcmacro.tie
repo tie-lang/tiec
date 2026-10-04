@@ -1,0 +1,11 @@
+type tie<logic>
+// 12.1/12.2 函数式宏：code 形参 + 返回 code
+macro twice(x: code) -> code {
+    return `(($x) + ($x))
+}
+
+func main() -> i64 {
+    var n = twice(3)
+    println(to_string(n))
+    return 0
+}

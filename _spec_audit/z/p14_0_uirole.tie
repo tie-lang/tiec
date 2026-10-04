@@ -1,0 +1,5 @@
+type tie<ui>
+// 16.1角色：type tie<ui> 文件头是否被接受
+func main() -> i64 {
+    return 0
+}

@@ -1,0 +1,17 @@
+type tie<logic>
+func main() -> i64 {
+    var a = 42
+    var b = 0xFF
+    var c = 0b1011
+    var d = 0o755
+    var e = 0t1T0
+    var f = 1_000_000
+    var g = 0xCA_FE
+    var h = 3.14
+    var i = 1.5e3
+    var j: f32 = 1.2f32
+    var k: i32 = 42i32
+    var l: u16 = 0x80u16
+    println(a+b+c+d+e+f+g+to_i64(h)+to_i64(i)+to_i64(j)+k+l)
+    return 0
+}

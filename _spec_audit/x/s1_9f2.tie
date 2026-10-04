@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var id = 255
+    println(h"{id:>6x}")
+    return 0
+}

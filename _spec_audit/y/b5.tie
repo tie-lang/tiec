@@ -1,0 +1,5 @@
+type tie<logic>
+// 确认：to_i64 单独用（非 Result 载荷）正常吗
+import "/std/result.tie"
+func f(s: string) -> i64 { return to_i64(s) }
+func main() -> i64 { return 0 }

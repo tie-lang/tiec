@@ -1,0 +1,14 @@
+type tie<logic>
+func mymap<T, U>(xs: table<T>, f: fn(T) -> U) -> table<U> {
+    var r: table<U> = table_new()
+    for x in xs {
+        table_push(r, f(x))
+    }
+    return r
+}
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3]
+    var doubled = mymap(xs, { it * 2 })
+    println(to_string(doubled[0]))
+    return 0
+}

@@ -1,0 +1,9 @@
+type tie<logic>
+struct Buf {
+    var data: array<u8, 512> = [0, 0, 0]
+}
+func main() -> i64 {
+    var b = Buf()
+    println(to_string(len(b.data)))
+    return 0
+}

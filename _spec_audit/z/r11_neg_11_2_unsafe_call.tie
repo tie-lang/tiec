@@ -1,0 +1,7 @@
+type tie<logic>
+// r11_neg_11_2_unsafe_call.tie —— 11.2 负例：安全代码调unsafe 函数须被拒
+// 复核 2026-10-03：E00587 门禁不属重分类范围，保持。
+unsafe func inner() -> i64 { return 7 }
+func main() -> i64 {
+    return inner()
+}

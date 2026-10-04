@@ -1,0 +1,14 @@
+type tie<logic>
+func main() -> i64 {
+    var n = 10
+    var f: fn() -> i64 = func() -> i64 { return n }
+    n = 20
+    println("scalar-after=" + to_string(f()))
+
+    var t: table<i64> = table_new_i64()
+    table_push(t, 1)
+    var g: fn() -> i64 = func() -> i64 { return len(t) }
+    table_push(t, 2)
+    println("table-after=" + to_string(g()))
+    return 0
+}

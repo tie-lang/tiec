@@ -1,0 +1,14 @@
+type tie<logic>
+// 12.6 卫生临时名：__ 前缀在展开时唯一化，不与使用处变量冲突
+macro probe() {
+    var __t = 99
+    println(__t)
+}
+
+func main() -> i64 {
+    var __t = 1
+    println(__t)
+    probe()
+    println(__t)
+    return 0
+}

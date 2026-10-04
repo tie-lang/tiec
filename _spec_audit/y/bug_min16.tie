@@ -1,0 +1,9 @@
+type tie<logic>
+// 确认：显式 import "/std/result.tie" 是触发条件
+import "/std/result.tie"
+
+func g(x: i64) -> i64 { return x }
+func f() -> Result<i64, string> {
+    return Result.Ok(g(1))
+}
+func main() -> i64 { return 0 }

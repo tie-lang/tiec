@@ -1,0 +1,13 @@
+type tie<logic>
+interface Named {
+    pub func name(self) -> string
+}
+struct Thing {
+    var n: i64 = 0
+}
+func show<T: Named>(x: T) -> string { return x.name() }
+func main() -> i64 {
+    var t = Thing(1)
+    println(show(t))
+    return 0
+}

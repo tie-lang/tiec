@@ -1,0 +1,9 @@
+type tie<logic>
+func validate(x: i64) -> i64 { return x }
+func main() -> i64 {
+    var xs: table<i64> = [1, 2, 3]
+    println(to_string(xs -> validate(0) -> validate(0)))
+    var s = "  hi  "
+    println("[" + trim(s) + "]")
+    return 0
+}

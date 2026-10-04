@@ -1,0 +1,24 @@
+type tie<logic>
+func open2(p: string) -> i64 { return 1 }
+func close(h: i64) { println("close") }
+func acquire() -> i64 { return 2 }
+func release(b: i64) { println("release") }
+func use2(h: i64, b: i64) {}
+func process(path: string) {
+    var h = open2(path)
+    defer { close(h) }
+    var buf = acquire()
+    defer { release(buf) }
+    use2(h, buf)
+}
+func transfer(from: string, amount: i64) -> bool {
+    guard amount > 0 else { return false }
+    guard from != "" else { return false }
+    return true
+}
+func main() -> i64 {
+    process("p")
+    println(to_string(transfer("a", 1)))
+    println(to_string(transfer("a", 0)))
+    return 0
+}

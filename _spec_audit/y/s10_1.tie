@@ -1,0 +1,17 @@
+type tie<logic>
+// ch10 §10.1/§10.3 消息携带数据 + 同步等待返回
+actor Acc {
+    var total: i64 = 0
+
+    pub func add(x: i64) -> i64 {
+        total += x
+        return total
+    }
+}
+
+func main() -> i64 {
+    var a = run Acc()
+    println(to_string(a.add(3)))
+    println(to_string(a.add(4)))
+    return 0
+}

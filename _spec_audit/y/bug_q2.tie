@@ -1,0 +1,23 @@
+type tie<logic>
+// 收窄：加上字符串 Err 载荷 + 打印
+import "/std/result.tie"
+
+func inner(x: i64) -> Result<i64, string> {
+    if x < 0 { return Result.Err("neg") }
+    return Result.Ok(x)
+}
+
+func outer(x: i64) -> Result<i64, string> {
+    var v = inner(x)?
+    return Result.Ok(v + 1)
+}
+
+func main() -> i64 {
+    switch outer(1) {
+        case Ok(v):
+            println("ok " + to_string(v))
+        case Err(m):
+            println("err " + m)
+    }
+    return 0
+}

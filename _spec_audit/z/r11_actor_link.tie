@@ -1,0 +1,22 @@
+type tie<logic>
+// r11_actor_link.tie —— 11.6/11.8 复核：actor 程序能否端到端链接并运行
+// 背景：提交 9823257 记录「actor 程序无法链接 checked-in trm_lite.a（缺
+// tl_sync$sleep，LNK2019）」。该阻塞是否已解除？
+// 本探针：actor 声明 + run + 同步消息方法 + 异步方法。
+actor Counter {
+    var n: i64 = 0
+    pub func inc(step: i64) -> i64 {
+        n = n + step
+        return n
+    }
+    pub async func reset() {
+        n = 0
+    }
+}
+
+func main() {
+    var c = run Counter()
+    var v1 = c.inc(5)
+    var v2 = c.inc(2)
+    println("actor-link " + to_string(v1) + " " + to_string(v2))
+}

@@ -1,0 +1,21 @@
+type tie<logic>
+// r11_pos_11_4_closure_ref.tie —— 11.4 正例：unsafe 区内闭包捕获 ref 形参被解禁
+// 复核 2026-10-03：与 11.1 的 E00000/E00697 负例构成对照，方向正确。
+// ★ 关键：解禁发生在**闭包字面量所在的上下文**，故捕获方须自己是 unsafe func
+//   （负例 tests/…/d11_1e_closure_ref.tie 与本例的差别只是 make 是否 unsafe）。
+// 注：ref 形参实参须为动态表（table_new_*），定长表字面量会被 E00590 拒。
+unsafe func make(ref t: table<i64>) -> fn() -> i64 {
+    return func() -> i64 { return len(t) }
+}
+
+func main() -> i64 {
+    var g: table<i64> = table_new_i64()
+    table_push(g, 1)
+    table_push(g, 2)
+    table_push(g, 3)
+    unsafe {
+        var f = make(g)
+        println("closure-ref-unsafe " + to_string(f()))
+    }
+    return 0
+}

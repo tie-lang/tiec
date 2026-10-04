@@ -1,0 +1,9 @@
+type tie<logic>
+func f1() { return }
+func f2() -> void { }
+func f3() -> i64 { return 1 }
+func main() -> i64 {
+    f1()
+    f2()
+    return f3()
+}

@@ -1,0 +1,9 @@
+type tie<logic>
+// 隔离：var buf = [] 空表（无类型标注）
+func main() -> i64 {
+    var buf = []
+    if len(buf) == 0 {
+        panic("缓冲区不应为空")
+    }
+    return 0
+}

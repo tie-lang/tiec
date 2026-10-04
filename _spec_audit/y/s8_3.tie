@@ -1,0 +1,16 @@
+type tie<logic>
+// ch08 §8.3 分支处理：switch 覆盖 + 穷尽性检查
+import "/std/result.tie"
+func parse_port(s: string) -> Result<i64, string> {
+    if len(s) == 0 { return Err("empty") }
+    return Ok(parse_int(s))
+}
+func main() -> i64 {
+    switch parse_port("1") {
+        case Ok(v):
+            println("端口 " + to_string(v))
+        case Err(msg):
+            println("失败：" + msg)
+    }
+    return 0
+}

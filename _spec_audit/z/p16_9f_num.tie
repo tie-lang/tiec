@@ -1,0 +1,37 @@
+type tie<logic>
+// 16.9字符串与数字；16.11/16.12 速览（with 作用于表）
+pub func gcd(a: i64, b: i64) -> i64 { if b == 0 { return a } return gcd(b, a % b) }
+struct Base { }
+struct Sub extends Base { var n: i64 = 0; }
+interface I { pub func m(self) -> i64 }
+port P { pub func mp(self) -> i64 }
+inline func inf() -> i64 { return 2 }
+func eqb(x: i64) -> i64 = x * 2
+actor Act { var n: i64 = 0
+    pub async func bump() { n = n + 1 }
+    pub func get() -> i64 { return n } }
+
+func main() -> i64 {
+    println(h"{1 + 1}")
+    println(to_string(0xFF))
+    println(to_string(0b1011))
+    println(to_string(1_000_000))
+    println(to_string(1.5))
+    println(to_string('A'))
+    println(to_string(42i32))
+    println(to_string(gcd(12, 18)))
+    println(to_string(eqb(4)))
+    println(to_string(inf()))
+    println(to_string(1 -? 2))
+    println(to_string(len(r"raw\n")))
+    var (p, q) = (1, 2)
+    println(to_string(p + q))
+    var xs: table<i64> = [1, 2, 3]
+    println(to_string(len(xs[1..3])))
+    var t2 = xs with { 0: 9 }
+    println(to_string(t2[0]))
+    var mm: map<i64> = [:]
+    mm[1] = 5
+    println(to_string(len(mm)))
+    return 0
+}

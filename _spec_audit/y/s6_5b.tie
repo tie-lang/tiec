@@ -1,0 +1,18 @@
+type tie<logic>
+// ch06 §6.5 继承：只测字段继承（前缀布局），不带子类型传给父类型参数
+struct Shape {
+    var name: string = ""
+}
+
+struct Circle extends Shape {
+    var r: f64 = 0.0
+}
+
+func main() -> i64 {
+    var c = Circle("circle", 2.0)
+    println(c.name)
+    println(to_string(c.r))
+    var d = Circle("d", 1.0)
+    println(d.name)
+    return 0
+}

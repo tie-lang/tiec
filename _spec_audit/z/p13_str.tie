@@ -1,0 +1,12 @@
+type tie<logic>
+// 已知事实核验：string 不可变 ⇒ 应移出移动跟踪（不消耗源）
+func eat(s: string) -> i64 { return len(s) }
+
+func main() -> i64 {
+    var s = "hello"
+    var n = eat(s)
+    println(to_string(n))
+    println(s)              // 若string 移出跟踪则此处应报错
+    println(s.len())
+    return 0
+}

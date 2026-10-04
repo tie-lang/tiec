@@ -1,0 +1,12 @@
+type tie<logic>
+// 边界：E=string + 非字面量载荷来自自定义函数（不用 to_i64）
+enum MR<T, E> {
+    Ok(T)
+    Err(E)
+}
+func g() -> i64 { return 3 }
+func f() -> MR<i64, string> {
+    var n: i64 = g()
+    return MR.Ok(n)
+}
+func main() -> i64 { return 0 }

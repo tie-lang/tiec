@@ -1,0 +1,11 @@
+type tie<logic>
+import "/std/sort.tie"
+import "/std/collection.tie"
+func main() -> i64 {
+    var t: table<i64> = [3, 1, 2]
+    sort.sort_i64(t)
+    println(to_string(t[0]) + to_string(t[2]))
+    var u: table<i64> = [3, 1, 2]
+    println(to_string(coll.reverse_i64(u)[0]))
+    return 0
+}

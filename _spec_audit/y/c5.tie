@@ -1,0 +1,11 @@
+type tie<logic>
+// 边界：E=string + 非字面量 i64 载荷（最小）
+enum MR<T, E> {
+    Ok(T)
+    Err(E)
+}
+func f() -> MR<i64, string> {
+    var n: i64 = 3
+    return MR.Ok(n)
+}
+func main() -> i64 { return 0 }

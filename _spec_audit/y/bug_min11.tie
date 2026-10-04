@@ -1,0 +1,9 @@
+type tie<logic>
+enum R4<T> {
+    W1(T)
+    N1
+}
+func f() -> R4<i64> {
+    return R4.W1(1)
+}
+func main() -> i64 { return 0 }

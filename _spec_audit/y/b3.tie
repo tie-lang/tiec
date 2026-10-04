@@ -1,0 +1,7 @@
+type tie<logic>
+// 隔离：E=string, 载荷是 to_i64(s)（内建调用，参数是 s）
+import "/std/result.tie"
+func f(s: string) -> Result<i64, string> {
+    return Result.Ok(to_i64(s))
+}
+func main() -> i64 { return 0 }

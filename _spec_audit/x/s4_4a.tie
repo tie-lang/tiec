@@ -1,0 +1,24 @@
+type tie<logic>
+func step() -> i64 { return 1 }
+func handle(x: i64) {}
+func main() -> i64 {
+    var n = 0
+    while n < 3 {
+        n = n + step()
+    }
+    println(to_string(n))
+    for i in 0..3 {
+        handle(i)
+    }
+    var items: table<i64> = [1, 2]
+    for item in items {
+        handle(item)
+    }
+    var s = "你好"
+    var cnt = 0
+    for ch in s.chars() {
+        cnt = cnt + 1
+    }
+    println("cp=" + to_string(cnt))
+    return 0
+}

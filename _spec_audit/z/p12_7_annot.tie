@@ -1,0 +1,12 @@
+type tie<logic>
+// 12.7 声明注解：可叠加、参数为字面量
+@priority(3)
+@deprecated("改用 fast_path")
+pub func slow_path(input: i64) -> i64 {
+    return input
+}
+
+func main() -> i64 {
+    println(to_string(slow_path(1)))
+    return 0
+}

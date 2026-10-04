@@ -1,0 +1,6 @@
+type tie<logic>
+func take(x: num) -> i64 { return to_i64(x) }
+func main() -> i64 {
+    var a: num = 42
+    return take(a)
+}

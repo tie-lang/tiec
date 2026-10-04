@@ -1,0 +1,17 @@
+type tie<logic>
+// ch10 §10.6 结果的延后取得：await 凭据
+actor Worker {
+    var v: i64 = 0
+
+    pub func compute(x: i64) -> i64 {
+        return x * 2
+    }
+}
+
+func main() -> i64 {
+    var w = run Worker()
+    var f = w.compute(3)
+    var r = await f
+    println(to_string(r))
+    return 0
+}

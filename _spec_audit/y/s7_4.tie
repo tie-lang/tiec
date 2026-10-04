@@ -1,0 +1,31 @@
+type tie<logic>
+// ch07 §7.4 接口作为运行期对象类型：table<Drawable> 装异质值并动态分派
+port Drawable {
+    pub func draw(self, ctx: i64) -> string
+}
+
+struct Button {
+    var label: string = ""
+}
+
+impl Drawable for Button {
+    pub func draw(self, ctx: i64) -> string { return "Button(" + self.label + ")" }
+}
+
+struct Panel {
+    var tag: string = ""
+}
+
+impl Drawable for Panel {
+    pub func draw(self, ctx: i64) -> string { return "Panel(" + self.tag + ")" }
+}
+
+func main() -> i64 {
+    var items: table<Drawable> = []
+    items <- Button("b")
+    items <- Panel("p")
+    for it in items {
+        println(it.draw(0))
+    }
+    return 0
+}

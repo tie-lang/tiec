@@ -1,0 +1,9 @@
+type tie<logic>
+// 12.2 跨文件使用 pub macro（裸名调用）
+import "F:/Projects/tie-repo/tiec/_spec_audit/z/p12_maclib.tie" as ml
+
+func main() -> i64 {
+    var n = twice(5)
+    println(to_string(n))
+    return 0
+}

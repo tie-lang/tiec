@@ -1,0 +1,6 @@
+type tie<logic>
+import "/std/result.tie"
+func main() -> i64 {
+    var r = Result.Ok(7)
+    return 0
+}

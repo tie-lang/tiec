@@ -1,0 +1,41 @@
+type tie<logic>
+// r11_pos_11_7_asm.tie —— 11.7 正例：asm! 三方向（out / in / inout）复核
+// 复核 2026-10-03：三方向与 (mem) 约束仍成立。
+// (mem) 四形态见 tests/language/asm_mem_probe.tie（in=41/out=77/inout=7/混用=12345）。
+// 写法提示：tie 的 asm 是 AT&T 方言（源在前、目标在后），立即数写 $$1。
+// 另：asm! 作表达式（返回 out 槽值）不成立——须out 到变量后读该变量，
+// 与 tests/language/asm_multi_probe.tie 的既有用法一致。
+
+// out + in
+func asm_out_in(n: i64) -> i64 {
+    var v: i64 = 0
+    unsafe {
+        asm!("mov $1, $0", out(reg) v, in(reg) n)
+    }
+    return v
+}
+
+// inout：inc 单操作数读写
+func asm_inout(n: i64) -> i64 {
+    var v: i64 = n
+    unsafe {
+        asm!("inc $0", inout(reg) v)
+    }
+    return v
+}
+
+// inout + 立即数：加 1
+func asm_inout_imm(n: i64) -> i64 {
+    var v: i64 = n
+    unsafe {
+        asm!("addq $$1, $0", inout(reg) v)
+    }
+    return v
+}
+
+func main() -> i64 {
+    println("asm3dir out_in=" + to_string(asm_out_in(7)) +
+        " inout=" + to_string(asm_inout(7)) +
+        " inout_imm=" + to_string(asm_inout_imm(7)))
+    return 0
+}

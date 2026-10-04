@@ -1,0 +1,28 @@
+type tie<logic>
+// r11_share_wrongdom.tie —— 11.6 域匹配负例：持 mem 域凭据去做 share 域操作
+// 用途：验证诊断码——持证但持错域时，消息里的「当前作用域持：mem」是 ASCII，
+// 归一化能折叠成 % ⇒ 应命中 E00900。
+var g_tab: table<i64> = []
+
+func wrong_domain() -> i64 {
+    unsafe {
+        var g: guard<mem> = unsafe.get(mem)
+        var r: i64 = 0
+        unsafe use g {
+            var p = alloc(8)
+            free(p)
+            r = spawn(func() -> i64 {
+                table_push(g_tab, 1)
+                return 0
+            })
+        }
+        return r
+    }
+    return 0
+}
+
+func main() {
+    unsafe {
+        println(to_string(wrong_domain()))
+    }
+}

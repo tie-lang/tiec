@@ -1,0 +1,15 @@
+type tie<logic>
+// 13.5 复制与克隆：表快照（自由函数形态）
+import "/std/collection.tie" as col
+
+func main() -> i64 {
+    var xs: table<i64> = []
+    table_push(xs, 1)
+    table_push(xs, 2)
+    var ys = col.copy_i64(xs)
+    ys[0] = 99
+    println(to_string(xs[0]))  // 期望1（独立副本）
+    println(to_string(ys[0]))  // 期望99
+    println(to_string(len(xs)))
+    return 0
+}

@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var a = 7
+    var b = 3
+    println(to_string(a **? b))
+    return 0
+}

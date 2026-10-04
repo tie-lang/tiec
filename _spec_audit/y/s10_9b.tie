@@ -1,0 +1,19 @@
+type tie<logic>
+// ch10 §10.9 对照：dataflow 库（表形态登记 + run 执行）
+import "/std/dataflow.tie" as df
+
+func main() -> i64 {
+    var g = df.new_g()
+    var a = df.node(func(v: i64) -> i64 { return v + 1 })
+    var b = df.node(func(v: i64) -> i64 { return v * 2 })
+    var c = df.node(func(v: i64) -> i64 { return v + 100 })
+    df.link(a, b)
+    df.link(b, c)
+    println(to_string(df.node_count()))
+    println(to_string(df.edge_count()))
+    var out = df.run(1)
+    for v in out {
+        println(to_string(v))
+    }
+    return 0
+}

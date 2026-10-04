@@ -1,0 +1,11 @@
+type tie<logic>
+// 对照：struct 无to_string 约定时，println(struct) 是否本来就坏？
+struct V {
+    var x: i64 = 1
+}
+
+func main() -> i64 {
+    var v = V(1)
+    println(v)
+    return 0
+}

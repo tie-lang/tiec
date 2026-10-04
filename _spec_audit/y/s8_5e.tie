@@ -1,0 +1,9 @@
+type tie<logic>
+// ch08 §8.5 内建检查：越界应报错并给位置
+func at(xs: table<i64>, i: i64) -> i64 {
+    return xs[i]
+}
+func main() -> i64 {
+    println(to_string(at([1, 2, 3], 10)))
+    return 0
+}

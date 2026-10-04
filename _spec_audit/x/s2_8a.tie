@@ -1,0 +1,14 @@
+type tie<logic>
+func max_of<T>(a: T, b: T) -> T {
+    if a > b { return a }
+    return b
+}
+struct Box<T> {
+    var value: T
+}
+func main() -> i64 {
+    println(to_string(max_of(3, 5)))
+    var bx = Box<i64>(7)
+    println(to_string(bx.value))
+    return 0
+}

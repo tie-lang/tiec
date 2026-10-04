@@ -1,0 +1,7 @@
+type tie<logic>
+import "/std/string.tie" as st
+func main() -> i64 {
+    var s = "a,b,c"
+    println(st.split(s, ",")[0])
+    return 0
+}

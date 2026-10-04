@@ -1,0 +1,18 @@
+type tie<logic>
+// 12.8 条件编译 #cfg / #else / #end
+#cfg(os = windows)
+pub func path_sep() -> string { return "\\" }
+#cfg(os = totally_unknown_os)
+pub func only_other() -> i64 { return 999 }
+#cfg(os = totally_unknown_os)
+this is not even valid tie syntax ((((
+#end
+#else
+pub func path_sep() -> string { return "nope" }
+#end
+
+func main() -> i64 {
+    println(path_sep())
+    println(to_string(len(path_sep())))
+    return 0
+}

@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var t: table<i64> = [3, 1, 2]
+    var t2 = t.sort()
+    println(to_string(t2[0]))
+    return 0
+}

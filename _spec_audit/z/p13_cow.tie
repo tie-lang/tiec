@@ -1,0 +1,24 @@
+type tie<logic>
+// 13.1 vs ROAD.md:520「容器 COW/移动语义裁定 v1 维持拷贝」的冲突核验
+func main() -> i64 {
+    // 普通赋值（非 clone、非 move）
+    var a: table<i64> = [1, 2, 3]
+    var b = a
+    b[0] = 99
+    println(to_string(a[0]))
+    println(to_string(b[0]))
+    println(to_string(len(a)))
+    println(to_string(len(b)))
+
+    // 传参（按值）
+    var c: table<i64> = [1, 2, 3]
+    consume_val(c)
+    c[0] = 77
+    println(to_string(c[0]))
+    return 0
+}
+
+func consume_val(t: table<i64>) -> i64 {
+    t[0] = 55
+    return len(t)
+}

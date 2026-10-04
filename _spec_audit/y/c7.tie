@@ -1,0 +1,10 @@
+type tie<logic>
+enum MR<T, E> {
+    Ok(T)
+    Err(E)
+}
+func g() -> i64 { return 3 }
+func f(s: string) -> MR<i64, string> {
+    return MR.Ok(g())
+}
+func main() -> i64 { return 0 }

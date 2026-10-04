@@ -1,0 +1,16 @@
+type tie<logic>
+// ch08 §8.3 ?: 在 Option 上（用 Option.Some/Option.None 构造）
+import "/std/result.tie"
+func find(xs: table<i64>, target: i64) -> Option<i64> {
+    for x in xs {
+        if x == target { return Option.Some(x) }
+    }
+    return Option.None
+}
+func main() -> i64 {
+    var a = find([1, 2, 3], 2) ?: 0
+    println(to_string(a))
+    var b = find([1, 2, 3], 9) ?: -1
+    println(to_string(b))
+    return 0
+}

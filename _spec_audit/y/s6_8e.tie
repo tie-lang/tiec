@@ -1,0 +1,19 @@
+type tie<logic>
+// ch06 §6.8 对照：规范约定的 to_string / index / index_set 名单是否存在
+struct Vec2 {
+    var x: f64 = 0.0
+    var y: f64 = 0.0
+}
+
+namespace Vec2 {
+    pub func index(a: Vec2, i: i64) -> f64 {
+        if i == 0 { return a.x }
+        return a.y
+    }
+}
+
+func main() -> i64 {
+    var p = Vec2(1.0, 2.0)
+    println(to_string(p[0]))
+    return 0
+}

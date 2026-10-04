@@ -1,0 +1,6 @@
+type tie<logic>
+func main() -> i64 {
+    var price = 0.1d + 0.2d
+    println(to_string(price))
+    return 0
+}

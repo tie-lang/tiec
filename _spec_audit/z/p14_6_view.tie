@@ -1,0 +1,11 @@
+type tie<logic>
+// 14.6 界面单元：view 声明
+view Counter(count: i64) -> (Inc) {
+    @Column {
+        @Text "计数"
+    }
+}
+
+func main() -> i64 {
+    return 0
+}

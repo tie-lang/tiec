@@ -1,0 +1,8 @@
+type tie<logic>
+//最小复现：n %%= 2 之后的下一条语句解析失败
+func main() -> i64 {
+    var n: i64 = 7
+    n %%= 2
+    println(to_string(n))
+    return 0
+}

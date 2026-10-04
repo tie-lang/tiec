@@ -1,0 +1,80 @@
+type tie<logic>
+// r11_attr_whitelist.tie —— 11.6 属性白名单复核：#[unsafe.<域>] 五域各自可用
+// 规范 §11.6「按模块授权」代码块明列 `#[unsafe.share]` 形态；
+// 实现的白名单在 pstmt_top_p1.tie:246-248（share/mem/ext/raw/lock 五域）。
+// 本探针对五域各写一个函数级属性，确认「属性位能落地为该域隐式持证」。
+
+// ---- mem ----
+#[unsafe.mem]
+func f_mem() -> i64 {
+    unsafe {
+        var p = alloc(16)
+        free(p)
+    }
+    return 1
+}
+
+// ---- ext ----
+#[unsafe.ext]
+func f_ext() -> i64 {
+    unsafe {
+        var h = load_library("kernel32.dll")
+        return h
+    }
+    return 0
+}
+
+// ---- raw ----
+#[unsafe.raw]
+func f_raw() -> i64 {
+    unsafe {
+        var x: i64 = 7
+        var p: ptr<i64> = addr_of(x)
+        volatile_store(p, 5)
+        return volatile_load(p)
+    }
+    return 0
+}
+
+// ---- lock ----
+#[unsafe.lock]
+func f_lock(xs: table<i64>) -> i64 {
+    unsafe {
+        table_push(xs, 1)
+    }
+    return len(xs)
+}
+
+// ---- share ----
+// share 域的承载 = 交给执行流的闭包（spawn / pp_submit / actor 消息投递）。
+// 这里用 spawn 一个引用全局可变容器的闭包来验证 share 位生效。
+var g_share_tab: table<i64> = []
+
+#[unsafe.share]
+func f_share() -> i64 {
+    unsafe {
+        var t = spawn(func() -> i64 {
+            table_push(g_share_tab, 99)
+            return len(g_share_tab)
+        })
+        return t
+    }
+    return 0
+}
+
+func main() {
+    var a: i64 = 0
+    var h: i64 = 0
+    var r: i64 = 0
+    var l: i64 = 0
+    var s: i64 = 0
+    unsafe {
+        a = f_mem()
+        h = f_ext()
+        r = f_raw()
+        l = f_lock(table_new_i64())
+        s = f_share()
+    }
+    println("attr5 mem=" + to_string(a) + " ext_nonzero=" + to_string(h) +
+        " raw=" + to_string(r) + " lock=" + to_string(l) + " share_task=" + to_string(s))
+}

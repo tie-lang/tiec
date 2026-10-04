@@ -1,0 +1,13 @@
+type tie<logic>
+func main() -> i64 {
+    var p: trit = true
+    var z: trit = zero
+    var n: trit = false
+    var a1 = p && z
+    var o1 = p || n
+    var n1 = !p
+    println(to_string(a1))
+    println(to_string(o1))
+    println(to_string(n1))
+    return 0
+}

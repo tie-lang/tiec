@@ -1,0 +1,22 @@
+type tie<logic>
+func classify(c: i64) -> string {
+    var grade = "C"
+    if c >= 90 {
+        grade = "A"
+    } else if c >= 60 {
+        grade = "B"
+    } else {
+        grade = "C"
+    }
+    return grade
+}
+func main() -> i64 {
+    println(classify(95))
+    println(classify(70))
+    println(classify(10))
+    var i = 1
+    if i {
+        println("truthy")
+    }
+    return 0
+}

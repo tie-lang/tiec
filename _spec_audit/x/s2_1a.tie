@@ -1,0 +1,22 @@
+type tie<logic>
+func main() -> i64 {
+    var a: i8 = 1
+    var b: i16 = 1
+    var c: i32 = 1
+    var d: i64 = 1
+    var e: u8 = 1
+    var f: u16 = 1
+    var g: u32 = 1
+    var h: u64 = 1
+    var i: i128 = 1
+    var j: u128 = 1
+    var k: f32 = 1.0
+    var l: f64 = 1.0
+    var m: bool = true
+    var n: trit = true
+    var o: char = 'A'
+    var p: string = "s"
+    println(to_string(a+b+c+d+e+f+g+h+i+j+to_i64(k)+to_i64(l)))
+    println(to_string(m) + to_string(n) + to_string(o) + p)
+    return 0
+}

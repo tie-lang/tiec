@@ -1,0 +1,7 @@
+type tie<logic>
+func main() -> i64 {
+    var total = 1 + \
+        2 + \
+        3
+    return total
+}

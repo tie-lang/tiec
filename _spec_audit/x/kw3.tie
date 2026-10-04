@@ -1,0 +1,5 @@
+type tie<logic>
+func main() -> i64 {
+    var a: inline = 1
+    return 0
+}

@@ -1,0 +1,25 @@
+type tie<logic, unsafe:mem>
+// r11_pp_submit_ok.tie —— 11.6 share 域第二处承载：并行池 pp_submit 正例
+// 复核 2026-10-03：_tiec_verify/share_gate/pp_submit_ok.tie 用相对路径
+// "../../trm-lite/..."，相对 _tiec_verify/share_gate/ 解析不到，恒报 E00483，
+// 属**探针路径失效**而非门禁失效。此处改用仓库绝对路径重测。
+import "F:/Projects/tie-repo/trm-lite/core/mnn/sched.tie"
+
+var g_rec: table<i64> = []
+
+unsafe func main() {
+    var fs: table<fn() -> i64> = []
+    var n: i64 = 0
+    while n < 2 {
+        table_push(fs, func() -> i64 {
+            table_push(g_rec, n)
+            return n
+        })
+        n = n + 1
+    }
+    unsafe with(share) {
+        var res: table<i64> = table_new_i64()
+        var r = trm_lite_ppool.pp_submit(fs, 2, res)
+        println("pp_submit_ok r=" + to_string(r))
+    }
+}

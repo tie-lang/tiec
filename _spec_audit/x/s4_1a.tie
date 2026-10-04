@@ -1,0 +1,17 @@
+type tie<logic>
+const MAX: i64 = 1024
+func main() -> i64 {
+    var count = 0
+    count = 10
+    count += 1
+    count *= 2
+    println(to_string(count) + to_string(MAX))
+    var x: i64 = 5
+    var shadow = 1
+    if x > 0 {
+        var shadow = 2
+        println(to_string(shadow))
+    }
+    println(to_string(shadow))
+    return 0
+}

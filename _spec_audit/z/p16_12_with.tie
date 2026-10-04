@@ -1,0 +1,14 @@
+type tie<logic>
+// 16.11/16.12 速览（with / map）
+struct Sub { var n: i64 = 0; }
+
+func main() -> i64 {
+    var st = Sub()
+    var st2 = st with { n: 9 }
+    println(to_string(st2.n))
+    var m: map<i64> = [:]
+    m[1] = 5
+    println(to_string(len(m)))
+    println(to_string(m[1]))
+    return 0
+}

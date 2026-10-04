@@ -1,0 +1,15 @@
+type tie<logic>
+// 16.6 常用内建
+func main() -> i64 {
+    var t: table<i64> = [3, 1, 2]
+    t.sort()
+    println(to_string(t[0]))
+    var s = "a,b,c"
+    var parts = s.split(",")
+    println(to_string(len(parts)))
+    println(s.contains("b").to_string())
+    println(len("  x  ").to_string())
+    println(to_string([1,2] + [3]))
+    println(to_string(len("héllo")))
+    return 0
+}

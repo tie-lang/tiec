@@ -1,0 +1,18 @@
+type tie<logic>
+func pair2() -> (i64, i64) { return (1, 2) }
+func main() -> i64 {
+    var (a, b) = pair2()
+    println(to_string(a + b))
+    var xs: table<i64> = [1, 2, 3, 4]
+    var (h, ...rest) = xs
+    println(to_string(h) + to_string(len(rest)))
+    var pairs: table<(i64, i64)> = [(1, 2), (3, 4)]
+    var s = 0
+    for (k, v) in pairs {
+        s = s + k + v
+    }
+    println(to_string(s))
+    var (p, q) = pair2()
+    println(to_string(p * q))
+    return 0
+}

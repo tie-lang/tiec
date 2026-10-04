@@ -1,0 +1,13 @@
+type tie<unsafe>
+func transfer() -> i64 {
+    var a = 1
+    unsafe goto #done
+    a = 2
+    #[tag.done]
+    println("a=" + to_string(a))
+    return a
+}
+func main() -> i64 {
+    println(to_string(transfer()))
+    return 0
+}

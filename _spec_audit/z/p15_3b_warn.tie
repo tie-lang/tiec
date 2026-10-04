@@ -1,0 +1,11 @@
+type tie<logic>
+// 15.3 警告诊断：变量遮蔽 W00008
+func main() -> i64 {
+    var tmp: i64 = 1
+    if true {
+        var tmp: i64 = 2
+        println(to_string(tmp))
+    }
+    println(to_string(tmp))
+    return 0
+}

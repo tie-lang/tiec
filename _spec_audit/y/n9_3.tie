@@ -1,0 +1,8 @@
+type tie<logic>
+// ch09 §9.3 负例：私有名称不应跨文件可见
+import "./mod/geometry2.tie" as geo
+
+func main() -> i64 {
+    println(to_string(geo.helper()))
+    return 0
+}

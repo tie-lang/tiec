@@ -1,0 +1,10 @@
+type tie<unsafe:mem>
+func main() -> i64 {
+    unsafe {
+        var x: i64 = 42
+        var p = addr_of(x)
+        var v = deref(p)
+        println(to_string(v))
+    }
+    return 0
+}

@@ -1,0 +1,11 @@
+type tie<logic>
+// 确认：泛型枚举模板 + 调用载荷
+enum R4<T> {
+    W1(T)
+    N1
+}
+func g(x: i64) -> i64 { return x }
+func f() -> R4<i64> {
+    return R4.W1(g(1))
+}
+func main() -> i64 { return 0 }

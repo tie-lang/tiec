@@ -1,0 +1,5 @@
+type tie<logic>
+unsafe extern fn getenv(name: string) -> i64
+func main() -> i64 {
+    return 0
+}
