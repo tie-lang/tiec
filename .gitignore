@@ -39,3 +39,7 @@ compiler/_*.txt
 tests/language/_*.tie
 tests/_*_probe/_*
 tests/_*/_*
+
+# _spec_audit build artifacts (probe .tie sources are kept as evidence)
+_spec_audit/**/*.zd
+_spec_audit/**/*.t
