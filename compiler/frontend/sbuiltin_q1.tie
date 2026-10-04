@@ -23,6 +23,7 @@ pub func builtin_call(fn_name: string, args: table<i64>, call_node: i64) -> i64 
     if fn_name == "addr_of" || fn_name == "deref" || fn_name == "volatile_load" { return builtin_call_b_addr_of(fn_name, args, call_node) }
     if fn_name == "ptr_add" || fn_name == "slice_index" { return builtin_call_b_ptr_add(fn_name, args, call_node) }
     if fn_name == "slice_of" { return builtin_call_b_slice_of(fn_name, args, call_node) }
+    if fn_name == "share" { return builtin_call_b_share(fn_name, args, call_node) }
     // ---------- S1.3 to_* 显式数值转换族（p.9.0-S.8 规范 §2.11 正名） ----------
     // to_i8..to_u128 / to_f32 / to_f64：1 参数字 → 目标类型。
     // as_* 中的 as_i64/as_f64 仍留在此组——其返回类型推导与解包目标相同，

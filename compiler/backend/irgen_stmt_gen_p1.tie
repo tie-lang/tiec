@@ -176,7 +176,11 @@ pub func tig_stmt_b_100_VarDecl(id: i64) -> i64 {
             // 持有）→ 免 retain（否则 rc=2、出口析构只 -1 → 每处字面量初始化泄漏 1）。
             if init >= 0 {
                 var iv4 = node_types[init]
-                if iv4 >= 0 && types.is_table(iv4) && s_tags[init] != 7 && s_tags[init] != 12 {
+                // ★ r.1.6.15：`share(x)` 虽形如调用（tag 7），但语义是**别名**而非
+                // 瞬态新值 ⇒ 必须 retain（否则调用方与绑定方各 release 一次、
+                // 而 rc 只有 1 ⇒ 出口双释放崩溃，实测 rc=127）。
+                var is_shr = s_tags[init] == 7 && s_names[init] == interner.intern("share")
+                if iv4 >= 0 && types.is_table(iv4) && (is_shr || (s_tags[init] != 7 && s_tags[init] != 12)) {
                     // p.6.1.7-RCA-3【2026-09-06】：元组**解构**字段读（var (a,b)=f() 由
                     // 解析器降级为 `var a = _tmp.Item1`，tag 15）——元素表所有权已随被调
                     // 函数返回转移给调用方，此处再 retain(+1) 会与 loopvar 的 -1 不对等，
@@ -305,6 +309,16 @@ pub func tig_stmt_b_100_VarDecl(id: i64) -> i64 {
         //   · 绑定处 retain（tig_agg_retain_bound，按实参瞬态性逐字段判）
         //   · 出口 release（tig_tbl_exit_release 遍历 g_aggcand_*）
         // 两者成对 ⇒ 净 0。struct 形参槽是**借用**（同表参数既有约定），不登记不 retain。
+        // r.1.6.15 `var b = share(a)`：把 b（以及裸变量实参 a）登记为**显式共享名**
+        // ⇒ 写路径跳过 COW ⇒ 就地改、别名互见。这正是 `share` 的语义。
+        // 实参不是裸变量（如 `s.t`）时只能标 b —— 记入文档的已知不对称。
+        if init >= 0 && s_tags[init] == 7 && s_names[init] == interner.intern("share") {
+            table_push(g_shared_param_nids, interner.intern(sstate.name_str(id)))
+            var shr_arg = sstate.child(init, sstate.slot_off(init))
+            if shr_arg >= 0 && s_tags[shr_arg] == 6 {
+                table_push(g_shared_param_nids, interner.intern(sstate.name_str(shr_arg)))
+            }
+        }
         if types.kind(ty) == K_STRUCT && ty_has_table(ty) {
             if init >= 0 {
                 tig_agg_retain_bound(av, ty, init)

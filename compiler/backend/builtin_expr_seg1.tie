@@ -13,6 +13,7 @@ namespace irgen {
         if nm == "deref" { return bi_deref(nm, id) }
         if nm == "deref_write" { return bi_deref_write(nm, id) }
         if nm == "volatile_load" { return bi_volatile_load(nm, id) }
+        if nm == "share" { return bi_share(nm, id) }
         if nm == "volatile_store" { return bi_volatile_store(nm, id) }
         if nm == "is_null" { return bi_is_null(nm, id) }
         if nm == "ptr_add" { return bi_ptr_add(nm, id) }

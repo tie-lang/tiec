@@ -218,6 +218,20 @@ if nm == "volatile_store" {
 
 // S1.2 unsafe 指针/内存内置
 // 内置 `is_null`（p.9.21.2 两步制①：自 builtin_expr 提取）
+// r.1.6.15 `share(x)`：**恒等传递**——值不变，效果在**绑定处**（目标变量登记为
+// 「显式共享」⇒ 写路径跳过 COW）。这是值语义的逃生舱：需要零拷贝就地改、且能
+// 自行证明并发安全时用它。危险面由域门禁（unsafe 上下文 + share 凭据）承担。
+pub func bi_share(nm: string, id: i64) -> i64 {
+if nm == "share" {
+    var v = tig_expr(call_arg(id, 0))
+    if v < 0 {
+        return -1
+    }
+    g_builtin_res = v
+    return 0
+}
+}
+
 pub func bi_is_null(nm: string, id: i64) -> i64 {
 if nm == "is_null" {
     // is_null(p) → icmp eq p, null（llvmgen ptr 比较自动把 0 写 null；
