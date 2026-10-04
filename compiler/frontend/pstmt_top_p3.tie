@@ -88,6 +88,7 @@ func parse_fn_def() -> i64 {
             var is_immut: i64 = 0
             var is_move: i64 = 0
             var is_deep: i64 = 0
+            var is_shared: i64 = 0
             var by_ref_pre: i64 = 0
             var mod_more: bool = true
             while mod_more {
@@ -97,6 +98,8 @@ func parse_fn_def() -> i64 {
                     is_move = is_move + 1
                 } else if putil.eat(lex_deep) {
                     is_deep = is_deep + 1
+                } else if putil.eat(lex_shared) {
+                    is_shared = is_shared + 1
                 } else if putil.eat(lex_ref) {
                     by_ref_pre = by_ref_pre + 1
                 } else {
@@ -162,9 +165,9 @@ func parse_fn_def() -> i64 {
             }
             // 参数约定位域（p.9.11.26）：bit0=ref 可写借用 · bit1=immut 只读借用 ·
             // bit2=move 所有权转移 · bit3=「同一修饰重复出现」标志（供语义层诊断）·
-            // bit4=deep 值语义（入口深拷贝表字段，r.1.6.11）。
+            // bit4=deep 值语义（入口深拷贝表字段，r.1.6.11）· bit5=shared 显式共享（不复制）。
             var dup: i64 = 0
-            if is_immut > 1 || is_move > 1 || is_deep > 1 || by_ref_pre > 1 || by_ref > 1 {
+            if is_immut > 1 || is_move > 1 || is_deep > 1 || is_shared > 1 || by_ref_pre > 1 || by_ref > 1 {
                 dup = 1
             }
             var pval: i64 = 0
@@ -179,6 +182,9 @@ func parse_fn_def() -> i64 {
             }
             if is_deep > 0 {
                 pval = pval + 16
+            }
+            if is_shared > 0 {
+                pval = pval + 32
             }
             if dup > 0 {
                 pval = pval + 8

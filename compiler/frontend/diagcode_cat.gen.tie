@@ -1,6 +1,6 @@
 type tie<class>
 // compiler/frontend/diagcode_cat.gen.tie —— 诊断标号目录（p.6.9.15 生成文件，勿手改）
-// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 890 条 + prefix 866 条。
+// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 891 条 + prefix 867 条。
 // 标号规范：五位纯序号 E+5 位（E00001 起全局连续）；家族仅记 JSON/td family 字段，不编码进标号。
 var cat_keys: table<string>;
 var cat_codes: table<string>;
@@ -1003,6 +1003,8 @@ pub func ensure() {
     table_push(cat_codes, "E00353")
     table_push(cat_keys, "原子变量%未入作用域（函数%）")
     table_push(cat_codes, "E00354")
+    table_push(cat_keys, "参数%不能同时标注%与%（共享与值拷贝互斥）")
+    table_push(cat_codes, "E00905")
     table_push(cat_keys, "参数%不能同时标注%与%（只读借用与可写借用互斥）")
     table_push(cat_codes, "E00690")
     table_push(cat_keys, "参数%不能同时标注%与%（所有权已移交，无从借用）")
@@ -2769,6 +2771,8 @@ pub func ensure() {
     table_push(pfx_codes, "E00353")
     table_push(pfx_keys, "原子变量%未入作用域（函数%")
     table_push(pfx_codes, "E00354")
+    table_push(pfx_keys, "参数%不能同时标注%与%（共享与值拷贝互斥）")
+    table_push(pfx_codes, "E00905")
     table_push(pfx_keys, "参数%不能同时标注%与%（只读借用与可写借用互斥）")
     table_push(pfx_codes, "E00690")
     table_push(pfx_keys, "参数%不能同时标注%与%（所有权已移交，无从借用）")
