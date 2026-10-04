@@ -45,6 +45,20 @@ func s21_index_raise(next_blk: i64) {
     ir.add_operand(db, next_blk, 1)
 }
 
+// r.1.6.9 共享表越界写诊断：i >= len 且该表**被别名共享**（rc>1）→ 运行时诊断，
+// 打印后 exit(1)。独占表的越界写照旧自动扩容（p.9.12.2 保留），不走本函数。
+// noreturn；next_blk 供死 br 收尾（LLVM 要求块有 terminator；opt 会 DCE 死 br）。
+func s21_oob_raise(next_blk: i64) {
+    var msg = tig_str_lit(interner.intern("\"运行时错误: 表下标越界——该表被别名共享，写越界会改变所有别名看到的长度；如需扩容请先 clone 出独立副本\""))
+    var fmt = interner.intern("%s\n")
+    var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))
+    ir.add_operand(inst, fmt, 0)
+    ir.add_operand(inst, msg, 0)
+    tig_ext_call1("exit", tig_int_lit_ty(1, types.named(TK_I32)), types.named(TK_I32), -1)
+    var db = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(db, next_blk, 1)
+}
+
 // 元素零值（扩容新槽填充）：string → 有效空串指针 ""（null 指针不是合法字符串，
 // len() 会崩溃）；其余按 t21_zero（数值 0 / 0.0 / false / ptr null / any 零聚合）。
 func s21_elem_zero(ty: i64) -> i64 {
@@ -85,7 +99,23 @@ func s21_table_set_ex(t: i64, i: i64, elem_llvm_ty: i64, v: i64, excl: bool) {
     g_cur_block = nb
     s21_index_raise(mg)
     g_cur_block = mg
-    // 长度检查：need = i+1；need > len → 逐槽 push 零值到 need
+    // 长度检查：need = i+1；need > len → **越界写按引用计数分流**（r.1.6.9）
+    //
+    // ★ 危险的精确定位：越界写会**隐式改变表的形状**（len/cap），而共享句柄的
+    //   其它别名会看到这个改变——实测 `var a=[1,2,3]; var b=a; b[100]=42` 之后
+    //   `len(a)` 也变成 101。用户只写了一个元素，却无声改变了**另一个变量**的形状。
+    //   这正是「非 unsafe 区写不出危险代码」要杜绝的一类。
+    //
+    // ★ 但**独占表的扩容是无害的**：没有别人看得到。故按句柄 @40 的真实引用计数
+    //   分流（tbl_retain/tbl_release 已在维护，不引入新状态）：
+    //     rc == 1（唯一持有者）⇒ 照旧自动扩容 —— p.9.12.2 语义**保留**。
+    //       这一支是必需的：编译器自举依赖它（实测「struct + namespace 方法」路径
+    //       会做越界写，改为一律报错会直接让自举不收敛）。
+    //     rc  > 1（存在别名）⇒ 拒绝并诊断 —— 形状改变会让别名跟着变，属危险。
+    //
+    // ★ 这**不**改变 push/pop 的共享语义：那些是显式操作，共享可见是 tie 的既有
+    //   惯用法（tiu 有 73 处依赖「struct 按值传参 + 表字段共享」累积结果）。
+    //   显式扩容（想让别名也看到）请先 table_resize/table_reserve 再写。
     var lenv = s21_table_len(t)
     var need = s21_bin(0, i, tig_int_lit(1))  // i+1
     var growc = tig_icmp_c(need, lenv, 3)     // sgt
@@ -96,7 +126,18 @@ func s21_table_set_ex(t: i64, i: i64, elem_llvm_ty: i64, v: i64, excl: bool) {
     ir.add_operand(cb1, gt, 1)
     ir.add_operand(cb1, ge, 1)
     g_cur_block = gt
-    // 零值 + 循环游标（alloca）
+    var rc_v = s21_load(s21_gep(t, 40, true), T64)
+    var shc = tig_icmp_c(rc_v, tig_int_lit(1), 3)          // sgt：rc > 1 ⇒ 共享
+    var rb = ir.new_block(g_cur_func, interner.intern("ts.rb"))
+    var gal = ir.new_block(g_cur_func, interner.intern("ts.gal"))
+    var cb2 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb2, shc, 0)
+    ir.add_operand(cb2, rb, 1)
+    ir.add_operand(cb2, gal, 1)
+    g_cur_block = rb
+    s21_oob_raise(ge)          // 共享表越界写：诊断 + exit（死 br 到 ge 供 LLVM 收尾）
+    g_cur_block = gal
+    // 独占 → 原扩容路径（零值逐个追加，string 槽得有效 "" 而非 null）
     var zeroval = s21_elem_zero(elem_llvm_ty)
     var idx_a = ir.new_inst(g_cur_block, 20, T64)
     ir.add_operand(idx_a, T64, 2)
