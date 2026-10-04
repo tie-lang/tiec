@@ -92,8 +92,8 @@ func main() {
     var k2 = json.obj_get(inner, "k2")
     assert.assert(json.is_array(k2))
     assert.assert_eq(json.arr_len(k2), 2)
-    var deep = json.obj_get(json.arr_at(k2, 1), "deep")
-    assert.assert(json.is_null(deep))
+    var dv = json.obj_get(json.arr_at(k2, 1), "deep")
+    assert.assert(json.is_null(dv))
     // 序列化（单键序稳定）
     var n11 = json.parse("{\"x\":[1,2],\"y\":\"z\"}")
     assert.assert_eq(json.to_str(n11), "{\"x\":[1,2],\"y\":\"z\"}")

@@ -15,9 +15,9 @@ func helper() -> string {
 }
 
 namespace inner {
-// 嵌套命名空间内公有函数：using f2.inner 后可裸调用 deep()
-pub func deep() -> string {
-    return "deep"
+// 嵌套命名空间内公有函数：using f2.inner 后可裸调用 nested()
+pub func nested() -> string {
+    return "nested"
 }
 }
 }
