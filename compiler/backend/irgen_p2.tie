@@ -662,6 +662,15 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
         scope_put(interner.intern(pname), av, pty)
         // p.6.10.3：登记参数名（表参数借用、不析构不 release——所有权在调用方）
         table_push(g_param_nids, interner.intern(pname))
+        // r.1.6.11 `deep` 形参：入口对表字段做值语义分离（rc>1 才克隆，rc=1 零成本）。
+        // N_PARAM val bit4 = deep（parser 登记）。by_ref 形参的 av 是**实参槽地址**，
+        // 对它 seal 会改到调用方，故只对按值形参做（deep 与 ref 本应互斥）。
+        if (s_vals[p] & 16) != 0 && is_ref == 0 {
+            var sev = tig_deep_param_seal(av, pty)
+            if sev < 0 {
+                return -1
+            }
+        }
         i = i + 1
     }
     // p.9.11.15 生成器 prologue：创建产出表（table<elem>，句柄 ptr 存槽）。
