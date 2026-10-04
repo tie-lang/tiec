@@ -3,9 +3,9 @@ type tie<logic>
 // 验证 math.tie 全部函数，并直接调用 Rust 层数学原语演示完整数学栈
 // M2.1 起 std 库使用命名空间形式：math.abs / assert.assert_eq 等。
 
-import "../std/assert.tie"
-import "../std/math.tie"
-import "../std/string.tie"
+import "/std/assert.tie"
+import "/std/math.tie"
+import "/std/string.tie"
 
 // 将布尔值转为可读文本（to_string 只支持数字，bool 需手动转换）
 func bool_str(b: bool) -> string {

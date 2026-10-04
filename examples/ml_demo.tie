@@ -3,7 +3,7 @@ type tie<logic>
 // 编译运行：cargo run -p tie -- examples/ml_demo.tie
 // 验证线性 SVM（感知机）对 AND 门分类 + 决策树对简单模式分类。
 
-import "../ext/ml.tie"
+import "/ext/ml.tie"
 
 func main() {
     // ---- 线性 SVM：AND 门（线性可分）----

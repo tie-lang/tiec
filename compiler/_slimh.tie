@@ -1,0 +1,153 @@
+type tie<logic>
+// compiler/_slimh.tie —— 临时：driver.tie 本地帮助函数抽取（配 _slim.tie，不入库）
+func normalize_target(t: string) -> string {
+    // r.1.6.6：空目标 → 本机默认。Windows 主机（OS=Windows_NT 存在）保持空串
+    // （传统 Windows 链接路径，行为零变化）；POSIX 主机默认 Linux 三元组——
+    // Linux 自举链（tiec-linux 编译探针/回归程序无 --target 时）走 Linux 平台
+    // 分支与链接参数（sockaddr/管道无 Windows 假设）。
+    if str_len(t) == 0 {
+        var osv = get_env("OS")
+        var osl: i64 = str_len(osv)
+        var wflag: i64 = 0
+        var j: i64 = 0
+        while j + 7 <= osl {
+            if slice(str.clone(osv), j, j + 7) == "Windows" {
+                wflag = 1
+            }
+            j = j + 1
+        }
+        if wflag == 0 {
+            return "x86_64-unknown-linux-gnu"
+        }
+        return t
+    }
+    if t == "win-x64" || t == "windows-x64" {
+        return "x86_64-pc-windows-msvc"
+    }
+    if t == "win-x86" || t == "windows-x86" {
+        return "i686-pc-windows-msvc"
+    }
+    if t == "win-arm64" || t == "windows-arm64" {
+        return "aarch64-pc-windows-msvc"
+    }
+    if t == "linux-x64" || t == "linux-x86_64" {
+        return "x86_64-unknown-linux-gnu"
+    }
+    if t == "linux-arm64" {
+        return "aarch64-unknown-linux-gnu"
+    }
+    if t == "macos-x64" || t == "macos-x86_64" {
+        return "x86_64-apple-darwin"
+    }
+    if t == "macos-arm64" {
+        return "aarch64-apple-darwin"
+    }
+    return t
+}
+
+func strip_type_header(src: string) -> string {
+    var lines = split_lines(src)
+    var n: i64 = len(lines)
+    var out: string = ""
+    var in_header = true
+    var i: i64 = 0
+    while i < n {
+        var ln = lines[i]
+        var t = trim(str.clone(ln))
+        if in_header {
+            if str_len(t) == 0 {
+                // 头部区空行：保留
+            } else if has_prefix(t, "type tie") {
+                // 声明行：剥离
+                i = i + 1
+                continue
+            } else {
+                in_header = false
+            }
+        }
+        if str_len(out) > 0 {
+            out = out + "\n"
+        }
+        out = out + ln
+        i = i + 1
+    }
+    return out
+}
+
+func split_lines(s: string) -> table<string> {
+    var rows = table_new_string()
+    var n: i64 = len(s)
+    var i: i64 = 0
+    var sb = string_builder()
+    while i < n {
+        var b = str_byte(s, i)
+        if b == 10 {
+            // \n：行结束（每行新建 sb——自举兼容旧原语集；sb_reset 复用留待
+            // 编译器自身认识该原语后启用）
+            table_push(rows, sb_build(sb))
+            sb = string_builder()
+        } else if b != 13 {
+            // 非 \r：追加字节（二进制安全）
+            sb_append_byte(sb, b)
+        }
+        i = i + 1
+    }
+    // 尾部无 \n 的末行（非空才保留——与原实现一致）
+    var tail = sb_build(sb)
+    if tail != "" {
+        table_push(rows, tail)
+    }
+    return rows
+}
+
+func has_prefix(s: string, prefix: string) -> bool {
+    var n: i64 = str_len(s)
+    var m: i64 = str_len(prefix)
+    if n < m {
+        return false
+    }
+    var i: i64 = 0
+    while i < m {
+        if str_char(s, i) != str_char(prefix, i) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+func find_char(s: string, ch: string) -> i64 {
+    var n: i64 = str_len(s)
+    var i: i64 = 0
+    while i < n {
+        if str_char(s, i) == ch {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+func slice(s: string, start: i64, end: i64) -> string {
+    var sb = string_builder()
+    var i: i64 = start
+    while i < end {
+        sb_append(sb, str_char(s, i))
+        i = i + 1
+    }
+    return sb_build(sb)
+}
+
+func trim(s: string) -> string {
+    var n: i64 = str_len(s)
+    var start: i64 = 0
+    var end: i64 = n
+    while start < end && (str_char(s, start) == " " || str_char(s, start) == "\t") {
+        start = start + 1
+    }
+    while end > start && (str_char(s, end - 1) == " " || str_char(s, end - 1) == "\t") {
+        end = end - 1
+    }
+    return slice(s, start, end)
+}
+

@@ -11,9 +11,9 @@ type tie<logic>
 // 命名说明：char / code 是 tie 类型关键字保留字，故码点→字符函数为 to_char、
 // 字符→ASCII 码函数为 to_code（见 std/utf.tie、std/ascii.tie 头部注释）。
 // 预期输出：utf+ascii 验收通过（全部断言通过，无 assert 失败退出）。
-import "../../std/assert.tie"
-import "../../std/utf.tie"
-import "../../std/ascii.tie"
+import "/std/assert.tie"
+import "/std/utf.tie"
+import "/std/ascii.tie"
 using assert;
 using utf;
 using ascii;

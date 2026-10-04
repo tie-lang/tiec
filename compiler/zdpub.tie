@@ -19,7 +19,7 @@ type tie<class>
 // 桥接成二进制安全 string 后走 tsha1f 寄存器哈希。
 
 import "./tdzd.tie"
-import "../std/tsha1.tie"
+import "/std/tsha1.tie"
 
 var zdpub_err: string = "";
 

@@ -1,0 +1,187 @@
+type tie<logic>
+// tools/orphan_check.tie —— 孤儿源文件检查（p.9.21 G8）
+// ============================================================
+// 100% tie 实现（编译型 tie<logic> 程序）。列出 compiler/ 下**没有任何
+// 其他文件 import** 的 .tie 源文件：入口文件、_ 探针、独立自检本就无人
+// import（预期）；其余是早期拆分留下的死分片候选（只报告，不删除）。
+//
+// 用法（repo 根）：
+//   compiler\tiec.exe tools\orphan_check.tie -o <tmp>\oc.exe
+//   <tmp>\oc.exe
+// 退出码 0。
+//
+// # 规则
+//   - import 形态：`import "./目标.tie"`（相对 import 方所在目录）与
+//     `import "../目录/目标.tie"`（上层目录）——按段归一化（. / ..）；
+//   - 跳过目录：_bak / proto / backuptmp / tests / _ghidra_out；
+//   - 跳过 `_` 前缀与 README 文件（不参与也不报告）。
+
+import "../compiler/frontend/lexer.tie"
+
+func has_prefix(s: string, p: string) -> bool {
+    var n = str_len(s)
+    var m = str_len(p)
+    if m > n {
+        return false
+    }
+    return str.slice(s, 0, m) == p
+}
+
+func has_suffix(s: string, p: string) -> bool {
+    var n = str_len(s)
+    var m = str_len(p)
+    if m > n {
+        return false
+    }
+    return str.slice(s, n - m, n) == p
+}
+
+func contains(s: string, sub: string) -> bool {
+    return str.find(s, sub) >= 0
+}
+
+func is_skip_path(p: string) -> bool {
+    if contains(p, "\\_bak") {
+        return true
+    }
+    if contains(p, "\\proto\\") {
+        return true
+    }
+    if contains(p, "\\backuptmp\\") {
+        return true
+    }
+    if contains(p, "\\tests\\") {
+        return true
+    }
+    if contains(p, "\\_ghidra_out\\") {
+        return true
+    }
+    return false
+}
+
+func base_name(p: string) -> string {
+    var n = str_len(p)
+    var i = n - 1
+    while i >= 0 {
+        if str_char(p, i) == "\\" {
+            return str.slice(p, i + 1, n)
+        }
+        i = i - 1
+    }
+    return p
+}
+
+func dir_name(p: string) -> string {
+    var n = str_len(p)
+    var i = n - 1
+    while i >= 0 {
+        if str_char(p, i) == "\\" {
+            return str.slice(p, 0, i)
+        }
+        i = i - 1
+    }
+    return p
+}
+
+// 路径归一化：按 \ 切段，处理 . 与 ..（与文件系统语义一致）
+func normalize(p: string) -> string {
+    // import 目标用正斜杠（./x.tie、../dir/x.tie），dir /s /b 用反斜杠——
+    // 先统一成反斜杠再切段，否则 `.` 段切不出来（实测 248 个全报孤儿）。
+    var norm = str.replace(p, "/", "\\")
+    var parts = str.split(norm, "\\")
+    var out: table<string> = table_new_string()
+    var i: i64 = 0
+    while i < len(parts) {
+        var seg = parts[i]
+        if seg == "." || seg == "" {
+            i = i + 1
+            continue
+        }
+        if seg == ".." {
+            if len(out) > 0 {
+                // 弹出末段（table 无 pop，收缩逻辑长度即可：直接重建）
+                var shorter: table<string> = table_new_string()
+                var k: i64 = 0
+                while k < len(out) - 1 {
+                    table_push(shorter, out[k])
+                    k = k + 1
+                }
+                out = shorter
+            }
+            i = i + 1
+            continue
+        }
+        table_push(out, seg)
+        i = i + 1
+    }
+    var joined = ""
+    i = 0
+    while i < len(out) {
+        if i > 0 {
+            joined = joined + "\\"
+        }
+        joined = joined + out[i]
+        i = i + 1
+    }
+    return joined
+}
+
+func main() -> i64 {
+    var listing = exec_output("cmd /c dir /s /b compiler\\*.tie")
+    var all = str.split(listing, "\n")
+    var files: table<string> = table_new_string()
+    var imported: table<string> = table_new_string()
+    var fi: i64 = 0
+    while fi < len(all) {
+        var path = str.trim(all[fi])
+        if str_len(path) > 0 && has_suffix(path, ".tie") && !is_skip_path(path) {
+            var bn = base_name(path)
+            if !has_prefix(bn, "_") && !has_prefix(bn, "README") {
+                table_push(files, path)
+                var lines = str.split(file_read(path), "\n")
+                var dir = dir_name(path)
+                var li: i64 = 0
+                while li < len(lines) {
+                    var raw = str.trim(lines[li])
+                    if has_prefix(raw, "import \"") {
+                        var rest = str.slice(raw, 8, str_len(raw))
+                        var q = str.find(rest, "\"")
+                        if q > 0 {
+                            var target = str.slice(rest, 0, q)
+                            if has_prefix(target, "./") || has_prefix(target, "../") {
+                                var full = normalize(dir + "\\" + target)
+                                table_push(imported, full)
+                            }
+                        }
+                    }
+                    li = li + 1
+                }
+            }
+        }
+        fi = fi + 1
+    }
+    // 汇总：未被任何 import 指向的文件
+    println("source files: " + to_string(len(files)) + ", not imported by anything:")
+    var orphans: i64 = 0
+    var i: i64 = 0
+    while i < len(files) {
+        var f = files[i]
+        var hit: bool = false
+        var k: i64 = 0
+        while k < len(imported) {
+            if imported[k] == f {
+                hit = true
+                k = len(imported)
+                continue
+            }
+            k = k + 1
+        }
+        if !hit {
+            orphans = orphans + 1
+            println("  " + f)
+        }
+        i = i + 1
+    }
+    println("--- " + to_string(orphans) + " orphan(s) ---")
+    return 0
+}

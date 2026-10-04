@@ -3,7 +3,7 @@ type tie<logic>
 // 编译运行：cargo run -p tie -- examples/compress_demo.tie
 // 验证 LZ77/LZW 压缩 → 解压 roundtrip 还原。
 
-import "../ext/compress.tie"
+import "/ext/compress.tie"
 
 func main() {
     // ---- LZ77：重复文本压缩 + roundtrip ----

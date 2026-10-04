@@ -11,9 +11,9 @@ type tie<logic>
 //   数值安全：crc 恒 & 0xFFFFFFFF 保持正数，>>8 算术右移即逻辑右移（正数）；
 //   fnv1a 乘法上限 ≈7.2e16 << i64::MAX，永不溢出。
 // 预期输出：std_coll_crc 验收通过（全部断言通过，无 assert 失败退出）。
-import "../../std/assert.tie"
-import "../../std/collection.tie"
-import "../../std/crypto.tie"
+import "/std/assert.tie"
+import "/std/collection.tie"
+import "/std/crypto.tie"
 using assert;
 using coll;
 using crc;

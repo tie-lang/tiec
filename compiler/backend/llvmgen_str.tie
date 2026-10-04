@@ -22,6 +22,19 @@ type tie<class>
 namespace llvmgen {
 
 // ==================== 类型映射 ====================
+// asm! 内存（indirect）约束的参数类型串（S1.2 I1，2026-10-02）。
+// LLVM LangRef 要求 indirect 约束（`*m` / `=*m`）的操作数带 elementtype
+// 属性，否则 clang 报「Operand for indirect constraint must have
+// elementtype attribute」（实测）。实参类型是 ptr<T>，元素类型经
+// types.table_elem 取回（该函数对 ptr 亦适用）。
+func asm_mem_arg_ty(vty: i64) -> string {
+    var el = types.table_elem(vty)
+    if el < 0 {
+        el = types.named(TK_I64)
+    }
+    return "ptr elementtype(" + llvm_ty(el) + ")"
+}
+
 // types 自编码 → LLVM 类型名
 func llvm_ty(t: i64) -> string {
     if t == TK_VOID {
@@ -69,6 +82,11 @@ func llvm_ty(t: i64) -> string {
     //   struct → 命名结构体 %struct.<名字>（emit_agg_types 输出 type 定义）。
     // 对齐 Rust llvm_ty 的 Tuple/Struct 映射（元组内联、类命名）。
     var agg_k = types.kind(t)
+    if agg_k == K_ARRAY {
+        // L1 定长数组：LLVM 原生数组 [N x T]（连续内存，自动对齐；循环
+        // 经 LLVM auto-vectorizer 直接产出 SIMD——扩散训练热点的性能来源）。
+        return "[" + to_string(types.array_len(t)) + " x " + llvm_ty(types.array_elem(t)) + "]"
+    }
     if agg_k == K_FN {
         // S2.2 fn 函数值类型：命名结构体 %fn.<签名索引> = { ptr, ptr }
         //（字段 0 = 环境指针，字段 1 = 入口函数指针；emit_agg_types 输出定义）。
@@ -187,13 +205,11 @@ func asm_tmpl_convert(t: string) -> string {
 }
 // S2.1：@.str.N 序号 → 该字符串常量字节长度（与 emit_strings 同款 utf.byte_len）。
 // 头部长度字段是 {ptr,len} 表示的编译期来源——字面量在 .rodata 带 8 字节 i64 头。
+// p.9.14.4：O(1) 直索引（str_slot 登记时算好 g_slot_len[slot]），替代线性扫
+// str_idx（每处字符串引用 O(S)，S = 全部字面量条数 → emit 平方源）。
 func str_len_of_slot(slot: i64) -> i64 {
-    var i: i64 = 0
-    while i < len(str_pool) {
-        if str_idx[i] == slot {
-            return utf.byte_len(intern.lookup(str_pool[i]))
-        }
-        i = i + 1
+    if slot >= 0 && slot < len(g_slot_len) {
+        return g_slot_len[slot]
     }
     return 0
 }
@@ -210,17 +226,22 @@ func str_data_ref(slot: i64) -> string {
 }
 
 // 查找/登记字符串池 id → @.str.N 序号
+// p.9.14.4：O(1) 印章表直查（g_ss_stamp/g_ss_slotv，-1 = 未登记），替代线性
+// 扫 str_pool（每条字符串指令 O(S)）。登记时同步算好 g_slot_len[slot]。
 func str_slot(name_id: i64) -> i64 {
-    var i: i64 = 0
-    while i < len(str_pool) {
-        if str_pool[i] == name_id {
-            return str_idx[i]
-        }
-        i = i + 1
+    while len(g_ss_stamp) <= name_id {
+        table_push(g_ss_stamp, -1)
+        table_push(g_ss_slotv, -1)
+    }
+    if g_ss_stamp[name_id] >= 0 {
+        return g_ss_slotv[name_id]
     }
     var n = str_count
     table_push(str_pool, name_id)
     table_push(str_idx, n)
+    g_ss_stamp[name_id] = n
+    g_ss_slotv[name_id] = n
+    table_push(g_slot_len, utf.byte_len(intern.lookup(name_id)))
     str_count = str_count + 1
     return n
 }
@@ -229,6 +250,9 @@ func str_slot(name_id: i64) -> i64 {
 func collect_strings() {
     str_pool = table_new_i64()
     str_idx = table_new_i64()
+    g_ss_stamp = table_new_i64()
+    g_ss_slotv = table_new_i64()
+    g_slot_len = table_new_i64()
     str_count = 0
     var ni = ir.inst_count()
     var i: i64 = 0
@@ -584,7 +608,11 @@ func user_extern_decl(sym: string) -> string {
     }
     if sym == "sqrt" || sym == "sin" || sym == "cos" || sym == "tan" ||
         sym == "exp" || sym == "log" || sym == "pow" ||
-        sym == "floor" || sym == "ceil" || sym == "round" {
+        sym == "floor" || sym == "ceil" || sym == "round" ||
+        sym == "tanh" || sym == "sinh" || sym == "cosh" || sym == "asin" || sym == "acos" ||
+        sym == "atan" || sym == "log2" || sym == "log10" || sym == "expm1" || sym == "log1p" ||
+        sym == "cbrt" || sym == "exp2" || sym == "trunc" ||
+        sym == "atan2" || sym == "copysign" || sym == "fmod" || sym == "remainder" || sym == "hypot" {
         return ""
     }
     // p.6.4.4：libc _gcvt（to_string(f64)；非变参 CRT，声明由调用签名自动推导）

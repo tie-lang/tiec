@@ -10,7 +10,7 @@ type tie<logic>
 //   <档位> <字节数> <迭代次数> <耗时秒> <字节/秒> <次/秒>
 //
 // 运行：tiec scripts/bench/tsha1-bench.tie -o tsha1-bench.exe && tsha1-bench.exe
-import "../../std/tsha1.tie"
+import "/std/tsha1.tie"
 using tsha;
 
 func itoa(v: i64) -> string {

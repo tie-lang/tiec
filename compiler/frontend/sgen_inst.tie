@@ -21,8 +21,14 @@ namespace sgen {
 pub func check_generic_constraints(gti: i64, args: table<i64>, line: i64, col: i64) -> i64 {
     var n = gtyp_nparams[gti]
     var off = gtyp_conoff[gti]
+    var koff = gtyp_kindoff[gti]
     var k: i64 = 0
     while k < n {
+        // v2 值参数槽（kind==1）无 port 约束（整型容量参数），跳过
+        if gtyp_kinds[koff + k] == 1 {
+            k = k + 1
+            continue
+        }
         var cons = gtyp_cons[off + k]
         if cons >= 0 {
             var pname = intern.lookup(cons)
@@ -41,7 +47,22 @@ pub func check_generic_constraints(gti: i64, args: table<i64>, line: i64, col: i
             if !stype.impl_has_ty(pi, at) {
                 sm_err_line = line
                 sm_err_col = col
-                sm_err_msg = "类型 '" + types.type_name(at) + "' 未实现 port '" + pname + "'（泛型约束不满足）"
+                if sstate.port_is_iface(pi) {
+                    // p.9.11.21 interface 约束不满足：定位第一个违规方法
+                    var vio = stype.iface_first_violation(pi, at)
+                    if vio >= 0 {
+                        var vname = sstate.port_method_name(pi, vio)
+                        if stype.iface_vio_missing() {
+                            sm_err_msg = "类型 '" + types.type_name(at) + "' 未实现 interface '" + pname + "'（缺少方法 '" + vname + "'）"
+                        } else {
+                            sm_err_msg = "类型 '" + types.type_name(at) + "' 未实现 interface '" + pname + "'（方法 '" + vname + "' 签名不匹配）"
+                        }
+                    } else {
+                        sm_err_msg = "类型 '" + types.type_name(at) + "' 未实现 interface '" + pname + "'（泛型约束不满足）"
+                    }
+                } else {
+                    sm_err_msg = "类型 '" + types.type_name(at) + "' 未实现 port '" + pname + "'（泛型约束不满足）"
+                }
                 return -1
             }
         }
@@ -98,6 +119,13 @@ pub func instantiate_fn(gti: i64, args: table<i64>, line: i64, col: i64) -> i64 
     var p_defs: table<i64> = table_new_i64()
     var p_vars: table<i64> = table_new_i64()
     var required: i64 = nparams
+    // p.8.1.3 变长泛型：变参（最后一个形参 ...T）不占必选位（对齐 collect_fn）
+    if nparams > 0 {
+        var lastp0 = sstate.child(new_node, sstate.slot_off(new_node) + 1 + (nparams - 1))
+        if s_aux[lastp0] == 1 {
+            required = nparams - 1
+        }
+    }
     var seen_default: bool = false
     var k: i64 = 0
     while k < nparams {
@@ -115,16 +143,16 @@ pub func instantiate_fn(gti: i64, args: table<i64>, line: i64, col: i64) -> i64 
         if is_var == 1 {
             pt = types.table_of(pt)
         }
-        // ref 形参仅支持表（对齐 collect_fn 校验）
-        if s_vals[p] == 1 && !types.is_table(pt) {
+        // ref 形参仅支持表/定长数组（对齐 collect_fn 校验；p.9.11.11 immut 存 bit1，掩码 & 1）
+        if (s_vals[p] & 1) == 1 && !types.is_table(pt) && !types.is_array(pt) {
             g_inst_depth = g_inst_depth - 1
             sm_err_line = line
             sm_err_col = col
-            sm_err_msg = "实例化 '" + mangled + "' 参数 '" + sstate.name_str(p) + "' 的 ref 修饰仅支持表参数，实际是 " + types.type_name(pt)
+            sm_err_msg = "实例化 '" + mangled + "' 参数 '" + sstate.name_str(p) + "' 的 ref 修饰仅支持表/定长数组参数，实际是 " + types.type_name(pt)
             return -1
         }
         table_push(p_tys, pt)
-        table_push(p_refs, s_vals[p])
+        table_push(p_refs, s_vals[p] & 1)
         table_push(p_vars, is_var)
         var has_def: i64 = 0
         if sstate.nchild(p) > 1 {
@@ -186,10 +214,61 @@ pub func instantiate_fn(gti: i64, args: table<i64>, line: i64, col: i64) -> i64 
     return sig
 }
 
+// p.8.2.6 默认类型参数兜底：实参表按模板参数序，若尾部缺省（显式实参/推断
+// 都只给了前 k 个）则为缺失的末尾参数追加默认类型（未声明默认 → 报错）。
+// 返回补充后的 args（新表）；失败返回空表（sm_err_* 已置）。仅处理"尾部连续
+// 缺失"。优先级：显式 > 推断 > 默认（缺失才补默认）。
+func fill_missing_defaults(gti: i64, args: table<i64>, line: i64, col: i64) -> table<i64> {
+    var n_tp = gtyp_nparams[gti]
+    if len(args) > n_tp {
+        sm_err_line = line
+        sm_err_col = col
+        sm_err_msg = "泛型模板需要 " + to_string(n_tp) + " 个类型参数，实际 " + to_string(len(args)) + " 个"
+        return table_new_i64()
+    }
+    // 显式复制入参：表的赋值是**浅拷贝共享**（实测 `var b = a; b[0]=99` 会改到
+    // `a[0]`），若直接 `var out = args` 再 push，就会**就地污染调用方的表**。
+    // 本函数契约是「返回补充后的 args（新表）」（见上方注释），故此处按契约复制。
+    // 副作用：`args` 全程只被读（len / 下标），移动检查不再把它当已移交。
+    var out = table_new_i64()
+    var i: i64 = 0
+    while i < len(args) {
+        table_push(out, args[i])
+        i = i + 1
+    }
+    if len(args) < n_tp {
+        var defaults = sstate.gt_defaults(gti)
+        var k = len(args)
+        while k < n_tp {
+            if defaults[k] < 0 {
+                sm_err_line = line
+                sm_err_col = col
+                sm_err_msg = "泛型模板缺失类型参数 #" + to_string(k) + "（未提供且未声明默认类型）"
+                return table_new_i64()
+            }
+            var dty = parse_generic_type_node(defaults[k])
+            if dty < 0 {
+                sm_err_line = line
+                sm_err_col = col
+                sm_err_msg = "泛型默认类型参数解析失败"
+                return table_new_i64()
+            }
+            table_push(out, dty)
+            k = k + 1
+        }
+    }
+    return out
+}
+
 // 实例化 struct 模板 → struct 索引。幂等（st_keys 已命中直接返回）。
-// 复制定义 → reg_struct → 字段拍平（无继承）→ g_extra_tops → gin 记录。
 pub func instantiate_struct(gti: i64, args: table<i64>) -> i64 {
     var full = intern.lookup(gty_full[gti])
+    // p.8.2.6 默认类型参数：实参少于形参时补尾部默认（如 Box<i64> 对
+    // struct Box<T, U=string> → U 自动补 string）。补完后再 mangle/校验。
+    args = fill_missing_defaults(gti, args, 1, 1)
+    if len(args) == 0 && gtyp_nparams[gti] > 0 {
+        return -1
+    }
     var mangled = mangle(full, args)
     var sidx = sstate.bs_find(st_keys, intern.intern(mangled))
     if sidx >= 0 {
@@ -228,6 +307,9 @@ pub func instantiate_struct(gti: i64, args: table<i64>) -> i64 {
         sm_err_col = 1
         return -1
     }
+    // p.9.21.6-1 模块边界显式化：实例化 struct 的来源模块 = 模板定义所在
+    // 文件（node = gty_node[gti]；new_node 是合成节点无文件归属，不能反查）
+    st_mod[si] = sstate.file_id_of_node(node)
     // 字段拍平（实例化 struct 无父；cls_done 置位 → collect_all_struct_fields 跳过）
     cls_done[si] = 1
     cls_fldoff[si] = len(fld_names)

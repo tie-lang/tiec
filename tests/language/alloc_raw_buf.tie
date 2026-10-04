@@ -1,4 +1,4 @@
-type tie<logic>
+type tie<logic, unsafe:mem>
 // alloc(n) 原始缓冲回归（漏洞 A 类修复，S10e）：修复前 alloc 的 malloc 结果标 TK_STR，
 // llvmgen op36 对「返回 TK_STR 的 extern 调用」自动字符串补头扫描（strlen + tie_sso_alloc
 // + memcpy）——对**未初始化**堆缓冲 strlen 读的是垃圾，返回缓冲实际容量 = 垃圾长度：
@@ -12,13 +12,13 @@ func main() {
         var buf = alloc(n)
         var i: i64 = 0
         while i < n {
-            deref_write(ptr_add(buf, i), as_u8((i & 255)))
+            deref_write(ptr_add(buf, i), to_u8((i & 255)))
             i = i + 1
         }
         var ok = true
         i = 0
         while i < n {
-            var v = as_i64(deref(ptr_add(buf, i)))
+            var v = to_i64(deref(ptr_add(buf, i)))
             if v != (i & 255) {
                 ok = false
             }
@@ -29,12 +29,12 @@ func main() {
         var buf2 = alloc(n2)
         i = 0
         while i < n2 {
-            deref_write(ptr_add(buf2, i), as_u8(((i * 3 + 7) & 255)))
+            deref_write(ptr_add(buf2, i), to_u8(((i * 3 + 7) & 255)))
             i = i + 1
         }
         i = 0
         while i < n2 {
-            var v2 = as_i64(deref(ptr_add(buf2, i)))
+            var v2 = to_i64(deref(ptr_add(buf2, i)))
             if v2 != ((i * 3 + 7) & 255) {
                 ok = false
             }

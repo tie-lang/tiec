@@ -42,6 +42,13 @@ func expand_generics() -> i64 {
         i0 = i0 + 1
     }
     // 主循环：扫描函数体（触发展开）→ 新函数入队
+    // 规模上限（p.9.21.2 RCA，2026-09-22）：旧实现为绝对上限 2000，而本函数统计的是
+    // **编译单元内被扫描的函数总数**（顶层函数 + 命名空间函数 + 泛型展开产物），该数随
+    // 源码规模线性增长——2026-09 的 tiec 单单元已含约 1900 个函数，任何合法的小函数拆分
+    // 都会撞上限（实测：把 builtin_expr 的 108 个内置分支提为独立函数即触发 E00520）。
+    // 改为**相对上限**：以初始顶层函数数为基（n0 线性可增，失控的泛型递归展开呈指数增长
+    // 仍会被拦下），上限 = 2000 + n0 * 4。
+    var cap: i64 = 2000 + n0 * 4
     var total: i64 = 0
     while qpos < len(queue) {
         var fn_node = queue[qpos]
@@ -61,10 +68,10 @@ func expand_generics() -> i64 {
         table_push(done, fn_node)
         scan_fn_light(fn_node)
         total = total + 1
-        if total > 2000 {
+        if total > cap {
             sm_err_line = s_lines[fn_node]
             sm_err_col = s_cols[fn_node]
-            sm_err_msg = "泛型实例化规模超限（超过 2000 个实例化函数），疑似无限递归实例化"
+            sm_err_msg = "泛型实例化规模超限（超过 " + to_string(cap) + " 个实例化函数），疑似无限递归实例化"
             return -1
         }
         // 新展开的函数追加到 g_extra_tops → 入队（去重由 done 保证）

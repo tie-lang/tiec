@@ -48,12 +48,12 @@ unsafe fn widebuf(s: string, out: ptr<u8>) {
     var i: i64 = 0
     while i < n {
         var cp: i64 = char_code(str_char(s, i))   // ASCII 码点 = 字节值
-        deref_write(ptr_add(out, 2 * i), as_u8(cp & 0xFF))
-        deref_write(ptr_add(out, 2 * i + 1), as_u8(0))
+        deref_write(ptr_add(out, 2 * i), to_u8(cp & 0xFF))
+        deref_write(ptr_add(out, 2 * i + 1), to_u8(0))
         i = i + 1
     }
-    deref_write(ptr_add(out, 2 * n), as_u8(0))
-    deref_write(ptr_add(out, 2 * n + 1), as_u8(0))
+    deref_write(ptr_add(out, 2 * n), to_u8(0))
+    deref_write(ptr_add(out, 2 * n + 1), to_u8(0))
 }
 
 func main() {
@@ -74,8 +74,8 @@ func main() {
         SetHandleInformation(hw, 1u32, 1u32)
         SetHandleInformation(hr, 1u32, 0u32)
         // 结构化 STARTUPINFOW：cb=sizeof(104)，附加 std 句柄到管道写端
-        si.cb = as_u32(104)
-        si.dwFlags = as_u32(0x100)          // STARTF_USESTDHANDLES
+        si.cb = to_u32(104)
+        si.dwFlags = to_u32(0x100)          // STARTF_USESTDHANDLES
         si.hStdInput = GetStdHandle(-10)     // STD_INPUT_HANDLE（子进程不读 stdin）
         si.hStdOutput = hw
         si.hStdError = hw
@@ -93,14 +93,14 @@ func main() {
         // 从管道读子进程 stdout（"hello"）逐字节拼回字符串
         var out: string = ""
         while true {
-            rcount = as_u32(0)
+            rcount = to_u32(0)
             var okr = ReadFile(hr, buf, 4096u32, addr_of(rcount), 0)
             if okr == 0 {
                 break
             }
             var j: i64 = 0
-            while j < as_i64(rcount) {
-                out = out + str_from_code(as_i64(deref(ptr_add(buf, j))))
+            while j < to_i64(rcount) {
+                out = out + str_from_code(to_i64(deref(ptr_add(buf, j))))
                 j = j + 1
             }
             if rcount == 0u32 {

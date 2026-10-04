@@ -11,7 +11,7 @@ type tie<logic>
 //   PASS set_i64 / PASS set_str / PASS set_ops / PASS table_ops
 // ============================================================
 
-import "../../std/collection.tie"
+import "/std/collection.tie"
 
 func main() {
     // 1. set i64：去重 + 有序 + 二分 + 移除

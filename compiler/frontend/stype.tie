@@ -6,12 +6,22 @@ type tie<class>
 // 对应 proto/semantic.tie 755-857（parse_type_node）+ 1410-1476
 // （types_compatible）+ 1478-1543（types_match）逻辑搬移。
 // 类型系统复用 middle/types.tie（types.named/table_of/kind/low/判据族/
-// type_name 与 proto 的 ty_* 完全同构）与 middle/data.tie（tag 段表）。
+// type_name 与 proto 的 ty_* 完全同构）。
 // 依赖：./sstate.tie（AST 全局 + 符号表 + 工具，经其裸名访问 s_*/tup_*/
-// sm_err_*）+ ../middle/data.tie（经其传递可达 ../middle/types.tie）。
+// sm_err_*）+ ../middle/types.tie（类型编码与 TK_* 关键字常量）。
 // 树式无环：由 scollect.tie import（传递可达上层全部）。
+//
+// 库归属（p.9.21 G3）：本文件是**语义层**的 AST→类型 id 映射器（stype 属
+// frontend 的 s* 家族，与 sstate/sbuiltin/sinfer/scheck/scollect/sgen/smove 同族），
+// 不是 tie.types 库（tie.types = middle/types.tie 的类型 id 编码）。门禁曾按
+// 文件名前缀把本文件判成 types 库，从而虚报 types → sema / types → ir 两条越界边。
+// 另：原先 import ../middle/data.tie 只为「经其传递可达 types.tie」，并不使用
+// data 的任何符号——改为直接 import types.tie，types 库因此不再经 stype 依赖 ir。
 import "./sstate.tie"
-import "../middle/data.tie"
+import "../middle/types.tie"
+
+// p.9.11.21 interface 诊断辅助全局（tie 约束：全局变量须在命名空间之前）
+var g_iface_vio_missing: bool = true;
 
 namespace stype {
 
@@ -147,6 +157,41 @@ pub func parse_type_node(tid: i64) -> i64 {
         }
         return types.tuple_of(idx)
     }
+    if tag == S_N_ARRAY_TYPE {
+        // L1 定长数组：array<elem, N>（children = [元素类型, N_INT_LIT | N_VAR]）。
+        // N_VAR = const 名（v2，查整型常量表）或值参数（实例化后已被替换为
+        // N_INT_LIT——若残留 N_VAR 且查表失败即报错，防跨档错配）。
+        // 内存安全：长度受 MAX_ARRAY_LEN 上限约束（护栏，防后端爆炸）。
+        var elem = parse_type_node(sstate.child(tid, 0))
+        if elem < 0 {
+            return -1
+        }
+        var len_node = sstate.child(tid, 1)
+        if len_node < 0 || (s_tags[len_node] != S_N_INT_LIT && s_tags[len_node] != S_N_VAR) {
+            sm_err_line = s_lines[tid]
+            sm_err_col = s_cols[tid]
+            sm_err_msg = "数组长度必须是编译期整数字面量或常量名（array<T, N>）"
+            return -1
+        }
+        var nlen = sstate.resolve_int_len_node(len_node)
+        if nlen <= 0 {
+            sm_err_line = s_lines[tid]
+            sm_err_col = s_cols[tid]
+            if s_tags[len_node] == S_N_VAR {
+                sm_err_msg = "数组长度引用的常量未定义或非正整数型常量（" + sstate.name_str(len_node) + "）"
+            } else {
+                sm_err_msg = "数组长度必须为正整数，实际是 " + to_string(nlen)
+            }
+            return -1
+        }
+        if nlen > 262144 {
+            sm_err_line = s_lines[tid]
+            sm_err_col = s_cols[tid]
+            sm_err_msg = "数组长度超上限（上限 2^18=262144，实际 " + to_string(nlen) + "），请改用容量档位族或降低粒度"
+            return -1
+        }
+        return types.array_of(elem, nlen)
+    }
     if tag == S_N_FN_TYPE {
         // S2.2 函数值类型 `fn(A,B)->R`（N_FN_TYPE 布局：children=[返回类型]+参数类型...）。
         // 返回类型 = child(0)，参数 = child(1..n-1)。查重/登记走
@@ -175,20 +220,92 @@ pub func parse_type_node(tid: i64) -> i64 {
 }
 
 // ---------- S2.4 port 提升/约束判定辅助 ----------
-// struct 类型 id 是否实现 port（port 索引）——提升合法性 / 泛型约束校验共用。
-// struct_ty 必须是 K_STRUCT（调用方保证）；未实现返回 false。
+// struct/enum 类型 id 是否实现 port/interface（port 索引）——提升合法性 /
+// 泛型约束校验共用。port（名义）：查显式 impl 记录；p.9.11.21 interface
+// （结构性）：命名空间方法签名兼容即实现（鸭子多态，无需显式 impl 块）。
+// 未实现返回 false。
 pub func impl_has_ty(pi: i64, struct_ty: i64) -> bool {
-    if types.kind(struct_ty) != K_STRUCT {
+    var k = types.kind(struct_ty)
+    if k == K_STRUCT {
+        var si = types.low(struct_ty)
+        if si < 0 {
+            return false
+        }
+        if sstate.impl_find(pi, si) >= 0 {
+            return true
+        }
+        // p.9.11.21 interface 结构性实现：签名兼容即实现（首次判定合成
+        // impl 记录 → vtable 生成 / 提升 / 约束校验全复用，后端零改动）
+        if sstate.port_is_iface(pi) {
+            return iface_struct_has_ty(pi, si)
+        }
         return false
     }
-    var si = types.low(struct_ty)
-    if si < 0 {
-        return false
-    }
-    if sstate.impl_find(pi, si) >= 0 {
-        return true
+    if k == K_ENUM {
+        // p.9.11.21 interface 结构性实现（enum 关联方法，M2.1.8 自动 ref）：
+        // 仅签名兼容判定（enum 不合成 impl 记录——impl 表存 struct 索引，
+        // 与 port 现状一致：enum 可满足泛型约束，但不能提升为接口对象）
+        if !sstate.port_is_iface(pi) {
+            return false
+        }
+        var ei = types.low(struct_ty)
+        if ei < 0 {
+            return false
+        }
+        return iface_enum_has_ty(pi, ei)
     }
     return false
+}
+
+
+// p.9.11.21 诊断辅助：第一个不满足 interface 的方法序号（-1 = 全满足；
+// -2 = 非 struct/enum 类型）。g_iface_vio_missing 说明原因：true = 缺少
+// 同名方法，false = 方法存在但签名不匹配（参数/返回类型）。
+pub func iface_first_violation(pi: i64, ty: i64) -> i64 {
+    var k = types.kind(ty)
+    var tname = ""
+    if k == K_STRUCT {
+        tname = sstate.struct_name_of(types.low(ty))
+    } else if k == K_ENUM {
+        tname = sstate.enum_name_of(types.low(ty))
+    } else {
+        return -2
+    }
+    var n = pm_n[pi]
+    var mi: i64 = 0
+    while mi < n {
+        var mname = sstate.port_method_name(pi, mi)
+        var full = tname + "::" + mname
+        var sig = sstate.fn_sig(full)
+        if sig < 0 {
+            g_iface_vio_missing = true
+            return mi
+        }
+        var pnp = sstate.port_method_nparams(pi, mi)
+        if sg_nparams[sig] != pnp {
+            g_iface_vio_missing = true
+            return mi
+        }
+        var j: i64 = 1
+        while j < pnp {
+            if sstate.port_method_param(pi, mi, j) != sp_tys[sg_off[sig] + j] {
+                g_iface_vio_missing = false
+                return mi
+            }
+            j = j + 1
+        }
+        if sg_ret[sig] != sstate.port_method_ret(pi, mi) {
+            g_iface_vio_missing = false
+            return mi
+        }
+        mi = mi + 1
+    }
+    return -1
+}
+
+// 最近一次 iface_first_violation 的原因：true = 缺少方法，false = 签名不匹配
+pub func iface_vio_missing() -> bool {
+    return g_iface_vio_missing
 }
 
 // ---------- S1.3 窄整数辅助（位宽/符号性） ----------
@@ -267,6 +384,13 @@ pub func types_compatible(a: i64, b: i64) -> bool {
     }
     if ka == K_TABLE && kb == K_TABLE {
         return types_compatible(types.table_elem(a), types.table_elem(b))
+    }
+    // L1 定长数组：同长度 + 元素类型兼容（值类型，结构兼容）
+    if ka == K_ARRAY && kb == K_ARRAY {
+        if types.array_len(a) != types.array_len(b) {
+            return false
+        }
+        return types_compatible(types.array_elem(a), types.array_elem(b))
     }
     if ka == K_MAP && kb == K_MAP {
         return types_compatible(types.table_elem(a), types.table_elem(b))
@@ -415,6 +539,51 @@ pub func types_match(want: i64, got: i64, init_node: i64) -> bool {
                 return true
             }
         }
+        // L1 定长数组字面量适配：`var b: array<f32, 3> = [1.0, 2.0, 3.0]`。
+        // 元素个数必须 == array_len(want)，且逐元素与元素类型匹配
+        //（子元素 node_types 已由 sinfer.infer_expr 填充——scheck 检查先于
+        // 本调用已对整棵树做类型推断）。
+        if types.kind(want) == K_ARRAY {
+            var want_len = types.array_len(want)
+            var want_elem = types.array_elem(want)
+            if tag == S_N_TABLE_LIT {
+                var nc_a = sstate.nchild(init_node)
+                if nc_a != want_len {
+                    return false
+                }
+                var je: i64 = 0
+                while je < nc_a {
+                    var cell = sstate.child(init_node, je)
+                    var vnode = sstate.child(cell, 1)
+                    var vty = node_types[vnode]
+                    if vty < 0 {
+                        return false
+                    }
+                    if !types_match(want_elem, vty, vnode) && !types_compatible(want_elem, vty) {
+                        return false
+                    }
+                    je = je + 1
+                }
+                return true
+            }
+            // `var z: array<f32, 64> = array_init(0.0)`：广播初始化，实参类型
+            // 与元素类型匹配即可（长度由数组类型决定，实参个数恒 1）。
+            if tag == S_N_CALL && sstate.name_str(init_node) == "array_init" {
+                var a0 = sstate.child(init_node, sstate.slot_off(init_node))
+                if a0 < 0 {
+                    return false
+                }
+                var a0t = node_types[a0]
+                if a0t < 0 {
+                    return false
+                }
+                if types_match(want_elem, a0t, a0) || types_compatible(want_elem, a0t) {
+                    return true
+                }
+                return false
+            }
+            return false
+        }
         // 元组字面量：逐字段适配
         if tag == S_N_TUPLE_LIT {
             var kw = types.kind(want)
@@ -526,28 +695,26 @@ pub func types_match(want: i64, got: i64, init_node: i64) -> bool {
     return false
 }
 
-// 常量值是否在类型范围内（C3 边界；与 sinfer.lit_in_range 同套逻辑，
-// stype 侧独立副本避免循环依赖）
-func lit_in_range_stype(v: i64, ty: i64) -> bool {
-    if ty == TK_I8 && (v < -128 || v > 127) {
-        return false
+// L1 定长数组：索引节点 → 编译期常量值（纯字面量：IntLit 或 Neg+IntLit）。
+// 返回 (c, v)：c=true 时 v = 常量值（可为负）；c=false 非编译期常量。
+// sinfer/irgen 共用（编译期越界检查 + 常量 GEP vs 动态 GEP 分派）。
+pub func arr_const_index(node: i64) -> (c: bool, v: i64) {
+    if node < 0 {
+        return (false, 0)
     }
-    if ty == TK_I16 && (v < -32768 || v > 32767) {
-        return false
+    if s_tags[node] == S_N_INT_LIT {
+        return (true, s_vals[node])
     }
-    if ty == TK_I32 && (v < -2147483648 || v > 2147483647) {
-        return false
+    if s_tags[node] == S_N_UNARY && s_vals[node] == 0 && sstate.nchild(node) >= 1 {
+        var inn = sstate.child(node, 0)
+        if s_tags[inn] == S_N_INT_LIT {
+            return (true, 0 - s_vals[inn])
+        }
     }
-    if ty == TK_U8 && (v < 0 || v > 255) {
-        return false
-    }
-    if ty == TK_U16 && (v < 0 || v > 65535) {
-        return false
-    }
-    if ty == TK_U32 && (v < 0 || v > 4294967295) {
-        return false
-    }
-    return true
+    return (false, 0)
 }
 
+
 }
+
+import "./stype_p1.tie"
