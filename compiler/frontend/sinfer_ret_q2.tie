@@ -138,7 +138,7 @@ pub func infer_call(id: i64) -> i64 {
                 sm_err_col = s_cols[id]
                 var held = types.cap_set_name(g_held_caps)
                 if str_len(held) == 0 {
-                    held = "无"
+                    held = "none"
                 }
                 sm_err_msg = "调用 '" + fnm + "' 需要 " + types.cap_name_of_bit(need) +
                     " 域凭据（当前作用域持：" + held + "）。持证方式：文件头 `type tie<角色, unsafe:" +

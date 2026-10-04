@@ -440,7 +440,7 @@ func propagate_captures() -> i64 {
                 sm_err_col = s_cols[snode]
                 var held_sp = types.cap_set_name(g_spawn_caps[sp])
                 if str_len(held_sp) == 0 {
-                    held_sp = "无"
+                    held_sp = "none"
                 }
                 sm_err_msg = "把一个引用全局可变容器的闭包交给执行流（spawn / 并行池提交 / actor 消息投递）需要 share 域凭据（当前作用域持：" + held_sp +
                     "）。持证方式：文件头 `type tie<角色, unsafe:share>`、函数级 `#[unsafe.share]`、或块级 `unsafe with(share) { }` / `unsafe use g { }`"

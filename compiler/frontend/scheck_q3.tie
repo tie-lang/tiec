@@ -59,7 +59,7 @@ pub func check_var_decl(s: i64) -> i64 {
                     sm_err_col = s_cols[s]
                     var held_p = types.cap_set_name(g_held_caps)
                     if str_len(held_p) == 0 {
-                        held_p = "无"
+                        held_p = "none"
                     }
                     sm_err_msg = "提升到 port '" + types.type_name(ty) + "' 需要 mem 域凭据（当前作用域持：" + held_p +
                         "）。持证方式：文件头 `type tie<角色, unsafe:mem>`、函数级 `#[unsafe.mem]`、或块级 `unsafe with(mem) { }` / `unsafe use g { }`"
