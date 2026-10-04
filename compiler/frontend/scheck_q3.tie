@@ -330,6 +330,7 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     }
     g_curfn = sig
     sstate.im_reset()   // p.9.11.11 immut 收集重置（每函数）
+    sstate.vp_reset()   // r.1.6.10 按值形参收集重置（每函数，W00031 用）
     lv_keys = table_new_i64()
     lv_vals = table_new_i64()
     lv_const = table_new_i64()
@@ -382,6 +383,9 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
         if (s_vals[pnode] & 2) != 0 {
             sstate.im_insert(pnid)
         }
+        // r.1.6.10：**全部**按值形参登记（不论 immut），供 W00031 判定
+        // 「按值形参的表字段重绑定」（调用方看不到，无声失效）。
+        sstate.vp_insert(pnid)
         i = i + 1
     }
     // actor 消息方法体（内部全名 `actor$N::m`，见 scollect_port_q2 的登记）：
@@ -475,6 +479,13 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
         var dw_reads: table<i64> = table_new_i64()
         var dw_decls: table<i64> = table_new_i64()
         diag_walk(body, dw_mvars, dw_assigned, dw_reads, dw_decls)
+        // r.1.6.10 W00031：按值形参的表字段重绑定告警（无声失效）。
+        // 与上面同属警告 pass（-w），默认短路为零成本。三张表是**函数内**的
+        // 「局部变量 → 来源(按值形参, 字段)」映射，仅供自赋值措辞升级。
+        var w31_sk: table<i64> = table_new_i64()
+        var w31_sr: table<i64> = table_new_i64()
+        var w31_sf: table<i64> = table_new_i64()
+        w31_walk(body, w31_sk, w31_sr, w31_sf)
         // W00011：函数参数从未被读取（或写入）
         var pi2: i64 = 0
         while pi2 < nparams {

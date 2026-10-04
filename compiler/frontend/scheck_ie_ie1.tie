@@ -734,4 +734,128 @@ pub func check_stmt_while(s: i64) -> i64 {
         return 0
 }
 
+// ============================================================
+// r.1.6.10「按值形参的表字段重绑定」告警（W00031）
+//
+// 背景：tie 的形参默认**按值**（§13.1）——struct 会被拷贝。但 struct 里的
+// **表字段是指向同一张堆表的句柄**，于是 `p.t` 在调用方与被调方指向同一张表：
+//   · 经句柄改内容（table_push / h[i]=v）→ 调用方**看得见**（这是 tie 的惯用法）
+//   · 重新赋值字段本身（p.t = 新表）        → 调用方**看不见**（只改了本地副本）
+// 后者是**无声失效**：语法合法、运行无效果、代码读起来像改了调用方。
+// 实测（2026-10-04）：
+//     func rebind(s: S) { s.t = table_new_i64() }   // 调用方 len 不变
+// 本告警给这类写法出声。**标量**字段不在范围（改本地副本是正常的本地计算）。
+//
+// 判据（三条同时成立）：
+//   ① 字段赋值的根变量名是**按值形参**（sstate.vp_is）
+//   ② 该字段类型是 table / map（堆类型）——只有堆句柄才「改不到调用方且无声」
+//   ③ 右值恰是取自**同一形参的同一字段**的局部变量 → 措辞升级为「自赋值」
+//      （`var ops = p.ops; …; p.ops = ops`：左右本就是同一句柄，此行纯属空操作）
+//
+// 映射 `局部变量 → 来源(vp形参, 字段)` 在**同一次函数体遍历**内建立：声明必在
+// 赋值之前，故无需额外时序处理。按值形参集合由 check_fn 逐函数登记。
+//
+// 告警纪律：只在警告 pass（-w）执行，默认零成本（与 W00011/15/5/19 同策略）。
+func w31_walk(node: i64, sk: table<i64>, sr: table<i64>, sf: table<i64>) {
+    if node < 0 {
+        return
+    }
+    var tg = s_tags[node]
+    if tg == S_N_VAR_DECL {
+        // 登记 `var X = <按值形参>.<字段>` 的来源关系（供自赋值判定）
+        var init = sstate.child(node, 1)
+        if init >= 0 && s_tags[init] == S_N_FIELD_ACCESS {
+            var r = sstate.im_root(init)
+            if r >= 0 && sstate.vp_is(r) {
+                var vnid = s_names[node]
+                var fnm = sstate.name_str(init)
+                if vnid >= 0 && len(fnm) > 0 {
+                    var seen: bool = false
+                    var k2: i64 = 0
+                    while k2 < len(sk) {
+                        if sk[k2] == vnid {
+                            seen = true
+                            break
+                        }
+                        k2 = k2 + 1
+                    }
+                    if !seen {
+                        table_push(sk, vnid)
+                        table_push(sr, r)
+                        table_push(sf, intern.intern(fnm))
+                    }
+                }
+            }
+        }
+    } else if tg == S_N_FIELD_ASSIGN {
+        var base = sstate.child(node, 0)
+        var r2 = sstate.im_root(base)
+        if r2 >= 0 && sstate.vp_is(r2) {
+            var fnm2 = sstate.name_str(node)
+            if w31_fld_is_heap(base, fnm2) {
+                // ③ 自赋值判定：右值是取自同一形参同一字段的变量
+                var self_a: bool = false
+                var init3 = sstate.child(node, 1)
+                if init3 >= 0 && s_tags[init3] == S_N_VAR {
+                    var vn3 = s_names[init3]
+                    var fnid3 = intern.intern(fnm2)
+                    var q: i64 = 0
+                    while q < len(sk) {
+                        if sk[q] == vn3 && sr[q] == r2 && sf[q] == fnid3 {
+                            self_a = true
+                            break
+                        }
+                        q = q + 1
+                    }
+                }
+                if self_a {
+                    sm_warn_add(s_lines[node], s_cols[node],
+                        "对按值形参 '" + sstate.im_name(r2) + "' 的表字段 '" + fnm2 +
+                        "' 的赋值是自赋值：右值本就是该字段本身，此行无任何效果（且按值形参的字段也改不到调用方）")
+                } else {
+                    sm_warn_add(s_lines[node], s_cols[node],
+                        "对按值形参 '" + sstate.im_name(r2) + "' 的表字段 '" + fnm2 +
+                        "' 重新赋值，调用方看不到（按值传参只拷贝句柄；经句柄改内容才可见，如需换表请返回新 struct）")
+                }
+            }
+        }
+    }
+    var nc = sstate.nchild(node)
+    var k: i64 = 0
+    while k < nc {
+        w31_walk(sstate.child(node, k), sk, sr, sf)
+        k = k + 1
+    }
+}
+
+// 字段是否堆类型（table / map）。只有堆句柄的字段重绑定才「改不到调用方且无声」；
+// 标量字段赋值改的是本地副本，属正常本地计算，不告警。
+func w31_fld_is_heap(base: i64, fnm: string) -> bool {
+    if len(fnm) == 0 {
+        return false
+    }
+    var bt = node_types[base]
+    if bt < 0 {
+        return false
+    }
+    if types.kind(bt) != K_STRUCT {
+        return false
+    }
+    var si = types.low(bt)
+    if si < 0 || si >= len(cls_fldoff) {
+        return false
+    }
+    var off = cls_fldoff[si]
+    var cnt = cls_nfld[si]
+    var i: i64 = 0
+    while i < cnt {
+        if intern.lookup(fld_names[off + i]) == fnm {
+            var ft = fld_tys[off + i]
+            return types.is_table(ft) || types.is_map(ft)
+        }
+        i = i + 1
+    }
+    return false
+}
+
 }

@@ -483,6 +483,43 @@ pub func im_name(nid: i64) -> string {
     return intern.lookup(nid)
 }
 
+// ==================== 全部按值形参集合（r.1.6.10，W00031 用） ====================
+// 与 immut 集合同构但用途不同：immut 用于**禁写**（主检查路径拒绝），本集合用于
+// 「按值形参的字段改不到调用方」**告警**（警告 pass）。每函数 check_fn 重置；
+// 参数循环对所有形参（不论 immut）逐一 vp_insert。
+//
+// 为什么单列而不复用 im_*：immut 形参在主检查路径已被拒绝（写它直接报错），
+// 走到告警 pass 的只有**非 immut** 的普通按值形参——正是本告警的目标。
+pub func vp_reset() {
+    g_vp_keys = table_new_i64()
+}
+
+pub func vp_insert(nid: i64) {
+    var i: i64 = 0
+    while i < len(g_vp_keys) {
+        if g_vp_keys[i] == nid {
+            return
+        }
+        i = i + 1
+    }
+    table_push(g_vp_keys, nid)
+}
+
+// nid 是否为当前函数的按值形参（名字池 id）
+pub func vp_is(nid: i64) -> bool {
+    if nid < 0 {
+        return false
+    }
+    var i: i64 = 0
+    while i < len(g_vp_keys) {
+        if g_vp_keys[i] == nid {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
 // 取赋值目标链的根变量名池 id：从 base 沿 child(0) 上行，遇 S_N_VAR 返回其名；
 // 非纯变量/字段/索引链（S_N_UNARY/方法返回值等）返回 -1（不判定 immut）。
 pub func im_root(base: i64) -> i64 {

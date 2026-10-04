@@ -83,6 +83,13 @@ var gen_marks: table<i64>;
 var g_im_keys: table<i64>;
 var g_im_vals: table<i64>;
 
+// r.1.6.10 **全部按值形参**名集合（每函数 check_fn 重置；变量名池 id）。
+// 与 immut 集合分开：immut 用于「禁写」拒绝（主检查路径），本集合用于
+// 「按值形参的字段改不到调用方」告警（警告 pass）。按值形参的表字段重绑定
+// 是**无声失效**——语法合法、运行无效果、代码读起来像改了调用方，
+// 属最该出声音的一类，故单列一集合供 W00031 判定。
+var g_vp_keys: table<i64>;
+
 var st_keys: table<i64>;      // struct 名 id（升序）
 var st_vals: table<i64>;      // struct 索引
 // p.9.11.32 类型别名注册表（名 id 升序；val = S_N_TYPE_ALIAS 节点 id）
