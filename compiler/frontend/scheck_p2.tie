@@ -429,7 +429,9 @@ func propagate_captures() -> i64 {
             if g_spawn_unsafe[sp] == 0 {
                 sm_err_line = s_lines[snode]
                 sm_err_col = s_cols[snode]
-                sm_err_msg = "spawn 一个引用全局可变容器的闭包必须在 unsafe 块或 unsafe 函数中（闭包与执行流共享同一份底层数据，并发写入由书写者负责排除）"
+                // 措辞不提 spawn：本判据覆盖三处交付入口（spawn / 并行池 pp_submit /
+                // actor 消息投递闭包），统称「交给执行流」。
+                sm_err_msg = "把一个引用全局可变容器的闭包交给执行流（spawn / 并行池提交 / actor 消息投递）必须在 unsafe 块或 unsafe 函数中（闭包与执行流共享同一份底层数据，并发写入由书写者负责排除）"
                 return -1
             }
             // 域位：1 = share（0=share 1=mem 2=ext 3=lock 4=raw）
@@ -440,7 +442,7 @@ func propagate_captures() -> i64 {
                 if str_len(held_sp) == 0 {
                     held_sp = "无"
                 }
-                sm_err_msg = "spawn 一个引用全局可变容器的闭包需要 share 域凭据（当前作用域持：" + held_sp +
+                sm_err_msg = "把一个引用全局可变容器的闭包交给执行流（spawn / 并行池提交 / actor 消息投递）需要 share 域凭据（当前作用域持：" + held_sp +
                     "）。持证方式：文件头 `type tie<角色, unsafe:share>`、函数级 `#[unsafe.share]`、或块级 `unsafe with(share) { }` / `unsafe use g { }`"
                 return -1
             }

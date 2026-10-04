@@ -534,6 +534,35 @@ func infer_actor_method(aty: i64, mname: string, args: table<i64>, id: i64) -> i
         if at < 0 {
             return -1
         }
+        // share 门禁 · actor 消息投递（2026-10-04 恢复并修正判据时序）
+        // 实参是 **fn 值** ⇒ 这个闭包被投递进 actor 的执行流 ⇒ 若它捕获了全局可变
+        // 容器（cl_grefs），就是跨执行流共享同一份底层数据 ⇒ 需 share 域凭据。
+        // ★ 注意 `run Counter()`（建 actor）**不需要**凭据：actor 状态独占、经消息交互，
+        //   不是共享内存（规范 §10.2/10.3）。要拦的只是「把闭包投进去」。
+        //
+        // ★★ 恢复背景：这段曾于 `374b739` 被删，理由是「消息参数区固定 8 字节 i64 槽
+        //   ⇒ 闭包（16 字节）传不进去 ⇒ 分支不可达」。该前提随后被 `71ed87e` 推翻
+        //   （消息参数区改为 64 字节字节缓冲、按类型打包，闭包重新可投），但门禁
+        //   **没有跟着恢复** ⇒ 实测「传捕获全局表的闭包进 actor」全程放行
+        //   （`_spec_audit/z/r11_share_actor.tie` rc=0，应拒未拒）。
+        //
+        // ★★ 判据时序（本次修正的真错点，`374b739` 原代码的判据也是错的）：**此处
+        //   判 `cl_grefs` 恒为假**。实测 `ci_a=0 / len(cl_grefs)=1 / cl_grefs[0]=0`
+        //   —— 闭包**字面量**在 `infer_expr` 里当场登记进 `g_clo_pending`，但闭包体
+        //   （含 `g_tab` 的全局引用打点）是**延迟检查**的（`check_pending_closures`
+        //   在所有函数检查完之后才跑）⇒ 此刻 `cl_grefs` 还是初值 0。
+        //   正解与 `sinfer_ret_q2.tie` 的 spawn 路径**同款**：此处只
+        //   **登记调用点 + 快照凭据 + force=0**，判定延到 `scheck_p2` 的
+        //   `check_spawn_share_gate` 末段——那时打点与子闭包传播都已完成。
+        //   ⚠ force 必须为 **0**：置 1 会让末段无条件判「共享」，把不共享的闭包
+        //   （`cap_glob_matrix.tie` 那类纯标量捕获）也误判成需凭据。
+        if types.is_fn(at) {
+            table_push(g_spawn_nodes, id)
+            table_push(g_spawn_args, args[j])
+            table_push(g_spawn_caps, g_held_caps)
+            table_push(g_spawn_unsafe, g_unsafe_depth)
+            table_push(g_spawn_force, 0)
+        }
         var want = sstate.actor_method_param(ai, mname, j)
         argsz_total = argsz_total + (types.actor_param_bytes(want) + 7) / 8 * 8
 
