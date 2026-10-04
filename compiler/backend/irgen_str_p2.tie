@@ -168,6 +168,38 @@ func tig_agg_retain_fields(slot: i64, ty: i64) -> i64 {
     return 0
 }
 
+// 聚合字段的**带守卫释放**：condv 为真才真正释放（假时把各字段句柄 select 成 null，
+// 由 tbl_release 的空句柄守卫跳过）——与闭包 `tig_closure_release_slot_guarded` 同范式，
+// **不在回边分裂控制流块**（分裂曾致 LLVM 支配关系违规）。
+func tig_agg_release_guarded(slot: i64, ty: i64, condv: i64) -> i64 {
+    if !ty_has_table(ty) || types.kind(ty) != K_STRUCT {
+        return 0
+    }
+    var si = ty - BASE_STRUCT
+    if si < 0 || si >= len(cls_nfld) {
+        return 0
+    }
+    var off = cls_fldoff[si]
+    var cnt = cls_nfld[si]
+    var TSTR = types.named(TK_STR)
+    var k: i64 = 0
+    while k < cnt {
+        var ft = fld_tys[off + k]
+        if types.is_table(ft) || types.is_map(ft) {
+            var fa = s21_gep(slot, struct_field_off(ty, k), true)
+            var cur = s21_load(fa, TSTR)
+            var safe = tig_select_i(condv, cur, tig_null_ptr(), TSTR)
+            tig_tbl_release_call(safe)
+            g_used_trmlite = true
+        } else if types.kind(ft) == K_STRUCT {
+            var fa2 = s21_gep(slot, struct_field_off(ty, k), true)
+            tig_agg_release_guarded(fa2, ft, condv)
+        }
+        k = k + 1
+    }
+    return 0
+}
+
 // 聚合**绑定**处的字段 retain：slot = 目标聚合槽（store 已完成）。
 // init 为**本文件 struct 构造**（S(...)，tag 7 且名字解析为 struct）时，按**逐字段实参的
 // 瞬态性**决定——瞬态（调用 tag 7 / 字面量 tag 12）免 retain，与表元素路径同纪律；
