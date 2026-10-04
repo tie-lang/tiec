@@ -225,6 +225,10 @@ func is_builtin_name(nm: string) -> bool {
     if nm == "any_tag" {
         return true
     }
+    // r.1.6.15：share(x) 显式共享别名（值语义逃生舱）
+    if nm == "share" {
+        return true
+    }
     // P2d-D3：map 高阶——map_keys(m)/map_values(m)/map_contains(m, key)
     if nm == "map_keys" || nm == "map_values" || nm == "map_contains" {
         return true

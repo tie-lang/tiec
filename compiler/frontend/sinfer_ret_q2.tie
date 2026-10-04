@@ -203,6 +203,16 @@ pub func infer_call(id: i64) -> i64 {
             g_typed = g_typed + 1
             return node_types[id]
         }
+        if fnm == "share" {
+            // share(x) → x 的类型（恒等：共享别名与原值同型）
+            var s0 = infer_expr(args[0])
+            if s0 < 0 {
+                return -1
+            }
+            node_types[id] = s0
+            g_typed = g_typed + 1
+            return s0
+        }
         if fnm == "volatile_load" {
             // volatile_load(p) → 指针元素类型（任务15：MMIO/硬件寄存器读）
             var p0 = infer_expr(args[0])

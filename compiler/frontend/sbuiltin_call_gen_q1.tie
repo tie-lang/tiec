@@ -124,6 +124,18 @@ pub func builtin_call_b_memcpy(fn_name: string, args: table<i64>, call_node: i64
         return types.named(TK_VOID)
 }
 
+// r.1.6.15 `share(x)`：取**共享可变别名**（值语义逃生舱）。返回类型 = 实参类型。
+pub func builtin_call_b_share(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
+    var nargs = len(args)
+    if nargs != 1 {
+        sm_err_line = s_lines[call_node]
+        sm_err_col = s_cols[call_node]
+        sm_err_msg = "share() 期望 1 个参数（要共享的值），实际 " + to_string(nargs) + " 个"
+        return -2
+    }
+    return types.named(TK_TABLE)  // 占位；实际类型由调用点 infer 取实参类型
+}
+
 pub func builtin_call_b_addr_of(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
     var nargs = len(args)
     // ---------- S1.2 unsafe 指针/内存内置（固定返回类型部分） ----------

@@ -468,6 +468,12 @@ pub func builtin_domain(fnm: string) -> i64 {
     if fnm == "cstr_to_string" {
         return 2
     }
+    // share：**显式共享可变别名**——值语义的逃生舱（绕过 COW 隔离）。
+    // 强大但危险：写它会改到所有别名，编译器不再保证隔离；且别名不可追踪
+    // ⇒ 与并发共享同一危险面，故归 share 域（需 unsafe 上下文 + share 凭据）。
+    if fnm == "share" {
+        return 1
+    }
     // raw：绕过编译器对代码的假设
     if fnm == "volatile_load" || fnm == "volatile_store" {
         return 16
