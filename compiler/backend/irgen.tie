@@ -181,6 +181,16 @@ var g_file_lock: bool = false;
 // p.6.10.3：函数参数表名集合（intern id → 1）——出口析构跳过参数（借用语义，
 // 所有权在调用方）；参数槽被赋值覆盖也不 release（避免收回调用方所有权）。
 var g_param_nids: table<i64>;
+// r.1.6.14 值语义过渡开关（TIE_TBL_VALUE=1 开启；默认关＝当前共享语义不变）。
+// 关闭时全部 COW 接线为 no-op ⇒ 逐指令等价，回归可用来证明「没接线坏」。
+var g_tbl_value: bool = false;
+var g_tbl_value_init: bool = false;
+// `shared` 形参名 id（bit5）——写路径遇到它们**不做 COW**（显式共享＝就地改）。
+// 与 g_param_nids 同生命周期（每编译重置 + 闭包体生成时保存/恢复）。
+var g_shared_param_nids: table<i64>;
+// 值语义形参的出口释放候选（r.1.6.14）：入口 retain 过的表形参槽地址。
+// **每函数重置**（否则 B 函数出口会释放 A 函数的形参 ⇒ 双释放）。
+var g_ownparam_slots: table<i64>;
 // p.6.10.3：entry 级（函数顶层块创建的）局部表变量 alloca 清单——供函数出口
 // 析构（entry alloca 被任意出口块 load 均满足支配关系；循环/分支内 var 的 alloca
 // 在非 entry 块，排除以避免 LLVM「instruction does not dominate」）。

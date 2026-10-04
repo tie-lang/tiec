@@ -168,6 +168,59 @@ func tig_agg_retain_fields(slot: i64, ty: i64) -> i64 {
     return 0
 }
 
+// ============ r.1.6.14 值语义过渡：写前分离（COW） ============
+// 开关：TIE_TBL_VALUE=1 开启值语义写路径；默认关 ⇒ 本组函数全部 no-op，
+// 生成代码与接线前**逐指令一致**（回归可用来证明接线本身没坏）。
+// 语义：非 `shared` 的表变量在写之前先按 rc 分离——rc<=1（独占）原样返回（零成本），
+// rc>1（有别名）则克隆出私有副本并把新句柄写回变量槽 ⇒ 后续写不再影响别名。
+func tbl_value_on() -> bool {
+    if !g_tbl_value_init {
+        g_tbl_value_init = true
+        if get_env("TIE_TBL_VALUE") == "1" {
+            g_tbl_value = true
+        }
+    }
+    return g_tbl_value
+}
+
+// 名 id 是否为 `shared` 形参（bit5 登记）⇒ 显式共享，写路径**不做** COW。
+func tig_is_shared_param(nid: i64) -> bool {
+    var i: i64 = 0
+    while i < len(g_shared_param_nids) {
+        if g_shared_param_nids[i] == nid {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// 写前分离：返回应当用于本次写的句柄（可能已换新）。tnid = 目标变量名 id。
+// 非裸变量（字段/下标目标）或槽不可得 ⇒ 原样返回（本批不接，走原路径）。
+func tig_cow_before_write(t: i64, tnid: i64) -> i64 {
+    if !tbl_value_on() {
+        return t
+    }
+    if tig_is_shared_param(tnid) {
+        return t
+    }
+    if scope_get(tnid) < 0 {
+        return t
+    }
+    // 槽类型判据：表变量的**声明类型被推断路径 clobber 成 TK_STR**（裸句柄，
+    // 见 irgen_stmt_gen_p1 的 RCA-2 注），故 table<T> 与 TK_STR 都算表槽。
+    // 两个调用点（表下标写 / table_push 首参）都已由语义层保证目标是表。
+    if !types.is_table(g_lookup_ty) && g_lookup_ty != types.named(TK_STR) {
+        return t
+    }
+    var slot = g_lookup_alloca
+    var nh = tl_i64_1("tl_tbl$tbl_cow", t21_ptri(t))
+    var nhp = t21_intp(nh)
+    s21_store(slot, nhp, types.named(TK_STR))
+    g_used_trmlite = true
+    return nhp
+}
+
 // 聚合字段的**带守卫释放**：condv 为真才真正释放（假时把各字段句柄 select 成 null，
 // 由 tbl_release 的空句柄守卫跳过）——与闭包 `tig_closure_release_slot_guarded` 同范式，
 // **不在回边分裂控制流块**（分裂曾致 LLVM 支配关系违规）。
