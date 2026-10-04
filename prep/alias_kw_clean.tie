@@ -1,0 +1,139 @@
+type tie<script>
+// prep/alias_kw_clean.tie —— p.9.11.32 alias 保留字化的一键预处理
+//
+// 把源码中以 `alias` 作为**标识符**的出现点统一改名为 `alias_id`：
+//   · 字符串字面量与 // 行注释原样保留（不改文档/错误消息/比较串）
+//   · 标识符边界判定（前后不得为 [A-Za-z0-9_]）——alias_id / alias_keys /
+//     lex_alias / g_alias_depth 等复合名不受影响
+//   · 就地改写（file_write），仅当发生改名时写回
+//
+// 用法：alias_kw_clean <file.tie> [file2.tie ...]
+//       每个参数是一个源文件；输出每文件改名数与总数。
+//
+// 背景：p.9.11.32 `alias` 升级为真保留字（build_kw 登记），既有代码中作为
+// 局部变量名的 `alias`（parse_import / expand_one_import / proto parser）
+// 必须先改名，本程序即该迁移的一键工具。
+
+// 判定从 i 开始是否命中子串 sub（逐码点匹配）
+func match_at(src: string, n: i64, i: i64, sub: string) -> bool {
+    var m: i64 = str_len(sub)
+    if i + m > n {
+        return false
+    }
+    var j: i64 = 0
+    while j < m {
+        if str_char(src, i + j) != str_char(sub, j) {
+            return false
+        }
+        j = j + 1
+    }
+    return true
+}
+
+// 标识符字符集（const 串 + 逐位命中，脚本底座无码点内建故走 == 集合）
+var g_ident_set: string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+
+func ident_hit(c: string) -> bool {
+    var n: i64 = str_len(g_ident_set)
+    var i: i64 = 0
+    while i < n {
+        if match_at(g_ident_set, n, i, c) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// 改名计数（clean 单文件作用域内累加，main 每文件清零）
+var g_count: i64 = 0
+
+// 单文件变换：alias（标识符位）→ alias_id；字符串/行注释原样保留
+func clean(src: string) -> string {
+    var n: i64 = str_len(src)
+    var out: string = ""
+    var i: i64 = 0
+    while i < n {
+        var c = str_char(src, i)
+        if c == "\"" {
+            // 字符串字面量：整体原样拷贝（含 \\ 转义对）
+            out = out + c
+            i = i + 1
+            while i < n {
+                var c2 = str_char(src, i)
+                out = out + c2
+                if c2 == "\\" && i + 1 < n {
+                    out = out + str_char(src, i + 1)
+                    i = i + 2
+                    continue
+                }
+                i = i + 1
+                if c2 == "\"" {
+                    break
+                }
+            }
+        } else if c == "/" && i + 1 < n && str_char(src, i + 1) == "/" {
+            // 行注释：原样拷到行尾（换行符留给主循环）
+            while i < n && str_char(src, i) != "\n" {
+                out = out + str_char(src, i)
+                i = i + 1
+            }
+        } else if match_at(src, n, i, "alias") {
+            // 候选命中：标识符边界判定（前驱/后继不得为标识符字符）
+            var before_ok = true
+            if i > 0 {
+                if ident_hit(str_char(src, i - 1)) {
+                    before_ok = false
+                }
+            }
+            var after_ok = true
+            if i + 5 < n {
+                if ident_hit(str_char(src, i + 5)) {
+                    after_ok = false
+                }
+            }
+            if before_ok && after_ok {
+                out = out + "alias_id"
+                g_count = g_count + 1
+                i = i + 5
+            } else {
+                out = out + c
+                i = i + 1
+            }
+        } else {
+            out = out + c
+            i = i + 1
+        }
+    }
+    return out
+}
+
+func main() {
+    var n = arg_count()
+    if n < 1 {
+        println("用法: alias_kw_clean <file.tie> [file2.tie ...]")
+        exit(2)
+    }
+    var total: i64 = 0
+    var i: i64 = 0
+    while i < n {
+        var path = arg_string(i)
+        if !file_exists(path) {
+            println("缺失: " + path)
+            exit(1)
+        }
+        var src = file_read(path)
+        g_count = 0
+        var cleaned = clean(src)
+        if g_count > 0 {
+            if !file_write(path, cleaned) {
+                println("写入失败: " + path)
+                exit(1)
+            }
+        }
+        println(to_string(g_count) + " 处  " + path)
+        total = total + g_count
+        i = i + 1
+    }
+    println("共改名 " + to_string(total) + " 处")
+}

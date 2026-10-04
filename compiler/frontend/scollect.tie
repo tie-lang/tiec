@@ -23,6 +23,16 @@ import "./scollect_port.tie"
 // 注：tie 全局变量必须放文件顶层（namespace 外）。
 var g_impl_pending: table<i64>;
 
+// p.9.17.2 缺陷 #4a：标量全局的**初始化表达式类型检查延迟**执行——
+// collect_top 期间 enum 只有名字登记（en_keys），变体表（en_vnames 等）由
+// semantic 主流程在其后的 collect_all_enums() 填充；此时对 enum 变体常量
+// 初始化器跑 infer_expr 会误报 E00506「枚举 'X' 没有变体 'Y'」（变体扫描落空）。
+// 此处暂存（节点, 标注类型, 全名），由 check_deferred_global_inits() 在
+// collect_all_enums() 之后统一检查。
+var gd_nodes: table<i64>;
+var gd_tys: table<i64>;
+var gd_nms: table<string>;
+
 namespace scollect {
 
 // 内置函数返回表预登记（语言底座）
@@ -102,13 +112,31 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
                 }
                 return 0
             }
+            if s_tags[slot0] == S_N_TYPE_ARGS {
+                // p.8.1.3 显式特化：`func name<具体类型>(...)` ——类型实参已具体
+                // 化，mangle 函数名为 name$T1$T2 并按普通函数收集（与泛型实例化
+                // 同 key：调用点 instantiate_fn 幂等命中 → 自动优先绑定特化实现）。
+                var sargs = sgen.parse_type_args_ast(slot0)
+                if len(sargs) == 0 {
+                    return -1
+                }
+                full = sgen.mangle(full, sargs)
+                s_names[fn_node] = intern.intern(full)
+                s_children[s_coff[fn_node]] = -1   // 泛型槽清 -1（普通函数布局）
+            }
         }
     }
     var nparams = s_aux[fn_node]
     var is_pub = s_vals[fn_node]
-    // S1.2：函数 unsafe 标志（val bit1）。参数/返回含指针类型的函数必须是
-    // unsafe fn（安全函数不能触碰指针）。
-    var is_unsafe = (is_pub >> 1) & 1
+    // S1.2 的「参数/返回含指针类型 ⇒ 必须 unsafe fn」两条门禁已随安全边界
+    // 重分类（§11.8，2026-10-01）撤销，故原先在此取出的函数 unsafe 标志
+    //（val bit1）在本函数内不再被消费。`is_pub` 保留：下文 reg_fn 传的是整个
+    // val（含各标志位），不只是 pub。
+    //
+    // `unsafe fn` 仍是**有意义的声明**：函数体因此获得不安全上下文
+    //（see check_fn：sig_unsafe(sig) == 1 ⇒ g_unsafe_depth + 1），体内仍可做
+    // 解引用/分配等操作级门禁保护的动作。变的只是「签名里出现指针类型」不再是
+    // 判定函数是否必须 unsafe 的依据。
     // 返回类型：FnDef children[slot_off]（新布局 children[0]=泛型槽→偏移 1；
     // 旧布局无槽→children[0]=返回类型。slot_off 统一判定保证自举双兼容）
     var rt_node = sstate.child(fn_node, sstate.slot_off(fn_node))
@@ -116,25 +144,46 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
     if ret_ty < 0 {
         return -1
     }
-    if types.is_unsafe_ty(ret_ty) && is_unsafe == 0 {
-        sm_err_line = s_lines[fn_node]
-        sm_err_col = s_cols[fn_node]
-        sm_err_msg = "返回指针/切片/原子类型 '" + types.type_name(ret_ty) + "' 的函数必须标注 unsafe（`unsafe fn`）"
-        return -1
+    // §11.8 重分类（2026-10-01）：返回指针/切片/原子类型不再要求 unsafe fn ——
+    // 返回值是一个值，持有它不引发 UB；解引用才是危险面，由调用点的操作级
+    // 门禁（sinfer_ret_q2.tie 的 unsafe 内置清单）拦截。
+    // p.9.11.15 生成器检测：函数体含 N_YIELD → 生成器函数。语言侧定稿——
+    // 生成器必须声明返回类型（= 元素类型，非 void），签名返回类型登记为
+    // table<elem>（调用方 gen() 得表，for/推导式直接消费）；运行期惰性
+    // 协程由 p.9.5.1 trm-lite 承载，本轮 IR = 攒表返回（探针验证产出序列）。
+    var g_body = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + nparams)
+    var is_gen_fn: i64 = 0
+    if g_body >= 0 {
+        if contains_yield(g_body) {
+            is_gen_fn = 1
+        }
+    }
+    if is_gen_fn == 1 {
+        if ret_ty == types.named(TK_VOID) {
+            sm_err_line = s_lines[fn_node]
+            sm_err_col = s_cols[fn_node]
+            sm_err_msg = "生成器函数（含 yield）必须声明返回类型（= yield 产出元素的类型），实际是 void（请写 `-> 元素类型`）"
+            return -1
+        }
+        ret_ty = types.table_of(ret_ty)   // 签名返回类型 → table<elem>
     }
     var p_tys: table<i64> = table_new_i64()
     var p_refs: table<i64> = table_new_i64()
     var p_defs: table<i64> = table_new_i64()
     var p_vars: table<i64> = table_new_i64()
-    var required: i64 = nparams
-    // 变参函数：必选数初值扣掉变参本身（调用方可传 0 个额外实参；
-    // 下方循环对变参跳过时保留该初值——如 `sum(rest: ...i64)` 需 0）
-    if nparams > 0 {
-        var lastp = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + (nparams - 1))
-        if s_aux[lastp] == 1 {
-            required = nparams - 1
-        }
-    }
+    // 必选参数数（默认值前）：**初值 0**，由下方循环按「最后一个无默认值且非变参
+    // 的参数位置 +1」覆盖。
+    // RCA（p.9.11.23，2026-09-27）：此处原为 `var required: i64 = nparams`
+    //（意图「默认全部必选」）+ 变参时扣 1，导致**全部参数都带默认值**的函数
+    // 必选数停在 nparams（而非 0）——于是 `d0(c: 9)` 这类调用被个数检查
+    // （nc < req）误拒，报「期望 3 个参数，实际 1 个」。同理变参函数
+    //（`f(a: i64 = 1, b: ...T)`）也会停在 nparams-1。改为 0 初值后：
+    //   * 无默认值参数逐个覆盖（语义不变）
+    //   * 全部带默认值 → 0（正确）
+    //   * 纯变参 `sum(rest: ...i64)` → 0（变参在循环中被跳过，不加计）
+    //   * `f(a: i64, b: ...T)` → 1（a 覆盖）
+    // 该改动只**放宽**（required 变小或不变），故既有可通过的调用不受影响。
+    var required: i64 = 0
     // 默认值校验：ref 不能带默认值 + 可选参数必须连续 + 默认值必须字面量 + 类型匹配
     var seen_default: bool = false
     var k: i64 = 0
@@ -145,14 +194,39 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
         if pt < 0 {
             return -1
         }
-        // S1.2：安全函数参数不能是指针/切片/原子类型
-        if types.is_unsafe_ty(pt) && is_unsafe == 0 {
+        // §11.8 重分类（2026-10-01）：参数为指针/切片/原子类型不再要求 unsafe fn
+        // —— 传参只是复制一个值，不引发 UB。「安全切片 vs 裸指针」的两层门禁
+        // 由此合到操作一层（见 sinfer_ret_q2.tie）。
+        var is_ref = s_vals[p] & 1   // by_ref（p.9.11.11 immut 存 bit1，掩码 & 1）
+        // p.9.11.26 四约定矩阵：统一声明面 + 互斥诊断。
+        //   bit0=ref（可写借用）· bit1=immut（只读借用）· bit2=move（所有权转移）
+        //   · bit3=重复修饰
+        // 互斥裁决（同槽双约 = 语义矛盾，编译诊断）：
+        //   * immut × ref：只读借用与可写借用不可共存
+        //   * move × (ref | immut)：所有权已移交，无从「借用」
+        //   * 同类修饰重复（`ref ref x`）也属笔误，一并诊断
+        // 诊断先行（同槽首个问题即报），避免叠加多条互相掩盖。
+        var is_immut_p = (s_vals[p] / 2) % 2
+        var is_move_p = (s_vals[p] / 4) % 2
+        var is_dup_p = (s_vals[p] / 8) % 2
+        if is_dup_p == 1 {
             sm_err_line = s_lines[p]
             sm_err_col = s_cols[p]
-            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的指针/切片/原子类型 '" + types.type_name(pt) + "' 只能在 unsafe 函数中使用"
+            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的传递约定修饰重复出现（ref/immut/move 各至多一次）"
             return -1
         }
-        var is_ref = s_vals[p]
+        if is_immut_p == 1 && is_ref == 1 {
+            sm_err_line = s_lines[p]
+            sm_err_col = s_cols[p]
+            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 不能同时标注 immut 与 ref（只读借用与可写借用互斥）"
+            return -1
+        }
+        if is_move_p == 1 && (is_ref == 1 || is_immut_p == 1) {
+            sm_err_line = s_lines[p]
+            sm_err_col = s_cols[p]
+            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 不能同时标注 move 与 ref/immut（所有权已移交，无从借用）"
+            return -1
+        }
         var is_var = s_aux[p]   // 变参标志（`name: ...T`，parser 写入 aux）
         var has_def: i64 = 0
         var def_node: i64 = -1
@@ -199,11 +273,13 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
             sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的 ref 参数不能有默认值（必须在调用点传实参）"
             return -1
         }
-        // ref 形参仅支持表参数（对齐 Rust：标量/字符串/struct 形参引用无实义）
-        if is_ref == 1 && !types.is_table(pt) {
+        // ref 形参仅支持表/定长数组参数（对齐 Rust：标量/字符串/struct 形参引用无实义）
+        // L1：array<T, N> 值类型按引用传参（指针），避免聚合值拷贝——扩散热点
+        // matmul/conv 的行列数组全走 ref，零拷贝。
+        if is_ref == 1 && !types.is_table(pt) && !types.is_array(pt) {
             sm_err_line = s_lines[p]
             sm_err_col = s_cols[p]
-            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的 ref 修饰仅支持表参数（table/table<T>），实际是 " + types.type_name(pt)
+            sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的 ref 修饰仅支持表参数（table/table<T>）或定长数组（array<T, N>），实际是 " + types.type_name(pt)
             return -1
         }
         // 可选参数（带默认值）必须连续排在必选参数之后
@@ -269,6 +345,8 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
     // **自动按引用传递**（对齐 Rust ir.rs：param_by_ref[0]，字段修改反映到调用方）。
     // `pub func inc(c: Counter)` 在 namespace Counter 内：c 首参标 ref，
     // c.inc() 转发时传 c 的槽地址，inc 内 c.count 修改写回调用方。
+    // p.9.11.20 enum 关联方法同约定：namespace <enum 名> 内函数首参 == 该
+    // enum 类型 → 首参自动 ref（方法分派 obj.method() → <enum>::method(obj)）。
     if nparams > 0 {
         var last2 = sstate.rfind_ns(full)
         if last2 >= 0 {
@@ -280,6 +358,14 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
                 if p_tys[0] == types.struct_of(si2) {
                     p_refs[0] = 1  // 首参按引用（接收者）
                 }
+            } else {
+                var eidx2 = sstate.bs_find(en_keys, snid)
+                if eidx2 >= 0 {
+                    var ei2 = en_vals[eidx2]
+                    if p_tys[0] == types.enum_of(ei2) {
+                        p_refs[0] = 1  // enum 接收者按引用（对齐 struct 方法）
+                    }
+                }
             }
         }
     }
@@ -288,7 +374,45 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
         sm_err_col = s_cols[fn_node]
         return -1
     }
+    // p.9.11.15：生成器标记（签名返回类型已登记为 table<elem>；scheck 校验
+    // yield 元素类型、irgen 按生成器发射攒表/返回表）
+    if is_gen_fn == 1 {
+        var g_sig = sstate.fn_sig(full)
+        sstate.mark_gen(g_sig)
+    }
     return 0
+}
+
+// p.9.11.15 生成器检测辅助：子树（语句/表达式）是否含 N_YIELD。
+// 递归扫描子节点；N_FN_LIT（闭包）与 N_FN_DEF（块内函数定义）为函数边界，
+// 不深入（闭包内 yield 由 scheck 在闭包体检查时报错，不属外层函数）。
+// **N_CASE_BIND 特判**（对齐 sgen.clone_inner）：children[1] 是**变量名池 id**
+//（非 AST 节点，parser 直接把 intern id 塞进 children）——不能当节点递归
+//（会把池 id 当节点 id 读 s_tags 递归进无关子树，可能成环 → 栈溢出崩溃，
+// 2026-09-13 enum 参数 + payload 解构实测 0xC0000409）；只递归 children[0]。
+func contains_yield(node: i64) -> bool {
+    if node < 0 {
+        return false
+    }
+    var tag = s_tags[node]
+    if tag == S_N_YIELD {
+        return true
+    }
+    if tag == S_N_FN_LIT || tag == S_N_FN_DEF {
+        return false
+    }
+    if tag == N_CASE_BIND {
+        return contains_yield(sstate.child(node, 0))
+    }
+    var nc = sstate.nchild(node)
+    var k: i64 = 0
+    while k < nc {
+        if contains_yield(sstate.child(node, k)) {
+            return true
+        }
+        k = k + 1
+    }
+    return false
 }
 
 // 字符串切片（scollect 本地辅助；对齐 irgen.ig_slice）
@@ -362,6 +486,9 @@ func collect_struct_decl(s: i64) -> i64 {
         sm_err_col = s_cols[s]
         return -1
     }
+    // p.9.21.6-1 模块边界显式化：struct 行来源模块回填（reg_struct 默认 0；
+    // 此处持定义节点 s，反查真实文件 id）
+    st_mod[idx] = sstate.file_id_of_node(s)
     // struct 名登记（types.type_name / 泛型 mangling 片段还原用；追加式与
     // reg_struct 索引顺序一致——实例化 struct 由 sgen.instantiate_struct 同步登记）
     types.set_struct_name(idx, nm)

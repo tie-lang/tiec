@@ -8,9 +8,9 @@ type tie<logic>
 //   其他         → 404 "Not Found"
 // 验证：curl http://127.0.0.1:8080/ 等。
 
-import "../std/net.tie"
-import "../std/string.tie"
-import "../std/http_server.tie"
+import "/std/net.tie"
+import "/std/string.tie"
+import "/std/http_server.tie"
 
 func main() {
     var srv = httpsrv.listen(8080)

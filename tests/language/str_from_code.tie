@@ -7,8 +7,8 @@ type tie<logic>
 // 用途：tie:zd 二进制序列化解码中文的必要前提——此前 tie 无「码点 → 字符」路径
 // （utf.to_char 仅 ASCII 查表、无 \u/\x 转义、eval 受限）。
 // 预期输出：str_from_code 验收通过（全部断言通过，无 assert 失败退出）。
-import "../../std/assert.tie"
-import "../../std/utf.tie"
+import "/std/assert.tie"
+import "/std/utf.tie"
 using assert;
 using utf;
 

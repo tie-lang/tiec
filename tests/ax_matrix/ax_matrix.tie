@@ -23,7 +23,7 @@ type tie<logic>
 //
 // 退出：全 PASS → exit(0)；任一 FAIL → exit(1)。
 
-import "../../std/process.tie" as process
+import "/std/process.tie" as process
 
 // ---------- 常量 ----------
 var g_tiec: string = "compiler\\tiec_7A6100.exe"

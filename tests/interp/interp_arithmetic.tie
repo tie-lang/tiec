@@ -69,6 +69,10 @@ func main() {
     interp.reset()
     check(interp.eval("-8 >> 2"), "-2")
     interp.reset()
+    check(interp.eval("~10"), "-11")
+    interp.reset()
+    check(interp.eval("~0"), "-1")
+    interp.reset()
     check_err(interp.eval("1 << 64"), "左移量必须在 0..64 范围内")
 
     // ---- eval_ternary：三元 ----

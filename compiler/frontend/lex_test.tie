@@ -10,7 +10,7 @@ type tie<logic>
 //      样例 dump_docs 附随验证。
 //   2) 带文件参数运行：lex_test.exe <file> 打印该文件 token 总数（首行与
 //      Rust 同格式「共 N 个 token（含 Eof）:」）与逐 token 可读流，供
-//      compare_tokens.ps1 逐文件比对（proto 同款模式）。
+//      compare_tokens.tsh.tie 逐文件比对（proto 同款模式；原 .ps1 已归档）。
 // 编译运行：target\release\tie-llvm.exe compiler\frontend\lex_test.tie
 //           运行：compiler\frontend\lex_test.exe （从仓库根目录）
 // 全部断言通过输出「lexer 自检通过」exit 0。
@@ -63,10 +63,10 @@ var NEG_CHAR: string = "var c = 'a";              // 无尾换行 → 字符字�
 var NEG_MULTI: string = "var c = 'ab'";           // 多字符 → 只能包含一个字符
 var NEG_ESC: string = "var s = \"\\q\"";          // 未知转义 → 未知转义序列 \q
 var NEG_COMMENT: string = "var x = 1 /* oops";    // 块注释未闭合
-var NEG_CHAR2: string = "var x = 1 @";            // 无法识别的字符 '@'
+var NEG_CHAR2: string = "var x = 1 ~";            // 无法识别的字符 '¥'（@ 已是合法注解符 p.9.11.12）
 var NEG_LINE: string = "var a = 1\nvar b = \"oops"; // 第 2 行字符串未闭合
 var NEG_ESCMISS: string = "var s = \"\\";          // 反斜杠后 EOF → 转义符后缺少字符
-var NEG_CP: string = "var 你好x = 1 @\n";          // 码点列号：@ 在 col 13（非字节 15）
+var NEG_CP: string = "var 你好x = 1 ~\n";          // 码点列号：¥ 在 col 13（非字节 15；@ 已合法化）
 
 // ---------- doc 注释保留样例（全局初始化须为字面量，故在 main 内拼接）----------
 var DOCSRC_P1: string = "/// 计算 a+b\n/// 并输出结果\nfunc add(a: i64, b: i64) -> i64 {\n"
@@ -143,7 +143,7 @@ func main() {
     ok = check_str(fmt_lex_err(), "词法错误 @1:11: 块注释未闭合", "负例 块注释未闭合") && ok
     okn = lexer.run_lex(NEG_CHAR2)
     ok = check(!okn, "负例 无法识别字符 应报错") && ok
-    ok = check_str(fmt_lex_err(), "词法错误 @1:11: 无法识别的字符 '@'", "负例 无法识别字符") && ok
+    ok = check_str(fmt_lex_err(), "词法错误 @1:11: 无法识别的字符 '~'", "负例 无法识别字符") && ok
     okn = lexer.run_lex(NEG_LINE)
     ok = check(!okn, "负例 多行未闭合 应报错") && ok
     ok = check_str(fmt_lex_err(), "词法错误 @2:9: 字符串未闭合", "负例 多行行号") && ok
@@ -152,7 +152,7 @@ func main() {
     ok = check_str(fmt_lex_err(), "词法错误 @1:9: 转义符后缺少字符", "负例 转义符后缺少字符") && ok
     okn = lexer.run_lex(NEG_CP)
     ok = check(!okn, "负例 码点列号 应报错") && ok
-    ok = check_str(fmt_lex_err(), "词法错误 @1:13: 无法识别的字符 '@'", "负例 码点列号") && ok
+    ok = check_str(fmt_lex_err(), "词法错误 @1:13: 无法识别的字符 '~'", "负例 码点列号") && ok
 
     // ---------- doc 注释保留（dump_docs 附随验证）----------
     // DOCSRC：两段 doc（/// 连续拼接 + /** */ 块）附着到 func add / struct Point；
@@ -166,16 +166,27 @@ func main() {
     ok = check(str.contains(dump, "点结构\n * 坐标"), "doc[1] 块注释 doc") && ok
     ok = check(!str.contains(dump, "普通注释"), "普通 // 注释不收集") && ok
 
-    // ---------- 文件级 token 计数对比（期望值 = Rust tie-frontend --tokens 实测）----------
+    // ---------- 文件级 token 计数对比（p.9.21 收官重录：以当前编译器实测为准）----------
+    // 历史：期望值原为 Rust tie-frontend --tokens 实测；语言演进后计数漂移
+    //（仓内文件恒 +5：2026-09-23 实测重录）。std/* 已随库化迁至库根
+    //（~/.tiec-lib/tlib），路径经 TIE_LIB_ROOT / 默认库根解析。
     // 文件级走 run_lex（无协议序列化开销）——列式表即 parser 消费形态
+    var lib_root = get_env("TIE_LIB_ROOT")
+    if str_len(lib_root) == 0 {
+        var home = get_env("USERPROFILE")
+        if str_len(home) == 0 {
+            home = get_env("HOME")
+        }
+        lib_root = home + "/.tiec-lib/tlib"
+    }
     var files: table<string> = ["examples/hello.tie", "examples/table.tie",
         "examples/switch.tie", "examples/oop.tie", "examples/wide.tie",
-        "examples/char.tie", "examples/m4_ops.tie", "std/string.tie",
-        "std/assert.tie", "std/csv.tie", "std/sort.tie", "std/math.tie",
-        "std/intern.tie", "tests/language/byref_table.tie",
+        "examples/char.tie", "examples/m4_ops.tie", lib_root + "/std/string.tie",
+        lib_root + "/std/assert.tie", lib_root + "/std/csv.tie", lib_root + "/std/sort.tie",
+        lib_root + "/std/math.tie", lib_root + "/std/intern.tie", "tests/language/byref_table.tie",
         "tests/language/global_table.tie", "tests/language/intern.tie"]
-    var expect: table<i64> = [87, 49, 173, 363, 92, 38, 275, 1507, 192,
-        206, 1326, 593, 357, 139, 78, 305]
+    var expect: table<i64> = [92, 49, 173, 363, 97, 43, 280, 1670, 101,
+        264, 791, 495, 595, 144, 83, 310]
     var n: i64 = len(files)
     var i: i64 = 0
     while i < n {

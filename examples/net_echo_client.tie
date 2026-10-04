@@ -4,7 +4,7 @@ type tie<logic>
 // 连接 127.0.0.1:9000，发送 "hello tie"，打印回显。
 // 期望输出：hello tie
 
-import "../std/net.tie"
+import "/std/net.tie"
 using net;
 
 func main() {

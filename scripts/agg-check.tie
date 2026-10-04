@@ -22,7 +22,7 @@ type tie<logic>
 // 断言「良性通过 / 篡改拦截 / 缺失检出」三个场景后清理，退出 0/1。
 
 import "../compiler/config.tie"
-import "../std/tsha1.tie"
+import "/std/tsha1.tie"
 
 // ---------- 全局 ----------
 var c_names: table<string>;   // 组件名（平行表，来自版本清单 map 键）

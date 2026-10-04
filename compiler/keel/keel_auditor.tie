@@ -19,13 +19,13 @@ type tie<class>
 //   分别交给 p.7.1.2 已交付的 keel_registry 仲裁与后续里程碑。
 //
 // # 语言边界
-//   - import 路径相对本文件（compiler/keel/）：std 在 ../../std/。
+//   - import 路径相对本文件（compiler/keel/）：std 在 /std/。
 //   - 命名空间内互调裸调用；对 std 用命名空间前缀 tsha./ed25519.（不 using）。
 //   - 全局变量加 keelaud_ 前缀防 import 内联后的顶层重名。
 //   - 目录枚举用内置 list_dir（返回文件名表，不含路径前缀）；文件字节用 byte_read。
 
-import "../../std/tsha1.tie"
-import "../../std/ed25519.tie"
+import "/std/tsha1.tie"
+import "/std/ed25519.tie"
 
 var keelaud_err: string = "";    // 最近一次失败信息（成功时为空串）
 

@@ -73,6 +73,11 @@ pub func parse_type() -> i64 {
         if putil.peek_lexeme() == "fn" && putil.peek_n(1) == lex_lparen {
             return parse_fn_type(line, col)
         }
+        // L1 定长数组类型：`array<T, N>`（array 保持普通标识符——zdwrite 等
+        // 有名为 array 的函数，不能占保留字；此处仅 '<' 后按数组类型特判）。
+        if putil.peek_lexeme() == "array" && putil.peek_n(1) == lex_lt {
+            return parse_array_type(line, col)
+        }
         // 结构类型引用：`Box` 或 `Box<i64>`（2026-08-14 泛型类型实参）。
         // N_STRUCT_TYPE children = [类型实参槽]：`Box<i64>` → N_TYPE_ARGS 子节点；
         // `Box` 裸引用 → children[0] = -1（兼容现有布局）。
@@ -94,6 +99,53 @@ pub func parse_type() -> i64 {
     }
     putil.set_err(line, col, "期望类型，实际是 " + putil.describe(tag))
     return -1
+}
+
+// 定长数组类型：`array<元素类型, 长度N>`（L1 定长数组，值类型）。
+// 前提：当前 peek 为标识符 "array" 且 peek_n(1) 为 '<'（本函数消费之）。
+// 长度 N v2：正整数字面量（现状）或标识符（const 名 / 值参数名，N_VAR 节点；
+// 语义层解析为编译期整型常量，见 sgen/stype 数组段）。产出 N_ARRAY_TYPE 节点：
+// children = [元素类型节点, N_INT_LIT | N_VAR 节点]。
+func parse_array_type(line: i64, col: i64) -> i64 {
+    putil.advance()   // 消费 "array"
+    if !putil.expect(lex_lt, "'<'") {
+        return -1
+    }
+    var elem = parse_type()
+    if elem < 0 {
+        return -1
+    }
+    if !putil.expect(lex_comma, "','") {
+        return -1
+    }
+    var nline = putil.peek_line()
+    var ncol = putil.peek_col()
+    var nnode: i64 = -1
+    if putil.peek_tag() == lex_int {
+        if putil.int_lit_overflow(putil.peek_lexeme()) {
+            putil.set_err(nline, ncol, "数组长度超出 i64 可表示范围")
+            return -1
+        }
+        var nlen = putil.parse_int_lit(putil.peek_lexeme())
+        putil.advance()
+        nnode = ast.new_node(N_INT_LIT, -1, nlen, -1, nline, ncol)
+    } else if putil.peek_tag() == lex_ident {
+        // v2：常量名 / 值参数名（N_VAR，语义层按编译期整型常量解析）
+        var cid = putil.expect_ident()
+        nnode = ast.new_node(N_VAR, cid, -1, -1, nline, ncol)
+    } else {
+        putil.set_err(nline, ncol, "数组长度必须是整数字面量或常量名（array<T, N>）")
+        return -1
+    }
+    if !putil.expect_type_gt("数组类型后需 '>'") {
+        return -1
+    }
+    var t = ast.new_node(N_ARRAY_TYPE, -1, -1, -1, line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, elem)
+    table_push(kids, nnode)
+    ast.set_children(t, kids)
+    return t
 }
 
 // 函数值类型：`fn(参数类型...) -> 返回类型`（S2.2，闭包/函数指针）。
@@ -148,7 +200,9 @@ func parse_fn_type(line: i64, col: i64) -> i64 {
 // 类型实参列表：`<T1, T2, ...>`（使用点，如 `Box<i64>` / `max<i64>(...)`）。
 // 逐个用 parse_type 递归解析实参（实参可为内建泛型 table<T>/map<T>、嵌套
 // 结构引用 Box<i64>、元组类型等）；闭合用 expect_type_gt（自动处理 `>>` 分裂）。
-// 返回 N_TYPE_ARGS 节点（children = 类型节点序列）。
+// v2 值实参：整型字面量 `<1280>`（N_INT_LIT）与类型实参同表混排（语义层按
+// 模板参数 kind 分流，见 sgen.parse_type_args_ast / finish_args）。
+// 返回 N_TYPE_ARGS 节点（children = 类型节点 / N_INT_LIT 值节点序列）。
 // 前提：当前 peek 为 '<'（本函数消费之）。
 pub func parse_type_args() -> i64 {
     var line = putil.peek_line()
@@ -157,17 +211,44 @@ pub func parse_type_args() -> i64 {
         return -1
     }
     var args: table<i64> = table_new_i64()
-    var a = parse_type()
-    if a < 0 {
-        return -1
-    }
-    table_push(args, a)
-    while putil.eat(lex_comma) {
+    var a: i64 = -1
+    if putil.peek_tag() == lex_int {
+        var vline = putil.peek_line()
+        var vcol = putil.peek_col()
+        if putil.int_lit_overflow(putil.peek_lexeme()) {
+            putil.set_err(vline, vcol, "值实参超出 i64 可表示范围")
+            return -1
+        }
+        var nv = putil.parse_int_lit(putil.peek_lexeme())
+        putil.advance()
+        var nn = ast.new_node(N_INT_LIT, -1, nv, -1, vline, vcol)
+        table_push(args, nn)
+    } else {
         a = parse_type()
         if a < 0 {
             return -1
         }
         table_push(args, a)
+    }
+    while putil.eat(lex_comma) {
+        if putil.peek_tag() == lex_int {
+            var vline = putil.peek_line()
+            var vcol = putil.peek_col()
+            if putil.int_lit_overflow(putil.peek_lexeme()) {
+                putil.set_err(vline, vcol, "值实参超出 i64 可表示范围")
+                return -1
+            }
+            var nv = putil.parse_int_lit(putil.peek_lexeme())
+            putil.advance()
+            var nn = ast.new_node(N_INT_LIT, -1, nv, -1, vline, vcol)
+            table_push(args, nn)
+        } else {
+            a = parse_type()
+            if a < 0 {
+                return -1
+            }
+            table_push(args, a)
+        }
     }
     if !putil.expect_type_gt("类型实参列表后需 '>'") {
         return -1

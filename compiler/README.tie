@@ -81,7 +81,7 @@ type tie<class>
 //   —— Rust 种子编译器（tie-llvm.exe）编译 tie 自写 driver.tie 得到 tiec.exe。
 //   这是**唯一的 Rust 接触点**。G3 0-Rust 承诺：种子之后的一切（编译用户程序、
 //   链接运行时、REPL 运行、解释器求值）不触碰 cargo/target 的 Rust 产物
-//   （scripts/zero-rust-check.ps1 验证 7 项全 PASS，报告见 docs/bench/zero-rust.md）。
+//   （scripts/zero-rust-check.tsh.tie 验证 7 项全 PASS，报告见 docs/bench/zero-rust.md）。
 // 二阶自举（自举闭环证明）：
 //   compiler/tiec.exe compiler/driver.tie -o compiler/tiec2.exe
 //   —— tiec 编译自身源码得到 tiec2.exe（T5.2 irgen 最小集扩展修复 13 bug 后
@@ -92,12 +92,13 @@ type tie<class>
 // ============================================================
 // 4. CLI 用法
 // ============================================================
-// 用法：tiec <input.tie> [-o <out>] [-O0|-O1|-O2|-O3] [--target <三元组>]
+// 用法：tiec <input.tie> [-o <out>] [-l<0-3> -t<0-3>] [--target <三元组>]（p.9.20 双轴优化）
 //                    [--emit-ir] [--keep-ir] [--prep-only] [--config <f>] [--help]
 // 退出码：0 成功 / 1 编译失败 / 2 参数错误。
 //
 //   -o <file>        输出路径（logic 默认：输入同名 .exe；library 默认：.a）
-//   -O0|-O1|-O2|-O3  优化级别（默认 -O2），映射到 opt -O{N}
+//   -l<0-3>          LLVM/clang 轴（默认 2），映射到 opt -O{N}
+//   -t<0-3>          tiec 中端轴（默认 0 = 零 pass；p.9.20）
 //   --target <三元组>  交叉编译目标（如 x86_64-pc-windows-msvc；平台别名自动归一化：
 //                    win-x64/win-x86/win-arm64/linux-x64/linux-arm64/macos-x64/
 //                    macos-arm64，未知名称原样透传）

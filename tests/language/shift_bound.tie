@@ -5,7 +5,7 @@ type tie<logic>
 // 语义定界（JS 式）：count & 63。
 //   shl：左移；右移有符号=ashr（符号扩展）、无符号=lshr。全 i64 路径。
 // 断言全走运行时变量（避开前端常量折叠歧义）。
-import "../../std/assert.tie"
+import "/std/assert.tie"
 using assert;
 
 func main() {

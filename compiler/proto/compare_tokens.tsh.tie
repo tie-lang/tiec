@@ -1,0 +1,21 @@
+type tie<tsh>
+// compiler/proto/compare_tokens.tsh.tie —— T1.1 验收工具（已归档，仅文档）
+// ============================================================
+// 原 compare_tokens.ps1：tie 词法原型 vs Rust tie-frontend --tokens 全流对比。
+// 【归档裁决】0-Rust 政策下 Rust 参考编译器已归档（tiec_rust），本工具的比对
+// 参照物 `target/release/tie-frontend.exe --tokens` 与编译原型所需
+// `target/release/tie-llvm.exe`（→ lexer_test.exe）均已不复存在，故本工具
+// 客观无法运行，也无法在 tie/tsh 下做行为等价改写。按批次②规范「纯说明则
+// 直接转注释版」，保留为 tsh 文档条目（不删语义，供历史追溯）。
+//
+// 原用法回顾：
+//   pwsh ./compiler/proto/compare_tokens.ps1 [文件...]
+//     · 无参：对 examples/std/tests 下 16 文件逐一对比
+//     · 带参：只对比指定文件
+//     对比：(1) token 总数（首行一致）(2) 逐 token (行,列,种类) 三元组一致；
+//     tag 0..79 → Rust TokenKind 名（lexer.tie 文件头 tag 表一致）。
+// 现状：词法验收已由 compiler/frontend/lex_test.tie（T2.4，自含断言，不再依赖
+// Rust tie-frontend）承接；此处仅保留历史说明。
+// EN: archived T1.1 acceptance tool — Rust tie-frontend comparator retired under
+// 0-Rust; lexical acceptance is now covered by frontend/lex_test.tie (self-hosted).
+exit 0

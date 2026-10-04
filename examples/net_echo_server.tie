@@ -5,7 +5,7 @@ type tie<logic>
 // 配合 net_echo_client.tie 验证：client 发 "hello tie" → 回显 "hello tie"。
 // 用法：编译运行本文件（后台），再运行 net_echo_client.tie。
 
-import "../std/net.tie"
+import "/std/net.tie"
 using net;
 
 func main() {

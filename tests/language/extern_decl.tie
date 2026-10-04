@@ -18,8 +18,8 @@ type tie<logic>
 //   3
 //   hello
 //   extern 验收通过
-import "../../std/string.tie"
-import "../../std/process.tie"
+import "/std/string.tie"
+import "/std/process.tie"
 using process;
 using str;
 

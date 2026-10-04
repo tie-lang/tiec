@@ -9,12 +9,12 @@ type tie<logic>
 // fixed 去前缀（mul/div/floor/frac）。
 // 运行：tie-llvm examples/rdu_demo.tie（或 tie examples/rdu_demo.tie）
 
-import "../rdu/bits.tie" as bits
-import "../rdu/math.tie" as m
-import "../rdu/ascii.tie" as ac
-import "../rdu/crc.tie" as crc
-import "../rdu/fixed.tie" as fx
-import "../rdu/rnd.tie" as rnd
+import "/rdu/bits.tie" as bits
+import "/rdu/math.tie" as m
+import "/rdu/ascii.tie" as ac
+import "/rdu/crc.tie" as crc
+import "/rdu/fixed.tie" as fx
+import "/rdu/rnd.tie" as rnd
 
 // 布尔值转可读文本（to_string 只支持数字，bool 需手动转换）
 func bool_str(b: bool) -> string {

@@ -157,7 +157,11 @@ func main() {
     if !check(ir.op_desc(0) != "", "opcode T2.8 说明非空") {
         ok = false
     }
-    if !check(ir.op_group(64) == 5, "常量组号（60-64）") {
+    // p.9.20.3 修复后：const_i=60（实现权威），且 33=phi / 34=select / 35=call
+    if !check(ir.op_group(60) == 5 && ir.op_name(60) == "const_i", "常量组号 + const_i=60") {
+        ok = false
+    }
+    if !check(ir.op_name(33) == "phi" && ir.op_name(35) == "call", "phi=33 / call=35（修复后映射）") {
         ok = false
     }
     if !check(ir.ins_ops_cnt(i0) == 2, "add 操作数 2 个") {
@@ -258,7 +262,7 @@ func main() {
     if !check(len(dump) > 40, "dump_meta 摘要输出") {
         ok = false
     }
-    if !check(ir.op_count() == 53, "opcode 表 53 条目") {
+    if !check(ir.op_count() == 55, "opcode 表 55 条目（p.9.20.3 重建）") {
         ok = false
     }
 

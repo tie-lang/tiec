@@ -29,14 +29,14 @@ namespace interp {
 // ==================== S3.3 宏展开执行入口 ====================
 
 // 注册宏定义（mexpand 用）：AST 协议文本（根 = 单个声明节点）→ load_ast +
-// 归档 + 顶层注册。成功返回 ""；失败返回错误文本（g_err 同步置位）。
+// 归档 + 顶层注册。成功返回 ""；失败返回错误文本（w_err 同步置位）。
 // 与 eval 的"源码第一趟注册"路径等价，但输入是协议文本（宏定义来自
 // 编译器 AST 池序列化，非源码），跳过 lexer/parser。
 pub func eval_proto(proto: string) -> string {
-    g_err = ""
+    w_err = ""
     if sstate.load_ast(proto) < 0 {
-        g_err = "内部错误: AST 协议加载失败（宏定义注册）"
-        return g_err
+        w_err = "内部错误: AST 协议加载失败（宏定义注册）"
+        return w_err
     }
     var base = isess.archive_add()
     // 根 = 协议根（id 0 → 归档 id = base，**不是 a_n-1**：协议节点按 id
@@ -60,38 +60,38 @@ pub func eval_proto(proto: string) -> string {
             return r
         }
     }
-    g_err = "宏定义注册失败: 协议根既不是声明节点也不是语句列表"
-    return g_err
+    w_err = "宏定义注册失败: 协议根既不是声明节点也不是语句列表"
+    return w_err
 }
 
 // 执行宏函数（mexpand 调用）：name = 宏名，args = 实参 code 文本表
 // （AST 协议文本，调用点实参子树序列化）。执行宏体：形参绑定为 code 值，
-// return 的 code 值文本原样返回。成功返回协议文本（g_err 为空）；失败返回
-// 错误文本（g_err 同步置位）。
+// return 的 code 值文本原样返回。成功返回协议文本（w_err 为空）；失败返回
+// 错误文本（w_err 同步置位）。
 pub func eval_macro(name: string, args: table<string>) -> string {
-    g_err = ""
+    w_err = ""
     var f = isess.f_get(name)
     if f < 0 {
-        g_err = "宏 '" + name + "' 未定义"
-        return g_err
+        w_err = "宏 '" + name + "' 未定义"
+        return w_err
     }
     if !isess.m_has(name) {
-        g_err = "'" + name + "' 不是宏（未以 macro 声明）"
-        return g_err
+        w_err = "'" + name + "' 不是宏（未以 macro 声明）"
+        return w_err
     }
     // 递归深度限制（宏调用宏 / 展开递归）
     g_macro_depth = g_macro_depth + 1
     if g_macro_depth > 64 {
         g_macro_depth = g_macro_depth - 1
-        g_err = "宏展开嵌套过深（超过 64 层，疑似无限递归）：" + name
-        return g_err
+        w_err = "宏展开嵌套过深（超过 64 层，疑似无限递归）：" + name
+        return w_err
     }
     // 参数个数检查（宏参数全部必选、无默认值）
     var total = isess.naux(f)
     if len(args) != total {
         g_macro_depth = g_macro_depth - 1
-        g_err = "宏 '" + name + "' 期望 " + to_string(total) + " 个 code 参数，实际 " + to_string(len(args)) + " 个"
-        return g_err
+        w_err = "宏 '" + name + "' 期望 " + to_string(total) + " 个 code 参数，实际 " + to_string(len(args)) + " 个"
+        return w_err
     }
     var saved_ns = isess.ns_save()
     var saved_base = env_base
@@ -100,7 +100,7 @@ pub func eval_macro(name: string, args: table<string>) -> string {
     while i < total {
         var p = isess.nchild_at(f, 1 + i)
         var pname = isess.nname_str(p)
-        isess.var_declare(pname, ivalue.new_code(args[i]))
+        isess.var_declare(pname, vval.new_code(args[i]))
         i = i + 1
     }
     env_base = isess.scope_top()
@@ -110,21 +110,21 @@ pub func eval_macro(name: string, args: table<string>) -> string {
     env_base = saved_base
     isess.ns_restore(saved_ns)
     g_macro_depth = g_macro_depth - 1
-    if g_err != "" {
-        return g_err
+    if w_err != "" {
+        return w_err
     }
     if g_flow == FL_RETURN {
         var val = g_flow_val
         g_flow = FL_NORMAL
-        if ivalue.type_of(val) == T_CODE {
-            return ivalue.code_str(val)
+        if vval.type_of(val) == W_CODE {
+            return vval.code_str(val)
         }
-        g_err = "宏 '" + name + "' 必须返回 code 值（return 了一个 " +
-            ivalue.type_name(val) + "）"
-        return g_err
+        w_err = "宏 '" + name + "' 必须返回 code 值（return 了一个 " +
+            vval.type_name(val) + "）"
+        return w_err
     }
-    g_err = "宏 '" + name + "' 未返回 code 值（函数体缺少 return code 语句）"
-    return g_err
+    w_err = "宏 '" + name + "' 未返回 code 值（函数体缺少 return code 语句）"
+    return w_err
 }
 
 // 执行过程宏（M4，dev33 批次9）：#[macro] 标记的宏由 mexpand 把实参子树
@@ -132,27 +132,27 @@ pub func eval_macro(name: string, args: table<string>) -> string {
 //（普通宏绑定为 code 值）。宏体用 tokenize/deparse 驱动 token 流变换，须
 // return code 值（eval_expr/eval_code 构造）。与 eval_macro 同构。
 pub func eval_macro_proc(name: string, args: table<string>) -> string {
-    g_err = ""
+    w_err = ""
     var f = isess.f_get(name)
     if f < 0 {
-        g_err = "过程宏 '" + name + "' 未定义"
-        return g_err
+        w_err = "过程宏 '" + name + "' 未定义"
+        return w_err
     }
     if !isess.m_has(name) {
-        g_err = "'" + name + "' 不是宏（未以 macro 声明）"
-        return g_err
+        w_err = "'" + name + "' 不是宏（未以 macro 声明）"
+        return w_err
     }
     g_macro_depth = g_macro_depth + 1
     if g_macro_depth > 64 {
         g_macro_depth = g_macro_depth - 1
-        g_err = "宏展开嵌套过深（超过 64 层，疑似无限递归）：" + name
-        return g_err
+        w_err = "宏展开嵌套过深（超过 64 层，疑似无限递归）：" + name
+        return w_err
     }
     var total = isess.naux(f)
     if len(args) != total {
         g_macro_depth = g_macro_depth - 1
-        g_err = "过程宏 '" + name + "' 期望 " + to_string(total) + " 个参数，实际 " + to_string(len(args)) + " 个"
-        return g_err
+        w_err = "过程宏 '" + name + "' 期望 " + to_string(total) + " 个参数，实际 " + to_string(len(args)) + " 个"
+        return w_err
     }
     var saved_ns = isess.ns_save()
     var saved_base = env_base
@@ -162,7 +162,7 @@ pub func eval_macro_proc(name: string, args: table<string>) -> string {
         var p = isess.nchild_at(f, 1 + i)
         var pname = isess.nname_str(p)
         // 过程宏：形参绑定为实参源码文本（字符串值）
-        isess.var_declare(pname, ivalue.new_str(args[i]))
+        isess.var_declare(pname, vval.new_str(args[i]))
         i = i + 1
     }
     env_base = isess.scope_top()
@@ -172,47 +172,49 @@ pub func eval_macro_proc(name: string, args: table<string>) -> string {
     env_base = saved_base
     isess.ns_restore(saved_ns)
     g_macro_depth = g_macro_depth - 1
-    if g_err != "" {
-        return g_err
+    if w_err != "" {
+        return w_err
     }
     if g_flow == FL_RETURN {
         var val = g_flow_val
         g_flow = FL_NORMAL
-        if ivalue.type_of(val) == T_CODE {
-            return ivalue.code_str(val)
+        if vval.type_of(val) == W_CODE {
+            return vval.code_str(val)
         }
-        g_err = "过程宏 '" + name + "' 必须返回 code 值（return 了一个 " +
-            ivalue.type_name(val) + "）"
-        return g_err
+        w_err = "过程宏 '" + name + "' 必须返回 code 值（return 了一个 " +
+            vval.type_name(val) + "）"
+        return w_err
     }
-    g_err = "过程宏 '" + name + "' 未返回 code 值（函数体缺少 return code 语句）"
-    return g_err
+    w_err = "过程宏 '" + name + "' 未返回 code 值（函数体缺少 return code 语句）"
+    return w_err
 }
 
 // 执行 code 值文本（C2 thunk `.call()` / 编译期执行）：协议文本 → 归档 →
-// 根 StmtList 逐语句执行 / 单表达式求值。返回最后值 id（void → Void 值）。
-// 失败置 g_err 返回 -1。
-func exec_code_proto(proto: string) -> i64 {
-    g_err = ""
+// 根 StmtList 逐语句执行 / 单表达式求值。返回最后值（void/无值 → Void 值）。
+// 失败置 w_err 返回 Value.Nil（p.9.17.2 拆箱值模型）。
+func exec_code_proto(proto: string) -> Value {
+    w_err = ""
     if sstate.load_ast(proto) < 0 {
-        g_err = "内部错误: AST 协议加载失败（code 执行）"
-        return -1
+        w_err = "内部错误: AST 协议加载失败（code 执行）"
+        return Value.Nil
     }
     var base = isess.archive_add()
     var root = base
-    var last: i64 = -1
+    var last: Value = Value.Nil
+    var has_last: bool = false
     if isess.ntag(root) == N_STMTLIST {
         var i: i64 = 0
         while i < isess.nchild(root) {
             exec_stmt(isess.nchild_at(root, i))
-            if g_err != "" {
-                return -1
+            if w_err != "" {
+                return Value.Nil
             }
             if g_flow != FL_NORMAL {
                 break
             }
-            if g_lastval >= 0 {
+            if g_has_last {
                 last = g_lastval
+                has_last = true
             }
             i = i + 1
         }
@@ -222,15 +224,15 @@ func exec_code_proto(proto: string) -> i64 {
         }
     } else {
         var v = gen_expr(root)
-        if g_err != "" {
-            return -1
+        if w_err != "" {
+            return Value.Nil
         }
         return v
     }
-    if last >= 0 {
+    if has_last {
         return last
     }
-    return ivalue.new_void()
+    return vval.new_void()
 }
 
 // ==================== M4 token 流工具（宏环境，dev33 批次9） ====================
@@ -242,36 +244,36 @@ func exec_code_proto(proto: string) -> i64 {
 // 在 parse_program 末尾创建 → 根是最后一个节点（id = s_n - 1），不是 id 0
 //（id 0 是第一个创建的节点，如返回类型 NAMED_TYPE）。导航：
 // 根 StmtList[0] = FnDef；FnDef 最后子 = 函数体 StmtList；体[0] = Return；
-// Return[0] = 表达式。返回协议文本；失败置 g_err 返回空串。
+// Return[0] = 表达式。返回协议文本；失败置 w_err 返回空串。
 func expr_from_wrap() -> string {
     if s_n < 1 {
-        g_err = "内部错误: eval_expr 包装程序缺少节点"
+        w_err = "内部错误: eval_expr 包装程序缺少节点"
         return ""
     }
     var root = s_n - 1
     if s_tags[root] != N_STMTLIST {
-        g_err = "内部错误: eval_expr 包装程序根不是语句列表 (tag=" +
+        w_err = "内部错误: eval_expr 包装程序根不是语句列表 (tag=" +
             to_string(s_tags[root]) + ")"
         return ""
     }
     var fn = s_children[s_coff[root]]
     if fn < 0 {
-        g_err = "内部错误: eval_expr 包装程序缺少函数定义"
+        w_err = "内部错误: eval_expr 包装程序缺少函数定义"
         return ""
     }
     var body = s_children[s_coff[fn] + s_nchild[fn] - 1]
     if body < 0 {
-        g_err = "内部错误: eval_expr 包装程序缺少函数体"
+        w_err = "内部错误: eval_expr 包装程序缺少函数体"
         return ""
     }
     var ret = s_children[s_coff[body]]
     if ret < 0 {
-        g_err = "内部错误: eval_expr 包装程序缺少 return 语句"
+        w_err = "内部错误: eval_expr 包装程序缺少 return 语句"
         return ""
     }
     var expr = s_children[s_coff[ret]]
     if expr < 0 {
-        g_err = "eval_expr 表达式为空"
+        w_err = "eval_expr 表达式为空"
         return ""
     }
     return sstate_subtree_protocol(expr)
@@ -344,14 +346,14 @@ func unescape_token_lexeme(s: string) -> string {
 }
 
 // 解析 token 流文本 → g_tk_tags/g_tk_lexemes（平行表，lexeme 未转义）。
-// 返回 token 数；失败置 g_err 返回 -1。首行 <N>: 头部跳过，其后每行
+// 返回 token 数；失败置 w_err 返回 -1。首行 <N>: 头部跳过，其后每行
 // <tag> <lexeme>（lexeme 含空格只按首个空格切分）。
 func parse_tokens(stream: string) -> i64 {
     g_tk_tags = table_new_i64()
     g_tk_lexemes = table_new_string()
     var lines = split_proto_lines(stream)
     if len(lines) < 1 {
-        g_err = "token 流为空"
+        w_err = "token 流为空"
         return -1
     }
     var i: i64 = 1
@@ -359,7 +361,7 @@ func parse_tokens(stream: string) -> i64 {
         var line = lines[i]
         var sp = find_char_str(line, " ")
         if sp < 0 {
-            g_err = "token 流格式错误（第 " + to_string(i) + " 行缺少空格分隔）"
+            w_err = "token 流格式错误（第 " + to_string(i) + " 行缺少空格分隔）"
             return -1
         }
         var tag = sstate.parse_dec(str.slice(line, 0, sp))
@@ -372,10 +374,10 @@ func parse_tokens(stream: string) -> i64 {
 }
 
 // token 流 → 源码文本：逐 token 发射原始拼写（未转义 lexeme），token 间单
-// 空格；跳过 Eof token。返回源码字符串（失败置 g_err 返回空串）。
+// 空格；跳过 Eof token。返回源码字符串（失败置 w_err 返回空串）。
 func deparse_tokens(stream: string) -> string {
     var n = parse_tokens(stream)
-    if g_err != "" {
+    if w_err != "" {
         return ""
     }
     var out: string = ""

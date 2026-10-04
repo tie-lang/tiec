@@ -23,6 +23,17 @@ type tie<class>
 // # ASI：行尾自动补分号；行尾二元运算符/逗号/冒号/点/开括号/大括号/分号/
 //   else/in 不补（++/-- 不算二元运算符，后缀 i++ 行尾应补；S2.3 起 '?' 后缀
 //   解包符同样不算，行尾 `expr ?` 应补分号断句）。
+//
+// # pub 方法全集（组件契约，p.9.21 G7 库资格①；增删须同步此处与 ROAD）
+//   扫描入口：run_lex(src) -> bool（true = 成功，token 表含末尾 Eof）
+//   协议输出：tokenize(src) -> string（首行 <N>: 逐 token 协议；出错为 ERR 协议）
+//   token 读取：token_count token_tag token_line token_col
+//               token_lexeme_id token_lexeme
+//   错误槽位（run_lex 返回 false 后读取）：lex_err_line lex_err_col lex_err_msg
+//   doc 注释：dump_docs
+//   自检：frontend/lex_test.tie（golden 基线，无 driver 可跑）。
+//   说明：lex_* tag 常量是**数据契约**的一部分（0-79 对齐 Rust TokenKind），
+//   不在「方法」之列但同样受契约保护。
 import "./lex_scan.tie"
 
 namespace lexer {
@@ -77,6 +88,7 @@ pub func run_lex(src: string) -> bool {
     g_line_has_token = false
     g_last_line_tag = -1
     g_paren_depth = 0
+    g_str_interp = 0
     g_err_msg = ""
     // 源文本 → 码点表（性能重构：字节遍历 utf8_seq_len/utf8_char_at，
     // 替代 regex_find_all 逐码点切分——旧法每码点一次堆串分配，N 个字符串
@@ -97,6 +109,21 @@ pub func run_lex(src: string) -> bool {
     lextok.build_line_starts()
     var pos: i64 = 0
     while pos < g_n {
+        // p.8.2.3 插值 `}` 后：续扫字符串段（无开引号，scan_string 内部按
+        // g_str_interp==2 处理）；p.9.11.30 三引号插值续段走 scan_triple_string
+        if g_str_interp == 2 {
+            var r2: i64 = 0
+            if g_str_triple == 1 {
+                r2 = lexscan.scan_triple_string(pos)
+            } else {
+                r2 = lexscan.scan_string(pos)
+            }
+            if r2 < 0 {
+                return false
+            }
+            pos = r2
+            continue
+        }
         var c = g_codes[pos]
         var r: i64 = 0
         if c == 10 {                       // '\n'：换行触发 ASI 判定
@@ -108,8 +135,42 @@ pub func run_lex(src: string) -> bool {
             continue
         } else if c == 47 {                // '/'：注释或除号
             r = lexscan.scan_slash(pos)
-        } else if c == 34 {                // '"' 字符串
-            r = lexscan.scan_string(pos)
+        } else if c == 92 {                // '\'：p.9.11.18 行尾续行符
+            // 显式续行：token 边界的 '\' + 换行（LF 或 CRLF）→ 当作空白跳过，
+            // 不产 token、不触发 ASI（续行语义 = 与下一行拼接到同一行）。
+            // 字符串/注释内的 '\' 不在此路径（字符串由 scan_string 状态优先，
+            // 注释由 scan_slash 吞到行尾），转义语义不受影响。
+            if pos + 1 < g_n && g_codes[pos + 1] == 10 {
+                pos = pos + 2
+                continue
+            }
+            if pos + 1 < g_n && g_codes[pos + 1] == 13 {
+                if pos + 2 < g_n && g_codes[pos + 2] == 10 {
+                    pos = pos + 3    // CRLF
+                } else {
+                    pos = pos + 2    // 仅 CR（旧 Mac 换行）
+                }
+                continue
+            }
+            r = lexscan.scan_symbol(pos)   // '\' 后非换行 → 无法识别的字符
+        } else if c == 104 && pos + 1 < g_n && g_codes[pos + 1] == 34 {
+            // p.9.23.1（规范 §1.9）：h 紧跟引号 = 插值字符串。h 非保留字，
+            // 仅在此位置特殊识别（h(x)/hx 等仍走标识符）。普通串花括号一律
+            // 字面，插值显式开启：h"{expr}"、多行 h"""..."""（同带插值）；
+            // h 串内字面花括号写作 {{ / }}；h 与形态前缀 r 不组合。
+            g_str_hmode = true
+            if pos + 3 < g_n && g_codes[pos + 2] == 34 && g_codes[pos + 3] == 34 {
+                r = lexscan.scan_triple_string(pos + 1)   // h"""（pos+1 指向首引号）
+            } else {
+                r = lexscan.scan_string(pos + 1)          // h"（pos+1 指向开引号）
+            }
+        } else if c == 34 {                // '"' 字符串（p.9.11.30：`"""` 三引号多行）
+            g_str_hmode = false   // 新普通串：非插值（h 串由 h 分支置位）
+            if pos + 2 < g_n && g_codes[pos + 1] == 34 && g_codes[pos + 2] == 34 {
+                r = lexscan.scan_triple_string(pos)
+            } else {
+                r = lexscan.scan_string(pos)
+            }
         } else if c == 39 {                // '\'' 字符字面量
             r = lexscan.scan_char(pos)
         } else if lextok.is_digit(c) {     // 数字
@@ -121,6 +182,12 @@ pub func run_lex(src: string) -> bool {
         }
         if r < 0 {
             return false
+        }
+        // p.8.2.3：插值模式中遇 `}`（lex_rbrace）→ 标记续扫（下一 token 走
+        // 字符串段续扫）。表达式内的 `}`（块/表字面量）不存在——tie 表用 `[`，
+        // `{` 不是表达式起始，插值表达式内不可能出现顶层 `}`，判定无歧义。
+        if g_str_interp == 1 && lextok.token_tag(lextok.token_count() - 1) == lex_rbrace {
+            g_str_interp = 2
         }
         pos = r
     }
