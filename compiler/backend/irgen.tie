@@ -186,6 +186,11 @@ var g_param_nids: table<i64>;
 // 在非 entry 块，排除以避免 LLVM「instruction does not dominate」）。
 var g_entry_block: i64 = 0;
 var g_tblcand_allocas: table<i64>;
+// r.1.6.13：**聚合（struct）**析构候选——与 g_tblcand_allocas 分离，避免动到表路径
+// （闭包那份会交换 g_tblcand_allocas，混入聚合会牵连）。两表平行：槽地址 + 类型。
+// 出口按类型递归 release 各表字段，与绑定处的 tig_agg_retain_bound 成对。
+var g_aggcand_allocas: table<i64>;
+var g_aggcand_tys: table<i64>;
 // 闭包 env 释放候选（A 方案，2026-10-02）：初值为**闭包字面量**、且该闭包确有捕获的
 // 局部变量。三张平行表：变量名 id（查 esc 不逃逸）/ fn 值槽地址 / fn 类型 id。
 // 出口按 esc_is_live 判定——未逃逸才发 drop（保守：逃逸者不释放，残余泄漏但安全）。

@@ -296,6 +296,17 @@ pub func tig_stmt_b_100_VarDecl(id: i64) -> i64 {
                 ir.add_operand(st0, av, 0)
             }
         }
+        // r.1.6.13：聚合（struct）局部的表字段引用计数守恒。
+        //   · 绑定处 retain（tig_agg_retain_bound，按实参瞬态性逐字段判）
+        //   · 出口 release（tig_tbl_exit_release 遍历 g_aggcand_*）
+        // 两者成对 ⇒ 净 0。struct 形参槽是**借用**（同表参数既有约定），不登记不 retain。
+        if types.kind(ty) == K_STRUCT && ty_has_table(ty) {
+            if init >= 0 {
+                tig_agg_retain_bound(av, ty, init)
+            }
+            table_push(g_aggcand_allocas, av)
+            table_push(g_aggcand_tys, ty)
+        }
         scope_put(nm, av, ty)
         // 表变量元素类型登记（table_push/table_at 选桥用）：
         // init 是 table<T>（含 table_new_* 调用）→ 记录元素类型。语义层
