@@ -430,6 +430,8 @@ if nm == "table_push" {
     }
     // r.1.6.7 独占免锁：目标表是第一实参且为**裸局部变量**、静态证得独占
     // （句柄从未离开本次调用）→ tbl_push_nl。判据见 irgen_esc.tie。
+    // r.1.6.14：值语义模式下先分离（默认关 ⇒ no-op，逐指令等价）
+    t = tig_cow_before_write(t, tnid)
     s21_table_push_ex(t, pty, x, esc_take(tname_node, "table_push"))
     g_builtin_res = tig_int_lit(0)  // void 结果：哑值（调用方丢弃）
     return 0

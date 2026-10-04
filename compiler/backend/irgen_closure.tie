@@ -644,6 +644,7 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
     var s_tvk = g_tv_keys
     var s_tve = g_tv_elems
     var s_pn = g_param_nids
+    var s_spn = g_shared_param_nids
     var s_tc = g_tblcand_allocas
     var s_sbk = g_sb_keys
     var s_sbh = g_sb_hv
@@ -674,6 +675,7 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
     // 状态带回「已被闭包捕获」的表 —— 方向必须偏向保守（少去锁只会更慢）。
     lock_reset()
     g_param_nids = table_new_i64()
+    g_shared_param_nids = table_new_i64()
     g_tblcand_allocas = table_new_i64()
     g_clov_nids = table_new_i64()
     g_clov_slots = table_new_i64()
@@ -770,6 +772,7 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
     g_tv_keys = s_tvk
     g_tv_elems = s_tve
     g_param_nids = s_pn
+    g_shared_param_nids = s_spn
     g_tblcand_allocas = s_tc
     g_sb_keys = s_sbk
     g_sb_hv = s_sbh

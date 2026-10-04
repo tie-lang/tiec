@@ -517,6 +517,8 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     // 重新判为独占 —— 方向必须偏向保守。
     esc_reset()
     g_param_nids = table_new_i64()
+    g_shared_param_nids = table_new_i64()
+    g_ownparam_slots = table_new_i64()
     g_tblcand_allocas = table_new_i64()
     g_aggcand_allocas = table_new_i64()
     g_aggcand_tys = table_new_i64()
@@ -619,6 +621,8 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     g_cur_func = fid
     var entry = ir.new_block(fid, interner.intern("entry"))
     g_entry_block = entry     // p.6.10.3：entry 级表变量析构候选登记用
+    // r.1.6.14：每函数重置「值语义形参」释放候选（其出口释放只该覆盖本函数形参）
+    g_ownparam_slots = table_new_i64()
     g_cur_block = entry
     // 参数入作用域（alloca + store；T0.3 by_ref 参数不 alloca，直接绑定参数寄存器）
     var off = ir.func_params_off(fid)
@@ -664,6 +668,10 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
         scope_put(interner.intern(pname), av, pty)
         // p.6.10.3：登记参数名（表参数借用、不析构不 release——所有权在调用方）
         table_push(g_param_nids, interner.intern(pname))
+        // r.1.6.14：`shared` 形参（bit5=32）另行登记——写路径据此**跳过 COW**。
+        if (s_vals[p] & 32) != 0 {
+            table_push(g_shared_param_nids, interner.intern(pname))
+        }
         // r.1.6.11 `deep` 形参：入口对表字段做值语义分离（rc>1 才克隆，rc=1 零成本）。
         // N_PARAM val bit4 = deep（parser 登记）。by_ref 形参的 av 是**实参槽地址**，
         // 对它 seal 会改到调用方，故只对按值形参做（deep 与 ref 本应互斥）。
@@ -672,6 +680,17 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
             if sev < 0 {
                 return -1
             }
+        }
+        // r.1.6.14 值语义形参：非 `shared` / 非 `ref` 的表形参在**入口 retain**
+        // （让 rc 计入本次调用这一份持有）并在**出口 release**（成对）。
+        // 于是 callee 内的写触发 COW 分离（rc=2 ⇒ 克隆），调用方不受影响；
+        // `shared` 形参跳过（纯借用 + 就地改，这就是它的高性能语义）。
+        // 默认（开关关）整段不发射 ⇒ 逐指令等价。
+        if tbl_value_on() && is_ref == 0 && (s_vals[p] & 32) == 0 &&
+            types.is_table(pty) && pty != types.named(TK_ANY) {
+            var pv0 = s21_load(av, types.named(TK_STR))
+            tig_tbl_retain_call(pv0)
+            table_push(g_ownparam_slots, av)
         }
         i = i + 1
     }

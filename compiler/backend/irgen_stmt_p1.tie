@@ -262,6 +262,13 @@ func tig_tbl_exit_release() {
         tig_tbl_release_call(ir.get_value(old))
         i = i + 1
     }
+    // r.1.6.14：值语义形参的出口释放——与入口的 retain 成对。
+    var _pi: i64 = 0
+    while _pi < len(g_ownparam_slots) {
+        var pv9 = s21_load(g_ownparam_slots[_pi], types.named(TK_STR))
+        tig_tbl_release_call(pv9)
+        _pi = _pi + 1
+    }
     // r.1.6.13：聚合（struct）局部的表字段释放——与绑定处的 tig_agg_retain_bound 成对。
     var _ai: i64 = 0
     while _ai < len(g_aggcand_allocas) {
@@ -676,6 +683,10 @@ func tig_index_assign(id: i64) -> i64 {
             }
             v = bx
         }
+    }
+    // r.1.6.14：值语义模式下先分离（裸变量目标；默认关 ⇒ no-op）
+    if s_tags[base] == 6 {
+        t = tig_cow_before_write(t, interner.intern(sstate.name_str(base)))
     }
     // r.1.6.7 独占免锁：写路径同样按独占判定选免锁入口（越界静默跳过语义不变）
     s21_table_set_ex(t, iv, pty, v, esc_take(base, "写 t[i]"))
