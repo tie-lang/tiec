@@ -281,6 +281,11 @@ pub func tig_stmt_b_100_VarDecl(id: i64) -> i64 {
                 // 回边由哨兵逐次减，最终值由出口减）。
                 tig_loopvar_release(av)
             }
+            // r.1.6.13：聚合局部的回边释放（同上语义，动作改为递归释放各表字段）。
+            // 条件同表路径：**非 entry 块**声明（entry 级的槽不跨迭代重写，由出口析构收尾）。
+            if g_cur_block != g_entry_block && types.kind(ty) == K_STRUCT && ty_has_table(ty) {
+                tig_agg_loopvar_release(av, ty)
+            }
             var store = ir.new_inst(g_cur_block, 22, -1)  // store
             ir.add_operand(store, ty, 2)
             ir.add_operand(store, iv, 0)
