@@ -131,6 +131,13 @@ const lex_starstarq: i64 = 112;       // `**?` checked 幂
 const lex_move: i64 = 113;            // `move` 所有权转移形参修饰
 const lex_tilde: i64 = 114;           // `~` 整数按位取反
 const lex_dotdoteq: i64 = 115;        // `..=` 闭区间
+// p.9.11.36 `deep` 值语义形参修饰符（tag 116）：与 `immut`（只读引用）对偶。
+//   `func f(deep p: S)` ⇒ 入口把 p 的**表字段**深拷贝一份，此后函数内对 p 的一切
+//   修改都影响不到调用方（默认的按值传参只拷贝句柄，表仍是共享的）。
+// 取 116 的依据：本文件此前最大值 115（上一行）；已按 RCA 纪律做全文重号扫描
+//（grep -o ": i64 = [0-9]*" | sort -n | uniq -d 为空）。破坏性评估：`deep` 在
+// tiec/tiu/tlib 全仓**无任何出现**（grep -w = 0），升为保留字无影响。
+const lex_deep: i64 = 116;            // `deep` 值语义形参修饰（深拷贝表字段）
 // p.9.11.15 yield 生成器关键字（tag 105）：`func gen() { yield v; ... }`——
 // 含 yield 的函数 = 生成器函数（产出序列，调用返回迭代序列对象/表）。
 const lex_yield: i64 = 105;   // yield 关键字（生成器产出语句）

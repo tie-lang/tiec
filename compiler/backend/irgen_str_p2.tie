@@ -68,6 +68,41 @@ func s21_elem_zero(ty: i64) -> i64 {
     return t21_zero(ty)
 }
 
+// ==================== r.1.6.11 `deep` 形参：入口值语义分离 ====================
+// 语义：`func f(deep p: S)` ⇒ 函数内对 p 的**表字段**的一切修改都影响不到调用方。
+// 实现：入口对每个表字段**无条件克隆**一份私有副本（`tl_tbl$tbl_clone`）。
+// 为何不用 tbl_cow（按 rc 分流、rc=1 免拷贝）：**struct 按值拷贝不会 retain 其表
+// 字段**（实测按值传参发射整 struct 的 `store`，不含逐字段 retain），所以 rc ≠ 别名数
+// ——rc=1 时可能实际已有别名，tbl_cow 会漏判成「独占」而不克隆，deep 就失效了。
+// 代价：每次调用一份 O(len) 拷贝，这正是 `deep` 这个修饰符向用户索取的代价
+// （用户显式要求值语义）；默认（无 deep）路径零改动、零成本。
+// 只处理 table 字段；map 无对应运行时入口，留待需要时补。
+func tig_deep_param_seal(slot: i64, pty: i64) -> i64 {
+    if types.kind(pty) != K_STRUCT {
+        return 0
+    }
+    var si = pty - BASE_STRUCT
+    if si < 0 || si >= len(cls_nfld) {
+        return 0
+    }
+    var off = cls_fldoff[si]
+    var cnt = cls_nfld[si]
+    var TSTR = types.named(TK_STR)
+    var k: i64 = 0
+    while k < cnt {
+        var ft = fld_tys[off + k]
+        if types.is_table(ft) {
+            var fa = s21_gep(slot, struct_field_off(pty, k), true)
+            var cur = s21_load(fa, TSTR)
+            var nh = tl_i64_1("tl_tbl$tbl_clone", t21_ptri(cur))
+            s21_store(fa, t21_intp(nh), TSTR)
+            g_used_trmlite = true
+        }
+        k = k + 1
+    }
+    return 0
+}
+
 // 表下标写（p.9.12.2：越界自动扩容，杜绝静默丢弃）：
 //   - 负下标(i<0) → 运行时诊断（不得静默/不得越界写）；
 //   - i >= len → 按元素零值逐槽 push 扩容 need = max(len, i+1) 后写 target；
