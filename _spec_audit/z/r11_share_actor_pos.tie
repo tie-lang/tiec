@@ -1,0 +1,63 @@
+type tie<logic>
+// ============================================================================
+// r11_share_actor_pos.tie —— 11.6 share 域第三处承载正例（2026-10-04）
+// ----------------------------------------------------------------------------
+// 配套负例 `r11_share_actor.tie`：传捕获全局表的闭包进 actor 且无 share 凭据
+// ⇒ 应被拒（E00899 缺 unsafe 上下文 / 缺 share 凭据）。
+//
+// 本探针覆盖两条**不应被拦**的正例，防止门禁过度拦截：
+//   ① 持 share 凭据（`unsafe with(share)`）时，同一形态应放行；
+//   ② 闭包只捕获**标量**全局（不共享底层缓冲）⇒ 即便无凭据也应放行。
+// 运行需 TIE_TRM_LITE_LIB 指向 trm_lite.a。
+// ============================================================================
+
+var g_tab: table<i64> = []   // 全局可变容器 ⇒ 投递即共享
+var g_k: i64 = 7             // 标量全局 ⇒ 无底层缓冲可共享
+
+actor Runner {
+    pub func run_it(f: fn() -> i64) -> i64 {
+        return f()
+    }
+}
+
+func report(tag: string, got: i64, want: i64) {
+    if got == want {
+        println("PASS " + tag + "=" + to_string(got))
+    } else {
+        println("FAIL " + tag + "=" + to_string(got) + " 期望 " + to_string(want))
+    }
+}
+
+func main() {
+    var r = run Runner()
+
+    // ① 持 share 凭据 + 捕获全局表 ⇒ 放行
+    //    ⚠ 双锁缺一不可：`unsafe with(share)` 只给**凭据**（锁二），还需
+    //    **unsafe 上下文**（锁一）—— 故外层再套 `unsafe { }`。
+    var with_cred: i64 = 0
+    unsafe {
+        unsafe with(share) {
+            with_cred = r.run_it(func() -> i64 {
+                table_push(g_tab, 1)
+                return len(g_tab)
+            })
+        }
+    }
+    report("with_cred", with_cred, 1)
+
+    // ② 只捕获标量全局，无凭据 ⇒ 不该被拦（标量无共享缓冲）
+    var scalar_only: i64 = 0
+    unsafe {
+        scalar_only = r.run_it(func() -> i64 {
+            return g_k * 3
+        })
+    }
+    report("scalar_only", scalar_only, 21)
+
+    // ③ 完全无捕获的闭包 ⇒ 不该被拦
+    var no_cap: i64 = 0
+    unsafe {
+        no_cap = r.run_it(func() -> i64 { return 5 })
+    }
+    report("no_cap", no_cap, 5)
+}
