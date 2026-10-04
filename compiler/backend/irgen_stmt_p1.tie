@@ -262,6 +262,12 @@ func tig_tbl_exit_release() {
         tig_tbl_release_call(ir.get_value(old))
         i = i + 1
     }
+    // r.1.6.13：聚合（struct）局部的表字段释放——与绑定处的 tig_agg_retain_bound 成对。
+    var _ai: i64 = 0
+    while _ai < len(g_aggcand_allocas) {
+        tig_agg_release_fields(g_aggcand_allocas[_ai], g_aggcand_tys[_ai])
+        _ai = _ai + 1
+    }
     // 闭包 env 释放（A 方案）：与表同一出口时机（本函数是唯一出口析构入口，
     // 挂在此处即覆盖全部调用点——普通函数尾与 return 语句）。
     clo_exit_release()

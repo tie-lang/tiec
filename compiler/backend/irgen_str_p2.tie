@@ -103,6 +103,155 @@ func tig_deep_param_seal(slot: i64, pty: i64) -> i64 {
     return 0
 }
 
+// ============ r.1.6.13 聚合表字段的引用计数守恒（递归） ============
+// 根因：retain 判据此前只看**一层**（`types.is_table(表达式类型)`）⇒ struct 拷贝/构造
+// 只发整聚合 load+store，其**表字段不被 retain** ⇒ rc ≠ 别名数。
+// 实测（提交 b4acf9d）：`var a = table_new_i64(); var s = S(a);` 之后 `a` 与 `s.t`
+// 是两个别名，rc 仍为 1 ⇒ 越界写门禁判成「独占」而静默扩容、COW 与 deep 一并失准。
+//
+// ★ 必须沿用既有纪律：**瞬态值（调用 tag 7 / 表字面量 tag 12）所有权直接转移，
+//   不 retain**（否则出口 release 只 -1，净剩 1 ⇒ 泄漏）。判据同表字面量元素路径。
+
+// 类型是否（递归）含表/映射字段。
+func ty_has_table(t: i64) -> bool {
+    if t < 0 {
+        return false
+    }
+    if types.is_table(t) || types.is_map(t) {
+        return true
+    }
+    if types.kind(t) != K_STRUCT {
+        return false
+    }
+    var si = t - BASE_STRUCT
+    if si < 0 || si >= len(cls_nfld) {
+        return false
+    }
+    var off = cls_fldoff[si]
+    var cnt = cls_nfld[si]
+    var k: i64 = 0
+    while k < cnt {
+        if ty_has_table(fld_tys[off + k]) {
+            return true
+        }
+        k = k + 1
+    }
+    return false
+}
+
+// 对聚合槽 slot（地址）内每个表/映射字段 retain（递归进嵌套 struct）。
+func tig_agg_retain_fields(slot: i64, ty: i64) -> i64 {
+    if !ty_has_table(ty) || types.kind(ty) != K_STRUCT {
+        return 0
+    }
+    var si = ty - BASE_STRUCT
+    if si < 0 || si >= len(cls_nfld) {
+        return 0
+    }
+    var off = cls_fldoff[si]
+    var cnt = cls_nfld[si]
+    var TSTR = types.named(TK_STR)
+    var k: i64 = 0
+    while k < cnt {
+        var ft = fld_tys[off + k]
+        if types.is_table(ft) || types.is_map(ft) {
+            var fa = s21_gep(slot, struct_field_off(ty, k), true)
+            var cur = s21_load(fa, TSTR)
+            tig_tbl_retain_call(cur)
+            g_used_trmlite = true
+        } else if types.kind(ft) == K_STRUCT {
+            var fa2 = s21_gep(slot, struct_field_off(ty, k), true)
+            tig_agg_retain_fields(fa2, ft)
+        }
+        k = k + 1
+    }
+    return 0
+}
+
+// 聚合**绑定**处的字段 retain：slot = 目标聚合槽（store 已完成）。
+// init 为**本文件 struct 构造**（S(...)，tag 7 且名字解析为 struct）时，按**逐字段实参的
+// 瞬态性**决定——瞬态（调用 tag 7 / 字面量 tag 12）免 retain，与表元素路径同纪律；
+// 其余来源（变量读 / 字段读 / 函数返回）一律 retain（都是既有别名）。
+// ★ retain 打在**绑定处**而非构造处：构造出的临时值（如 f(S(a)) 的实参）没有本地槽，
+//   在构造处 retain 会无人 release ⇒ 泄漏。绑定处则与「结构体局部出口 release」成对。
+func tig_agg_retain_bound(slot: i64, ty: i64, init: i64) -> i64 {
+    if init < 0 || !ty_has_table(ty) || types.kind(ty) != K_STRUCT {
+        return 0
+    }
+    var si = ty - BASE_STRUCT
+    if si < 0 || si >= len(cls_nfld) {
+        return 0
+    }
+    // init 是否 struct 构造调用（决定能否按实参判瞬态）
+    var is_ctor: bool = false
+    var nc: i64 = 0
+    var soff: i64 = 0
+    if s_tags[init] == 7 {
+        if sstate.bs_find(st_keys, s_names[init]) >= 0 {
+            is_ctor = true
+            soff = sstate.slot_off(init)
+            nc = sstate.nchild(init) - soff
+        }
+    }
+    var off = cls_fldoff[si]
+    var cnt = cls_nfld[si]
+    var TSTR = types.named(TK_STR)
+    var k: i64 = 0
+    while k < cnt {
+        var ft = fld_tys[off + k]
+        var do_ret: bool = true
+        if is_ctor && k < nc {
+            var an = sstate.child(init, soff + k)
+            if s_tags[an] == 7 || s_tags[an] == 12 {
+                do_ret = false
+            }
+        }
+        if do_ret {
+            if types.is_table(ft) || types.is_map(ft) {
+                var fa = s21_gep(slot, struct_field_off(ty, k), true)
+                var cur = s21_load(fa, TSTR)
+                tig_tbl_retain_call(cur)
+                g_used_trmlite = true
+            } else if types.kind(ft) == K_STRUCT {
+                var fa2 = s21_gep(slot, struct_field_off(ty, k), true)
+                tig_agg_retain_fields(fa2, ft)
+            }
+        }
+        k = k + 1
+    }
+    return 0
+}
+
+// 对聚合槽 slot（地址）内每个表/映射字段 release（递归进嵌套 struct）。
+// 与 retain 成对：创建 +1、析构 -1 ⇒ 净 0（含「构造即唯一持有者」时的真正释放）。
+func tig_agg_release_fields(slot: i64, ty: i64) -> i64 {
+    if !ty_has_table(ty) || types.kind(ty) != K_STRUCT {
+        return 0
+    }
+    var si = ty - BASE_STRUCT
+    if si < 0 || si >= len(cls_nfld) {
+        return 0
+    }
+    var off = cls_fldoff[si]
+    var cnt = cls_nfld[si]
+    var TSTR = types.named(TK_STR)
+    var k: i64 = 0
+    while k < cnt {
+        var ft = fld_tys[off + k]
+        if types.is_table(ft) || types.is_map(ft) {
+            var fa = s21_gep(slot, struct_field_off(ty, k), true)
+            var cur = s21_load(fa, TSTR)
+            tig_tbl_release_call(cur)
+            g_used_trmlite = true
+        } else if types.kind(ft) == K_STRUCT {
+            var fa2 = s21_gep(slot, struct_field_off(ty, k), true)
+            tig_agg_release_fields(fa2, ft)
+        }
+        k = k + 1
+    }
+    return 0
+}
+
 // 表下标写（p.9.12.2：越界自动扩容，杜绝静默丢弃）：
 //   - 负下标(i<0) → 运行时诊断（不得静默/不得越界写）；
 //   - i >= len → 按元素零值逐槽 push 扩容 need = max(len, i+1) 后写 target；
