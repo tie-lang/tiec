@@ -486,6 +486,18 @@ pub func tig_stmt_b_104_Return(id: i64) -> i64 {
             if rty >= 0 && types.is_table(rty) && ret_needs_retain {
                 tig_tbl_retain_call(rv)
             }
+            // ★★ 返回**含表字段的 struct** 时同样要 retain 各表字段（同一缺口）：
+            //   紧跟其后的 tig_tbl_exit_release() 会释放本函数 struct 局部的表字段
+            //   （g_aggcand_*），而返回值已把这份 struct 交给调用方 ⇒ 不 retain 就是
+            //   悬垂句柄（实测：调用方读 len() 侥幸可读、取元素时 tbl_at 进临界区即段错误）。
+            //   判据与上面一致（ret_needs_retain = 槽持引用：tag 6 变量读 / tag 15 struct 基），
+            //   槽地址取 tig_expr 刚查过的 g_lookup_alloca（与 COW 接线同一来源）。
+            if rty >= 0 && types.kind(rty) == K_STRUCT && ty_has_table(rty) && ret_needs_retain {
+                var rslot = g_lookup_alloca
+                if rslot >= 0 {
+                    tig_agg_retain_fields(rslot, rty)
+                }
+            }
             // p.9.11.4 defer：return（表达式）前运行函数级全部 defer（`?` 输出
             // 表前，保证 defer body 仍可见作用域变量）
             if len(g_def_flags) > 0 {
