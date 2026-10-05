@@ -646,6 +646,17 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
     var s_pn = g_param_nids
     var s_spn = g_shared_param_nids
     var s_tc = g_tblcand_allocas
+    // r.1.6.14：值语义出口释放/聚合析构候选同样必须按函数隔离 —— 闭包体尾部
+    // tig_tbl_exit_release 会遍历这三张表，若沿用外层的表则 value id 属于**外层函数**
+    // 的 IR，在本函数里不存在 ⇒ opt 报「use of undefined value」（实测
+    // lock_credential.tie 的 no_closure_inherit 在 TIE_TBL_VALUE=1 下 E00883）。
+    // g_clov_* 同理：只重置不恢复会抹掉外层**先前**登记的闭包候选 ⇒ 该 env 永不释放。
+    var s_ops = g_ownparam_slots
+    var s_aca = g_aggcand_allocas
+    var s_act = g_aggcand_tys
+    var s_cvn = g_clov_nids
+    var s_cvs = g_clov_slots
+    var s_cvc = g_clov_cids
     var s_sbk = g_sb_keys
     var s_sbh = g_sb_hv
     var s_cbsk = g_cbs_keys
@@ -677,6 +688,9 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
     g_param_nids = table_new_i64()
     g_shared_param_nids = table_new_i64()
     g_tblcand_allocas = table_new_i64()
+    g_ownparam_slots = table_new_i64()
+    g_aggcand_allocas = table_new_i64()
+    g_aggcand_tys = table_new_i64()
     g_clov_nids = table_new_i64()
     g_clov_slots = table_new_i64()
     g_clov_cids = table_new_i64()
@@ -774,6 +788,12 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
     g_param_nids = s_pn
     g_shared_param_nids = s_spn
     g_tblcand_allocas = s_tc
+    g_ownparam_slots = s_ops
+    g_aggcand_allocas = s_aca
+    g_aggcand_tys = s_act
+    g_clov_nids = s_cvn
+    g_clov_slots = s_cvs
+    g_clov_cids = s_cvc
     g_sb_keys = s_sbk
     g_sb_hv = s_sbh
     g_cbs_keys = s_cbsk
