@@ -20,7 +20,7 @@ func opnd_const(inst: i64, k: i64, const_of: table<i64>, has_const: table<bool>)
 }
 
 // 整型算术 / icmp 的折叠与化简（单指令）。
-func fold_int(inst: i64, op: i64, rv: i64, const_of: table<i64>, has_const: table<bool>, repl: table<i64>) {
+func fold_int(inst: i64, op: i64, rv: i64, ref const_of: table<i64>, ref has_const: table<bool>, ref repl: table<i64>) {
     var nvals = len(has_const)
     if rv < 0 || rv >= nvals {
         return
@@ -110,7 +110,7 @@ func is_sym_slot(op: i64, k: i64) -> bool {
 }
 
 // 替代表链压缩 + 全量回写操作数（值传播）。
-func apply_repl(repl: table<i64>, nvals: i64) {
+func apply_repl(ref repl: table<i64>, nvals: i64) {
     var v: i64 = 0
     while v < nvals {
         var r = repl[v]
@@ -313,7 +313,7 @@ func cse_same(a: i64, b: i64) -> bool {
 }
 
 // 块内 CSE：重复纯指令的结果值替代为首次出现者。返回替代登记数。
-func cse_blockwise(repl: table<i64>, nvals: i64) -> i64 {
+func cse_blockwise(ref repl: table<i64>, nvals: i64) -> i64 {
     var merged: i64 = 0
     var nb = ir.block_count()
     var bi: i64 = 0

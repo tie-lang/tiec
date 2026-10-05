@@ -9,7 +9,7 @@ namespace sstate {
 // 全局后收集但 nid 更小），故 sorted_insert 可能中间插入——若 const/telem
 // 仅 table_push 末尾追加会与 keys/vals 错位（读错行的 const/元素类型）。
 // 参照 sinfer.lv_add 的五列同步移位模式，四列同位置插入。
-pub func sorted_insert_gb(keys: table<i64>, vals: table<i64>, cons: table<i64>, telems: table<i64>, mods: table<i64>, k: i64, v: i64, c: i64, e: i64, m: i64) -> i64 {
+pub func sorted_insert_gb(ref keys: table<i64>, ref vals: table<i64>, ref cons: table<i64>, ref telems: table<i64>, ref mods: table<i64>, k: i64, v: i64, c: i64, e: i64, m: i64) -> i64 {
     var n = len(keys)
     var lo: i64 = 0
     var hi: i64 = n - 1

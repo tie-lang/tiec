@@ -668,8 +668,12 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
         scope_put(interner.intern(pname), av, pty)
         // p.6.10.3：登记参数名（表参数借用、不析构不 release——所有权在调用方）
         table_push(g_param_nids, interner.intern(pname))
-        // r.1.6.14：`shared` 形参（bit5=32）另行登记——写路径据此**跳过 COW**。
-        if (s_vals[p] & 32) != 0 {
+        // r.1.6.14：**跳过 COW 的名字**登记（表名 g_shared_param_nids，语义已扩为
+        // 「写路径不做分离」）。两类：
+        //   · `ref` 形参（bit0）——可写借用的定义就是「写回调用方」⇒ 必须跳过，
+        //     否则分离后写只落在本地副本，借用语义失效。
+        //   · `shared` 形参（bit5）——显式共享、零拷贝就地改。
+        if (s_vals[p] & 1) != 0 || (s_vals[p] & 32) != 0 {
             table_push(g_shared_param_nids, interner.intern(pname))
         }
         // r.1.6.11 `deep` 形参：入口对表字段做值语义分离（rc>1 才克隆，rc=1 零成本）。

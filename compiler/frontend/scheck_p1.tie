@@ -75,7 +75,7 @@ func mod_walk(node: i64, nm: string) -> i64 {
 // 声明节点（mvars）、被赋值目标名、被读取名。
 // 递归覆盖闭包体（FN_LIT 子树），故闭包内对外层变量的读取/修改均计入，
 // 避免对捕获变量误报「未使用 / 未修改」。
-func diag_walk(node: i64, mvars: table<i64>, assigned: table<i64>, reads: table<i64>, decls: table<i64>) {
+func diag_walk(node: i64, ref mvars: table<i64>, ref assigned: table<i64>, ref reads: table<i64>, ref decls: table<i64>) {
     if node < 0 {
         return
     }
@@ -128,7 +128,7 @@ func diag_walk(node: i64, mvars: table<i64>, assigned: table<i64>, reads: table<
 }
 
 // 名 → 计数递增（线性查找，表很小）
-func wbump(keys: table<i64>, vals: table<i64>, nid: i64) {
+func wbump(ref keys: table<i64>, ref vals: table<i64>, nid: i64) {
     var i: i64 = 0
     while i < len(keys) {
         if keys[i] == nid {

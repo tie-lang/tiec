@@ -180,7 +180,7 @@ func strip_type_decl(src: string) -> string {
 }
 
 // 名字命中 → 标记保留位
-func sel_mark_name(nm: i64, names: table<i64>, flags: table<i64>) {
+func sel_mark_name(nm: i64, names: table<i64>, ref flags: table<i64>) {
     var i: i64 = 0
     while i < len(names) {
         if names[i] == nm {

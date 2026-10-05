@@ -149,7 +149,7 @@ func check_arm_patterns_enum(c: i64, subj_ty: i64) -> i64 {
 // W00012 收窄版的统计遍历：递归收集整数字面量的值 / 出现次数 / 首次位置。
 // 只覆盖单棵函数体子树（含闭包 FN_LIT 子树），因此计数天然是「同一函数内」。
 // 0 / 1 / -1 不计（正常用法）。
-func lit_scan(node: i64, vals: table<i64>, cnts: table<i64>, lns: table<i64>, cls_ln: table<i64>) {
+func lit_scan(node: i64, ref vals: table<i64>, ref cnts: table<i64>, ref lns: table<i64>, ref cls_ln: table<i64>) {
     if node < 0 {
         return
     }

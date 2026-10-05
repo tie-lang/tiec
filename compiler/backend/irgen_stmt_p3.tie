@@ -437,7 +437,7 @@ func find_var_refs(st: i64, target: i64) -> table<i64> {
 }
 
 // find_var_refs 的递归实现（深度优先遍历子节点）
-func collect_var_refs(st: i64, target: i64, out: table<i64>) {
+func collect_var_refs(st: i64, target: i64, ref out: table<i64>) {
     if st < 0 {
         return
     }
@@ -540,7 +540,7 @@ func sb_split_segs(val: i64, nid: i64) -> table<i64> {
 }
 
 // 递归收集语句树中的自加候选（合法叶 + 候选名 + 其它写标记 + goto 探测）
-func sb_collect(st: i64, legal: table<i64>, nids: table<i64>) {
+func sb_collect(st: i64, ref legal: table<i64>, ref nids: table<i64>) {
     if st < 0 {
         return
     }
@@ -647,7 +647,7 @@ func sb_scan(body: i64, cond: i64) -> table<i64> {
 }
 
 // 收集所有「out 作为赋值目标但非自加」的写（其它写 → 提升不安全）
-func collect_other_writes(st: i64, w_nid: table<i64>, w_has: table<i64>) {
+func collect_other_writes(st: i64, ref w_nid: table<i64>, ref w_has: table<i64>) {
     if st < 0 {
         return
     }
