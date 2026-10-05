@@ -192,7 +192,7 @@ func sel_mark_name(nm: i64, names: table<i64>, ref flags: table<i64>) {
 }
 
 // 递归收集 node 子树内对同文件顶层名的引用并标记
-func sel_collect_refs(node: i64, names: table<i64>, flags: table<i64>) {
+func sel_collect_refs(node: i64, names: table<i64>, ref flags: table<i64>) {
     if node < 0 {
         return
     }

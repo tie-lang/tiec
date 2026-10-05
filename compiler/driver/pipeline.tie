@@ -311,7 +311,7 @@ func asm_order_one_fn(fn_node: i64, prefix: string, ref out: table<string>) {
     table_push(out, full_name)
 }
 
-func asm_order_ns(ns_node: i64, prefix: string, out: table<string>) {
+func asm_order_ns(ns_node: i64, prefix: string, ref out: table<string>) {
     var nseg = s_aux[ns_node]
     var full_pre: string = prefix
     var k: i64 = 0

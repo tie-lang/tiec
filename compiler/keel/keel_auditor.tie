@@ -76,7 +76,7 @@ func ends_with(s: string, suf: string) -> bool {
 }
 
 // 文件名表升序排序（原地冒泡；< 即 strcmp 码点序）。返回值便于链式。
-func sort_names(t: table<string>) -> table<string> {
+func sort_names(ref t: table<string>) -> table<string> {
     var n = len(t)
     var changed: bool = true
     while changed {
@@ -111,7 +111,10 @@ func file_fingerprint(path: string) -> string {
 //    目录不存在 / 无 *.tie → 返回空串（err_msg 携带）。
 pub func fingerprint_tree(dir: string) -> string {
     keelaud_err = ""
-    var names = sort_names(list_dir(dir))
+    // sort_names 的形参在值语义迁移中改为 ref ⇒ 实参必须**可寻址**
+    // （不能直接传 list_dir(dir) 的调用结果，编译器 E00591）
+    var raw_names = list_dir(dir)
+    var names = sort_names(raw_names)
     var manifest: string = ""
     var count: i64 = 0
     var i: i64 = 0
