@@ -76,7 +76,7 @@ func main() {
     check(interp.eval("var t = table_new_i64(); table_push(t, 1); f(t); table_at(t, 0)"), "7")
     // 控制组：非 ref 表参数重绑定不写回调用方——t 仍是原表
     interp.reset()
-    check(interp.eval("func g(x: table<i64>) { table_push(x, 99); x = table_new_i64(); table_push(x, 7); }"), "已定义 1 个函数")
+    check(interp.eval("func g(ref x: table<i64>) { table_push(x, 99); x = table_new_i64(); table_push(x, 7); }"), "已定义 1 个函数")
     check(interp.eval("var t = table_new_i64(); table_push(t, 1); g(t); table_at(t, 0)"), "1")
 
     if g_fail == 0 {
