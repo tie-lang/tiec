@@ -296,7 +296,7 @@ pub func asm_build_order() -> table<string> {
     return out
 }
 
-func asm_order_one_fn(fn_node: i64, prefix: string, out: table<string>) {
+func asm_order_one_fn(fn_node: i64, prefix: string, ref out: table<string>) {
     // p.9.21.11：移除「TYPE_PARAMS 首槽 → 模板跳过」——泛型**展开节点**
     //（sgen_inst 的 clone_subst 产物）同样保留 TYPE_PARAMS 首槽但名字已
     // mangled 且**必须进装配序**（展开函数经 fn_sig 归属到来源模块片段，

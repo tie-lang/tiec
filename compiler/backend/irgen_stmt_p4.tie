@@ -82,7 +82,7 @@ func cbs_append(acc: i64, x: i64) {
 }
 
 // 递归收集循环内 `t = byte_concat(t, x)` 自加候选（合法叶 = RHS 第一实参 Var）。
-func cbs_collect(st: i64, legal: table<i64>, nids: table<i64>) {
+func cbs_collect(st: i64, ref legal: table<i64>, ref nids: table<i64>) {
     if st < 0 {
         return
     }

@@ -1109,7 +1109,7 @@ pub func lv_moved_restore(snap: table<i64>) {
 }
 
 // 有序插入 keys（返回插入位置），vals 并行同步插入
-pub func sorted_insert(keys: table<i64>, vals: table<i64>, k: i64, v: i64) -> i64 {
+pub func sorted_insert(ref keys: table<i64>, ref vals: table<i64>, k: i64, v: i64) -> i64 {
     var n = len(keys)
     var lo: i64 = 0
     var hi: i64 = n - 1
@@ -1138,7 +1138,7 @@ pub func sorted_insert(keys: table<i64>, vals: table<i64>, k: i64, v: i64) -> i6
 
 // 函数表三列有序插入（keys/vals/nodes 并行同步移位；reg_fn 专用）。
 // 返回插入位置。
-pub func sorted_insert_fn(keys: table<i64>, vals: table<i64>, nodes: table<i64>, k: i64, v: i64, nd: i64) -> i64 {
+pub func sorted_insert_fn(ref keys: table<i64>, ref vals: table<i64>, ref nodes: table<i64>, k: i64, v: i64, nd: i64) -> i64 {
     var n = len(keys)
     var lo: i64 = 0
     var hi: i64 = n - 1

@@ -756,7 +756,7 @@ pub func check_stmt_while(s: i64) -> i64 {
 // 赋值之前，故无需额外时序处理。按值形参集合由 check_fn 逐函数登记。
 //
 // 告警纪律：只在警告 pass（-w）执行，默认零成本（与 W00011/15/5/19 同策略）。
-func w31_walk(node: i64, sk: table<i64>, sr: table<i64>, sf: table<i64>) {
+func w31_walk(node: i64, ref sk: table<i64>, ref sr: table<i64>, ref sf: table<i64>) {
     if node < 0 {
         return
     }
