@@ -7,7 +7,7 @@ type tie<logic, unsafe:lock>
 import "./lockauth/mod_plain.tie"
 
 // 主机文件函数：获文件级授权 ⇒ 去锁
-func file_auth_fn(g: table<i64>) -> i64 {
+func file_auth_fn(ref g: table<i64>) -> i64 {
     table_push(g, 9)
     return g[0]
 }

@@ -65,7 +65,7 @@ func ok_before_leak(n: i64) -> i64 {
 // ==================== (A)(B)(C) 必须**不**命中 ====================
 
 // 形参表：所有权在调用方，永不独占
-func param_tbl(t: table<i64>) -> i64 {
+func param_tbl(ref t: table<i64>) -> i64 {
     table_push(t, 1)
     return t[0]
 }

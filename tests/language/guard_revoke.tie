@@ -23,7 +23,7 @@ func ok_revoke_unused(n: i64) -> i64 {
 }
 
 // 派生子凭据（父被 move，子有效）—— 持子凭据去锁
-func ok_delegate_then_use(g: table<i64>) -> i64 {
+func ok_delegate_then_use(ref g: table<i64>) -> i64 {
     var s: i64 = 0
     unsafe {
         var a: guard<lock> = unsafe.get(lock)
@@ -49,7 +49,7 @@ func ok_revoke_parent(n: i64) -> i64 {
 }
 
 // 未撤销的凭据照常可用（撤销只影响它自己与其后代）
-func ok_independent_credential(g: table<i64>) -> i64 {
+func ok_independent_credential(ref g: table<i64>) -> i64 {
     var s: i64 = 0
     unsafe {
         var x: guard<lock> = unsafe.get(lock)
