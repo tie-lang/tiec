@@ -168,20 +168,19 @@ func tig_agg_retain_fields(slot: i64, ty: i64) -> i64 {
     return 0
 }
 
-// ============ r.1.6.14 值语义过渡：写前分离（COW） ============
-// 开关：`TIE_TBL_VALUE=1` 开启值语义写路径；默认关 ⇒ 本组函数全部 no-op，
-// 生成代码与接线前**逐指令一致**（回归可用来证明接线本身没坏）。
-// ⚠ **必须在迁移与运行期语义都过门禁后才敢翻默认**：实测 `TIE_TBL_VALUE=1`
-// 会让 tiu 的引擎探针 `engine/tests/probe_e1.tie` **段错误退出（rc=139、零输出）**
-// ——最小复现 = 调一个返回「含表字段的 struct」的函数后正常返回（退出期崩），
-// 见 `_tmp_mig/probe…` 与设计文档 `table-value-semantics.md` §5「默认翻转的前置条件」。
-// 该缺陷在 COW 接线提交 `1d648eb` 时就已存在（非迁移引入），故**默认保持关**。
+// ============ r.1.6.14 值语义：写前分离（COW） ============
+// 开关：**默认开启值语义**（2026-10-05 翻转）。`TIE_TBL_VALUE=0` 临时回到旧的
+// 共享语义（生成代码与接线前逐指令一致），仅供对照/排障；`=1` 显式开启与默认同义。
+// 翻转前的阻塞点（tiu probe_e1 段错误）已修：根因是**「返回含表字段的 struct」时
+// 未 retain 各表字段**，紧随的出口析构把调用方接手的表释放成悬垂句柄
+// （见 irgen_stmt_gen_p1.tie 的 struct 返回 retain 补丁）+ tie 侧按值 struct 形参
+// 依赖别名的调用点已重构为 ref 出参 / 返回重绑。
 // 语义：非 `shared` 的表变量在写之前先按 rc 分离——rc<=1（独占）原样返回（零成本），
 // rc>1（有别名）则克隆出私有副本并把新句柄写回变量槽 ⇒ 后续写不再影响别名。
 func tbl_value_on() -> bool {
     if !g_tbl_value_init {
         g_tbl_value_init = true
-        if get_env("TIE_TBL_VALUE") == "1" {
+        if get_env("TIE_TBL_VALUE") != "0" {
             g_tbl_value = true
         }
     }
@@ -472,7 +471,21 @@ func s21_table_at_ex(t: i64, i: i64, ok_ptr: i64, elem_llvm_ty: i64, excl: bool)
         ok = tl_i64_3("tl_tbl$tbl_at", t_i, i, t21_ptri(sv))
     }
     s21_store(ok_ptr, s21_trunc_i8(ok), types.named(TK_I8))  // 越界标志 → 出参 i8
-    return s21_load(sv, elem_llvm_ty)
+    var loaded = s21_load(sv, elem_llvm_ty)
+    // ★ 越界读的「零值」对 string 必须是**空串**，不能是空指针：
+    //   tie 里 null 指针不是合法字符串（`len()` / 拼接 / 比较都会解引用 ⇒ 段错误）。
+    //   `tbl_at` 的越界分支只做 `memset(out, 0, esz)`，对 i64 恰好是 0（符合
+    //   「高侧越界读返回 0」的裁决），对 `table<string>` 却给出 null ⇒ 调用方一碰即崩。
+    //   判据与**扩容零值** `s21_elem_zero` 完全一致（同一"元素零值"概念，别处已实现）。
+    //   实测：`var s: table<string> = table_new_string(); var g = s[0]; len(g)`
+    //   修复前 rc=139，修复后 g 为空串、len=0。
+    if elem_llvm_ty == types.named(TK_STR) {
+        var isok = tig_cond_to_bool(ok, types.named(TK_I64))
+        var z = s21_elem_zero(elem_llvm_ty)          // i64 形态（tig_str_lit）
+        // 槽值 load 出来是 ptr，两侧须同型 ⇒ 把零值转成 ptr
+        return tig_select_i(isok, loaded, t21_intp(z), types.named(TK_STR))
+    }
+    return loaded
 }
 
 // 是否哈希模式：esz 高位符号位（i64 负值）
