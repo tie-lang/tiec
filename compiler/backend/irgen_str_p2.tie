@@ -168,16 +168,20 @@ func tig_agg_retain_fields(slot: i64, ty: i64) -> i64 {
     return 0
 }
 
-// ============ r.1.6.14 值语义：写前分离（COW） ============
-// 开关：**默认开启值语义**（2026-10-05 翻转；此前为过渡期默认关）。
-// `TIE_TBL_VALUE=0` 临时回到旧的共享语义（生成代码与接线前逐指令一致），
-// 仅供对照/排障；`=1` 显式开启与默认同义。
+// ============ r.1.6.14 值语义过渡：写前分离（COW） ============
+// 开关：`TIE_TBL_VALUE=1` 开启值语义写路径；默认关 ⇒ 本组函数全部 no-op，
+// 生成代码与接线前**逐指令一致**（回归可用来证明接线本身没坏）。
+// ⚠ **必须在迁移与运行期语义都过门禁后才敢翻默认**：实测 `TIE_TBL_VALUE=1`
+// 会让 tiu 的引擎探针 `engine/tests/probe_e1.tie` **段错误退出（rc=139、零输出）**
+// ——最小复现 = 调一个返回「含表字段的 struct」的函数后正常返回（退出期崩），
+// 见 `_tmp_mig/probe…` 与设计文档 `table-value-semantics.md` §5「默认翻转的前置条件」。
+// 该缺陷在 COW 接线提交 `1d648eb` 时就已存在（非迁移引入），故**默认保持关**。
 // 语义：非 `shared` 的表变量在写之前先按 rc 分离——rc<=1（独占）原样返回（零成本），
 // rc>1（有别名）则克隆出私有副本并把新句柄写回变量槽 ⇒ 后续写不再影响别名。
 func tbl_value_on() -> bool {
     if !g_tbl_value_init {
         g_tbl_value_init = true
-        if get_env("TIE_TBL_VALUE") != "0" {
+        if get_env("TIE_TBL_VALUE") == "1" {
             g_tbl_value = true
         }
     }
