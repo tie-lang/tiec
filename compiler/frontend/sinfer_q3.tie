@@ -524,7 +524,7 @@ pub func recv_path_name(recv: i64) -> string {
 }
 
 // struct 实例方法转发
-pub func infer_struct_method(recv: i64, recv_ty: i64, mname: string, args: table<i64>, id: i64) -> i64 {
+pub func infer_struct_method(recv: i64, recv_ty: i64, mname: string, ref args: table<i64>, id: i64) -> i64 {
     var bk = types.kind(recv_ty)
     // p.9.11.20 enum 关联方法：接收者为 enum 类型 → 方法全名 = <enum 名>::<方法>
     //（复用 struct 方法机制：namespace <enum 名> 内 pub func，首参 = enum 类型

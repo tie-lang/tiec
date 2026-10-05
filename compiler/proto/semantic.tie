@@ -659,7 +659,7 @@ func bs_find(keys: table<i64>, k: i64) -> i64 {
     return -1
 }
 // 有序插入 keys（返回插入位置），vals 并行同步插入
-func sorted_insert(keys: table<i64>, vals: table<i64>, k: i64, v: i64) -> i64 {
+func sorted_insert(ref keys: table<i64>, ref vals: table<i64>, k: i64, v: i64) -> i64 {
     var n = len(keys)
     var lo: i64 = 0
     var hi: i64 = n - 1

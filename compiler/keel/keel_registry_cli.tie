@@ -172,7 +172,7 @@ func write_index(name: string, list: table<string>) -> bool {
 }
 
 // 升序插入版本（不重复；返回是否插入）。
-func idx_insert(list: table<string>, ver: string) -> i64 {
+func idx_insert(ref list: table<string>, ver: string) -> i64 {
     var i: i64 = 0
     while i < len(list) {
         if list[i] == ver {
