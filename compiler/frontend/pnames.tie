@@ -61,16 +61,22 @@ func ensure_tok_names() {
         "NotEq", "Lt", "Gt", "Le", "Ge", "AndAnd", "OrOr", "Bang", "PlusEq",
         "MinusEq", "StarEq", "SlashEq", "PercentEq", "AmpEq", "PipeEq", "CaretEq",
         "ShlEq", "ShrEq", "Amp", "Pipe", "Caret", "Shl", "Shr", "Inc", "Dec",
-        "Question", "Eof", "Enum", "Unsafe", "Repr", "Asm", "Panic", "Port",
+        "Question", "Eof", "Ellipsis", "Enum", "Unsafe", "Repr", "Asm", "Panic", "Port",
         "Impl", "Macro", "Backtick", "Dollar"]
     var i: i64 = 0
     while i < len(names) {
         table_push(g_tok_names, names[i])
         i = i + 1
     }
-    // 补齐保留段 token 名（90=hash,91=actor,92=larrow... 现有序列只推到 Dollar=89）：
+    // 补齐保留段 token 名（91=hash,92=actor,93=async,94=goto,95=larrow,96=interp_lbrace）：
     // p.9.13.1 单箭头统一：lex_fatarrow（原 tag 97）已删除，不再登记可读名。
-    var pad: table<i64> = [90, 91, 92, 93, 94, 95, 96]
+    // ★ 修（2026-10-06）：此前「90..96 配 6 个名字」是**错位**的表象 —— 根因是
+    //   `names` 少登记 const 80 的 `lex_ellipsis`（`...`），导致 80 起每个名字
+    //   都往后错一格（`names[80]="Enum"` 实际描述的是 ellipsis），尾部顺延成
+    //   Dollar=89。补上 Ellipsis 后表长 91（0..90），pad 起点随之改 91，
+    //   6 个名字正好对上 6 个码 —— 且 pn[6] 越界读空串的问题一并消失
+    //   （此前 96=interp_lbrace 被登记成空串）。
+    var pad: table<i64> = [91, 92, 93, 94, 95, 96]
     var pn: table<string> = ["Hash", "Actor", "Async", "Goto", "LArrow", "InterpL"]
     var p: i64 = 0
     while p < len(pad) {

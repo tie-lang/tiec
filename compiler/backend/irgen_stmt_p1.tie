@@ -65,10 +65,12 @@ func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target
     if !g_check_bounds {
         return 0
     }
-    var ivc = iv
+    // ★ 比较一律在**下标自型**上做，不 sext 到 i64 —— i128 下标 sext 到 i64 是
+    //   **非法 IR**（`sext i128 to i64`，实测 i128_full 编译挂）。类型未知才退回 i64。
     var it = node_types[idx_node]
-    if it > 0 && it != types.named(TK_I64) {
-        ivc = tig_sext(iv, it, types.named(TK_I64))
+    var cty = it
+    if cty <= 0 || !types.is_int(cty) {
+        cty = types.named(TK_I64)
     }
     // ★ 所有会发射指令的求值必须排在任何 add_operand 之前（否则「操作数段交错」）
     var linev = tig_int_lit(0)
@@ -76,7 +78,6 @@ func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target
         linev = tig_int_lit(s_lines[idx_node])
     }
     var okv = s21_load(ok_addr, types.named(TK_I8))
-    var ok64 = tig_sext(okv, types.named(TK_I8), types.named(TK_I64))
     var lenv = s21_table_len(t)
     // ★★ 负下标必须单独测：`tbl_at` 的判据是 `i < len`，对**负数恒真**
     //   （-1 < 2）⇒ 它 `memcpy(data + (-1)*esz)`，即**堆下读**，而且 ok 报 1。
@@ -84,8 +85,12 @@ func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target
     //   在**完全安全的代码里**发生 —— 违反「不用 unsafe 就无需担心内存安全」。
     //   写路径早有此检查（诊断「表下标越界（负索引）」），读路径缺失 ⇒ 本轮补上。
     //   成本 = 同一 panic 块上的**一个 icmp**，不新增分支目标。
-    var isz = tig_icmp_c(ok64, tig_int_lit(0), 0)                 // ok == 0
-    var negv = tig_icmp_c(ivc, tig_int_lit(0), 2)                 // ivc < 0
+    var isz = tig_cmp_const(okv, 0, 0, types.named(TK_I8))        // ok == 0（自型）
+    var negv = isz
+    // 无符号下标不可能为负 ⇒ 跳过负下标判定（省一个 icmp，且避免对无符号做 slt）。
+    if stype.is_signed(cty) {
+        negv = tig_cmp_const(iv, 2, 0, cty)                      // iv < 0（自型比较）
+    }
     // ★ 两个条件合成**一个分支**：原先「ok==0 → panic，否则再判负下标 → panic」是
     //   两个条件块 + 两个分支，现在 `bad = (ok==0) | (iv<0)` 只用一个条件分支。
     //   语义完全等价（两条件任一成立即越界），但少一个基本块、少一次分支。
@@ -101,7 +106,7 @@ func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target
     var pin = ir.new_inst(g_cur_block, 41, types.named(TK_I32))   // call_vararg
     ir.add_operand(pin, fmt, 0)
     ir.add_operand(pin, linev, 0)
-    ir.add_operand(pin, ivc, 0)
+    ir.add_operand(pin, iv, 0)
     ir.add_operand(pin, lenv, 0)
     if target == 0 {
         // 审计模式：只报告不中断（一次收全所有越界点）
