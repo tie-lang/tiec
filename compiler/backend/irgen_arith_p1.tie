@@ -98,11 +98,8 @@ func tig_div_zero_check(rv: i64, rty: i64) -> i64 {
     var fmt = interner.intern("division by zero in " + g_cur_fn_name + "\n")
     var pin = ir.new_inst(g_cur_block, 41, types.named(TK_I32))   // call_vararg
     ir.add_operand(pin, fmt, 0)
-    var one = tig_int_lit_ty(1, types.named(TK_I64))
-    tig_ext_call1("exit", one, types.named(TK_I64), -1)
-    var dbr = ir.new_inst(g_cur_block, 30, -1)                    // 死 br
-    ir.add_operand(dbr, okb, 1)
-    g_cur_block = okb
+    // 与 `panic`/越界检查同一失败语义（受 catch_panic 捕获 → longjmp；未受捕 → exit）
+    tig_panic_tail(okb)
     return 0
 }
 

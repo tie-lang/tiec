@@ -86,7 +86,7 @@ var g_no_warn: bool = false;      // --no-warn：跳过警告检查（不发射/
 var g_front_warn: bool = false;
 // v3（p.9.21.9 收口）：装配器块操作数映射修正 + 装配路径副作用恢复——
 // 旧片段由修正前的装配器语义写出，必须整体失效（盐升格）。
-var g_cache_salt: string = "tiec-cache-v10"; // 缓存键盐：编译器输出形态变更（如 optimizer 改动/固定点升格）时递增，强制旧缓存失效（p.9.19.8 遗留补：升格必 bump）
+var g_cache_salt: string = "tiec-cache-v11"; // 缓存键盐：编译器输出形态变更（如 optimizer 改动/固定点升格）时递增，强制旧缓存失效（p.9.19.8 遗留补：升格必 bump）
 // v10（2026-10-06）：越界/除零检查改为**常开**（原先默认关）⇒ 不带显式标志时的产物形态改变，
 // 旧缓存（v9）产出的机器码与当前语义不符，必须整体失效。
 var g_emit_ir: bool = false;
