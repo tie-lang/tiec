@@ -674,7 +674,13 @@ func collect_other_writes(st: i64, ref w_nid: table<i64>, ref w_has: table<i64>)
     // 其它写目标：下标赋值 N_INDEX_ASSIGN / 字段赋值 N_FIELD_ASSIGN 也归为写
     if s_tags[st] == 104 || s_tags[st] == 115 {  // N_INDEX_ASSIGN / N_FIELD_ASSIGN
         var wbase = sstate.child(st, 0)
-        if s_tags[wbase] == 6 {
+        // ★ 显式守卫：`child()` 缺子节点时会给 **-1**，而 `s_tags[-1]`/`s_names[-1]`
+        //   会读到表头前的分配器元数据（`tbl_at` 的 `i < len` 对负数恒真 ⇒ 堆下读）。
+        //   实测 `--check-bounds` 在此处报 `OOB irgen::collect_other_writes
+        //   [s_tags] line 677 idx -1`，**一个编译过程触发 76 次**（每次编译都要走
+        //   全函数写目标收集）。原先靠越界读返回「某个值」——若该值恰为 6
+        //   （N_VAR），本分支会被**误判为真**并把垃圾 nid 当成写目标登记。
+        if wbase >= 0 && s_tags[wbase] == 6 {
             var nid2 = s_names[wbase]
             var wi2 = linear_find(w_nid, nid2)
             if wi2 < 0 {

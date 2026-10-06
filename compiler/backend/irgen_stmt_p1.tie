@@ -61,7 +61,7 @@ func tig_array_bounds_check(idx_node: i64, iv: i64, len_count: i64) -> i64 {
 // `ok=0` 才不 set_len。检查只能作用于**用户源码的下标读**（`tig_index_read`）。
 //
 // 诊断带**源码行号**（`s_lines` 在编译期可读 ⇒ 直接内联常量，无需运行期查表）。
-func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target: i64) -> i64 {
+func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target: i64, base: i64) -> i64 {
     if !g_check_bounds {
         return 0
     }
@@ -84,22 +84,20 @@ func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target
     //   在**完全安全的代码里**发生 —— 违反「不用 unsafe 就无需担心内存安全」。
     //   写路径早有此检查（诊断「表下标越界（负索引）」），读路径缺失 ⇒ 本轮补上。
     //   成本 = 同一 panic 块上的**一个 icmp**，不新增分支目标。
-    var negv = tig_icmp_c(ivc, tig_int_lit(0), 2)                 // ivc < 0
-    var pnb = ir.new_block(g_cur_func, interner.intern("tb.n"))   // 越界 panic
-    var mdb = ir.new_block(g_cur_func, interner.intern("tb.m"))   // 第二查（负下标）
-    var okb = ir.new_block(g_cur_func, interner.intern("tb.o"))   // 正常继续
     var isz = tig_icmp_c(ok64, tig_int_lit(0), 0)                 // ok == 0
+    var negv = tig_icmp_c(ivc, tig_int_lit(0), 2)                 // ivc < 0
+    // ★ 两个条件合成**一个分支**：原先「ok==0 → panic，否则再判负下标 → panic」是
+    //   两个条件块 + 两个分支，现在 `bad = (ok==0) | (iv<0)` 只用一个条件分支。
+    //   语义完全等价（两条件任一成立即越界），但少一个基本块、少一次分支。
+    var bad = tig_or_i1(isz, negv)
+    var pnb = ir.new_block(g_cur_func, interner.intern("tb.n"))   // 越界 panic
+    var okb = ir.new_block(g_cur_func, interner.intern("tb.o"))   // 正常继续
     var cbr = ir.new_inst(g_cur_block, 31, -1)                    // cond_br
-    ir.add_operand(cbr, isz, 0)
+    ir.add_operand(cbr, bad, 0)
     ir.add_operand(cbr, pnb, 1)
-    ir.add_operand(cbr, mdb, 1)
-    g_cur_block = mdb
-    var cbr2 = ir.new_inst(g_cur_block, 31, -1)
-    ir.add_operand(cbr2, negv, 0)
-    ir.add_operand(cbr2, pnb, 1)
-    ir.add_operand(cbr2, okb, 1)
+    ir.add_operand(cbr, okb, 1)
     g_cur_block = pnb
-    var fmt = interner.intern("table index out of bounds at line %lld: index %lld, len %lld\n")
+    var fmt = interner.intern("OOB " + g_cur_fn_name + " [" + sstate.name_str(base) + "] line %lld idx %lld len %lld\n")
     var pin = ir.new_inst(g_cur_block, 41, types.named(TK_I32))   // call_vararg
     ir.add_operand(pin, fmt, 0)
     ir.add_operand(pin, linev, 0)
@@ -281,7 +279,7 @@ func tig_index_read(id: i64) -> i64 {
     var rv_at = s21_table_at_ex(t, iv, ok_addr, ret_ty, esc_take(base, "读 t[i]"))
     // S1.4：--check-bounds 下，用户源码的 t[i] 高侧越界即诊断（默认关 ⇒ 指令数与原先一致）。
     // 审计模式（TIE_CB_AUDIT=1）只报告不中断，用于一次收全所有越界点。
-    if tig_table_bounds_check(ok_addr, iv, t, idx, tig_cb_target()) < 0 {
+    if tig_table_bounds_check(ok_addr, iv, t, idx, tig_cb_target(), base) < 0 {
         return -1
     }
     return rv_at
