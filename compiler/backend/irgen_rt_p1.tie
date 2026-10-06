@@ -521,31 +521,30 @@ func tig_safe_access(id: i64) -> i64 {
 // 批次 7（任务 18）：可捕获 panic——若处于 catch_panic 捕获域（@tie_panic_active
 // 为真），打印消息后 longjmp 回 catch 点（不 exit，宿主继续运行）；否则保持
 // 原语义 printf + exit(1)。可配置目标行为（嵌入式 halt / wasm trap）后续。
-func tig_panic(id: i64) -> i64 {
-    var msg = sstate.child(id, 0)
-    var mv = tig_expr(msg)
-    if mv < 0 {
-        return -1
-    }
+// ★ 终止性失败的**唯一收尾实现**。
+// 调用前提：当前块已打印完诊断消息。本函数随后分派两条路径 ——
+//   受捕（处于 catch_panic 捕获域）→ longjmp 回捕获点，宿主继续运行；
+//   未受捕 → exit(1)。
+// 两条路径都补一条死 br 指向 `cont`：longjmp/exit 于 LLVM 均非 noreturn，
+// 块必须有显式 terminator；死代码由优化器删除。调用方随后应把 g_cur_block
+// 设为 `cont` 继续发射。
+// ★ 存在的理由：`panic` 语句与内建检查（越界/负下标/除零）**共用同一失败语义**。
+//   三处若各写一份，机制一改就会漏（本仓「同一判定散落多处必对齐」的既有教训）。
+func tig_panic_tail(cont: i64) {
     // 读捕获激活标记 @tie_panic_active（i1）
     llvmgen.catch_enable()
     var act_id = interner.intern("@tie_panic_active")
     var lda = ir.new_inst(g_cur_block, 21, types.named(TK_BOOL))  // load i1
     ir.add_operand(lda, act_id, 3)
     var active = ir.get_value(lda)
-    // 分支：受捕（打印 + longjmp）/ 未受捕（打印 + exit）
     var cblk = ir.new_block(g_cur_func, interner.intern("pnc.c"))
     var xblk = ir.new_block(g_cur_func, interner.intern("pnc.x"))
     var cb = ir.new_inst(g_cur_block, 31, -1)  // cond_br
     ir.add_operand(cb, active, 0)
     ir.add_operand(cb, cblk, 1)
     ir.add_operand(cb, xblk, 1)
-    var fmt = interner.intern("%s\n")
-    // cblk（受捕）：printf 消息 + longjmp(@tie_panic_jb, 1)（noreturn，跳回 catch 点）
+    // 受捕：longjmp(@tie_panic_jb, 1)（noreturn，跳回 catch 点）
     g_cur_block = cblk
-    var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-    ir.add_operand(inst, fmt, 0)
-    ir.add_operand(inst, mv, 0)
     var jb_id = interner.intern("@tie_panic_jb")
     var one32 = tig_int_lit_ty(1, types.named(TK_I32))
     var lj = ir.new_inst(g_cur_block, 36, -1)  // extern_call void（longjmp）
@@ -555,17 +554,33 @@ func tig_panic(id: i64) -> i64 {
     ir.add_operand(lj, jb_id, 3)  // arg0 @tie_panic_jb（OK_GLOBAL）
     ir.add_operand(lj, types.named(TK_I32), 2)  // arg1 ty i32
     ir.add_operand(lj, one32, 0)  // arg1 1
-    // longjmp 是 noreturn，但 LLVM 要求块有显式 terminator——追加死 br 到 xblk
-    //（longjmp 永不返回，br 为死代码，优化器删除；满足语法终止）。
-    var ljb = ir.new_inst(g_cur_block, 30, -1)  // br xblk（死代码）
-    ir.add_operand(ljb, xblk, 1)
-    // xblk（未受捕）：printf + exit(1)
+    var ljb = ir.new_inst(g_cur_block, 30, -1)  // br cont（死代码）
+    ir.add_operand(ljb, cont, 1)
+    // 未受捕：exit(1)
     g_cur_block = xblk
-    var inst2 = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-    ir.add_operand(inst2, fmt, 0)
-    ir.add_operand(inst2, mv, 0)
     var one = tig_int_lit_ty(1, types.named(TK_I64))
     tig_ext_call1("exit", one, types.named(TK_I64), -1)
+    var xbr = ir.new_inst(g_cur_block, 30, -1)  // br cont（死代码）
+    ir.add_operand(xbr, cont, 1)
+    // ★ 接管续块：调用方随后直接在 `cont` 上继续发射，**不要**再补 terminator
+    //   （本函数已为两条路径各补一条 br cont；同一块里出现两个 terminator 是非法 IR）。
+    g_cur_block = cont
+}
+
+func tig_panic(id: i64) -> i64 {
+    var msg = sstate.child(id, 0)
+    var mv = tig_expr(msg)
+    if mv < 0 {
+        return -1
+    }
+    // 打印一次，再交给公共收尾决定「longjmp 回捕获点」还是「exit」
+    var fmt = interner.intern("%s\n")
+    var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
+    ir.add_operand(inst, fmt, 0)
+    ir.add_operand(inst, mv, 0)
+    var cont = ir.new_block(g_cur_func, interner.intern("pnc.o"))
+    tig_panic_tail(cont)
+    g_cur_block = cont
     return 0
 }
 

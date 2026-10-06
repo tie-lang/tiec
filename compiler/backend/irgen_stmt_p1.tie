@@ -33,12 +33,8 @@ func tig_array_bounds_check(idx_node: i64, iv: i64, len_count: i64) -> i64 {
     ir.add_operand(pinst, fmt, 0)
     ir.add_operand(pinst, iv, 0)
     ir.add_operand(pinst, lenv, 0)
-    var one = tig_int_lit_ty(1, types.named(TK_I64))
-    tig_ext_call1("exit", one, types.named(TK_I64), -1)
-    // exit 未 declare noreturn，需显式 terminator 终止 panicblk（死 br，优化器删除）
-    var dbr = ir.new_inst(g_cur_block, 30, -1)
-    ir.add_operand(dbr, okb, 1)
-    g_cur_block = okb
+    // 诊断后按**统一失败语义**收尾（受 catch_panic 捕获 → longjmp；未受捕 → exit）
+    tig_panic_tail(okb)   // 已在 okb 上接管续块，勿再补 terminator
     return 0
 }
 
@@ -100,11 +96,10 @@ func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target
         var dbr = ir.new_inst(g_cur_block, 30, -1)
         ir.add_operand(dbr, okb, 1)
     } else {
-        // 正式模式：诊断后退出（exit 未 declare noreturn ⇒ 补一个死 br 终止块）
-        var one = tig_int_lit_ty(1, types.named(TK_I64))
-        tig_ext_call1("exit", one, types.named(TK_I64), -1)
-        var dbr2 = ir.new_inst(g_cur_block, 30, -1)
-        ir.add_operand(dbr2, okb, 1)
+        // 正式模式：诊断后按**统一失败语义**收尾
+        //（受 catch_panic 捕获 → longjmp 回捕获点；未受捕 → exit(1)）
+        // 收尾已把 g_cur_block 接管为 okb，**勿再补 terminator**。
+        tig_panic_tail(okb)
     }
     g_cur_block = okb
     return 0
