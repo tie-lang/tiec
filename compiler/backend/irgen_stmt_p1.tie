@@ -12,26 +12,20 @@ func tig_array_bounds_check(idx_node: i64, iv: i64, len_count: i64) -> i64 {
     if !g_check_bounds {
         return 0
     }
-    var it = node_types[idx_node]
-    if it > 0 && it != types.named(TK_I64) {
-        iv = tig_sext(iv, it, types.named(TK_I64))  // 窄整数下标统一提升为 i64 再比较
-    }
+    // ★ 下标已由 `tig_index_iv` 统一为 i64 ⇒ 一律按 i64 比较，不再按 idx_node 的类型
+    //   换算（否则 i64 值再 sext 会生成非法的 `sext i64 to i64`／宽度不匹配的 icmp）。
     var lenv = tig_int_lit(len_count)          // len（CHECK 内 IMM/slt 常量）
-    // 两段式分支避免布尔 or：先查 iv<0，再查 iv>=len，两路都汇入 panicblk
+    // ★ 两个条件合成**一个分支**（与表越界检查同法）：原先「先查 iv<0、再查 iv>=len」
+    //   是两个条件块 + 两个分支，`bad = (iv<0) | (iv>=len)` 只需一个条件分支。
+    var lt0 = tig_cmp_const(iv, 2, 0, types.named(TK_I64))            // iv < 0
+    var ge = tig_cmp_const(iv, 5, len_count, types.named(TK_I64))     // iv >= len
+    var bad = tig_or_i1(lt0, ge)
     var pnb = ir.new_block(g_cur_func, interner.intern("ck.n"))  // 越界 panic
-    var mdb = ir.new_block(g_cur_func, interner.intern("ck.m"))  // 第二查
     var okb = ir.new_block(g_cur_func, interner.intern("ck.o"))  // 正常继续
-    var lt0 = tig_icmp_c(iv, tig_int_lit(0), 2)   // iv < 0
     var cbr1 = ir.new_inst(g_cur_block, 31, -1)   // cond_br
-    ir.add_operand(cbr1, lt0, 0)
+    ir.add_operand(cbr1, bad, 0)
     ir.add_operand(cbr1, pnb, 1)
-    ir.add_operand(cbr1, mdb, 1)
-    g_cur_block = mdb
-    var ge = tig_icmp_c(iv, lenv, 5)              // iv >= len
-    var cbr2 = ir.new_inst(g_cur_block, 31, -1)
-    ir.add_operand(cbr2, ge, 0)
-    ir.add_operand(cbr2, pnb, 1)
-    ir.add_operand(cbr2, okb, 1)
+    ir.add_operand(cbr1, okb, 1)
     // panicblk：printf("%s (index %lld, len %lld)\n") + exit(1)
     g_cur_block = pnb
     var fmt = interner.intern("array index out of bounds: index %lld, len %lld\n")
@@ -65,13 +59,8 @@ func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target
     if !g_check_bounds {
         return 0
     }
-    // ★ 比较一律在**下标自型**上做，不 sext 到 i64 —— i128 下标 sext 到 i64 是
-    //   **非法 IR**（`sext i128 to i64`，实测 i128_full 编译挂）。类型未知才退回 i64。
-    var it = node_types[idx_node]
-    var cty = it
-    if cty <= 0 || !types.is_int(cty) {
-        cty = types.named(TK_I64)
-    }
+    // 下标已由 `tig_index_iv` 统一为 i64（见该函数的注释）⇒ 此处一律按 i64 比较，
+    // 不再按下标节点类型换算（否则 i64 值再 sext 会生成非法的 `sext i64 to i64`）。
     // ★ 所有会发射指令的求值必须排在任何 add_operand 之前（否则「操作数段交错」）
     var linev = tig_int_lit(0)
     if idx_node >= 0 && idx_node < len(s_lines) {
@@ -85,12 +74,10 @@ func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target
     //   在**完全安全的代码里**发生 —— 违反「不用 unsafe 就无需担心内存安全」。
     //   写路径早有此检查（诊断「表下标越界（负索引）」），读路径缺失 ⇒ 本轮补上。
     //   成本 = 同一 panic 块上的**一个 icmp**，不新增分支目标。
-    var isz = tig_cmp_const(okv, 0, 0, types.named(TK_I8))        // ok == 0（自型）
-    var negv = isz
-    // 无符号下标不可能为负 ⇒ 跳过负下标判定（省一个 icmp，且避免对无符号做 slt）。
-    if stype.is_signed(cty) {
-        negv = tig_cmp_const(iv, 2, 0, cty)                      // iv < 0（自型比较）
-    }
+    // 负下标一律判：无符号下标经 zext 后不可能为负，多出的一个 icmp 已折进同一
+    // 分支（不新增分支目标），换来的是**不依赖类型推断的可靠性**。
+    var isz = tig_cmp_const(okv, 0, 0, types.named(TK_I8))        // ok == 0
+    var negv = tig_cmp_const(iv, 2, 0, types.named(TK_I64))       // iv < 0
     // ★ 两个条件合成**一个分支**：原先「ok==0 → panic，否则再判负下标 → panic」是
     //   两个条件块 + 两个分支，现在 `bad = (ok==0) | (iv<0)` 只用一个条件分支。
     //   语义完全等价（两条件任一成立即越界），但少一个基本块、少一次分支。
@@ -123,6 +110,43 @@ func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target
     return 0
 }
 
+// 下标取值统一到 i64。
+// 表的索引形参（tl_tbl$tbl_at 系列）与数组 GEP 的索引都要求 i64，而源码里的下标
+// 可以是任意整数宽度（i8/i32/i128…）。原先直接把窄整数索引往下传 ⇒ LLVM 类型
+// 不匹配（实测 `var k: i32 = 1; t[k]` 与 `a[k]` 均编译失败，属**既有缺陷**）。
+// 拓宽按有符号性走 sext/zext；i128/u128 走 trunc（表不可能有 2^63 个元素）。
+// 非整数下标（如 map<string> 的字符串键）原样返回 —— is_int 为假即不转换。
+// 下标表达式的整数类型。`node_types` 对**变量引用节点**并不可靠（本文件取 base
+// 类型时尚需四路回退即为旁证）⇒ 变量节点再查一次作用域里的声明类型。
+func tig_index_ty(idx: i64) -> i64 {
+    // ★ 判据必须用 `< 0` 表示「未登记」：**TK_I8 = 0 是合法类型 id**，
+    //   而 node_types 的未登记哨兵是 -1（见 sstate_q1 的 table_push(node_types, -1)）。
+    //   曾用 `<= 0` 判定 ⇒ 把 i8 当成「未知」⇒ i8 下标不拓宽（本 bug 的根因）。
+    var ty = node_types[idx]
+    if ty >= 0 && types.is_int(ty) {
+        return ty
+    }
+    if s_tags[idx] == 6 {
+        var nm = interner.intern(sstate.name_str(idx))
+        if scope_get(nm) >= 0 && g_lookup_ty >= 0 && types.is_int(g_lookup_ty) {
+            return g_lookup_ty
+        }
+    }
+    return -1
+}
+
+func tig_index_iv(idx: i64) -> i64 {
+    var v = tig_expr(idx)
+    if v < 0 {
+        return -1
+    }
+    var ty = tig_index_ty(idx)
+    if ty < 0 || ty == types.named(TK_I64) {
+        return v
+    }
+    return tig_widen(v, ty, types.named(TK_I64))
+}
+
 func tig_index_read(id: i64) -> i64 {
     var base = sstate.child(id, 0)
     var idx = sstate.child(id, 1)
@@ -130,7 +154,7 @@ func tig_index_read(id: i64) -> i64 {
     // 已在语义层拒绝，动态下标 v1 默认零检查）
     var (aaddr, aaty) = tig_array_root(base)
     if aaty >= 0 {
-        var iv0 = tig_expr(idx)
+        var iv0 = tig_index_iv(idx)
         if iv0 < 0 {
             return -1
         }
@@ -151,7 +175,7 @@ func tig_index_read(id: i64) -> i64 {
     if s_tags[base] == 6 {
         var rpn = interner.intern(sstate.name_str(base))
         if rp_is(rpn) {
-            var iv0 = tig_expr(idx)
+            var iv0 = tig_index_iv(idx)
             if iv0 < 0 {
                 return -1
             }
@@ -162,7 +186,7 @@ func tig_index_read(id: i64) -> i64 {
     if t < 0 {
         return -1
     }
-    var iv = tig_expr(idx)
+    var iv = tig_index_iv(idx)
     if iv < 0 {
         return -1
     }
@@ -487,7 +511,7 @@ func tig_index_assign(id: i64) -> i64 {
                 sm_err_msg = "行池不支持下标复合赋值（p.9.12.6 边界，函数 " + g_cur_fn_name + "）"
                 return -1
             }
-            var iv1 = tig_expr(idx)
+            var iv1 = tig_index_iv(idx)
             if iv1 < 0 {
                 return -1
             }
@@ -502,7 +526,7 @@ func tig_index_assign(id: i64) -> i64 {
     // 值类型无 retain（无引用计数），无越界检查（常量越界语义层已拒绝）。
     var (aaddr2, aaty2) = tig_array_root(base)
     if aaty2 >= 0 {
-        var iv2 = tig_expr(idx)
+        var iv2 = tig_index_iv(idx)
         if iv2 < 0 {
             return -1
         }
@@ -557,7 +581,7 @@ func tig_index_assign(id: i64) -> i64 {
     if t < 0 {
         return -1
     }
-    var iv = tig_expr(idx)
+    var iv = tig_index_iv(idx)
     if iv < 0 {
         return -1
     }
