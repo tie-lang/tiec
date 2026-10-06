@@ -83,11 +83,9 @@ func tig_div_zero_check(rv: i64, rty: i64) -> i64 {
         // **不检查**；类型未知也不检查（避免对 double 生成 icmp）。
         return 0
     }
-    var rvc = rv
-    if rt != types.named(TK_I64) {
-        rvc = tig_sext(rv, rt, types.named(TK_I64))
-    }
-    var z = tig_icmp_c(rvc, tig_int_lit(0), 0)   // 除数 == 0
+    // ★ 与零比较用**除数自型**常量，不做 sext —— 除数若是 i128，`sext i128 to i64`
+    //   是**非法 IR**（实测 i128_full 编译挂；该 bug 由本检查引入并已修）。
+    var z = tig_cmp_const(rv, 0, 0, rt)          // 除数 == 0（自型比较）
     var pnb = ir.new_block(g_cur_func, interner.intern("dz.n"))   // 除零 panic
     var okb = ir.new_block(g_cur_func, interner.intern("dz.o"))   // 正常继续
     var cbr = ir.new_inst(g_cur_block, 31, -1)                    // cond_br
