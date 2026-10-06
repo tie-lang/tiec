@@ -715,14 +715,19 @@ pub func infer_call(id: i64) -> i64 {
     var off = sg_off[sig]
     var j2: i64 = 0
     while j2 < nc {
-        var want = sp_tys[off + j2]
+        // ★ 变长：实参数 nc 可超出固定形参数（total-1），此时 off+j2 越出本签名在
+        //   sp_tys 的区段。原写法「先读表、再被变参元素类型覆盖」依赖**越界读返回
+        //   零值**，检查常开后触发诊断。改为先判归属再读表 ⇒ 语义等价、不再越界。
+        //   （同一形态另见 sinfer_q3 的 infer_generic_fn_call 与 sinfer_p1 的
+        //    运算符重载路径 —— 三处必须一致，见仓库「同一判定散落多处」条目。）
+        var want: i64 = 0
         // 变参：超过固定形参数（total-1）的实参与变参元素类型 T 匹配
         var want_fixed: bool = true
-        if has_var {
-            if j2 >= total - 1 {
-                want = sstate_fn_variadic_elem(sig)
-                want_fixed = false
-            }
+        if has_var && j2 >= total - 1 {
+            want = sstate_fn_variadic_elem(sig)
+            want_fixed = false
+        } else {
+            want = sp_tys[off + j2]
         }
         // p.8.2.10 展开实参：operand 是表，其元素类型须与变参元素匹配
         if s_tags[args[j2]] == N_SPREAD_ARG {

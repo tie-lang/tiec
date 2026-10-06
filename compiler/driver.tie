@@ -90,7 +90,7 @@ var g_cache_salt: string = "tiec-cache-v9";  // 缓存键盐：编译器输出�
 var g_emit_ir: bool = false;
 var g_keep_ir: bool = false;
 var g_cli_fast_math: bool = false;    // --ffast-math：训练性能优先（编译产物启用 fast-math，默认关）
-var g_cli_check_bounds: bool = false; // --check-bounds：调试期数组越界检查（默认关）
+var g_cli_check_bounds: bool = false; // --check-bounds：幂等显式声明（检查恒开，见 driver 接线处）
 var g_cli_esc_audit: bool = false;    // --esc-audit：打印独占免锁判定（审计用，默认关）
 // --visibility=<档>：可见性梯度（p.9.21.4 II1）。0=A1a 全开放 1=A1b ns 级私有
 // （默认 = 历史行为，不传旗标的编译语义逐字节不变）2=A1c 包级 3=A1d 全私有。
@@ -184,20 +184,13 @@ func main() -> i64 {
         println(diagcode.render_error(-1, -1, "参数错误。输入 tiec --help 查看用法。"))
         return 2
     }
-    // S1.4：两个可选开关接线——--check-bounds → irgen（越界检查），--ffast-math → 后端工具链。
-    // ★ 分档（2026-10-06）：运行期安全检查（表越界/负下标/除零）默认**开**，
-    //   **显式** -l2/-l3（发布优化档）则**关**，而 `--check-bounds` 显式指定永远优先。
-    //   这就是 C/C++/Rust 的 debug_assert / release 模型：不带优化档编译 ⇒ 开发默认带检查
-    //   （安全、报错带行号）；`-l2`（本仓自举与发布用）⇒ 零成本，产物与接线前逐字节相同。
-    //   实测三项检查全开的净代价 +0.9%（自编译 34475 → 34807 ms）。
-    var cb_on = true
-    if g_llvm_set && g_llvm_opt >= 2 {
-        cb_on = false
-    }
-    if g_cli_check_bounds {
-        cb_on = true
-    }
-    irgen.set_check_bounds(cb_on)
+    // 运行期安全检查（表越界 / 表负下标 / 除零）**常开、不可关闭** ——
+    // 依规范 8.5 的裁决：「这些检查不可关闭，因为它们的成本相对故障后果可以忽略」。
+    // 实测三项全开的净代价 +0.9%（自编译 34475 → 34807 ms），该理由成立。
+    // 需要「越界即缺失」的宽松语义时用 3.13 的 `?[`（与检查开关无关，两者互补）。
+    // `--check-bounds` 保留为**幂等**的显式声明（既有脚本继续可用）；
+    // `TIE_CB_AUDIT=1` 切「只报告不中断」模式，用于一次收全所有越界点。
+    irgen.set_check_bounds(true)
     irgen.set_esc_audit(g_cli_esc_audit)
     // p.9.20.5 tail call：t>=1 启用文本级 tail 提示（t0 保持不动点基线）
     llvmgen.set_tail_enable(driver.effective_tie_opt() >= 1 ? 1 : 0)
