@@ -77,8 +77,10 @@ func tig_div_zero_check(rv: i64, rty: i64) -> i64 {
     if !g_check_bounds {
         return 0
     }
+    // ★ `< 0` 才是「未知」：**TK_I8 = 0 是合法类型 id**（node_types 未登记哨兵为 -1）。
+    //   曾用 `<= 0` ⇒ i8 除数被误判为未知而**跳过检查**。
     var rt = rty
-    if rt <= 0 || !types.is_int(rt) {
+    if rt < 0 || !types.is_int(rt) {
         // 浮点除数：`1.0 / 0.0` 得 inf/nan 是 IEEE 定义行为（大量程序依赖它），
         // **不检查**；类型未知也不检查（避免对 double 生成 icmp）。
         return 0
