@@ -67,9 +67,15 @@ pub func infer_generic_fn_call(full_name: string, gti: i64, id: i64, args: table
     var off = sg_off[sig]
     var j2: i64 = 0
     while j2 < nc {
-        var want = sp_tys[off + j2]
+        // ★ 变长泛型：实参数 nc 可超出固定形参数（total-1），此时 off+j2 已越出
+        //   本签名在 sp_tys 里的区段。原写法「先读表、再用变参元素类型覆盖」依赖
+        //   **越界读返回零值**，检查常开后触发诊断（实测 idx==len）。改为先判归属、
+        //   再决定是否读表：语义等价（越界那几项原本就被覆盖），且不再越界访问。
+        var want: i64 = 0
         if is_var == 1 && j2 >= total - 1 {
             want = sstate_fn_variadic_elem(sig)
+        } else {
+            want = sp_tys[off + j2]
         }
         var at = arg_tys[j2]
         if !stype.types_compatible(want, at) && !stype.types_match(want, at, args[j2]) &&
@@ -80,7 +86,13 @@ pub func infer_generic_fn_call(full_name: string, gti: i64, id: i64, args: table
             return -1
         }
         // ref 参数实参校验（对齐普通路径）
-        if sp_refs[off + j2] == 1 {
+        // 同上：变长尾部不查 sp_refs（原先越界读得 0 ⇒ 判为「非 ref」而不检查，
+        // 语义等价）。固定参数区仍在界内。
+        var is_ref_arg: i64 = 0
+        if !(is_var == 1 && j2 >= total - 1) {
+            is_ref_arg = sp_refs[off + j2]
+        }
+        if is_ref_arg == 1 {
             if !sstate.is_addressable(args[j2]) {
                 sm_err_line = s_lines[id]
                 sm_err_col = s_cols[id]

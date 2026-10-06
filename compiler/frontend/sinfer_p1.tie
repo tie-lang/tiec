@@ -711,11 +711,12 @@ func finish_op_overload(full: string, recv_node: i64, recv_ty: i64, arg_nodes: t
         if at < 0 {
             return -2
         }
-        var want2 = sp_tys[off + 1 + jj]
-        if has_var {
-            if 1 + jj >= total - 1 {
-                want2 = sstate_fn_variadic_elem(sig)
-            }
+        // 同 sinfer_q3：变长尾部不读 sp_tys（原依赖越界读得 0 再被覆盖）
+        var want2: i64 = 0
+        if has_var && 1 + jj >= total - 1 {
+            want2 = sstate_fn_variadic_elem(sig)
+        } else {
+            want2 = sp_tys[off + 1 + jj]
         }
         if !stype.types_compatible(want2, at) && !stype.types_match(want2, at, arg_nodes[jj]) &&
             !stype.types_narrow_int(want2, at, arg_nodes[jj]) {

@@ -111,11 +111,9 @@ pub func dep_cache_key() -> string {
     } else {
         m = m + "\nF0"
     }
-    if g_cli_check_bounds {
-        m = m + "\nC1"
-    } else {
-        m = m + "\nC0"
-    }
+    // 检查恒开（规范 8.5 不可关闭）⇒ 缓存键固定 C1。保留该标记是有意的：
+    // 旧缓存写的是 C0，标记不同即自动失效，不会误命中「无检查」的旧产物。
+    m = m + "\nC1"
     m = m + "\nv" + g_cache_salt
     return "tc" + to_string(str_hash(m))
 }
@@ -270,11 +268,9 @@ pub func cache_key_str(src: string) -> string {
     } else {
         m = m + "\nF0"
     }
-    if g_cli_check_bounds {
-        m = m + "\nC1"
-    } else {
-        m = m + "\nC0"
-    }
+    // 检查恒开（规范 8.5 不可关闭）⇒ 缓存键固定 C1。保留该标记是有意的：
+    // 旧缓存写的是 C0，标记不同即自动失效，不会误命中「无检查」的旧产物。
+    m = m + "\nC1"
     m = m + "\nv" + g_cache_salt
     return "tc" + to_string(str_hash(m))
 }
