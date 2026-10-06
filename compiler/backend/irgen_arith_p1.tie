@@ -71,6 +71,41 @@ func tig_arrow(op: i64, lhs: i64, rhs: i64) -> i64 {
 // 二元运算：生成左右操作数后按 op 生成算术/比较/逻辑/位运算指令。
 // 字符串操作（+ 拼接 / 比较）走运行时桥（str_cat / strcmp），由 node_types 判定。
 // && || 走短路（cond_br + phi 汇合，对齐 Rust ir.rs 短路模式）。
+// --check-bounds 下的除零检查：除数为 0 → 诊断 + exit(1)。
+// 与表越界检查共用同一范式（panic 块 + printf + exit + 死 br）。
+func tig_div_zero_check(rv: i64, rty: i64) -> i64 {
+    if !g_check_bounds {
+        return 0
+    }
+    var rt = rty
+    if rt <= 0 || !types.is_int(rt) {
+        // 浮点除数：`1.0 / 0.0` 得 inf/nan 是 IEEE 定义行为（大量程序依赖它），
+        // **不检查**；类型未知也不检查（避免对 double 生成 icmp）。
+        return 0
+    }
+    var rvc = rv
+    if rt != types.named(TK_I64) {
+        rvc = tig_sext(rv, rt, types.named(TK_I64))
+    }
+    var z = tig_icmp_c(rvc, tig_int_lit(0), 0)   // 除数 == 0
+    var pnb = ir.new_block(g_cur_func, interner.intern("dz.n"))   // 除零 panic
+    var okb = ir.new_block(g_cur_func, interner.intern("dz.o"))   // 正常继续
+    var cbr = ir.new_inst(g_cur_block, 31, -1)                    // cond_br
+    ir.add_operand(cbr, z, 0)
+    ir.add_operand(cbr, pnb, 1)
+    ir.add_operand(cbr, okb, 1)
+    g_cur_block = pnb
+    var fmt = interner.intern("division by zero in " + g_cur_fn_name + "\n")
+    var pin = ir.new_inst(g_cur_block, 41, types.named(TK_I32))   // call_vararg
+    ir.add_operand(pin, fmt, 0)
+    var one = tig_int_lit_ty(1, types.named(TK_I64))
+    tig_ext_call1("exit", one, types.named(TK_I64), -1)
+    var dbr = ir.new_inst(g_cur_block, 30, -1)                    // 死 br
+    ir.add_operand(dbr, okb, 1)
+    g_cur_block = okb
+    return 0
+}
+
 func tig_binary(op: i64, lhs: i64, rhs: i64) -> i64 {
     // P1 数据流箭头：非算术/比较——`x <- data` / `data -> x`（裸 Var 目标）。
     // 目标 = 函数 → 传参（data 作唯一实参）；= 变量 → 赋值 store + 值。
@@ -133,6 +168,15 @@ func tig_binary(op: i64, lhs: i64, rhs: i64) -> i64 {
     var rv = tig_expr(rhs)
     if rv < 0 {
         return -1
+    }
+    // ★ --check-bounds 下的**除零/模零**检查（op 3=`/` 4=`%` 24=`\` 26=`%%`）。
+    //   无检查时 x86 的 `sdiv`/`srem` 遇除数为 0 触发硬件异常，实测**进程挂死**
+    //   （不是崩溃也不是陷阱：rc=124 超时）⇒ 比崩溃更难排查。`10 / 2` 正常。
+    //   判据「除数 == 0」对有无符号一致；放这里可同时覆盖窄整数与 i64 两条路径。
+    if (op == 3 || op == 4 || op == 24 || op == 26) && tig_cb_target() == 1 {
+        if tig_div_zero_check(rv, node_types[rhs]) < 0 {
+            return -1
+        }
     }
     // p.9.11.9 checked 运算（+? -? *? op 21-23）：整数溢出即运行期报错。
     // 语义层已保证两侧为整数；此处直接分派（lv/rv 已求值，避免二次求值副作用）。
