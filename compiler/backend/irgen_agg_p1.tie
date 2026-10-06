@@ -271,7 +271,15 @@ func tig_tuple_lit_typed(id: i64, agg: i64) -> i64 {
 // 独立探测（<Struct>::<fname> getter 存在）→ 发射 getter 方法调用（接收者 = base
 // 表达式，arg 为空），返回属性值。独立探测与 op_add 判定同源，保证自举两期一致。
 func tig_computed_getter(id: i64, base: i64, base_ty: i64, fname: string) -> i64 {
-    var gidx = g_cmp_getter[id]
+    // ★ 显式范围守卫，**不要**依赖越界读返回 0：
+    //   `g_cmp_getter` 是语义层按节点 id 稠密登记的表（无 getter 处填 -1），
+    //   但在**当前模块未登记任何计算属性**时它可能是空的（实测 --check-bounds 下
+    //   在此处报 `index 17/39/46/54, len 0`）。原先靠「越界读返回 0」兜住——
+    //   0 与哨兵 -1 恰好都落到下面的「独立探测」分支，行为正确但属**偶然**。
+    var gidx: i64 = -1
+    if id >= 0 && id < len(g_cmp_getter) {
+        gidx = g_cmp_getter[id]
+    }
     if gidx < 0 {
         gidx = 0
     }
@@ -359,7 +367,12 @@ func tig_field_assign(id: i64) -> i64 {
     // （接收者 = base，实参 = value）。setter 通常 void，tig_op_overload 对 void
     // 返回哑值 0，赋值语句丢弃结果。命中计算属性 → 返回其发射值；否则 -2 走普通
     // 字段存储路径。
-    var sidx = g_cmp_setter[id]
+    // 同上：显式范围守卫，不依赖越界读返回 0（`g_cmp_setter` 在未登记计算属性的
+    // 模块上可能为空；实测 --check-bounds 下在此处报 `index 26, len 0`）。
+    var sidx: i64 = -1
+    if id >= 0 && id < len(g_cmp_setter) {
+        sidx = g_cmp_setter[id]
+    }
     if sidx < 0 {
         sidx = 0
     }
