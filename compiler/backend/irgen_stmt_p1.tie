@@ -78,13 +78,26 @@ func tig_table_bounds_check(ok_addr: i64, iv: i64, t: i64, idx_node: i64, target
     var okv = s21_load(ok_addr, types.named(TK_I8))
     var ok64 = tig_sext(okv, types.named(TK_I8), types.named(TK_I64))
     var lenv = s21_table_len(t)
+    // ★★ 负下标必须单独测：`tbl_at` 的判据是 `i < len`，对**负数恒真**
+    //   （-1 < 2）⇒ 它 `memcpy(data + (-1)*esz)`，即**堆下读**，而且 ok 报 1。
+    //   实测（无检查）：`t[neg]` 返回 -8070398854950596583（分配器元数据），
+    //   在**完全安全的代码里**发生 —— 违反「不用 unsafe 就无需担心内存安全」。
+    //   写路径早有此检查（诊断「表下标越界（负索引）」），读路径缺失 ⇒ 本轮补上。
+    //   成本 = 同一 panic 块上的**一个 icmp**，不新增分支目标。
+    var negv = tig_icmp_c(ivc, tig_int_lit(0), 2)                 // ivc < 0
     var pnb = ir.new_block(g_cur_func, interner.intern("tb.n"))   // 越界 panic
+    var mdb = ir.new_block(g_cur_func, interner.intern("tb.m"))   // 第二查（负下标）
     var okb = ir.new_block(g_cur_func, interner.intern("tb.o"))   // 正常继续
     var isz = tig_icmp_c(ok64, tig_int_lit(0), 0)                 // ok == 0
     var cbr = ir.new_inst(g_cur_block, 31, -1)                    // cond_br
     ir.add_operand(cbr, isz, 0)
     ir.add_operand(cbr, pnb, 1)
-    ir.add_operand(cbr, okb, 1)
+    ir.add_operand(cbr, mdb, 1)
+    g_cur_block = mdb
+    var cbr2 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cbr2, negv, 0)
+    ir.add_operand(cbr2, pnb, 1)
+    ir.add_operand(cbr2, okb, 1)
     g_cur_block = pnb
     var fmt = interner.intern("table index out of bounds at line %lld: index %lld, len %lld\n")
     var pin = ir.new_inst(g_cur_block, 41, types.named(TK_I32))   // call_vararg
