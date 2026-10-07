@@ -142,6 +142,7 @@ pub func cap_idle_flush() {
     // 这类「声明 unsafe:mem、但本次编译只用到其中非 mem 函数」的模块报挂空，
     // 那是纯粹的噪声（tiec 自举实测 2 条全属此类）。直接编译库文件时它自己就是
     // 主输入文件（序号 0），照常受判。
+    sm_set_cur_file(0)   // 下面只判模块序号 0 ⇒ 告警归属主文件（-Werror 口径一致）
     while i < 1 && i < len(g_file_idle_auth) {
                 var idle = g_file_idle_auth[i] & ~g_file_idle_used[i]
         var b: i64 = 0

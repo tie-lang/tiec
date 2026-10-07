@@ -442,7 +442,7 @@ pub func effective_llvm_opt() -> i64 {
     if limit > 0 && level >= 3 {
         // 降级行为不受 --no-warn 影响，只抑制打印
         if !g_no_warn {
-            println(diagcode.render_warning(-1, -1, "内存上限 " + to_string(limit) + "MB 下 LLVM 优化档 l3 受限，已自动降为 l2"))
+            println(warn_render(-1, -1, "内存上限 " + to_string(limit) + "MB 下 LLVM 优化档 l3 受限，已自动降为 l2"))
         }
         level = 2
     }
@@ -652,6 +652,11 @@ pub func compile_program(src: string) -> i64 {
     var rc = keel_run_pipeline(real_pid, steps)
     if rc != 0 {
         return rc
+    }
+    // -Werror：末段（链接/优化档）产生的 driver 侧告警同样当错误。此处产物可能
+    // 已落盘（告警发生在最后一段内部），故只保证**退出码非 0** 供 CI 与纪律判定。
+    if warn_gate() != 0 {
+        return 1
     }
     // p.9.15.1：管线成功后写依赖感知缓存（聚合键 + .dep 清单 + 产物指纹）。
     if cache_enabled() {

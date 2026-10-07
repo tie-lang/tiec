@@ -566,6 +566,8 @@ pub func check_fn_walk(full: string) -> i64 {
     // 命名空间内私有函数的裸调用解析依赖该栈（曾漏压导致「未定义的函数」）。
     var fast_node = sstate.fn_def_node(full)
     if fast_node >= 0 {
+        // 告警归属：本函数所在模块序号（0 = 主输入文件）——-Werror 只判主文件。
+        sm_set_cur_file(sstate.file_id_of_node(fast_node))
         var segs = push_ns_of(full)
         var r0 = check_fn(fast_node, full)
         var pp: i64 = 0

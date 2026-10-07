@@ -71,6 +71,12 @@ var g_imp_idvals: table<i64> = []
 var sm_warn_lines: table<i64>;   // 警告行（平行表）
 var sm_warn_cols: table<i64>;
 var sm_warn_msgs: table<string>; // 警告核心消息（与 diagcode 警告目录逐字一致）
+var sm_warn_files: table<i64>;   // 警告所属模块序号（0 = 主输入文件，见 g_file_base 约定）
+// 「当前正在检查的模块序号」：由 scheck.check_fn_walk 按函数定义节点设置，
+// sm_warn_add 据此打归属。**0 = 主输入文件**（g_file_base[0] = 0 的约定）。
+// 目的是让 -Werror 只判「你编的这个文件」，不被 std/prelude 自身的告警拖垮
+//（与 cap_idle_flush「只判主输入文件」同一裁决）。
+var sm_cur_file: i64 = 0;
 // p.9.14.2 独立警告 pass：总开关（默认 false = 只报错，警告检查不付任何成本）。
 // driver 用 -w 开启、--no-warn 保持关闭；仅 true 时语义侧警告收集/渲染进行。
 var sm_warn_active: bool = false;

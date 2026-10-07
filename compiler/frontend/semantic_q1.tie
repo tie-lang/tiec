@@ -8,6 +8,8 @@ pub func sm_warn_reset() {
     sm_warn_lines = table_new_i64()
     sm_warn_cols = table_new_i64()
     sm_warn_msgs = table_new_string()
+    sm_warn_files = table_new_i64()
+    sm_cur_file = 0
     // W00016：全局可变表写点累积每编译重置（scheck 侧状态）
     scheck.w16_reset()
 }
@@ -21,6 +23,12 @@ pub func sm_warn_add(line: i64, col: i64, msg: string) {
     table_push(sm_warn_lines, line)
     table_push(sm_warn_cols, col)
     table_push(sm_warn_msgs, msg)
+    table_push(sm_warn_files, sm_cur_file)
+}
+
+// 设置「当前检查的模块序号」（check_fn_walk 按函数定义节点设置；进入函数体前调用）。
+pub func sm_set_cur_file(fid: i64) {
+    sm_cur_file = fid
 }
 
 // OK 协议组装："OK:<typed>"（p.9.14.1：警告改结构化事件直发，不再拼 ;W: 文本段；
@@ -738,6 +746,31 @@ pub func warn_col_at(i: i64) -> i64 {
 // 第 i 条警告核心消息（与 diagcode 警告目录逐字一致）。
 pub func warn_msg_at(i: i64) -> string {
     return sm_warn_msgs[i]
+}
+
+// 第 i 条警告所属模块序号（0 = 主输入文件）。
+pub func warn_file_at(i: i64) -> i64 {
+    return sm_warn_files[i]
+}
+
+// **主输入文件**（模块序号 0）的警告条数。这是 -Werror 的判定口径：
+// 只对「你正在编译的这个文件」要求零警告，不被 std/prelude 自身告警牵连
+//（否则任何编译都会失败；库的告警属另一件事，用 warn_other_count 单独可见）。
+pub func warn_main_count() -> i64 {
+    var c: i64 = 0
+    var i: i64 = 0
+    while i < len(sm_warn_files) {
+        if sm_warn_files[i] == 0 {
+            c = c + 1
+        }
+        i = i + 1
+    }
+    return c
+}
+
+// 导入模块（模块序号 > 0）的警告条数，供汇总时如实报告（不隐藏）。
+pub func warn_other_count() -> i64 {
+    return len(sm_warn_files) - warn_main_count()
 }
 
 }

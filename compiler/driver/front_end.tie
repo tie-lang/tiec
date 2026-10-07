@@ -50,7 +50,44 @@ pub func frontend(src: string, base_dir: string) -> i64 {
     // p.9.14.1：语义警告改结构化事件直发（driver 从 semantic.warn_* 直读渲染，
     // 不再解析 OK 协议中的 ;W: 文本段）
     print_warns()
+    // -Werror：有任何警告即中止，不进入中端/后端（不产出任何中间产物与可执行文件）。
+    if warn_gate() != 0 {
+        return -1
+    }
     return 0
+}
+
+// driver 侧告警统一渲染入口：与 diagcode.render_warning 同形，**额外累计计数**，
+// 使角色注册/优化档降级等「不经 semantic 警告表」的告警也纳入 -Werror 判定。
+// 调用方仍各自保留 `if !g_no_warn` 守卫（--no-warn 时本就不打印，计数自然为 0）。
+pub func warn_render(line: i64, col: i64, core: string) -> string {
+    g_warn_seen = g_warn_seen + 1
+    return diagcode.render_warning(line, col, core)
+}
+
+// -Werror 闸门：0 = 通过（未开该开关，或确实没有警告）；1 = 有警告且要求当错误，
+// 调用方须以非 0 退出码中止。总结只打印一次（早退点 + 末段各调一次也只报一句）。
+pub func warn_gate() -> i64 {
+    if !g_warn_error {
+        return 0
+    }
+    // 口径 = **主输入文件**的警告（模块序号 0）+ driver 侧告警（角色/优化档等，
+    // 直接关系到本次编译的意图）。导入模块（std/prelude 等）自身的告警不计入，
+    // 否则任何编译都会失败；但它们**如实报出条数**，不隐藏。
+    var main_n = semantic.warn_main_count() + g_warn_seen
+    var other_n = semantic.warn_other_count()
+    if main_n == 0 {
+        return 0
+    }
+    if !g_warn_failed {
+        g_warn_failed = true
+        var msg = "警告按错误处理（-Werror）：主文件 " + to_string(main_n) + " 条警告"
+        if other_n > 0 {
+            msg = msg + "（另有导入模块 " + to_string(other_n) + " 条，不计入）"
+        }
+        println(msg)
+    }
+    return 1
 }
 
 // p.9.14.1：从 semantic 结构化警告事件直读渲染（warning[W#####] @l:c: 名字；建议。）。
