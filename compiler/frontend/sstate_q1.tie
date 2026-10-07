@@ -646,12 +646,18 @@ pub func imp_cap_put(local_id: i64, bits: i64) {
 pub func cap_apply_file(from_nid: i64) {
     // ① 文件级授权 → 本模块所有函数
     var fc = s_file_caps
+    var uc = s_file_uctx
     var i: i64 = from_nid
     if from_nid >= 0 {
         while i < len(s_tags) {
             if s_tags[i] == 101 {   // S_N_FN_DEF
                 if fc != 0 {
                     fn_cap_put(i, fc)
+                }
+                // 2026-10-07：文件级 unsafe 上下文同样落到**本模块**的每个函数上。
+                // 范围由此天然精确 —— 不继承父模块、也不扩散给子模块（规范 §11.6）。
+                if uc != 0 {
+                    fn_uctx_put(i, 1)
                 }
             }
             i = i + 1
@@ -744,6 +750,88 @@ pub func fn_cap_reset() {
     s_fn_cap_nodes = []
     s_fn_cap_vals = []
     s_file_caps = 0
+    s_fn_uctx_nodes = []
+    s_fn_uctx_vals = []
+    s_file_uctx = 0
+}
+
+// 本文件是否声明裸 `unsafe`（文件级不安全上下文，规范 §11.6）。
+pub func set_file_uctx(v: i64) {
+    s_file_uctx = v
+}
+
+pub func file_uctx() -> i64 {
+    return s_file_uctx
+}
+
+// 函数是否处于「文件级 unsafe 上下文」（由 cap_apply_file 按模块登记）。
+pub func fn_uctx_put(nid: i64, v: i64) {
+    if v == 0 {
+        return
+    }
+    var i: i64 = 0
+    while i < len(s_fn_uctx_nodes) {
+        if s_fn_uctx_nodes[i] == nid {
+            s_fn_uctx_vals[i] = 1
+            return
+        }
+        i = i + 1
+    }
+    table_push(s_fn_uctx_nodes, nid)
+    table_push(s_fn_uctx_vals, 1)
+}
+
+pub func fn_uctx(nid: i64) -> i64 {
+    var i: i64 = 0
+    while i < len(s_fn_uctx_nodes) {
+        if s_fn_uctx_nodes[i] == nid {
+            return s_fn_uctx_vals[i]
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+// 从**源码头部**取「是否声明裸 `unsafe`」（与 scan_file_caps 平行：同样只看
+// 前 20 行、遇首个非空非声明行即停）。供 import 逐模块设置上下文用。
+pub func scan_file_unsafe(src: string) -> i64 {
+    var n = str_len(src)
+    var pos: i64 = 0
+    var line_no: i64 = 1
+    var out: i64 = 0
+    var done: bool = false
+    while pos < n && line_no <= 20 && !done {
+        var ln_e = pos
+        while ln_e < n && str_char(src, ln_e) != "\n" {
+            ln_e = ln_e + 1
+        }
+        var ln = trim(str.slice(src, pos, ln_e))
+        if str_len(ln) > 0 {
+            if has_prefix(str.clone(ln), "type tie") {
+                var lt = find_char(str.clone(ln), "<")
+                var gt = find_char(str.clone(ln), ">")
+                if lt >= 0 && gt > lt {
+                    var inner = slice(str.clone(ln), lt + 1, gt)
+                    var parts = split_char(inner, ",")
+                    var i: i64 = 0
+                    while i < len(parts) {
+                        // 只认**恰好** `unsafe` 的项；`unsafe:域` 是另一回事（域凭据，
+                        // 由 scan_file_caps 负责），两者可同时出现。
+                        if trim(parts[i]) == "unsafe" {
+                            out = 1
+                        }
+                        i = i + 1
+                    }
+                }
+                done = true
+            } else {
+                done = true
+            }
+        }
+        pos = ln_e + 1
+        line_no = line_no + 1
+    }
+    return out
 }
 
 // 设置「本文件获授权的域位集」（driver 调 parse_ast 前按头部角色声明调用）。
@@ -807,6 +895,9 @@ pub func compile_unit_reset() {
     s_fn_cap_nodes = []
     s_fn_cap_vals = []
     s_file_caps = 0
+    s_fn_uctx_nodes = []
+    s_fn_uctx_vals = []
+    s_file_uctx = 0
 }
 
 // 本文件获授权的域位集。

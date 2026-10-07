@@ -375,15 +375,13 @@ func main() -> i64 {
             return 1
         }
     }
-    // S1.2 文件级 unsafe 角色（type tie<..., unsafe>）：整文件 unsafe 上下文
-    var k3: i64 = 0
-    while k3 < len(g_role_mods) {
-        if g_role_mods[k3] == "unsafe" {
-            g_unsafe_depth = g_unsafe_depth + 1
-            break
-        }
-        k3 = k3 + 1
-    }
+    // S1.2 文件级 unsafe 角色（type tie<..., unsafe>）：整文件 unsafe 上下文。
+    // 2026-10-07：此处原先**全局**抬升 g_unsafe_depth，造成两个偏差（均违反规范 §11.6）：
+    //   ① 上下文**扩散给被 import 的模块**（父授权不继承 —— 与 caps 同类的越权，
+    //      2026-10-01 只修了 caps 那一半）；
+    //   ② 语义检查在解析**之后**统一走，届时全局量已不代表「函数所属模块」。
+    // 现改为在 front_end 登记「本文件声明了 unsafe」，由 cap_apply_file 逐模块落到
+    // 函数上、检查时按函数抬升（与域凭据完全对称）。调用方签名不受影响。
     if g_prep_only {
         println("[预处理] 识别为 " + g_role + " 文件（头: " + g_input + "）")
         return 0

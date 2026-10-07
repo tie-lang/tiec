@@ -219,6 +219,31 @@ if rc_cp2 == 0 {
 }
 if file_exists(cp_exe) { remove_file(cp_exe) }
 
+// 6g. 文件级 unsafe 上下文的作用域（规范 §11.6：「文件级授权只作用于这个文件；
+//     被引入的模块也不继承引入方的授权」）。2026-10-07 修：上下文原先是**全局**抬升，
+//     ① 会扩散给被 import 的模块（父授权不继承 —— 与 caps 那条同类越权，2026-10-01
+//     只修了 caps 那一半）② 语义检查在解析之后走，全局量已不代表函数所属模块。
+//     两条不变式：**模块能自证**（安全调用方无需任何改动）+ **父授权不继承**。
+println("=== 6g. 文件级 unsafe 上下文的作用域（自证 / 不继承） ===")
+var up_dir = root + "\\tests\\_unsafe_probe\\"
+var up_out = get_env("TEMP") + "\\tsh_up_out.txt"
+var up_exe = get_env("TEMP") + "\\tsh_up_probe.exe"
+// ① 模块自证：库自己声明 unsafe+凭据，**安全**调用方 import 它应直接可用
+var rc_u1 = exec_code("cmd /c " + tiec + " " + up_dir + "use_selfcert.tie -o " + up_exe + " > \"" + up_out + "\" 2>&1")
+if rc_u1 == 0 {
+    var rc_run = exec_code("cmd /c \"" + up_exe + "\" > \"" + up_out + "\" 2>&1")
+    var uo = file_read(up_out)
+    if contains(uo, "VERDICT OK") { println("PASS 模块自证：安全调用方无需改动即可用"); pass = pass + 1 }
+    else { println("FAIL 模块自证：运行输出异常 -> " + uo); fail = fail + 1 }
+} else {
+    println("FAIL 模块自证：安全调用方被拒绝 -> " + file_read(up_out)); fail = fail + 1
+}
+// ② 父授权不继承：主文件声明 unsafe，也不能让「只给凭据、缺上下文」的模块编过
+var rc_u2 = exec_code("cmd /c " + tiec + " " + up_dir + "use_capsonly_from_unsafe.tie -o " + up_exe + " > \"" + up_out + "\" 2>&1")
+if rc_u2 != 0 { println("PASS 父授权不继承（模块仍缺上下文，被拒）"); pass = pass + 1 }
+else { println("FAIL 父授权不继承：模块白拿了主文件的 unsafe 上下文"); fail = fail + 1 }
+if file_exists(up_exe) { remove_file(up_exe) }
+
 println("")
 println("=== 汇总: PASS=" + to_string(pass) + " FAIL=" + to_string(fail) + " SKIP(已知基线)=" + to_string(known) + " ===")
 if fail > 0 { exit(1) }

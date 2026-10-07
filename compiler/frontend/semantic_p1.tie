@@ -266,6 +266,14 @@ func expand_one_import(imp_node: i64) -> i64 {
     // 解析失败、别名重复、append 失败…），逐点恢复必漏。
     defer { sstate.set_file_caps(saved_imp_fc) }
     sstate.set_file_caps(sstate.scan_file_caps(src))
+    // 2026-10-07：上下文（`unsafe`）与域凭据**同一规则的另一半** —— 上面 2026-10-01
+    // 只修了 caps。若只切 caps，则 ① 主文件声明了 `unsafe` 时，其上下文会**扩散给
+    // 被导入的模块**（模块白拿）；② 模块自己头部的 `unsafe` 被完全忽略（库无法自证）。
+    // 两者都违反规范 §11.6「文件级授权只作用于这个文件；被引入的模块也不继承引入方
+    // 的授权」。故同样按模块切到**它自己的**声明，并在 defer 里还原。
+    var saved_imp_uc = sstate.file_uctx()
+    defer { sstate.set_file_uctx(saved_imp_uc) }
+    sstate.set_file_uctx(sstate.scan_file_unsafe(src))
     var src2 = strip_type_decl(src)
     unsafe { tt1 = GetTickCount() }
     sm_t_imp_strip = sm_t_imp_strip + (tt1 - tt0)
