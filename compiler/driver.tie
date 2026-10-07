@@ -456,12 +456,10 @@ func main() -> i64 {
         g_cfg_root = config.apply_cli(g_cfg_root, "target", g_target)
     }
     // --backend 实现选择（P4b 验收）：CLI 显式 > 配置 tiec.backend
-    // -Werror 的配置兜底（tiec.warn_error = true）：CLI 未显式给出时按配置生效。
-    // 与 CLI 同义（配置只能开，不能用来关 CLI 已开的开关）。
-    if !g_warn_error && config.get_bool(g_cfg_root, "tiec.warn_error") {
-        g_warn_error = true
-        g_front_warn = true
-    }
+    // 注：`-Werror` 暂无配置项。曾加过 `tiec.warn_error` 兜底，但项目配置这条路
+    // （--config / config.data.tie）当前**没有任何用例、且实测连 `{}` 都无法解析**
+    // （"config 值意外字符（位置 0）"），把开关挂在跑不通的机制上只会掩盖问题。
+    // 待配置面修复后再加回（见 warning-system.md §4.5 的待办）。
     var backend = g_backend_cli
     if str_len(backend) == 0 {
         backend = config.get_str(g_cfg_root, "tiec.backend")
