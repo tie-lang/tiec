@@ -19,6 +19,9 @@ pub func frontend(src: string, base_dir: string) -> i64 {
     // 「本文件每个函数隐式持 lock 域」，范围天然精确、不会波及 import 的模块。
     sstate.compile_unit_reset()
     sstate.set_file_caps(driver.role_unsafe_caps())
+    // 2026-10-07：文件级不安全上下文（`type tie<角色, unsafe>`）与域凭据并行登记。
+    // 由 cap_apply_file 落到**本文件**的每个函数上 ⇒ 范围精确，不波及 import 的模块。
+    sstate.set_file_uctx(driver.role_has_bare_unsafe())
     var prc = parser.parse_ast(src)
     unsafe {
         var t0e = clock()

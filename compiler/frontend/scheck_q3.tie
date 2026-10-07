@@ -436,6 +436,13 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     if sstate.sig_unsafe(sig) == 1 {
         g_unsafe_depth = g_unsafe_depth + 1
     }
+    // 2026-10-07：文件级 unsafe 上下文（`type tie<角色, unsafe>`，规范 §11.6）
+    // 与域凭据**对称** —— 按该函数所属模块判定，不再依赖全局量。
+    // 此前 driver 在解析前全局 +1 ⇒ ① 会扩散给被 import 的模块（父授权不继承，
+    // 与 caps 那条同类越权）② 检查阶段在解析之后，全局量已不代表函数所属模块。
+    if sstate.fn_uctx(fn_node) == 1 {
+        g_unsafe_depth = g_unsafe_depth + 1
+    }
     // 2026-10-01：本函数的**持证域集** = 文件级授权 | 函数级属性位集。
     // 这是「域匹配」的锁二来源之一（另两个是块级 unsafe.with / unsafe use）。
     var saved_caps = g_held_caps
