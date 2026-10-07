@@ -164,6 +164,33 @@ for fn in td_badf {
 }
 if file_exists(td_zd) { remove_file(td_zd) }
 
+// 6d. #cfg 条件求值：**空白不得改变结果**（2026-10-07）。
+//     曾只 trim 值不 trim 键 ⇒ `#cfg(os = windows)` 静默判假、分支整段丢弃（症状是
+//     main 消失、链接报「必须定义入口点」），而规范里唯一的示例正是带空格的写法。
+//     ⚠ 断言用「紧凑写与带空格写结果一致」而非「必须判真」——后者平台相关。
+//     观测值 = 编译 rc（真⇒分支保留⇒有 main；假⇒分支丢弃⇒链接失败）。
+println("=== 6d. #cfg 空白不变式（紧凑写与带空格写必须同结果） ===")
+var cfg_dir = root + "\\tests\\_cfg_probe\\"
+var cfg_tmp = get_env("TEMP") + "\\tsh_cfg_out.txt"
+var cfg_exe = get_env("TEMP") + "\\tsh_cfg_probe.exe"
+func cfg_rc(fn: string) -> i64 {
+    return exec_code("cmd /c " + tiec + " " + cfg_dir + fn + " -o " + cfg_exe + " --no-cache > \"" + cfg_tmp + "\" 2>&1")
+}
+var rc_tight = cfg_rc("cfg_tight.tie")
+var rc_space = cfg_rc("cfg_spaced.tie")
+var rc_pad = cfg_rc("cfg_padded.tie")
+var rc_quote = cfg_rc("cfg_quoted.tie")
+if rc_tight == rc_space { println("PASS cfg 空格不改变结果（紧凑/带空格同 rc）"); pass = pass + 1 }
+else { println("FAIL cfg 空格改变了结果：紧凑 rc=" + to_string(rc_tight) + " 带空格 rc=" + to_string(rc_space)); fail = fail + 1 }
+if rc_tight == rc_pad { println("PASS cfg 首尾留空不改变结果"); pass = pass + 1 }
+else { println("FAIL cfg 首尾留空改变了结果：rc=" + to_string(rc_pad)); fail = fail + 1 }
+if rc_tight == rc_quote { println("PASS cfg 值加引号不改变结果"); pass = pass + 1 }
+else { println("FAIL cfg 值加引号改变了结果：rc=" + to_string(rc_quote)); fail = fail + 1 }
+// 未知键必须判假（分支丢弃 ⇒ 无 main ⇒ rc≠0）
+if cfg_rc("cfg_unknown.tie") != 0 { println("PASS(判假) cfg 未知键"); pass = pass + 1 }
+else { println("FAIL cfg 未知键被当成真"); fail = fail + 1 }
+if file_exists(cfg_exe) { remove_file(cfg_exe) }
+
 println("")
 println("=== 汇总: PASS=" + to_string(pass) + " FAIL=" + to_string(fail) + " SKIP(已知基线)=" + to_string(known) + " ===")
 if fail > 0 { exit(1) }

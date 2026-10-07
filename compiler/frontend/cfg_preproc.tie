@@ -169,6 +169,11 @@ func eval_cond(cond: string, target: string, profile: string) -> bool {
             }
         }
     }
+    // ★ 键也要 trim（2026-10-07 修）：此前只 trim 了 val ⇒ `#cfg(os = windows)` 的键
+    //   带着尾空格，既不等于 "os" 也不等于任何已知键 ⇒ 走「未知键 = 假」分支，
+    //   **静默选错分支且零诊断**（症状是分支被整段丢弃：main 消失、链接报「必须定义入口点」）。
+    //   规范里唯一的示例 `#cfg(os = linux)` 正好是带空格形态。
+    key = cp_trim(key)
     var r: bool = false
     if key == "os" || key == "target" {
         if len(val) == 0 {
