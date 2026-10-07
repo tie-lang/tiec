@@ -75,7 +75,7 @@ pub func register_role_map(roles: i64) {
         if config.type_of(def) == 6 {
             if role_registered(str.clone(nm)) {
                 if !g_no_warn {
-                    println(diagcode.render_warning(-1, -1, "角色重复注册，忽略后注册者") + "（角色 '" + nm + "'）")
+                    println(warn_render(-1, -1, "角色重复注册，忽略后注册者") + "（角色 '" + nm + "'）")
                 }
             } else {
                 // 加载器安全模块：角色定义仅接受 kind/params/output 三个字段，
@@ -105,7 +105,7 @@ pub func register_role_map(roles: i64) {
                     if out != "lib" && out != "check" && out != "exe" && out != "pass" {
                         // 回退 lib 的行为不受 --no-warn 影响，只抑制打印
                         if !g_no_warn {
-                            println(diagcode.render_warning(-1, -1, "角色 output 非法值，回退 lib") + "（角色 '" + nm + "'，值 '" + out + "'）")
+                            println(warn_render(-1, -1, "角色 output 非法值，回退 lib") + "（角色 '" + nm + "'，值 '" + out + "'）")
                         }
                         out = "lib"
                     }
@@ -223,7 +223,7 @@ pub func role_registry_scan_project(src_dir: string) {
             register_role_map(r1)
         } else {
             if !g_no_warn {
-                println(diagcode.render_warning(-1, -1, "roles.data.tie 解析失败，使用内置默认角色") + "（" + config.err_msg() + "）")
+                println(warn_render(-1, -1, "roles.data.tie 解析失败，使用内置默认角色") + "（" + config.err_msg() + "）")
             }
         }
     }
@@ -258,7 +258,7 @@ pub func role_registry_scan_project(src_dir: string) {
                             register_role_map(r2)
                         } else {
                             if !g_no_warn {
-                                println(diagcode.render_warning(-1, -1, "依赖包角色定义解析失败，使用内置默认角色") + "（" + config.err_msg() + "）")
+                                println(warn_render(-1, -1, "依赖包角色定义解析失败，使用内置默认角色") + "（" + config.err_msg() + "）")
                             }
                         }
                     }

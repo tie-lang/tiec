@@ -20,6 +20,7 @@ pub func usage() -> i64 {
     println("  --no-cache       关闭编译缓存（默认开启：产物缓存到 ~/.tiec-cache 或 cache.dir，命中直接复制跳过编译）")
     println("  --no-warn        跳过警告检查（tiec 警告与 LLVM 工具链警告一并静默；错误 error[E#####] 不受影响）")
     println("  -w, --warn       显式开启前端警告检查（默认只报错，警告 pass 不运行）")
+    println("  -Werror, --warn-error  有警告即报错（隐含 -w；任一警告 ⇒ 退出码非 0，供 CI 与零警告纪律使用）")
     println("  --target <三元组>  交叉编译目标（如 x86_64-pc-windows-msvc）")
     println("  --emit-ir        只生成 LLVM IR（.ll），不继续编译")
     println("  --keep-ir        保留中间 IR 文件（.ll / .opt.ll）")
@@ -174,6 +175,12 @@ pub func parse_args() -> i64 {
             // p.9.14.2 独立警告 pass：-w / --warn 显式开启前端警告检查
             // （默认只报错）。与 --no-warn 相反；两者后出现者生效。
             g_front_warn = true
+        } else if a == "-Werror" || a == "--warn-error" {
+            // -Werror：有警告即当错误。**隐含 -w**（不开警告检查就没有警告可数）。
+            // 与 --no-warn 同族：后出现者生效（--no-warn 在后 ⇒ 无警告 ⇒ 门闸通过）。
+            g_warn_error = true
+            g_front_warn = true
+            g_no_warn = false
         } else if a == "--target" {
             if i + 1 >= n {
                 return -1
