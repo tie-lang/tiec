@@ -141,18 +141,30 @@ func asm_bare_name(s: string) -> string {
 // 池 id 去重入表（is_ref = true → 全局名引用表 asm_grefs；false → extern
 // 符号表 asm_exts）。装配路径的 irgen 副作用恢复只关心「出现与否」，不关心序。
 func asm_push_dedup(gpid: i64, is_ref: bool) {
-    var t = asm_exts
-    if is_ref {
-        t = asm_grefs
-    }
+    // ★ 必须直接写目标全局表（2026-10-07 修）：此前用 `var t = asm_exts` 取一份
+    //   再 push —— 值语义下那是**副本**，push 触发写前分离只改副本、函数返回即丢，
+    //   于是 asm_grefs / asm_exts **永远为空**（去重入表整体失效）。汇编恢复路径
+    //   （driver 据 asm_gref_count/asm_ext_count 判定 `tl_*` 符号与 extern 名）据此
+    //   误判，恒走「副作用恢复失败降级全量」。
+    //   由 W00031 第二形态（写入副本后未使用）在自编译时抓到。
     var i: i64 = 0
-    while i < len(t) {
-        if t[i] == gpid {
+    if is_ref {
+        while i < len(asm_grefs) {
+            if asm_grefs[i] == gpid {
+                return
+            }
+            i = i + 1
+        }
+        table_push(asm_grefs, gpid)
+        return
+    }
+    while i < len(asm_exts) {
+        if asm_exts[i] == gpid {
             return
         }
         i = i + 1
     }
-    table_push(t, gpid)
+    table_push(asm_exts, gpid)
 }
 
 // 指令记录 → 所属片段号（两趟法第二趟按指令序补操作数时用）

@@ -204,6 +204,7 @@ diagcodes = [
     [ "code": "E00149", "key": "%期望%个参数（表%元素），实际%个", "name": "table_push()", "family": 3, "src": "/compiler/frontend/sbuiltin_call_gen_q1.tie", "template": "table_push() 期望 2 个参数（表, 元素），实际 ? 个" ],
     [ "code": "E00150", "key": "%期望%个参数（表%长度），实际%个", "name": "table_trunc()", "family": 3, "src": "/compiler/frontend/sbuiltin_call_gen_q1.tie", "template": "table_trunc() 期望 2 个参数（表, 长度），实际 ? 个" ],
     [ "code": "E00151", "key": "%期望%个参数（表），实际%个", "name": "table_pop()", "family": 3, "src": "/compiler/frontend/sbuiltin_call_gen_q1.tie", "template": "table_pop() 期望 1 个参数（表），实际 ? 个" ],
+    [ "code": "E00906", "key": "%期望%个参数（要共享的值），实际%个", "name": "share()", "family": 3, "src": "/compiler/frontend/sbuiltin_call_gen_q1.tie", "template": "share() 期望 1 个参数（要共享的值），实际 ? 个" ],
     [ "code": "E00152", "key": "%期望%个参数（通道%值），实际%个", "name": "ch_send()", "family": 3, "src": "/compiler/frontend/sbuiltin_call_gen_q2.tie", "template": "ch_send() 期望 2 个参数（通道, 值），实际 ? 个" ],
     [ "code": "E00153", "key": "%期望%个参数（通道），实际%个", "name": "ch_recv()", "family": 3, "src": "/compiler/frontend/sbuiltin_call_gen_q2.tie", "template": "ch_recv() 期望 1 个参数（通道），实际 ? 个" ],
     [ "code": "E00154", "key": "%期望%个参数（键%语言），实际%个", "name": "msg_t_lang()", "family": 3, "src": "/compiler/frontend/sbuiltin_call_gen_q2.tie", "template": "msg_t_lang() 期望 2 个参数（键, 语言），实际 ? 个" ],
