@@ -191,6 +191,34 @@ if cfg_rc("cfg_unknown.tie") != 0 { println("PASS(判假) cfg 未知键"); pass 
 else { println("FAIL cfg 未知键被当成真"); fail = fail + 1 }
 if file_exists(cfg_exe) { remove_file(cfg_exe) }
 
+// 6f. 复合赋值 `%%=`（规范 §1 运算符表 / §4 示例「原地取余并写回」）。
+//     实现曾缺此 token ⇒ 直接报 E00832（规范写了、实现没有）。两条断言：
+//     ① `a %%= b` 必须等于 `a %% b`（四种符号组合）——探针内部自比较，只输出一行判定；
+//     ② `%%=` 之后的语句必须照常执行（ROAD 曾记它「吞掉紧随其后的语句」）。
+println("=== 6f. 复合赋值 %%= （与二元 %% 等价；后续语句不被吞） ===")
+var cp_dir = root + "\\tests\\_compound_probe\\"
+var cp_out = get_env("TEMP") + "\\tsh_cp_out.txt"
+var cp_exe = get_env("TEMP") + "\\tsh_cp_probe.exe"
+var rc_cp1 = exec_code("cmd /c " + tiec + " " + cp_dir + "pcteq_assign.tie -o " + cp_exe + " > \"" + cp_out + "\" 2>&1")
+if rc_cp1 == 0 {
+    var rc_run1 = exec_code("cmd /c \"" + cp_exe + "\" > \"" + cp_out + "\" 2>&1")
+    var o1 = file_read(cp_out)
+    if contains(o1, "VERDICT OK") { println("PASS %%= 与 %% 等价（四种符号组合）"); pass = pass + 1 }
+    else { println("FAIL %%= 与 %% 不等价 -> " + o1); fail = fail + 1 }
+} else {
+    println("FAIL %%= 探针编译失败（E00832 复发？）-> " + file_read(cp_out)); fail = fail + 1
+}
+var rc_cp2 = exec_code("cmd /c " + tiec + " " + cp_dir + "mod_assign.tie -o " + cp_exe + " > \"" + cp_out + "\" 2>&1")
+if rc_cp2 == 0 {
+    exec_code("cmd /c \"" + cp_exe + "\" > \"" + cp_out + "\" 2>&1")
+    var o2 = file_read(cp_out)
+    if contains(o2, "after") && contains(o2, "1") { println("PASS %%= 后续语句照常执行且结果正确"); pass = pass + 1 }
+    else { println("FAIL %%= 吞掉了后续语句或结果错 -> " + o2); fail = fail + 1 }
+} else {
+    println("FAIL %%= 语句探针编译失败 -> " + file_read(cp_out)); fail = fail + 1
+}
+if file_exists(cp_exe) { remove_file(cp_exe) }
+
 println("")
 println("=== 汇总: PASS=" + to_string(pass) + " FAIL=" + to_string(fail) + " SKIP(已知基线)=" + to_string(known) + " ===")
 if fail > 0 { exit(1) }

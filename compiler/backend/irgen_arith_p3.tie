@@ -15,6 +15,25 @@ func tig_compound_assign(op: i64, lv: i64, rv: i64, ty: i64) -> i64 {
         return ir.get_value(sc)
     }
     var is_f = types.is_float(ty)
+    // p.9.11 `%%=`（浮点）：与二元 `%%` 同构 —— a - floor(a/b)*b（余数符号跟随除数）。
+    // 必须提前返回：frem 的语义与 floor 取余不同（-7.0 frem 3.0 == -1.0，
+    // 而 -7.0 %% 3.0 == 2.0），故不能像 `%=` 那样靠一个 opcode 表达。
+    if op == 26 && is_f {
+        var q2 = ir.new_inst(g_cur_block, 16, ty)  // fdiv a/b
+        ir.add_operand(q2, lv, 0)
+        ir.add_operand(q2, rv, 0)
+        var fl2 = tig_ext_call1("floor", ir.get_value(q2), ty, ty)
+        if fl2 < 0 {
+            return -1
+        }
+        var pr2 = ir.new_inst(g_cur_block, 15, ty)  // fmul floor(a/b)*b
+        ir.add_operand(pr2, fl2, 0)
+        ir.add_operand(pr2, rv, 0)
+        var sb2 = ir.new_inst(g_cur_block, 14, ty)  // fsub a - q*b
+        ir.add_operand(sb2, lv, 0)
+        ir.add_operand(sb2, ir.get_value(pr2), 0)
+        return ir.get_value(sb2)
+    }
     var iop: i64 = -1
     if op == 0 {
         iop = 0  // +=
@@ -28,6 +47,8 @@ func tig_compound_assign(op: i64, lv: i64, rv: i64, ty: i64) -> i64 {
         iop = 3  // \=：先取截断商；有符号整数随后套 floor 调整（见函数尾）
     } else if op == 4 {
         iop = 4  // %=
+    } else if op == 26 {
+        iop = 4  // %%=：先取截断余数；有符号整数随后套 floor 调整（见函数尾）
     } else if op == 13 {
         iop = 6  // &=
     } else if op == 14 {
@@ -69,6 +90,11 @@ func tig_compound_assign(op: i64, lv: i64, rv: i64, ty: i64) -> i64 {
     // 无符号/char/trit 在 tig_floor_fix_div 内直接返回截断值（无负值，两者等价）。
     if op == 24 {
         return tig_floor_fix_div(lv, res, rv, ty)
+    }
+    // p.9.11 `%%=`（有符号整数）：截断余数 → floor 余数，与二元 `%%` 同语义。
+    // 无符号/char/trit 在 tig_floor_fix_mod 内直接返回截断值（无负值，两者等价）。
+    if op == 26 {
+        return tig_floor_fix_mod(res, rv, ty)
     }
     return res
 }
