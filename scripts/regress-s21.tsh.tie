@@ -143,6 +143,27 @@ for fn in lf_n {
 }
 if file_exists(root + "\\compiler\\lf_tmp.exe") { remove_file(root + "\\compiler\\lf_tmp.exe") }
 
+// 6c. td（tie:data）合规（规范 §17.1）：**头部可选**，且非 td 语法必须被拒。
+//     我连错两次的正是这条（信了「某文件自称 td」「探针注释说会失败」而不是规范与实测），
+//     故把它变成断言：合规 5 例中 3 例应成功、2 例应拒绝。
+println("=== 6c. td 合规（规范 §17.1：头可选；非 td 语法必须拒）===")
+var td_dir = root + "\\tests\\_td_probe\\"
+var td_out = get_env("TEMP") + "\\tsh_td_out.txt"
+var td_okf = ["header.data.tie", "noheader.data.tie", "named.data.tie"]
+var td_badf = ["unclosed.data.tie", "not_td.data.tie"]
+var td_zd = get_env("TEMP") + "\\tsh_td_probe.zd"
+for fn in td_okf {
+    var rc_td = exec_code("cmd /c " + tiec + " --compress-data " + td_dir + fn + " -o " + td_zd + " > \"" + td_out + "\" 2>&1")
+    if rc_td == 0 { println("PASS td " + fn); pass = pass + 1 }
+    else { println("FAIL td " + fn + " 应成功但 rc=" + to_string(rc_td) + " -> " + file_read(td_out)); fail = fail + 1 }
+}
+for fn in td_badf {
+    var rc_td2 = exec_code("cmd /c " + tiec + " --compress-data " + td_dir + fn + " -o " + td_zd + " > \"" + td_out + "\" 2>&1")
+    if rc_td2 != 0 { println("PASS(拒) td " + fn); pass = pass + 1 }
+    else { println("FAIL(未拒) td " + fn); fail = fail + 1 }
+}
+if file_exists(td_zd) { remove_file(td_zd) }
+
 println("")
 println("=== 汇总: PASS=" + to_string(pass) + " FAIL=" + to_string(fail) + " SKIP(已知基线)=" + to_string(known) + " ===")
 if fail > 0 { exit(1) }
