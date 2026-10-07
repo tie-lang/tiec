@@ -107,5 +107,11 @@ func prelude_inject(body: string, role: string, raw: string) -> string {
     if prelude_needs_result(raw) {
         head = "import \"/std/result.tie\"\n" + head
     }
-    return head + body
+    // ★ 追加到**末尾**，不置于首部（2026-10-07 修）：
+    //   首部注入把正文整体下移注入行数，而诊断行号**没有行映射** ⇒ 主文件全部
+    //   告警/错误行号 +2（实测：`var` 在第 3 行报 `@5:5`），用户按报的行号改会
+    //   **改错行**。tie 的 import / using 与「使用点」的相对位置无关（顶层声明
+    //   先登记后解析），故末尾注入语义等价，且**零行位移**。
+    //   ★ 必须补一个换行：正文若以行注释结尾且无尾换行，追加内容会被注释吞掉。
+    return body + "\n" + head
 }

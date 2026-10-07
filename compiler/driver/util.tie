@@ -77,7 +77,6 @@ func strip_type_header(src: string) -> string {
     var lines = split_lines(src)
     var n: i64 = len(lines)
     var sb = string_builder()
-    var emitted = false
     var in_header = true
     var i: i64 = 0
     while i < n {
@@ -87,20 +86,21 @@ func strip_type_header(src: string) -> string {
             if str_len(t) == 0 {
                 // 头部区空行：保留
             } else if has_prefix(t, "type tie") {
-                // 声明行：剥离
-                i = i + 1
-                continue
+                // ★ 保行剥离（2026-10-07）：把声明行**替换为空行**而非删除，使正文
+                //   行号与用户所写的源文件逐行对齐。原先直接删除 ⇒ 正文整体上移
+                //   一行，而诊断行号没有行映射 ⇒ 主文件所有告警/错误行号 −1
+                //   （用户按报的行号改会改错行）。
+                //   不置 in_header = false ⇒ 与原先一致地继续剥离后续头部声明行。
+                ln = ""
             } else {
                 in_header = false
             }
         }
-        if emitted {
+        // 逐行原样拼接：不再用 emitted 丢前导空行（丢空行同样会移动行号）。
+        if i > 0 {
             sb_append(sb, "\n")
         }
         sb_append(sb, ln)
-        if str_len(ln) > 0 {
-            emitted = true
-        }
         i = i + 1
     }
     return sb_build(sb)
