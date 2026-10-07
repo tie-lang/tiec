@@ -273,6 +273,57 @@ func collect_strings() {
         }
         i = i + 1
     }
+    // 2026-10-07：**预登记**生成期才用到的串，使「全部串在排序前已知」。
+    // 否则排序后仍会被懒登记追加到尾部 ⇒ 尾部顺序回到路径相关，等于没修。
+    // ① 全局 string 初值（emit_globals 经 str_slot 登记）
+    var gi: i64 = 0
+    while gi < len(g_global_strs) {
+        if g_global_strs[gi] >= 0 {
+            str_slot(g_global_strs[gi])
+        }
+        gi = gi + 1
+    }
+    // ② 空串（string 全局无字面量时的兜底）
+    str_slot(interner.intern(""))
+    str_sort_slots()
+}
+
+// 2026-10-07：**串池编号按文本升序**（原来按指令扫描序）。
+// 为何必须：扫描序随编译路径变（缓存命中时被导入模块的 IR 装载序不同）⇒
+// 同一输入 `--no-cache` 与缓存命中会得到不同的 @.str.N 编号
+//（实测 414 行差异，**字符串集合完全相同**，只是编号不同）。
+// 按文本排序 ⇒ 编号只由「有哪些串」决定，与任何遍历顺序无关。
+// 实现代价：插入排序，n = 串数（本程序 16、编译器自身数百量级），字符串比较。
+// 契约：调用后 `str_pool[t]` 的 @.str 编号 = t（`str_idx[t] == t`），
+// `g_ss_stamp`/`g_ss_slotv` 随之重绑 ⇒ 后续 str_slot 命中已算好的 slot。
+func str_sort_slots() {
+    var n = len(str_pool)
+    var k: i64 = 1
+    while k < n {
+        var cur = str_pool[k]
+        var cs = intern.lookup(cur)
+        var j = k - 1
+        var stop: bool = false
+        while j >= 0 && !stop {
+            if intern.lookup(str_pool[j]) > cs {
+                str_pool[j + 1] = str_pool[j]
+                j = j - 1
+            } else {
+                stop = true
+            }
+        }
+        str_pool[j + 1] = cur
+        k = k + 1
+    }
+    var t: i64 = 0
+    while t < n {
+        var pid = str_pool[t]
+        g_ss_stamp[pid] = t
+        g_ss_slotv[pid] = t
+        g_slot_len[t] = utf.byte_len(intern.lookup(pid))
+        t = t + 1
+    }
+    str_count = n
 }
 
 // T4.5：遍历全部指令，收集 extern_call(36) 的符号名池 id（去重）。
@@ -304,6 +355,33 @@ func collect_externs() {
             call_sym_reg(sid2)
         }
         i = i + 1
+    }
+    ext_sort()
+}
+
+// 2026-10-07：extern 符号按**名字**排序后再输出 declare。
+// 为何必须：`ext_syms` 原为「指令扫描序」，而扫描序随编译路径变（缓存命中时
+// 被导入模块的 IR 装载序不同）⇒ declare 段的**顺序**会变，使 .ll 字节级不可复现
+//（实测同一输入两路径差 16 行 declare，集合相同仅次序不同）。
+// 按符号名排序 ⇒ 与任何顺序无关。（declare 的先后在 LLVM 无语义，故安全。）
+func ext_sort() {
+    var k: i64 = 1
+    var n = len(ext_syms)
+    while k < n {
+        var cur = ext_syms[k]
+        var cs = intern.lookup(cur)
+        var j = k - 1
+        var stop: bool = false
+        while j >= 0 && !stop {
+            if intern.lookup(ext_syms[j]) > cs {
+                ext_syms[j + 1] = ext_syms[j]
+                j = j - 1
+            } else {
+                stop = true
+            }
+        }
+        ext_syms[j + 1] = cur
+        k = k + 1
     }
 }
 
