@@ -146,6 +146,15 @@ var g_ren_stamp: table<i64>;
 var g_ren_val: table<i64>;
 var g_ren_fn: i64 = 0;
 var g_ren_next: i64 = 1;
+// 2026-10-07：**具名族**重编号（`%smN` / `%spN`）的印章表。
+// 为何需要：这两族的后缀是**构造期 id**（指令 id / 值 id），而构造顺序取决于
+// 编译路径（缓存命中与否）⇒ 原样输出会让 .ll **不可复现**（实测同一输入
+// `--no-cache` 得 a3d7ec5e…、缓存命中得 0859932b…，952 行差在 %sm）。
+// 与 %N 同法处理：按函数分配新号（编号来自函数自身的行序 ⇒ 与路径无关）。
+// 独立一套表是为了**不把构造期 id 灌进数值 id 的空间**（两套 id 空间不同，
+// 混用会互相挤占编号）。
+var g_renn_stamp: table<i64>;
+var g_renn_val: table<i64>;
 // r.1.6.3：每函数重编号的形参占位基数（renumber_lines 的 g_ren_next 初值）。
 // 普通函数 = g_pcnt；Linux main（带 i32 %0, ptr %1 附加形参）由 gen_func 置 2，
 // 防止函数体指令重编号为 %0 与形参撞号（opt：instruction expected to be

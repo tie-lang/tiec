@@ -144,9 +144,51 @@ func is_signed_int(t: i64) -> bool {
     return t == 0 || t == 1 || t == 2 || t == 3 || t == 21
 }
 
+// 2026-10-07：全局段**按下标排序**输出（名字升序）。
+// 为何必须：全局声明的顺序原为「登记序」，而登记发生在 IR 构建期 ——
+// 缓存命中时被导入模块的 IR 装载序不同 ⇒ 同一输入两路径得到不同的全局顺序
+//（实测差异 2 行：`@tl_loopf_*` 哨兵全局互换位置），使 .ll 字节级不可复现。
+// 全局**声明**的先后在 LLVM 无语义（引用一律按名字），排序安全。
+// 生成期编号不受影响（只在输出序上生效）。
+func glob_order() -> table<i64> {
+    var n = len(g_global_names)
+    var txts = table_new_string()
+    var t: i64 = 0
+    while t < n {
+        table_push(txts, intern.lookup(g_global_names[t]))
+        t = t + 1
+    }
+    var ord = table_new_i64()
+    t = 0
+    while t < n {
+        table_push(ord, t)
+        t = t + 1
+    }
+    var k: i64 = 1
+    while k < n {
+        var cur = ord[k]
+        var cs = txts[cur]
+        var j = k - 1
+        var stop: bool = false
+        while j >= 0 && !stop {
+            if txts[ord[j]] > cs {
+                ord[j + 1] = ord[j]
+                j = j - 1
+            } else {
+                stop = true
+            }
+        }
+        ord[j + 1] = cur
+        k = k + 1
+    }
+    return ord
+}
+
 func emit_globals() {
-    var i: i64 = 0
-    while i < len(g_global_names) {
+    var ord = glob_order()
+    var oi: i64 = 0
+    while oi < len(ord) {
+        var i = ord[oi]
         var nm = intern.lookup(g_global_names[i])
         // p.9.12.4：命名空间内 const 以全名 "ns::NAME" 登记 → LLVM 符号经
         // ns_replace 转 $（@ns$NAME），对齐命名空间函数符号规则
@@ -181,7 +223,7 @@ func emit_globals() {
                 // 以函数名作指针常量，故无运行期初始化。
                 if i < len(g_global_fns) && g_global_fns[i] >= 0 {
                     line("@" + lv_nm + " = global ptr @" + ns_replace(intern.lookup(g_global_fns[i])))
-                    i = i + 1
+                    oi = oi + 1
                     continue
                 }
                 // string 全局默认空串常量（null 会被 strcmp 段错误）；
@@ -195,7 +237,7 @@ func emit_globals() {
                         eslot = str_slot(empty_id)
                     }
                     line("@" + lv_nm + " = global ptr " + str_data_ref(eslot))
-                    i = i + 1
+                    oi = oi + 1
                     continue
                 }
                 init = "null"
@@ -215,7 +257,7 @@ func emit_globals() {
             }
             line("@" + lv_nm + " = global " + ty + " " + init)
         }
-        i = i + 1
+        oi = oi + 1
     }
     if len(g_global_names) > 0 {
         line("")
@@ -560,6 +602,49 @@ func renumber_line(ln: string, t: string) -> string {
     while i < n {
         var b = str_byte(ln, i)
         if b == 37 && i + 1 < n {
+            // 具名族 `%smN` / `%spN`（2026-10-07）：后缀是**构造期 id**（指令 id /
+            // 值 id），随编译路径变（缓存命中与否）⇒ 必须与 %N 一样按函数重编号，
+            // 否则 .ll 字节级不可复现（实测 952 行差异全在此）。prefix 原样保留，
+            // 只把后缀数字换成函数内的新号。
+            if str_byte(ln, i + 1) == 115 && i + 3 < n {   // 's'
+                var pb2 = str_byte(ln, i + 2)
+                if pb2 == 109 || pb2 == 112 {              // 'm' / 'p'
+                    var q3 = i + 3
+                    var v3: i64 = 0
+                    var n3: i64 = 0
+                    while q3 < n {
+                        var d3 = str_byte(ln, q3)
+                        if d3 >= 48 && d3 <= 57 {
+                            v3 = v3 * 10 + (d3 - 48)
+                            n3 = n3 + 1
+                            q3 = q3 + 1
+                        } else {
+                            break
+                        }
+                    }
+                    // 后缀数字之后不得紧跟标识符字节（防 `%sm5x` 之类误改）
+                    var okb: bool = q3 >= n
+                    if !okb {
+                        var cb3 = str_byte(ln, q3)
+                        if !((cb3 >= 48 && cb3 <= 57) || (cb3 >= 65 && cb3 <= 90) ||
+                             (cb3 >= 97 && cb3 <= 122) || cb3 == 95 || cb3 == 36) {
+                            okb = true
+                        }
+                    }
+                    if n3 > 0 && okb {
+                        if i > seg {
+                            sb_append(sb, str_sub_bytes(ln, seg, i))
+                        }
+                        sb_append_byte(sb, 37)
+                        sb_append_byte(sb, 115)
+                        sb_append_byte(sb, pb2)
+                        sb_append_i64(sb, ren_named(v3))
+                        i = q3
+                        seg = q3
+                        continue
+                    }
+                }
+            }
             // 尝试读纯数字后缀（值累算）
             var j = i + 1
             var val: i64 = 0
@@ -618,6 +703,25 @@ func ren_def(old: i64) -> i64 {
     var v = g_ren_next
     g_ren_stamp[old] = g_ren_fn
     g_ren_val[old] = v
+    g_ren_next = g_ren_next + 1
+    return v
+}
+
+// 具名族（`%smN` / `%spN`）重映射：与 ren_def 同构，但用独立的印章表 ——
+// 这两族的后缀是**构造期 id**（不同 id 空间），不能与数值 id 共用映射。
+// 每次调用复用 `g_ren_next`：同一函数内两族共享计数器 ⇒ 各族内编号必唯一
+//（族前缀本身就区分两族），且编号只由**函数自身的行序**决定 ⇒ 与缓存路径无关。
+func ren_named(old: i64) -> i64 {
+    while len(g_renn_stamp) <= old {
+        table_push(g_renn_stamp, -1)
+        table_push(g_renn_val, -1)
+    }
+    if g_renn_stamp[old] == g_ren_fn {
+        return g_renn_val[old]
+    }
+    var v = g_ren_next
+    g_renn_stamp[old] = g_ren_fn
+    g_renn_val[old] = v
     g_ren_next = g_ren_next + 1
     return v
 }
