@@ -119,6 +119,30 @@ r = compile_run(root + "\\tests\\s31\\config_smoke.tie", true)
 if has_prefix(r, "OK") { println("PASS config_smoke"); pass = pass + 1 }
 else { println("FAIL config_smoke -> " + r); fail = fail + 1 }
 
+// 6b. 诊断行号不变式（2026-10-07）：主文件的告警/错误行号必须与用户所写的行号一致。
+//     曾因 strip_type_header 删行 + prelude 首部注入而无行映射 ⇒ 主文件全部行号 +2，
+//     用户按报的行号改会**改错行**。两探针的第 6 行分别是语法错误与未重赋值的 var，
+//     期望诊断精确报 @6。**行号即断言**：改动探针必须同步改这里的期望值。
+println("=== 6b. 诊断行号不变式（主文件行号须与用户所写一致） ===")
+var lf_dir = root + "\\tests\\_linefix_probe\\"
+var lf_tmp = get_env("TEMP") + "\\tsh_linefix_out.txt"
+var lf_n = ["linefix_err.tie", "linefix_warn.tie"]
+var lf_want = ["[E00832] @6:21:", "@6:5: 可变绑定未修改"]
+var lf_i: i64 = 0
+for fn in lf_n {
+    var lf_exe = root + "\\compiler\\lf_tmp.exe"
+    if file_exists(lf_exe) { remove_file(lf_exe) }
+    exec_code("cmd /c " + tiec + " " + lf_dir + fn + " -o " + lf_exe + " -w --no-cache > \"" + lf_tmp + "\" 2>&1")
+    var lf_txt = file_read(lf_tmp)
+    if contains(lf_txt, lf_want[lf_i]) {
+        println("PASS linefix " + fn + "（" + lf_want[lf_i] + "）"); pass = pass + 1
+    } else {
+        println("FAIL linefix " + fn + " 期望 " + lf_want[lf_i] + " -> " + lf_txt); fail = fail + 1
+    }
+    lf_i = lf_i + 1
+}
+if file_exists(root + "\\compiler\\lf_tmp.exe") { remove_file(root + "\\compiler\\lf_tmp.exe") }
+
 println("")
 println("=== 汇总: PASS=" + to_string(pass) + " FAIL=" + to_string(fail) + " SKIP(已知基线)=" + to_string(known) + " ===")
 if fail > 0 { exit(1) }
