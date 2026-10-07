@@ -31,6 +31,8 @@ pub func usage() -> i64 {
     println("  --shared         编译为动态库（.dll/.so；library 角色，M5）")
     println("  --prep-only      只做头部识别并打印结果")
     println("  --config <f>     构建配置文件（默认查当前目录 config.data.tie）")
+    println("            语法：数组容器 + `\"键\": 值`，如 [\"tiec\": [\"backend\": \"win32\"]]；")
+    println("            注意与 tie:data 的 `{...}` / `k = v` 形态**不同**（照后者写会报「值意外字符」）")
     println("  --profile <p>    构建 profile（dev/release，覆盖配置顶层 profile 键）")
     println("  --backend <b>    后端实现选择（win32；trm 为路线 B 字节码目标，可插拔；其他 port 未接入）")
     println("  --lib-root <dir>  内置库根目录（存放 std/ext/rdu/sys；覆盖 TIE_LIB_ROOT 与默认 ~/.tiec-lib/tlib）")
