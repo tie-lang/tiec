@@ -383,9 +383,15 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
         if (s_vals[pnode] & 2) != 0 {
             sstate.im_insert(pnid)
         }
-        // r.1.6.10：**全部**按值形参登记（不论 immut），供 W00031 判定
-        // 「按值形参的表字段重绑定」（调用方看不到，无声失效）。
-        sstate.vp_insert(pnid)
+        // r.1.6.10：按值形参登记（不论 immut），供 W00031 判定「写入副本」类无声失效。
+        // ★ 必须**排除 ref 形参**（2026-10-07 修正）：ref 的写入会传到调用方，不是副本。
+        //   此前无条件登记，而批量迁移把大量表/数组形参改成了 ref ⇒ 该集合实际包含
+        //   ref 形参 ⇒ `vp_is` 名不副实，W00031 第二形态在 ref 形参上误报
+        //   （实测 tlib `tensor.copy` 的 `dst`、`nn` 的 `yo` 都被误报）。
+        //   第一形态只作用于 struct 形参，而 ref 不支持 struct ⇒ 过滤对它是零影响。
+        if prefs == 0 {
+            sstate.vp_insert(pnid)
+        }
         i = i + 1
     }
     // actor 消息方法体（内部全名 `actor$N::m`，见 scollect_port_q2 的登记）：
@@ -486,6 +492,9 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
         var w31_sr: table<i64> = table_new_i64()
         var w31_sf: table<i64> = table_new_i64()
         w31_walk(body, w31_sk, w31_sr, w31_sf)
+        // r.1.6.10 W00031 第二形态：局部副本写入后再未被读取（写的是副本 ⇒ 静默丢失）。
+        // 与上面同属警告 pass（-w），默认短路为零成本。
+        w31_deadcopy_check(body)
         // W00011：函数参数从未被读取（或写入）
         var pi2: i64 = 0
         while pi2 < nparams {

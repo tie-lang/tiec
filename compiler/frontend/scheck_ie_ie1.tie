@@ -858,4 +858,278 @@ func w31_fld_is_heap(base: i64, fnm: string) -> bool {
     return false
 }
 
+// ============ W00031 第二形态：局部副本写入后再未被读取（2026-10-07）============
+// 实测两处真实缺陷（tofflib 的字形标记表与 cmap 缓存）都栽在这里：
+// `var t = xget(s)` 取到的是全局表的**副本**，`t[g] = 1` 之后再没人读 t
+// ⇒ 写入静默丢失。编译通过、六层自检全绿，只有产物文本层错位才暴露 ——
+// 这类「写了等于没写」必须在编译期报出来（安全路径要默认就对）。
+//
+// 判据（顺序敏感：要判「写之后还有没有读」，故与 w31_walk 的通用遍历分开做一次按序扫描）：
+//   * 目标必须是**纯变量**（索引赋值的 base 是 S_N_VAR）。字段访问 `s.t[i]` 不算 ——
+//     字段访问不触发写前分离，元素写入本就会穿给调用方，那是对的；
+//   * 该名字属于**局部**（本函数 var 声明）或**按值形参**（vp_is）：全局表与
+//     ref/shared 形参的写入会传出去，不算；
+//   * 该写入之后，函数体内**再无该变量的任何出现**（读、传参、返回、写回、捕获皆算出现）。
+func w31_dc_note(nid: i64, line: i64, col: i64, ref tn: table<i64>, ref tl: table<i64>, ref tc: table<i64>) {
+    if nid < 0 {
+        return
+    }
+    var free_slot: i64 = -1
+    var i: i64 = 0
+    while i < len(tn) {
+        if tn[i] == nid {
+            return
+        }
+        if tn[i] < 0 && free_slot < 0 {
+            free_slot = i
+        }
+        i = i + 1
+    }
+    if free_slot >= 0 {
+        tn[free_slot] = nid
+        tl[free_slot] = line
+        tc[free_slot] = col
+        return
+    }
+    table_push(tn, nid)
+    table_push(tl, line)
+    table_push(tc, col)
+}
+
+// 该变量被「看到」了（读/传参/返回/写回/捕获）⇒ 撤销待判定。
+// 置 -1 作墓碑，避免依赖 table_pop / table_trunc 的返回语义。
+func w31_dc_clear(nid: i64, ref tn: table<i64>) {
+    if nid < 0 {
+        return
+    }
+    var i: i64 = 0
+    while i < len(tn) {
+        if tn[i] == nid {
+            tn[i] = -1
+        }
+        i = i + 1
+    }
+}
+
+func w31_dc_is_mut(nm: string) -> bool {
+    return nm == "table_push" || nm == "table_pop" || nm == "table_set" ||
+        nm == "table_remove" || nm == "table_insert" || nm == "table_clear" ||
+        nm == "table_trunc"
+}
+
+// 收集本函数体内的局部声明名（含嵌套块与闭包体；形参不在 VAR_DECL 里）
+func w31_dc_locals(node: i64, ref loc: table<i64>) {
+    if node < 0 {
+        return
+    }
+    if s_tags[node] == S_N_VAR_DECL {
+        var nid = s_names[node]
+        if nid >= 0 {
+            table_push(loc, nid)
+        }
+    }
+    var nc: i64 = sstate.nchild(node)
+    var k: i64 = 0
+    while k < nc {
+        w31_dc_locals(sstate.child(node, k), loc)
+        k = k + 1
+    }
+}
+
+func w31_dc_local_is(nid: i64, ref loc: table<i64>) -> bool {
+    if nid < 0 {
+        return false
+    }
+    if sstate.vp_is(nid) {
+        return true
+    }
+    var i: i64 = 0
+    while i < len(loc) {
+        if loc[i] == nid {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// 收集子树里出现过的全部变量名（含写目标）。循环回边保护用。
+func w31_dc_names(node: i64, ref out: table<i64>) {
+    if node < 0 {
+        return
+    }
+    if s_tags[node] == S_N_VAR {
+        var nid = s_names[node]
+        if nid >= 0 {
+            table_push(out, nid)
+        }
+    }
+    var nc: i64 = sstate.nchild(node)
+    var k: i64 = 0
+    while k < nc {
+        w31_dc_names(sstate.child(node, k), out)
+        k = k + 1
+    }
+}
+
+// 该名字是否出现在某个**活动**循环体内。
+// ★★ 循环回边：循环体里对这一轮的写入，往往是给**下一轮**读的（如
+// `while j >= 0 { ... st_nodes[top] = v; top = top + 1 }` 里 `st_nodes` 在
+// 下一轮被 `len(st_nodes)` 读）。按源码顺序看读在写之前，线性扫描会误判成死写。
+// 故：体内出现过该名字 ⇒ 该循环内的写入不判死。
+// 用「栈 + 活跃标记」而非 pop（避免依赖 table_pop 语义）；LIFO 由递归天然保证。
+func w31_dc_in_loop(nid: i64, ref ls: table<i64>, ref le: table<i64>, ref la: table<i64>, ref lf: table<i64>) -> bool {
+    if nid < 0 {
+        return false
+    }
+    var k: i64 = 0
+    while k < len(ls) {
+        if la[k] == 1 {
+            var j = ls[k]
+            while j < le[k] {
+                if lf[j] == nid {
+                    return true
+                }
+                j = j + 1
+            }
+        }
+        k = k + 1
+    }
+    return false
+}
+
+// 按序扫描：写入点在其子树遍历**之后**登记（这样写入目标自身不会被当成读），
+// 其余出现（S_N_VAR）即清除。
+func w31_dc_walk(node: i64, ref loc: table<i64>, skip: i64,
+    ref tn: table<i64>, ref tl: table<i64>, ref tc: table<i64>,
+    ref ls: table<i64>, ref le: table<i64>, ref la: table<i64>, ref lf: table<i64>) {
+    if node < 0 {
+        return
+    }
+    var tg = s_tags[node]
+    if tg == S_N_WHILE || tg == S_N_FOR || tg == S_N_FN_LIT {
+        // 先把整个循环体（含条件）出现过的名字收进 lf，再压活动标记。
+        // ★ 闭包体同办（S_N_FN_LIT）：闭包可能被调用多次，体内对捕获表的写入
+        //   可能给**下一次调用**读 —— 与循环回边同源。
+        var st = len(lf)
+        var ncL: i64 = sstate.nchild(node)
+        var kL: i64 = 0
+        while kL < ncL {
+            w31_dc_names(sstate.child(node, kL), lf)
+            kL = kL + 1
+        }
+        table_push(ls, st)
+        table_push(le, len(lf))
+        table_push(la, 1)
+        var ncW: i64 = sstate.nchild(node)
+        var kW: i64 = 0
+        while kW < ncW {
+            w31_dc_walk(sstate.child(node, kW), loc, -1, tn, tl, tc, ls, le, la, lf)
+            kW = kW + 1
+        }
+        la[len(la) - 1] = 0   // 出循环：标记失效（lf 内容保留，不影响判定）
+        return
+    }
+    if tg == S_N_INDEX_ASSIGN {
+        // children = [S_N_INDEX 包装, 右值]；基址在包装节点的 child(0)
+        //（与 diag_walk 同款取法）。**必须要求基址恰好是纯变量**：
+        // `s.t[i] = v` 的基址是字段访问 —— 字段访问不触发写前分离，
+        // 元素写入本就会穿给调用方，那是对的，不能误报。
+        var tgt = sstate.child(node, 0)
+        var bv: i64 = -1
+        if tgt >= 0 {
+            var b0 = sstate.child(tgt, 0)
+            if b0 >= 0 && s_tags[b0] == S_N_VAR {
+                bv = b0
+            }
+        }
+        var nc: i64 = sstate.nchild(node)
+        var k: i64 = 0
+        while k < nc {
+            var ch = sstate.child(node, k)
+            if ch == tgt {
+                w31_dc_walk(ch, loc, bv, tn, tl, tc, ls, le, la, lf)
+            } else {
+                w31_dc_walk(ch, loc, -1, tn, tl, tc, ls, le, la, lf)
+            }
+            k = k + 1
+        }
+        if bv >= 0 {
+            var nid = s_names[bv]
+            if w31_dc_local_is(nid, loc) && !w31_dc_in_loop(nid, ls, le, la, lf) {
+                w31_dc_note(nid, s_lines[node], s_cols[node], tn, tl, tc)
+            }
+        }
+        return
+    }
+    if tg == S_N_CALL || tg == S_N_METHOD_CALL {
+        if w31_dc_is_mut(sstate.name_str(node)) {
+            var off = sstate.slot_off(node)
+            var a0 = sstate.child(node, off)
+            var nid2: i64 = -1
+            if a0 >= 0 && s_tags[a0] == S_N_VAR {
+                nid2 = s_names[a0]
+            }
+            var nc2: i64 = sstate.nchild(node)
+            var k2: i64 = 0
+            while k2 < nc2 {
+                var ch2 = sstate.child(node, k2)
+                if ch2 != a0 {
+                    w31_dc_walk(ch2, loc, -1, tn, tl, tc, ls, le, la, lf)
+                }
+                k2 = k2 + 1
+            }
+            if nid2 >= 0 && w31_dc_local_is(nid2, loc) && !w31_dc_in_loop(nid2, ls, le, la, lf) {
+                w31_dc_note(nid2, s_lines[node], s_cols[node], tn, tl, tc)
+            }
+            return
+        }
+    }
+    if tg == S_N_VAR {
+        if node != skip {
+            w31_dc_clear(s_names[node], tn)
+        }
+        return
+    }
+    if tg == S_N_VAR_DECL {
+        // 同名遮蔽：被遮蔽的那个已经不可见，撤销待判定（保守，宁可漏报不可误报）
+        w31_dc_clear(s_names[node], tn)
+    }
+    var nc3: i64 = sstate.nchild(node)
+    var k3: i64 = 0
+    while k3 < nc3 {
+        w31_dc_walk(sstate.child(node, k3), loc, -1, tn, tl, tc, ls, le, la, lf)
+        k3 = k3 + 1
+    }
+}
+
+// 函数粒度入口：扫描一个函数体，末尾把「写了却再没被读过」的变量报出来。
+pub func w31_deadcopy_check(body: i64) {
+    if body < 0 {
+        return
+    }
+    if !semantic.sm_warn_enabled() {
+        return
+    }
+    var loc: table<i64> = table_new_i64()
+    w31_dc_locals(body, loc)
+    var tn: table<i64> = table_new_i64()
+    var tl: table<i64> = table_new_i64()
+    var tc: table<i64> = table_new_i64()
+    var ls: table<i64> = table_new_i64()
+    var le: table<i64> = table_new_i64()
+    var la: table<i64> = table_new_i64()
+    var lf: table<i64> = table_new_i64()
+    w31_dc_walk(body, loc, -1, tn, tl, tc, ls, le, la, lf)
+    var i: i64 = 0
+    while i < len(tn) {
+        var nid = tn[i]
+        if nid >= 0 {
+            sm_warn_add(tl[i], tc[i], "变量 '" + sstate.im_name(nid) +
+                "' 被写入后再未被读取：这次写入不会生效")
+        }
+        i = i + 1
+    }
+}
+
 }
