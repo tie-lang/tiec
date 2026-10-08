@@ -312,8 +312,20 @@ pub func tig_stmt_b_103_Assign(id: i64) -> i64 {
         // p.6.10.2/3：表变量赋值引用计数插桩——仅普通赋值（非复合）、RHS 表类型。
         //  retain(新)：局部槽/全局槽接收引用时 +1；RHS 为 table_new_* 直接构造则
         //  免（新表所有权已转移给槽）。
-        //  release(旧)：局部**非参数**目标覆盖前 -1（参数借用不回收调用方所有权；
-        //  全局目标永驻不 release）。空句柄由 tl_tbl.tbl_release 守卫跳过。
+        //  release(旧)：局部**非参数**目标覆盖前 -1（参数借用不回收调用方所有权）。
+        //  空句柄由 tl_tbl.tbl_release 守卫跳过。
+        //
+        // ★★ p.9.16 内存工程【2026-10-08 RCA】：原判据含 `tgt_global <= 0`——即
+        // **全局目标覆盖时不 release 旧值**，理由是「全局永驻」。该推理只对了一半：
+        // 全局**在函数退出时**不能释放（它的生命周期超出函数），但**在赋值覆盖时**
+        // 旧值确实被丢弃 ⇒ 必须 -1。漏了这一半 ⇒ 每次「全局表被重新赋值」都泄漏
+        // 整张旧表。实测（`_z/leak/glob.tie`：循环内 `g = t`，t 为 1000 元素新表，
+        // 30 万次）：**峰值 2.43 GB / 稳态 190 MB**；同形但目标为**局部**变量
+        // （`locrb.tie`）峰值仅 9.1 MB ⇒ 泄漏点唯一地落在「全局目标」这一支。
+        // 这正是 LSP 稳态随文档/编辑线性增长（tsp 每次重析都要把 ~150 个前端全局
+        // 表重绑成新空表）的根因——也是 release_ast() 单靠「重绑」收不回内存的原因。
+        // 修法：与复合赋值（上方 op>=0 分支）同款——全局槽的 load 用操作数 kind 3
+        // （OK_GLOBAL 池 id），局部槽用 kind 0（alloca）。
         // p.6.1.7-RCA【2026-09-05】：旧值必须在 **store 之前** load——旧码在 store 后
         // 才 load 槽，读到的是**新表**：retain(新)+1 与 release(读到的新)-1 相抵 → 新表
         // 引用计数缺 1（别名方 cur=nxt 仍持有指针）→ 循环内表变量重入时
@@ -344,9 +356,13 @@ pub func tig_stmt_b_103_Assign(id: i64) -> i64 {
         if assign_is_tbl && !assign_new_tbl {
             tig_tbl_retain_call(vv)
         }
-        if assign_is_tbl && tgt_global <= 0 && !tig_is_param(nid) {
+        if assign_is_tbl && !tig_is_param(nid) {
             var old = ir.new_inst(g_cur_block, 21, tgt_ty)  // load 旧值（store 前！）
-            ir.add_operand(old, tgt_alloca, 0)
+            if tgt_global > 0 {
+                ir.add_operand(old, tgt_alloca, 3)          // 全局槽：OK_GLOBAL 池 id
+            } else {
+                ir.add_operand(old, tgt_alloca, 0)          // 局部槽：alloca
+            }
             assign_old_v = ir.get_value(old)
         }
         var st = ir.new_inst(g_cur_block, 22, -1)  // store
