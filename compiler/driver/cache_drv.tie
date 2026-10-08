@@ -41,6 +41,61 @@ pub func dep_depset() -> table<string> {
 }
 
 // 单文件指纹（p.9.15.1 暂用 str_hash 对照；tsha1r 内联实现待定）
+// p.9.15.1：**本次编译的源码集指纹** —— 全部模块的**内容指纹**排序后取哈希。
+// 只取指纹、**不取路径** ⇒ 与调用目录/路径写法无关（同一源码集在任何 cwd 下同值）；
+// 排序 ⇒ 与遍历序无关（今日铁律：摘要/编号只依赖内容，不依赖遍历序）。
+// 用途：由 driver 烘进产物，充当「编译器自身身份」（见 g_tiec_build_stamp）。
+// ⚠ 本文件在 namespace 体内 ⇒ 全局 var 按本仓惯例放 driver.tie 主文件。
+
+pub func source_set_stamp() -> string {
+    if str_len(g_src_stamp) > 0 {
+        return g_src_stamp
+    }
+    var ps = dep_depset()
+    var fps: table<string> = table_new_string()
+    var i: i64 = 0
+    while i < len(ps) {
+        var f = dep_file_fp(ps[i])
+        if str_len(f) > 0 {
+            table_push(fps, f)
+        }
+        i = i + 1
+    }
+    var sf = dep_sort_strings(fps)
+    var acc = ""
+    i = 0
+    while i < len(sf) {
+        acc = acc + sf[i] + "\n"
+        i = i + 1
+    }
+    // 长度参与：不同文件数即便哈希碰撞也不至于同键（并便于人读）
+    g_src_stamp = "s" + to_string(len(sf)) + "-" + to_string(str_hash(acc))
+    return g_src_stamp
+}
+
+// p.9.15.1：把「本次源码集指纹」烘进产物的 `g_tiec_build_stamp` 全局初值。
+// 仅当该全局存在时执行（即**正在编译 tiec 自身**）⇒ 用户程序零成本、产物零影响。
+// 调用点须在 irgen **之后**（全局已登记）、emit **之前**（初值尚可覆写）。
+pub func bake_build_stamp() {
+    if llvmgen.has_global("g_tiec_build_stamp") {
+        llvmgen.global_str_init("g_tiec_build_stamp", interner.intern(source_set_stamp()))
+    }
+}
+
+// p.9.15.1：**编译器自身身份**（参与全部缓存键）。
+// 非空构建戳 ⇒ 「源码集指纹 + 手工盐」；空 ⇒ 退回手工盐并**响亮报告**
+//（不静默：静默退回会让「以为自动了、其实没有」长期潜伏）。
+pub func compiler_ident() -> string {
+    if str_len(g_tiec_build_stamp) > 0 {
+        return g_tiec_build_stamp + "+" + g_cache_salt
+    }
+    if !g_ident_warned {
+        g_ident_warned = true
+        println("缓存提示：本编译器无构建戳（非自举构建或旧产物），缓存键退回手工盐 " + g_cache_salt)
+    }
+    return g_cache_salt
+}
+
 pub func dep_file_fp(p: string) -> string {
     if !file_exists(p) {
         return ""
@@ -114,7 +169,7 @@ pub func dep_cache_key() -> string {
     // 检查恒开（规范 8.5 不可关闭）⇒ 缓存键固定 C1。保留该标记是有意的：
     // 旧缓存写的是 C0，标记不同即自动失效，不会误命中「无检查」的旧产物。
     m = m + "\nC1"
-    m = m + "\nv" + g_cache_salt
+    m = m + "\nv" + compiler_ident()
     return "tc" + to_string(str_hash(m))
 }
 
@@ -271,7 +326,7 @@ pub func cache_key_str(src: string) -> string {
     // 检查恒开（规范 8.5 不可关闭）⇒ 缓存键固定 C1。保留该标记是有意的：
     // 旧缓存写的是 C0，标记不同即自动失效，不会误命中「无检查」的旧产物。
     m = m + "\nC1"
-    m = m + "\nv" + g_cache_salt
+    m = m + "\nv" + compiler_ident()
     return "tc" + to_string(str_hash(m))
 }
 
@@ -332,7 +387,7 @@ pub func cache_enabled() -> bool {
 // 的 std/string.tie 片段被 driver 装配命中，其 test::expect_eq 展开引用的
 // test::expect 在 driver 单元无定义 → opt 报 use of undefined value）。
 pub func mod_slice_key(p: string, fp: string, topt: i64) -> string {
-    return "tm" + to_string(str_hash(p + "|" + fp + "|" + g_cache_salt + "|M" + to_string(topt) + "|TG" + g_target + "|R" + k_g_src))
+    return "tm" + to_string(str_hash(p + "|" + fp + "|" + compiler_ident() + "|M" + to_string(topt) + "|TG" + g_target + "|R" + k_g_src))
 }
 
 // p.9.21.9：全部模块片段命中 → 返回路径表（模块序 = dep_depset 序）；

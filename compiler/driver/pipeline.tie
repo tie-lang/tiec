@@ -107,6 +107,9 @@ pub func kpass_irgen() -> i64 {
         println("IR 生成失败: " + msg)
         return 1
     }
+    // p.9.15.1：烘进「本次源码集指纹」当**编译器自身身份**（仅编译 tiec 自身时
+    // 该全局才存在 ⇒ 用户程序零成本）。须在 irgen 之后（全局已登记）与 emit 之前。
+    bake_build_stamp()
     // p.9.20.2 中端 pass 管道（t 轴）：irgen 之后、llvmgen 之前。
     // 失败 = pass 内部错误（诊断由 pass 侧输出），终止编译。
     var mrc = passes.run(effective_tie_opt())
