@@ -226,6 +226,45 @@ pub func dep_manifest_ok(ck: string) -> bool {
     return true
 }
 
+// p.9.15.3：**缓存发布的临时名** —— `dst + ".tmp"`，**故意不做进程唯一**。
+// ⚠ 走过的弯路：先想用 pid 后缀（`GetCurrentProcessId`），但
+//   ① `time_now` 是**秒**级、`rand_range` 按秒播种 ⇒ 同秒两进程取值相同（实测），
+//      时间+随机这条常规路走不通；
+//   ② 改用 pid ⇒ 要在 `is_libc_sym` 白名单登记该符号，而**白名单是编译器内部判据**
+//      ⇒ 旧编译器不认识它、把它当 interp 桥 ⇒ **n1 根本造不出来（自举死锁）**。
+// ★ 关键认识：**同一键的所有写者本来就会写出同样的字节**（键含源码指纹 + 编译器
+//   身份 + 档位 + 目标 ⇒ 内容确定性），所以临时名**不需要唯一**，同名才正确：
+//   两个写者写同一临时名（同内容）、先到者改名成功、后来者发现目标已存在即丢弃。
+//   最坏情形只是「双方都没发布成功」⇒ 本次没缓存上、下次重编（miss 是安全方向），
+//   绝不会出现**半写对象被读到**。⇒ 连 pid 都不必取，零新增依赖。
+pub func cache_tmp_of(dst: string) -> string {
+    return dst + ".tmp"
+}
+
+// p.9.15.3：**原子发布** —— 先写唯一临时名，再「**只创建不替换**」地改到目标名。
+// 为何必须：原实现直接写目标名（`file_copy`/`file_write`/`byte_write` 都是直写）
+// ⇒ 并发读者可能读到**半写完**的缓存对象（截断的 .exe/.tir），而读者侧的
+// 「产物二次指纹核对」在同一进程两次读之间无法察觉持续中的半写。
+// 为何「只创建不替换」而非 delete+move：`file_move` 实测**拒绝覆盖已存在目标**
+//（返回 false 且目标保留旧值）—— 这正好可用：同键的内容是**确定性的**
+//（键含源码指纹 + 编译器身份 + 档位 + 目标 ⇒ 同键 ⇒ 同字节），故并发发布无需替换，
+// 先到者胜、后来者丢弃临时文件即可。
+// ★ 不采用 delete+move：那会出现「目标短暂不存在」的窗口（读者 miss，虽安全但白编），
+//   且删除与改名之间被中断会留下**缺失的条目**。
+// ★ 失败不影响正确性：最坏是本进程没缓存上 ⇒ 下次重编（miss 是安全方向）。
+pub func cache_publish(tmp: string, dst: string) -> bool {
+    if !file_exists(dst) {
+        if file_move(tmp, dst) {
+            return true
+        }
+    }
+    // 目标已存在（并发者先到 / 本就有）或改名失败 ⇒ 丢弃临时文件
+    if file_exists(tmp) {
+        file_delete(tmp)
+    }
+    return file_exists(dst)
+}
+
 // 依赖感知缓存命中判定（keel_run_pipeline 内 kpass_front 后调用）：
 // 返回 1=命中（产物已复制到目标路径）/ 0=未命中（继续管线）/ -1=错误。
 pub func cache_try_hit_dep() -> i64 {
@@ -269,9 +308,15 @@ pub func cache_store_dep() -> i64 {
         }
     }
     var ck = cdir + "/" + dep_cache_key()
-    if file_copy(artifact, ck) {
-        // 先写主对象，再写 .dep 清单（清单丢失时命中判定直接失效重编，安全）
-        if file_write(ck + ".dep", dep_manifest_text()) {
+    // 先写主对象，再写 .dep 清单（清单缺失时命中判定直接失效重编，安全）。
+    // p.9.15.3：两者都走「临时名 + 原子发布」，防并发读者看到半写对象。
+    var ot = cache_tmp_of(ck)
+    if file_copy(artifact, ot) {
+        if cache_publish(ot, ck) {
+            var mt = cache_tmp_of(ck + ".dep")
+            if file_write(mt, dep_manifest_text()) {
+                cache_publish(mt, ck + ".dep")
+            }
             println("已缓存编译产物（依赖感知）: " + artifact)
             return 0
         }
@@ -467,8 +512,13 @@ pub func mod_cache_update() -> i64 {
         if file_exists(frag) {
             hits = hits + 1
         } else {
-            if tieir.write_mod_slice(frag, i2, p, fp) {
-                written = written + 1
+            // p.9.15.3：片段同样「临时名 + 原子发布」——装配路径要求**全命中**，
+            // 半写片段一旦被读到会直接进装配（.tir 无内建校验），后果是坏 IR。
+            var ftmp = cache_tmp_of(frag)
+            if tieir.write_mod_slice(ftmp, i2, p, fp) {
+                if cache_publish(ftmp, frag) {
+                    written = written + 1
+                }
             } else {
                 // p.9.21.10：写失败不再静默（TIEC_INC=1 打印模块与原因）
                 var inc2 = get_env("TIEC_INC")
