@@ -272,14 +272,27 @@ pub func asm_parse_slice(t: table<i64>, m: i64) -> i64 {
                 // 全局名在 IR 里有两种写法（irgen 多数点带 '@' 前缀，少数据点
                 // 直存裸名）→ 比对前统一归一化去前缀。
                 var gnm = asm_bare_name(interner.name_str(gpid))
-                if gnm == "s21_sso_pool" || gnm == "s21_sso_off" || gnm == "s21_sso_malloc_cnt" {
-                    asm_flag_sso = true
-                }
-                if gnm == "g_wsock_init" {
-                    asm_flag_wsock = true
-                }
-                if gnm == "tie_panic_jb" || gnm == "tie_panic_active" {
-                    asm_flag_catch = true
+                // 2026-10-08：**只认「全局引用」操作数（kind 3）**，不再只比名字。
+                // 为何：片段池里既有全局引用，也有**字符串常量**（op62/op41 的池载荷）。
+                // 只比名字时，任何内容恰好等于某个全局名的字符串都会被当成「引用了该
+                // 全局」。实例：编译器自身源码里有一处字符串文本正是 `g_wsock_init`
+                // （见 `llvmgen_p1.tie` 的 emit 片段）⇒ 装配路径把 wsock 旗标置位、
+                // 输出**无引用的死全局** `@g_wsock_init`，而全量 irgen 路径不置位
+                // （该程序无 net 代码）⇒ 同一输入的 `.ll` **字节级不可复现**
+                //（实测仅剩这 2 行差异）。kind 3 是 irgen 引用全局的既定写法
+                //（同函数下方 `if okd == 3 { asm_push_dedup(...) }` 的登记族恢复）。
+                // 下面 `sc` 那条无需改：它已由 `iop == 35`（调用指令）把关，
+                // 字符串常量是 op62，不会混淆。
+                if okd == 3 {
+                    if gnm == "s21_sso_pool" || gnm == "s21_sso_off" || gnm == "s21_sso_malloc_cnt" {
+                        asm_flag_sso = true
+                    }
+                    if gnm == "g_wsock_init" {
+                        asm_flag_wsock = true
+                    }
+                    if gnm == "tie_panic_jb" || gnm == "tie_panic_active" {
+                        asm_flag_catch = true
+                    }
                 }
                 // p.9.17.1：str_char 缓存 helper 调用（op 35 载荷）→ sc 段恢复
                 //（sc_enable 同时隐含 sso 段——llvmgen emit 侧强制置位）

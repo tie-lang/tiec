@@ -252,9 +252,17 @@ func tig_exec_output_inline(cmd: i64) -> i64 {
     var b_x = ir.new_block(g_cur_func, interner.intern("eo.x"))
     // 读循环头（b_loop 即循环体起点，回边到自身）：
     s21_store(rcp, tig_int_lit_ty(0, I32), I32)
+    // 2026-10-08：hFile 按 **ptr（HANDLE）** 传，与另外四处 ReadFile 调用一致。
+    // 本处句柄在槽里以 i64 承载（CreatePipe 写入的是指针尺寸的 HANDLE），故调用前
+    // inttoptr 一次。★ 为何必须统一：`user_extern_decl` 的 declare 由**调用点**推导，
+    // 一个符号出现两种签名时，取哪个取决于**指令表扫描序**，而扫描序随编译路径变
+    // （缓存命中走模块片段装配）⇒ 同一输入的 `.ll` 字节级不可复现（实测本处 vs
+    // 另四处：`@ReadFile(i64,…)` / `@ReadFile(ptr,…)`）。
+    var hv_hr_p = ir.new_inst(g_cur_block, 25, P8)   // inttoptr i64 → ptr
+    ir.add_operand(hv_hr_p, hv_hr, 0)
     var ats3: table<i64> = table_new_i64()
     var avs3: table<i64> = table_new_i64()
-    table_push(ats3, T64); table_push(avs3, hv_hr)
+    table_push(ats3, P8); table_push(avs3, ir.get_value(hv_hr_p))
     table_push(ats3, P8);  table_push(avs3, buf)
     table_push(ats3, I32); table_push(avs3, tig_int_lit_ty(4096, I32))
     table_push(ats3, P8);  table_push(avs3, rcp)
