@@ -93,6 +93,16 @@ var g_warn_failed: bool = false;  // 已判定「警告按错误」失败（总�
 var g_front_warn: bool = false;
 // v3（p.9.21.9 收口）：装配器块操作数映射修正 + 装配路径副作用恢复——
 // 旧片段由修正前的装配器语义写出，必须整体失效（盐升格）。
+// p.9.15.1：**构建戳**（= 编译器自身身份）。初值由 driver 在 irgen 之后覆写
+//（`bake_build_stamp`）：构建 tiec 时，本次编译的源码集**就是 tiec 自身源码集**
+// ⇒ 烘进产物的即「tiec 这一版源码的指纹」；运行期读回参与缓存键 ⇒
+// **改编译器源码重建后，旧缓存自动失效**，不再依赖手工 bump `g_cache_salt`
+//（手工那条留着：它是**显式**失效通道，漏 bump 会静默复用过期产物）。
+// ⚠ 为空（旧编译器产物、非自举构建、源码集为空）⇒ 退回手工盐，**不静默**。
+var g_tiec_build_stamp: string = "";
+// p.9.15.1：源码集指纹缓存（惰性算一次，见 driver.source_set_stamp）与「已提示」标志。
+var g_src_stamp: string = "";
+var g_ident_warned: bool = false;
 var g_cache_salt: string = "tiec-cache-v11"; // 缓存键盐：编译器输出形态变更（如 optimizer 改动/固定点升格）时递增，强制旧缓存失效（p.9.19.8 遗留补：升格必 bump）
 // v10（2026-10-06）：越界/除零检查改为**常开**（原先默认关）⇒ 不带显式标志时的产物形态改变，
 // 旧缓存（v9）产出的机器码与当前语义不符，必须整体失效。
