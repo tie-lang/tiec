@@ -694,8 +694,17 @@ func user_extern_decl(sym: string) -> string {
         return ""
     }
     // p.6.4.4：libc _gcvt（to_string(f64)；非变参 CRT，声明由调用签名自动推导）
+    //
+    // 2026-10-08：**取全部调用点里字典序最小的那个签名**（原来返回**首个**遇到的）。
+    // 为何：扫描序随编译路径变（缓存命中走模块片段装配，指令表构建序不同）⇒
+    // 同一符号会得到不同 declare，使 .ll **字节级不可复现**（实测 `@ReadFile`
+    // 一处 i64 / 一处 ptr）。取最小 ⇒ 结果只由「有哪些调用点」决定，与顺序无关。
+    // ★ 注意这**只是让输出稳定**：若各调用点签名本就不同，则无论取哪个，都会有
+    //   调用点与本文件 declare 不符（LLVM 实测**不拒**，故不炸，但仍是隐患）。
+    //   用 `TIEC_EXT_AUDIT=1` 可列出全部不一致的符号与候选签名，据此逐个收敛。
     var ni = ir.inst_count()
     var i: i64 = 0
+    var cands: table<string> = table_new_string()
     while i < ni {
         var op = ir.ins_op(i)
         // 用户 extern：既可能走 op36（tie_ 桥调用），也可能走 op35（用户顶层
@@ -724,11 +733,40 @@ func user_extern_decl(sym: string) -> string {
                 first = false
                 k = k + 2
             }
-            return "declare " + ret + " @" + sym + "(" + args + ")"
+            var cand = "declare " + ret + " @" + sym + "(" + args + ")"
+            var dup: bool = false
+            var q: i64 = 0
+            while q < len(cands) {
+                if cands[q] == cand {
+                    dup = true
+                }
+                q = q + 1
+            }
+            if !dup {
+                table_push(cands, cand)
+            }
         }
         i = i + 1
     }
-    return ""
+    if len(cands) == 0 {
+        return ""
+    }
+    var best = cands[0]
+    var q2: i64 = 1
+    while q2 < len(cands) {
+        if cands[q2] < best {
+            best = cands[q2]
+        }
+        q2 = q2 + 1
+    }
+    if len(cands) > 1 && get_env("TIEC_EXT_AUDIT") == "1" {
+        var q3: i64 = 0
+        while q3 < len(cands) {
+            println("EXT-AUDIT " + sym + " (" + to_string(len(cands)) + " 种签名，取最小): " + cands[q3])
+            q3 = q3 + 1
+        }
+    }
+    return best
 }
 
 // p.6.7.2：模块内是否已内联 trm-lite 表容器（tl_tbl$tbl_push define）——
