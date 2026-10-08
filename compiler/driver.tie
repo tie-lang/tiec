@@ -65,6 +65,10 @@ import "./driver/cache_drv.tie"
 // 阶段计时探针（性能诊断）：CRT clock()，毫秒精度。
 // 环境变量 TIEC_TIME=1 时输出各阶段耗时（不设则零开销静默）。
 unsafe extern fn clock() -> i64;
+// p.9.15.4 备注：产物发布争用时要退让，用 kernel32 `Sleep`——但它**已在本单元声明**
+// （frontend/mexpand.tie → interp/interp.tie:57，且 interp 注释写明与 ext/spidey、
+// ext/gfx 同款）：再声明一次报 E00039「与已有函数重复定义」。故此处不重复声明，
+// 直接用；形参按其 `i64` 调用，避免同一符号出现两种推导签名。
 
 // ==================== 全局 ====================
 var g_input: string = "";
@@ -103,6 +107,11 @@ var g_tiec_build_stamp: string = "";
 // p.9.15.1：源码集指纹缓存（惰性算一次，见 driver.source_set_stamp）与「已提示」标志。
 var g_src_stamp: string = "";
 var g_ident_warned: bool = false;
+// p.9.15.4：进程私有的中间产物路径与前缀（惰性算一次，见 driver.ir_paths_init）。
+var g_ir_path_g: string = "";
+var g_opt_path_g: string = "";
+var g_ir_prefix_g: string = "";
+var g_ir_lock: string = "";
 var g_cache_salt: string = "tiec-cache-v11"; // 缓存键盐：编译器输出形态变更（如 optimizer 改动/固定点升格）时递增，强制旧缓存失效（p.9.19.8 遗留补：升格必 bump）
 // v10（2026-10-06）：越界/除零检查改为**常开**（原先默认关）⇒ 不带显式标志时的产物形态改变，
 // 旧缓存（v9）产出的机器码与当前语义不符，必须整体失效。
