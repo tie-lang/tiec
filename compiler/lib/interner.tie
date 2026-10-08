@@ -207,4 +207,12 @@ pub func init() {
     intern.intern("string")
 }
 
+// p.9.16.1 内存工程：把字符串池回退到空始态（长驻进程内存回收）。
+// 转发 std/intern.reset；与 frontend 的 `semantic.release_ast()` 配套使用
+// ——后者把 s_* 列式表与池**同批**清空（s_names 存的是本池 id，两者必须同批）。
+// ⚠ 调用后先前取得的任何 id 全部失效。
+pub func reset() {
+    intern.reset()
+}
+
 }   // namespace interner
