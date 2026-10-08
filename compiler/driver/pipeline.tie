@@ -394,11 +394,9 @@ pub func kpass_emit() -> i64 {
         println(diagcode.render_error(-1, -1, "代码生成失败: " + llvmgen.err_msg()))
         return 1
     }
-    // IR 文件路径：--emit-ir → -o 或 输入.ll；否则中间文件（输出基准）
-    var ir_path = replace_ext(g_input, "ll")
-    if str_len(g_output) > 0 {
-        ir_path = replace_ext(g_output, "ll")
-    }
+    // IR 文件路径（p.9.15.4：统一由 driver.ir_path 给；--emit-ir 落用户路径，
+    // 否则落**进程私有**临时名——见 ir_priv_prefix 注释）
+    var ir_path = ir_path()
     unsafe {
         var t4 = clock()
     }
@@ -469,11 +467,8 @@ pub func effective_tie_opt() -> i64 {
 // 段 5 后端：opt → 链接/归档（lib→compile_library/compile_shared，其余→
 // compile_logic 三路 link 分支）。
 pub func kpass_link() -> i64 {
-    var ir_path = replace_ext(g_input, "ll")
-    if str_len(g_output) > 0 {
-        ir_path = replace_ext(g_output, "ll")
-    }
-    var opt_path = replace_ext(str.clone(ir_path), "opt.ll")
+    var ir_path = ir_path()
+    var opt_path = opt_path()
     // S3.1 + p.9.1.2：opt 优先级 CLI -O > 配置（含 profile）> 默认 2；受内存上限降档
     var level = effective_llvm_opt()
     var orc = tc.opt(ir_path, opt_path, level)
@@ -686,12 +681,25 @@ pub func compile_logic(ir_path: string, opt_path: string, target: string) -> i64
         }
     }
     // need_interp = g_used_interp：有 Rust 桥才链 tie_interp.lib
-    var bres = tc.link_exe(opt_path, exe_path, target, g_used_interp, g_used_trmlite, g_used_wsock)
+    // p.9.15.4：链接到**私有中转名**再发布到 exe_path —— ① 防并发互锁同一输出
+    //（LNK1104）② 用户路径永不出现**半写的 exe**。无私有前缀则退回直接链。
+    var link_out = exe_path
+    var pre_l = ir_prefix()
+    if pre_l != "" {
+        link_out = pre_l + ".exe.tmp"
+    }
+    var bres = tc.link_exe(opt_path, link_out, target, g_used_interp, g_used_trmlite, g_used_wsock)
     if bres != 0 {
         println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
         return 1
     }
-    cleanup(ir_path, opt_path)
+    if link_out != exe_path {
+        if !publish_artifact(link_out, exe_path) {
+            println(diagcode.render_error(-1, -1, "产物发布失败: " + exe_path))
+            return 1
+        }
+    }
+    cleanup_ir()
     println("编译成功: " + exe_path)
     return 0
 }
@@ -713,7 +721,7 @@ pub func compile_library(ir_path: string, opt_path: string, target: string) -> i
         println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
         return 1
     }
-    cleanup(ir_path, opt_path)
+    cleanup_ir()
     file_delete(obj_path)
     println("库编译成功: " + lib_path)
     return 0
@@ -736,17 +744,11 @@ pub func compile_shared(ir_path: string, opt_path: string, target: string) -> i6
         println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
         return 1
     }
-    cleanup(ir_path, opt_path)
+    cleanup_ir()
     println("动态库编译成功: " + dll_path)
     return 0
 }
 
-// 清理中间 .ll / .opt.ll（--keep-ir 时保留）。
-pub func cleanup(ir_path: string, opt_path: string) {
-    if !g_keep_ir {
-        file_delete(ir_path)
-        file_delete(opt_path)
-    }
-}
+
 
 }
