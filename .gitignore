@@ -15,6 +15,10 @@
 # 删除 Rust 种子后，clone 即可用 tiec 自举；源码变更后重新自举并提交同步更新）
 !compiler/tiec.exe
 
+# LSP 构建暂存树：源码权威在 tie-lang/tsp 仓；此处只为满足 `../frontend/` 相对
+# import 而暂存一份（用于构建 compiler/lsp/tsp.exe），不入库以免两份漂移。
+compiler/lsp/
+
 # 发行版打包产物
 /dist/
 
