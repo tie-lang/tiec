@@ -51,6 +51,12 @@ if subj_is_any {
     any_tag_v = ir.get_value(ald)
 }
 var ncases = s_aux[id]
+// 表达式统一类型（sinfer 按隐式拓宽方向定好）：各臂值 phi 前 tig_coerce 对齐
+//（2026-10-09 修，与 tig_ternary 同判据——此前混宽两臂产 LLVM phi 类型不一致）。
+var rty = node_types[id]
+if rty < 0 {
+    rty = types.named(TK_I64)
+}
 var merge_blk = ir.new_block(g_cur_func, interner.intern("swe.merge"))
 var val_tab: table<i64> = table_new_i64()
 var blk_tab: table<i64> = table_new_i64()
@@ -241,6 +247,7 @@ while k < ncases {
     if bv < 0 {
         return -1
     }
+    bv = tig_coerce(bv, node_types[body_expr], rty)
     var bv_blk = g_cur_block
     table_push(val_tab, bv)
     table_push(blk_tab, bv_blk)
@@ -262,12 +269,13 @@ if has_wild {
         if dv < 0 {
             return -1
         }
+        dv = tig_coerce(dv, node_types[dflt], rty)
         var dv_blk = g_cur_block
         table_push(val_tab, dv)
         table_push(blk_tab, dv_blk)
     }
 } else {
-    var fb = tig_int_lit(0)
+    var fb = tig_coerce(tig_int_lit(0), types.named(TK_I64), rty)
     var fb_blk = g_cur_block
     table_push(val_tab, fb)
     table_push(blk_tab, fb_blk)

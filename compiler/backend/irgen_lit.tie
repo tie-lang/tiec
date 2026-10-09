@@ -121,12 +121,23 @@ func tig_ternary(id: i64) -> i64 {
     ir.add_operand(cbr, cond, 0)
     ir.add_operand(cbr, then_blk, 1)
     ir.add_operand(cbr, else_blk, 1)
+    // phi 类型：语义层统一的公共类型（sinfer 已按隐式拓宽方向定好；混宽两臂
+    // 在**各自分支块内**（br 之前）tig_coerce 对齐——phi 入边值必须定义于前驱
+    // 块，放 merge 块会破坏支配性）。
+    var pty = node_types[id]
+    if pty < 0 {
+        pty = node_types[sstate.child(id, 1)]
+    }
+    if pty < 0 {
+        pty = types.named(TK_I64)
+    }
     // then 分支
     g_cur_block = then_blk
     var tv = tig_expr(sstate.child(id, 1))
     if tv < 0 {
         return -1
     }
+    tv = tig_coerce(tv, node_types[sstate.child(id, 1)], pty)
     var tv_blk = g_cur_block  // 嵌套短路时值实际产生块
     var br1 = ir.new_inst(g_cur_block, 30, -1)
     ir.add_operand(br1, merge_blk, 1)
@@ -136,15 +147,12 @@ func tig_ternary(id: i64) -> i64 {
     if ev < 0 {
         return -1
     }
+    ev = tig_coerce(ev, node_types[sstate.child(id, 2)], pty)
     var ev_blk = g_cur_block
     var br2 = ir.new_inst(g_cur_block, 30, -1)
     ir.add_operand(br2, merge_blk, 1)
-    // merge：phi 汇合（类型取 then 分支语义类型；兜底 i64）
+    // merge：phi 汇合
     g_cur_block = merge_blk
-    var pty = node_types[sstate.child(id, 1)]
-    if pty < 0 {
-        pty = types.named(TK_I64)
-    }
     var phi = ir.new_inst(g_cur_block, 33, pty)
     ir.add_operand(phi, tv, 0)
     ir.add_operand(phi, tv_blk, 1)

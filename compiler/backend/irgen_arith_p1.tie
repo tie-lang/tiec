@@ -210,11 +210,21 @@ func tig_binary(op: i64, lhs: i64, rhs: i64) -> i64 {
     if lhs_str || rhs_str {
         return tig_binary_str(op, lv, rv)
     }
-    // 浮点判定（f64/f32 字面量与算术；对齐 Rust：类型以一侧为准，语义已统一）
+    // 浮点判定（f64/f32 字面量与算术；对齐 Rust：类型以一侧为准，语义已统一）。
+    // f32 算术语义（S1.3，2026-10-09 落实）：操作数提升 f64 计算，结果按语义
+    // 类型回窄——f32+f32 → f32（sinfer rt=lhs）；混 f64 → f64（sinfer 816 行）。
+    // 此前操作数/结果类型与语义层脱节（f32 值落 double），任何 f32 算术路径
+    // 在 LLVM 层类型错。
     var lhs_f = lhs_t == types.named(TK_F64) || lhs_t == types.named(TK_F32)
     var rhs_f = rhs_t == types.named(TK_F64) || rhs_t == types.named(TK_F32)
     if lhs_f || rhs_f {
-        return tig_binary_float(op, lv, rv)
+        var fsem = types.named(TK_F64)
+        if lhs_t == types.named(TK_F32) && rhs_t == types.named(TK_F32) {
+            fsem = types.named(TK_F32)
+        }
+        var lf = tig_coerce(lv, lhs_t, types.named(TK_F64))
+        var rf = tig_coerce(rv, rhs_t, types.named(TK_F64))
+        return tig_binary_float(op, lf, rf, fsem)
     }
     // 元组 ==/!=：逐字段递归比较（语义层已校验两侧为结构相等元组；
     // < > <= >= 在语义层已被拦截，此处仅处理 5/6）

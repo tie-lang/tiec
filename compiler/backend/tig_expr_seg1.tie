@@ -21,7 +21,14 @@ func tig_expr_seg1(id: i64) -> i64 {
         return tig_int_lit(s_vals[id])
     }
     if tag == 1 {
-        // FloatLit：f64 常量（lexeme 文本存池，llvmgen 规范化输出）
+        // FloatLit：按推断类型生成常量（后缀 f32 → const_f float；默认 f64）。
+        // 对齐上方 IntLit 的后缀分派（批次 2 同款）。此前恒 f64——f32 字面量的
+        // IR 值落 double，存入 float 槽/参与 f32 算术/进 f32 phi 全部 LLVM 类型
+        // 错（2026-10-09 修；f32 变量 load 本就是 float，此后字面量与变量一致）。
+        var lt = node_types[id]
+        if lt >= 0 && lt != types.named(TK_F64) && types.is_float(lt) {
+            return tig_float_lit_ty(s_names[id], lt)
+        }
         return tig_float_lit(s_names[id])
     }
     if tag == 2 {
@@ -185,11 +192,20 @@ func tig_expr_seg1(id: i64) -> i64 {
                 return ir.get_value(tneg)
             }
             if oty == types.named(TK_F64) || oty == types.named(TK_F32) {
+                // f32 语义（2026-10-09）：操作数提升 f64 取负，结果按语义类型
+                // 回窄（对齐二元浮点算术的统一 f64 计算）。f32 变量 IR 值为
+                // float，须先 fpext；f32 字面量自字面量分派修复后同为 float。
+                var ovf = tig_coerce(ov, oty, types.named(TK_F64))
                 var zf = tig_float_lit(interner.intern("0.0"))
                 var fneg = ir.new_inst(g_cur_block, 14, types.named(TK_F64))  // fsub
                 ir.add_operand(fneg, zf, 0)
-                ir.add_operand(fneg, ov, 0)
-                return ir.get_value(fneg)
+                ir.add_operand(fneg, ovf, 0)
+                var negv = ir.get_value(fneg)
+                var rsem = node_types[id]
+                if rsem == types.named(TK_F32) {
+                    negv = tig_coerce(negv, types.named(TK_F64), rsem)
+                }
+                return negv
             }
             // S1.3 A1 窄整数取负：按操作数宽度生成 sub（i8 取负 → sub i8 0, x）
             var nty = types.named(TK_I64)
