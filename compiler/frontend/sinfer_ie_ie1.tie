@@ -360,6 +360,34 @@ pub func try_lambda_form(arrow: i64, target_ty: i64) -> i64 {
     return f
 }
 
+// p.9.11.34 短闭包**实参位**（上下文消歧，用户裁决 2026-10-09）：
+// 实参 `ident -> expr` 形态 + 形参类型是 fn ⇒ 语义期展开为闭包并**原位替换**
+// 调用节点的实参 child（arg_idx = 绝对 child 索引）。返回展开后的闭包节点 id；
+// 未命中返回 -1（实参原样保留——管道/箭头既有语义与诊断一字不变）。
+// ★ 消歧判据（为何无歧义）：解析期 `x -> expr` 恒按管道形态解析；管道语义
+// （数据作末参追加）要求被调目标是调用/可赋值变量——形参类型是 fn 时该解释
+// 不可能成立，故「形参 fn ⇒ 短闭包」分流确定。单参形态与 try_lambda_form
+// 一致（形参名 = 箭头左侧裸标识符，类型取 fn 签名第 0 形参）。
+pub func try_lambda_arg(call_id: i64, arg_idx: i64, arg_node: i64, want_ty: i64) -> i64 {
+    var lam = try_lambda_form(arg_node, want_ty)
+    if lam < 0 {
+        return -1
+    }
+    var kids: table<i64> = table_new_i64()
+    var nc = sstate.nchild(call_id)
+    var ci: i64 = 0
+    while ci < nc {
+        if ci == arg_idx {
+            table_push(kids, lam)
+        } else {
+            table_push(kids, sstate.child(call_id, ci))
+        }
+        ci = ci + 1
+    }
+    sstate.set_children(call_id, kids)
+    return lam
+}
+
 // p.9.13.3 `in` 中缀（语义期分派 + 改写为调用）。
 // 解析期产出 `N_BINARY(B_IN)`，children = **[泛型槽, 容器, 键/元素]**（与调用同形）。
 // 此处按容器类型选目标库函数，把节点**改写为 `S_N_CALL`**（仅换 tag/name/val，
@@ -486,6 +514,25 @@ pub func infer_expr_unary(id: i64) -> i64 {
                 sm_err_msg = "按位取反的操作数必须是整数"
                 return -1
             }
+        } else if op == U_AWAIT {
+            // p.9.11 `await`（规范 §10.6）：操作数须为 future<T> 凭据，结果 = T。
+            // 错误与结果走同一条路径（fail → raise，见 irgen tig_await）。
+            if types.kind(operand) != K_FUTURE {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "await 的操作数须为 future 凭据（async 非 void 方法调用的结果），实际是 " + types.type_name(operand)
+                return -1
+            }
+            var et = types.future_elem(operand)
+            if et < 0 {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "future 凭据负载类型解码失败"
+                return -1
+            }
+            node_types[id] = et
+            g_typed = g_typed + 1
+            return et
         } else {
             // 自增/自减：可写数字变量
             var target = sstate.child(id, 0)

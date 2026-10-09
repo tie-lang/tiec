@@ -56,7 +56,7 @@ func closure_cap_slot_ty(t: i64) -> i64 {
     }
     var k = types.kind(t)
     if k == K_TUPLE || k == K_STRUCT || k == K_ENUM || k == K_FN || k == K_ACTOR ||
-        k == K_ARRAY || k == K_PORT || k == K_GUARD {
+        k == K_ARRAY || k == K_PORT || k == K_GUARD || k == K_FUTURE {
         return t
     }
     return types.named(TK_I64)
@@ -661,6 +661,10 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
     var s_sbh = g_sb_hv
     var s_cbsk = g_cbs_keys
     var s_cbsa = g_cbs_acc
+    // p.9.11 reentrant：actor 方法上下文同样按函数隔离——闭包是独立函数，
+    // g_cur_actor_recval 是 handler 函数的值 id，跨函数引用产生 undefined value。
+    var s_arec = g_cur_actor_recval
+    var s_aree = g_cur_method_reent
     g_sc_keys = table_new_i64()
     g_sc_allocas = table_new_i64()
     g_sc_tys = table_new_i64()
@@ -698,6 +702,8 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
     g_sb_hv = table_new_i64()
     g_cbs_keys = table_new_i64()
     g_cbs_acc = table_new_i64()
+    g_cur_actor_recval = -1
+    g_cur_method_reent = false
     var params: table<i64> = table_new_i64()
     table_push(params, types.named(TK_STR))  // env ptr（隐藏第一参数）
     var k: i64 = 0
@@ -798,6 +804,8 @@ func tig_closure_entry_fn(ci: i64, id: i64, ret_ty: i64, ptys: table<i64>, p_ref
     g_sb_hv = s_sbh
     g_cbs_keys = s_cbsk
     g_cbs_acc = s_cbsa
+    g_cur_actor_recval = s_arec
+    g_cur_method_reent = s_aree
     return fid
 }
 

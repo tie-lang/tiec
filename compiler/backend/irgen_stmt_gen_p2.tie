@@ -356,7 +356,24 @@ pub func tig_stmt_b_103_Assign(id: i64) -> i64 {
         if assign_is_tbl && !assign_new_tbl {
             tig_tbl_retain_call(vv)
         }
-        if assign_is_tbl && !tig_is_param(nid) {
+        // ★ P2b any 装箱（赋值路径补齐，与 VarDecl 同款）：目标槽是 any 且 RHS 是
+        // 具体类型 → box 为 {tag,payload}。曾缺失 ⇒ 规范 §2.10 的 any 重绑定示例
+        //（`v = "text"`）直接 LLVM 类型错（槽型 {i64,i64} vs 未装箱值，新旧编译器
+        // 同样失败）。置于 retain 块**之后**：表 RHS 的 retain 须作用于裸句柄
+        //（装箱后是聚合值，tig_tbl_retain_call 不收）。any 盒本身不参与表引用
+        // 计数（与 VarDecl 出口析构排除 any 槽同款约定），故下方旧值 load/release
+        // 对 any 目标跳过（盒按借用约定随函数生命周期，不回收）。
+        if op < 0 && tgt_ty == types.named(TK_ANY) {
+            var vt5 = node_types[val]
+            if vt5 >= 0 && vt5 != types.named(TK_ANY) {
+                var bx5 = tig_box_any(vv, vt5)
+                if bx5 < 0 {
+                    return -1
+                }
+                vv = bx5
+            }
+        }
+        if assign_is_tbl && !tig_is_param(nid) && tgt_ty != types.named(TK_ANY) {
             var old = ir.new_inst(g_cur_block, 21, tgt_ty)  // load 旧值（store 前！）
             if tgt_global > 0 {
                 ir.add_operand(old, tgt_alloca, 3)          // 全局槽：OK_GLOBAL 池 id

@@ -152,6 +152,46 @@ pub func atomic_of(elem: i64) -> i64 {
     return BASE_ATOMIC + NEST_SLOT_OFF + n
 }
 
+// p.9.11 future<T>：id = 15<<40 | T（async 非 void 方法调用的凭据类型，规范
+// §10.6）。LLVM 表示 = i64（actor record 句柄）；await 取值（等 done/读 result/
+// 清门闩）。负载 T 为方法返回类型 id；嵌套聚合走 nest_future_elems 防进位。
+pub func future_of(elem: i64) -> i64 {
+    if elem < NEST_SLOT_OFF {
+        return BASE_FUTURE + elem
+    }
+    var n = len(nest_future_elems)
+    var i: i64 = 0
+    while i < n {
+        if nest_future_elems[i] == elem {
+            return BASE_FUTURE + NEST_SLOT_OFF + i
+        }
+        i = i + 1
+    }
+    table_push(nest_future_elems, elem)
+    return BASE_FUTURE + NEST_SLOT_OFF + n
+}
+
+// future<T> 的负载类型 T 解码（id → 元素类型 id；-1 = 非 future 或负载越界）
+pub func future_elem(t: i64) -> i64 {
+    if kind(t) != K_FUTURE {
+        return -1
+    }
+    var lf = low(t)
+    if lf < NEST_SLOT_OFF {
+        return lf
+    }
+    var sf = lf - NEST_SLOT_OFF
+    if sf >= 0 && sf < len(nest_future_elems) {
+        return nest_future_elems[sf]
+    }
+    return -1
+}
+
+// future<T> 判据（kind 段判别）
+pub func is_future(t: i64) -> bool {
+    return kind(t) == K_FUTURE
+}
+
 // ---------- L1 定长数组类型构造 ----------
 // array<T, N>：id = 14<<40 | NEST_SLOT_OFF + 序号。元素 + 长度经 nest_arr_elems /
 // nest_arr_lens 平行登记（低负载 = 序号；恒 ≥ NEST_SLOT_OFF 防与 named 段碰撞）。
@@ -555,6 +595,10 @@ pub func kind(id: i64) -> i64 {
     if id < 100 {
         return K_NAMED
     }
+    // p.9.11 future 段（15<<40）高于 array 段，必须最先判
+    if id >= BASE_FUTURE {
+        return K_FUTURE
+    }
     // L1：BASE_ARRAY（14<<40）高于 guard 段，必须最先判（下一档 13<<40）
     if id >= BASE_ARRAY {
         return K_ARRAY
@@ -601,6 +645,10 @@ pub func kind(id: i64) -> i64 {
 // 类型负载：Table/Map/Ptr/Slice/Atomic 的元素类型 id、Struct/Tuple/Enum/Port 的
 // 索引、TypeVar 的 intern 池 id；Named 类型无意义（调用方先判 kind）。
 pub func low(id: i64) -> i64 {
+    // p.9.11 future 段（15<<40）最高，必须最先判
+    if id >= BASE_FUTURE {
+        return id - BASE_FUTURE
+    }
     if id >= BASE_ARRAY {
         return id - BASE_ARRAY
     }

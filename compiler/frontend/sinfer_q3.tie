@@ -347,16 +347,25 @@ pub func infer_method_call(id: i64) -> i64 {
     var off = sg_off[sig]
     var j: i64 = 0
     while j < len(args) {
+        // 形参类型先于实参推断取出：短闭包实参位（p.9.11.34 上下文消歧）需要
+        // 「形参 fn ⇒ 展开」判据在 infer 之前生效。变参区实参不展开（元素类型）。
+        var want_m = sp_tys[off + j]
+        if has_var {
+            if j >= total - 1 {
+                want_m = sstate_fn_variadic_elem(sig)   // 变参：元素类型匹配
+            }
+        }
+        if (has_var == false || j < total - 1) && types.is_fn(want_m) {
+            var lam_m = try_lambda_arg(id, sstate.slot_off(id) + 1 + j, args[j], want_m)
+            if lam_m >= 0 {
+                args[j] = lam_m
+            }
+        }
         var at = infer_expr(args[j])
         if at < 0 {
             return -1
         }
-        var want = sp_tys[off + j]
-        if has_var {
-            if j >= total - 1 {
-                want = sstate_fn_variadic_elem(sig)   // 变参：元素类型匹配
-            }
-        }
+        var want = want_m
         if !stype.types_compatible(want, at) && !stype.types_match(want, at, args[j]) &&
             !stype.types_narrow_int(want, at, args[j]) {
             sm_err_line = s_lines[id]

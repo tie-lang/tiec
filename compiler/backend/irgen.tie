@@ -245,6 +245,17 @@ var g_lookup_ty: i64 = 0;
 var g_actor_task_gen: i64 = 0;
 // 一期并发 A4：actor dispatch/handler 函数急切生成标记（每模块仅一次）
 var g_actor_disp_gen: i64 = 0;
+// p.9.11 `reentrant`：actor 单步处理/嵌套排空函数急切生成标记（与 step+nested
+// 一起每模块仅一次；随 gen_actor_task_eager 末尾一并生成）
+var g_actor_step_gen: i64 = 0;
+// p.9.11 `reentrant`（规范 §10.7）：actor 方法 handler 生成期上下文——
+// g_cur_actor_recval = 本方法的 record 指针**值 id**（-1 = 非 actor 方法体）；
+// g_cur_method_reent = 本方法是否标注 reentrant。gen_actor_sync_call 据此在
+// 同步 RPC 等待点生成「嵌套排空」分支（仅本 actor 队列中的异步消息）。
+// ★ per-function 状态：闭包入口生成（tig_closure_entry_fn）须保存/清零/恢复
+//（闭包是独立函数，recp 值 id 跨函数引用会产生 undefined value）。
+var g_cur_actor_recval: i64 = -1;
+var g_cur_method_reent: bool = false;
 // p.6.7.6：S-pool 常驻 worker（@tie_s_pool_worker）急切生成标记（每模块仅一次）
 var g_s_pool_worker_gen: i64 = 0;
 // 阶段 A：变量命中形态（0=本地/1=全局标量/2=全局表，scope_get_global 置位）

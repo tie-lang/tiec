@@ -242,6 +242,34 @@ func parse_equality() -> i64 {
     return lhs
 }
 
+// 比较链入口之上加一层 `is`（p.9.11，规范 §3.16）：`v is i64` 类型判定。
+// 优先级：紧于 `==`（equality 内侧是 in_expr → is）、松于 `< >`（操作数走
+// parse_comparison）⇒ `x == v is i64` 解析为 `x == (v is i64)`。
+// 右侧是**类型**不是表达式：直接走 pexpr_type.parse_type（i64/Point/table<T>/…），
+// 产出 N_IS[children=[操作数, 类型节点]]（语义层 stype.parse_type_node 解析类型 id）。
+func parse_is() -> i64 {
+    var lhs = parse_comparison()
+    if lhs < 0 {
+        return -1
+    }
+    if putil.peek_tag() != lex_is {
+        return lhs
+    }
+    var line = ast.line(lhs)
+    var col = ast.col(lhs)
+    putil.advance()
+    var tnode = pexpr_type.parse_type()
+    if tnode < 0 {
+        return -1
+    }
+    var n = ast.new_node(N_IS, -1, -1, -1, line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, lhs)
+    table_push(kids, tnode)
+    ast.set_children(n, kids)
+    return n
+}
+
 // 比较 < > <= >=（p.8.2.2 链式比较：`a < b < c` desugar 为 `(a < b) && (b < c)`；
 // 中项表达式求值两次，保守语义——常用于变量/字面量）
 func parse_comparison() -> i64 {

@@ -1,0 +1,7 @@
+type tie<script>
+func main() -> i64 {
+    var v: any = 42
+    v = "hello"
+    println("ok")
+    return 0
+}

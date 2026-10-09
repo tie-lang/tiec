@@ -557,6 +557,13 @@ func exec_stmt(st: i64) -> i64 {
                 return -1
             }
             nv = cur_iv % iv
+        } else if op == 26 {
+            // p.9.11 `%%=`：floor 取余复合赋值（与二元 %% 同语义，规范 §3.3）
+            if iv == 0 {
+                cv_failed = true
+                return -1
+            }
+            nv = cv_floormod(cur_iv, iv)
         } else {
             cv_failed = true
             return -1

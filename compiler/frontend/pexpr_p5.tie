@@ -50,7 +50,7 @@ func mk_in_call(elem: i64, cont: i64) -> i64 {
 // 实现取解析层前瞻（不改词法表、**不把 `not` 升为全局保留字**），故既满足设计
 // 「`not in` 为一词法组合」的意图，又不破坏把 `not` 用作普通标识符的既有代码。
 func parse_in_expr() -> i64 {
-    var lhs = parse_comparison()
+    var lhs = parse_is()
     if lhs < 0 {
         return -1
     }
@@ -70,7 +70,7 @@ func parse_in_expr() -> i64 {
         }
         if !d {
             putil.advance()   // 'in'
-            var rhs = parse_comparison()
+            var rhs = parse_is()
             if rhs < 0 {
                 return -1
             }

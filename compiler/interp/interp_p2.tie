@@ -366,6 +366,10 @@ func value_matches_ty(v: Value, ty_node: i64) -> bool {
     if kw == 18 {
         return vt != W_INT && vt != W_FLOAT && vt != W_BOOL && vt != W_CHAR && vt != W_STR
     }
+    if kw == 23 {
+        // TK_ANY：`v is any` 恒真（any 装箱值必为某类型的值；对齐 AOT tig_is_check）
+        return true
+    }
     return false
 }
 
@@ -606,6 +610,33 @@ func gen_expr(id: i64) -> Value {
             return Value.Nil
         }
         return vval.new_range(s, e, isess.nval(id))
+    }
+    if t == N_IS {
+        // p.9.11 `is` 类型判定（规范 §3.16）：动态类型按 Value 变体匹配
+        //（复用 case 类型 pattern 的 value_matches_ty；child(1) 是类型节点）。
+        var subj = gen_expr(isess.nchild_at(id, 0))
+        if w_err != "" {
+            return Value.Nil
+        }
+        return vval.new_bool(value_matches_ty(subj, isess.nchild_at(id, 1)))
+    }
+    if t == N_BLOCK_PIPE {
+        // p.9.13.4 块管道 `x -> { v -> expr }`（此前仅 AOT 有分派，interp 侧缺
+        // ⇒ 同程序两引擎行为不一致）。语义 = 内联绑定非闭包：压作用域把数据值
+        // 绑定到节点名（对齐 AOT tig_block_pipe 的 scope_put(s_names[id])）→
+        // 求值体 → 弹域。
+        var pdata = gen_expr(isess.nchild_at(id, 0))
+        if w_err != "" {
+            return Value.Nil
+        }
+        isess.scope_push()
+        isess.var_declare(isess.nname_str(id), pdata)
+        var bres = gen_expr(isess.nchild_at(id, 1))
+        isess.scope_pop()
+        if w_err != "" {
+            return Value.Nil
+        }
+        return bres
     }
     if t == N_CALL {
         return gen_call(id)

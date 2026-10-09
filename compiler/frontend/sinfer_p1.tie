@@ -583,6 +583,17 @@ func infer_actor_method(aty: i64, mname: string, args: table<i64>, id: i64) -> i
         return -1
     }
     var rt = sstate.actor_method_ret(ai, mname)
+    // p.9.11 async 返回值（规范 §10.6 结果的延后取得）：async 非 void 方法
+    // → 调用产生凭据 future<T>（`var f = w.compute(x)`；`await f` 取值）。
+    // 同一 actor 至多一个未 await 凭据（mq_sync 门闩语义，见 gen_actor_sync_call
+    // future 模式）。async void 方法维持 fire-and-forget（调用即丢弃）。
+    var moff_ai = ac_mret[ai]
+    if ac_masync[moff_ai + mi] == 1 && rt != types.named(TK_VOID) {
+        var ft = types.future_of(rt)
+        node_types[id] = ft
+        g_typed = g_typed + 1
+        return ft
+    }
     node_types[id] = rt
     g_typed = g_typed + 1
     return rt

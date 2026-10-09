@@ -371,6 +371,7 @@ var ac_mnpars: table<i64>;   // 每方法参数个数扁平段
 var ac_mptys: table<i64>;    // 每方法参数类型扁平段
 var ac_mrets: table<i64>;    // 每方法返回类型扁平段
 var ac_masync: table<i64>;   // 每方法是否 async（fire-and-forget；与 ac_mrets 同位对齐）
+var ac_mreent: table<i64>;   // 每方法是否 reentrant（规范 §10.7 重入；与 ac_mrets 同位对齐）
 // actor 私有状态字段布局（行 = actor 索引；Step4b 起 per-actor state 真实槽位）：
 //   ac_fnoff[actor] -> 字段名段偏移（ac_fnames）
 //   ac_fncnt[actor] -> 字段个数
@@ -526,6 +527,7 @@ const S_N_FN_LIT: i64 = 132;        // func 字面量（S2.2 闭包，与 ast.ti
 const S_N_CALL_EXPR: i64 = 148;     // 调用表达式（P2a，与 ast.tie N_CALL_EXPR 同号）
 const S_N_FN_TYPE: i64 = 205;       // 函数值类型（S2.2，与 ast.tie N_FN_TYPE 同号）
 const S_N_ARRAY_TYPE: i64 = 206;    // L1 定长数组类型（与 ast.tie N_ARRAY_TYPE 同号）
+const S_N_IS: i64 = 207;            // `is` 类型判定（与 ast.tie N_IS 同号，规范 §3.16）
 // S2.4 port 接口模型（与 ast.tie N_PORT/N_IMPL 同号权威）：
 //   编号 138/139：与 S3.3 宏节点（135-137）错开（整合时统一，见 ast.tie）。
 const S_N_PORT: i64 = 138;          // port 声明：Port[name=port 名, children=[泛型槽(-1), 方法 FnDef...]]

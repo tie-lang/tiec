@@ -47,6 +47,26 @@ func eval_binary(op: i64, l: Value, r: Value) -> Value {
     if lt == W_INT && rt == W_TRIT {
         return trit_int(op, vval.int_val(l), vval.int_val(r), true)
     }
+    // p.9.13.3 `+` 容器拼接（interp 侧对齐 AOT 的 lang::tbl_cat 语义改写——
+    // 该改写在语义层，interp.eval 不经 sinfer ⇒ 这里原生实现）：
+    // 表 + 表 → 值语义新表（a 元素在前、b 在后）。map 的键值对在 interp 无
+    // 元素迭代通道（elem_at 仅 Tbl），map + map 暂维持「类型不匹配」。
+    if op == B_ADD && lt == W_TABLE && rt == W_TABLE {
+        var acc = vval.new_table()
+        var na = vval.elem_count(l)
+        var ia: i64 = 0
+        while ia < na {
+            acc = vval.table_push_val(acc, vval.elem_at(l, ia))
+            ia = ia + 1
+        }
+        var nb = vval.elem_count(r)
+        var ib: i64 = 0
+        while ib < nb {
+            acc = vval.table_push_val(acc, vval.elem_at(r, ib))
+            ib = ib + 1
+        }
+        return acc
+    }
     // 类型不匹配
     w_err = "类型不匹配: " + vval.type_name(l) + " " + op_symbol(op) + " " +
         vval.type_name(r)

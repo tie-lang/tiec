@@ -25,6 +25,36 @@ var g_iface_vio_missing: bool = true;
 
 namespace stype {
 
+// p.9.11 `is` 类型判定 / any 装箱共用的「类型 → 运行期 tag」映射（单源）。
+// 与 backend tig_box_any 的装箱约定逐条对齐：标量族 0-4；struct/enum/fn 与
+// 表/映射 = 类型 id（P2c/P2d）。返回 -1 = 该类型不能进 any（装箱同款拒绝面，
+// 如 f32/trit/guard），语义层据此拒绝 `is`，后端据此取期望 tag。
+pub func any_expected_tag(vty: i64) -> i64 {
+    if vty == types.named(TK_STR) {
+        return 3
+    }
+    if vty == types.named(TK_F64) {
+        return 1
+    }
+    if vty == types.named(TK_BOOL) {
+        return 2
+    }
+    if vty == types.named(TK_CHAR) {
+        return 4
+    }
+    if types.is_int(vty) {
+        return 0
+    }
+    if types.is_table(vty) || types.is_map(vty) {
+        return vty
+    }
+    var k = types.kind(vty)
+    if k == K_STRUCT || k == K_ENUM || k == K_FN {
+        return vty
+    }
+    return -1
+}
+
 // 类型节点 → 类型 id（types 自编码；含 tuple 查找/登记）
 pub func parse_type_node(tid: i64) -> i64 {
     var tag = s_tags[tid]
