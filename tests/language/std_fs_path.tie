@@ -26,7 +26,7 @@ func main() {
     assert.assert(fs.str_contains(lines[6], "Hello, tie!"))
 
     // ---- fs 写读往返 + 追加 + 删除（临时文件）----
-    var tmp = "REDACTED_USER_PATH/AppData/Local/Temp/opencode/t28_fs_test.txt"
+    var tmp = "t28_fs_test.txt"
     assert.assert(fs.write_text(tmp, "abc"))
     var rt1 = fs.read_text(tmp)
     switch rt1 {

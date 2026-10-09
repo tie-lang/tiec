@@ -27,8 +27,8 @@ using bytes;
 
 func main() {
     // ---- bytes：write/read 文件往返（临时文件，最后删除）----
-    // 临时文件路径（正斜杠写法等价于 REDACTED_USER_PATH\AppData\Local\Temp\opencode\...）
-    var path = "REDACTED_USER_PATH/AppData/Local/Temp/opencode/t28_bytes.bin"
+    // 临时文件（相对当前工作目录，用后即删）
+    var path = "t28_bytes.bin"
     // 写字节表 [65,66,67]（"ABC"）
     var w = table_new_i64()
     table_push(w, 65)
