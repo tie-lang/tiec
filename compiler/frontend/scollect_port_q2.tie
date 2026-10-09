@@ -283,15 +283,17 @@ pub func collect_actor_decl(s: i64) -> i64 {
             } else {
                 table_push(ac_mreent, 0)
             }
-            // p.9.11 async 返回值（规范 §10.6）：async 方法允许 **i64/u64** 返回
-            // ⇒ 调用产生 future<T> 凭据，await 取值（错误与结果同路径）。
-            // async void 维持 fire-and-forget。其余类型仍拒绝——result@96 是单
-            // i64 槽（actor 消息 ABI）：窄整数/f64/bool 需槽型适配、string/聚合
-            // 的 handler 返回表示未接通（实测 `ret ptr` 类型错，既有缺口）。
+            // p.9.11 async 返回值（规范 §10.6）：async 方法允许 **i64/u64 或
+            // ptr 表示类型（string/table/map/port）** 返回 ⇒ 调用产生 future<T>
+            // 凭据，await 取值（错误与结果同路径）。async void 维持
+            // fire-and-forget。其余（f64/bool/narrow int/struct/tuple/array）
+            // 仍拒绝——result@96 是单 i64 槽，窄整型/f64 的槽型适配与聚合值的
+            // 消息结果表示未接通（2026-10-09 修复后 ptr 表示已经
+            // dispatch ptrtoint / 调用方 inttoptr 打通，见 irgen_rt_p3）。
             if s_vals[item] / 4 % 2 == 1 {
                 var ret_node = rt_node
                 var ret_is_void = false
-                var ret_i64ish = false
+                var ret_abi_ok = false
                 if ret_node >= 0 {
                     if s_tags[ret_node] == S_N_NAMED_TYPE {
                         if s_vals[ret_node] == 14 {
@@ -300,12 +302,22 @@ pub func collect_actor_decl(s: i64) -> i64 {
                         var tkv = s_vals[ret_node]
                         // 64 位整数：i64=3 / u64=7（result@96 原生 i64 槽）
                         if tkv == 3 || tkv == 7 {
-                            ret_i64ish = true
+                            ret_abi_ok = true
+                        }
+                    } else {
+                        var rty3 = sgen.parse_generic_type_node(ret_node)
+                        if rty3 >= 0 {
+                            // ptr 表示：string / table / map / port（结果槽存
+                            // 句柄 i64，await 侧 inttoptr 还原）
+                            if rty3 == types.named(TK_STR) || types.is_table(rty3) ||
+                                types.is_map(rty3) || types.kind(rty3) == K_PORT {
+                                ret_abi_ok = true
+                            }
                         }
                     }
                 }
-                if !ret_is_void && !ret_i64ish {
-                    var tyn = "非 i64"
+                if !ret_is_void && !ret_abi_ok {
+                    var tyn = "不支持"
                     if ret_node >= 0 {
                         var rty2 = sgen.parse_generic_type_node(ret_node)
                         if rty2 >= 0 {
@@ -314,7 +326,7 @@ pub func collect_actor_decl(s: i64) -> i64 {
                     }
                     sm_err_line = s_lines[item]
                     sm_err_col = s_cols[item]
-                    sm_err_msg = "async 消息方法 '" + mname + "' 的返回类型 " + tyn + " 不支持（须 void 或 i64/u64；其余类型的消息结果表示待接通）"
+                    sm_err_msg = "async 消息方法 '" + mname + "' 的返回类型 " + tyn + " 不支持（须 void / i64 / u64 / string / table / map / port；其余类型的消息结果表示待接通）"
                     return -1
                 }
             }

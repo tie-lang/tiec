@@ -4,6 +4,21 @@ type tie<class>
 // 由 split_parts.py 按行数贪心分片：只搬函数与紧邻注释，
 // 顶层全局 var 与 import 树仍留在 irgen_rt.tie。
 namespace irgen {
+
+// p.9.11 消息 ABI：ptr 表示的消息返回类型（string/table/map/port——LLVM repr
+// = ptr，而消息结果槽 result@96 是单 i64 槽）。dispatch 侧 ptrtoint 打包、
+// 调用方（gen_actor_sync_call / tig_await）inttoptr 还原。struct/tuple/数组
+// 等聚合值表示不适用（结果槽单 i64，维持既有拒绝/不支持面）。
+func actor_ret_via_ptr(ty: i64) -> bool {
+    if ty == types.named(TK_STR) || types.is_table(ty) || types.is_map(ty) {
+        return true
+    }
+    if ty >= 0 && types.kind(ty) == K_PORT {
+        return true
+    }
+    return false
+}
+
 // 生成单个 actor 方法的 handler 函数（返回 0 成功 / -1 错误）
 func gen_actor_method(aidx: i64, mi: i64, anode: i64) -> i64 {
     var T64 = types.named(TK_I64)
@@ -240,6 +255,17 @@ func gen_actor_dispatch(aidx: i64, anode: i64) -> i64 {
             var dv = tig_int_lit_ty(0, T64)
             var ret = ir.new_inst(g_cur_block, 32, T64)  // ret 0
             ir.add_operand(ret, dv, 0)
+        } else if actor_ret_via_ptr(hret) {
+            // ★ p.9.11 消息 ABI 修正（actor string 字段/返回缺口）：ptr 表示
+            //   返回类型（string/table/map/port）——handler 按语义类型声明
+            //   （string → ret ptr），而 dispatch 声明 fn -> i64 ⇒ 曾直接
+            //   `ret ptr`（LLVM「value doesn't match function result type
+            //   'i64'」）。先 ptrtoint 再 ret；调用方读 result@96（i64）后
+            //   inttoptr 还原（gen_actor_sync_call / tig_await 同款）。
+            var ptD = ir.new_inst(g_cur_block, 24, T64)  // ptrtoint
+            ir.add_operand(ptD, ir.get_value(inst), 0)
+            var ret = ir.new_inst(g_cur_block, 32, T64)
+            ir.add_operand(ret, ir.get_value(ptD), 0)
         } else {
             var ret = ir.new_inst(g_cur_block, 32, hret)
             ir.add_operand(ret, ir.get_value(inst), 0)
@@ -594,7 +620,6 @@ func tig_actor_wait(ptr: i64, cond_eq: bool) {
     var T64 = types.named(TK_I64)
     var loop = ir.new_block(g_cur_func, interner.intern("aw.l"))
     var chk = ir.new_block(g_cur_func, interner.intern("aw.c"))
-    var idle = ir.new_block(g_cur_func, interner.intern("aw.i"))
     var exit = ir.new_block(g_cur_func, interner.intern("aw.x"))
     var br0 = ir.new_inst(g_cur_block, 30, -1)  // br loop
     ir.add_operand(br0, loop, 1)
@@ -613,21 +638,19 @@ func tig_actor_wait(ptr: i64, cond_eq: bool) {
     ir.add_operand(cb, ir.get_value(ic), 0)
     ir.add_operand(cb, exit, 1)
     ir.add_operand(cb, chk, 1)
-    // 同步点：等队列排空（池执行完当前批次消息任务）
+    // ★ p.9.11 修正（消费者出站同步 RPC 挂死的根因）：等待退让改用
+    //   tl_sync$sleep(1)——无锁 OS 睡眠。曾用 sched$yield_wait：其谓词
+    //   `g_pend_s > 0` 把**调用者自己的任务**也计入（pop_task 不减、task_done
+    //   才减）⇒ 从 actor 消费者任务内等待时谓词永真 = 自死锁（A 的消费者等
+    //   B 的应答，而 pend 恒含 A 自己）；main 上下文自身不入计数故侥幸正确。
+    //   sleep 与相邻 tig_mq_sync_enter / tig_mq_reserve 的限时退让约定同款，
+    //   main / 池 worker 两个上下文均安全。
     g_cur_block = chk
-    tig_trmlite_call("trm_lite_sched$yield_wait", tig_empty_types(), tig_empty_vals(), T64)
-    var v2 = s21_load(ptr, T64)
-    var ic2 = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
-    ir.add_operand(ic2, v2, 0)
-    ir.add_operand(ic2, z, 0)
-    ir.add_operand(ic2, pred, 2)
-    var cb2 = ir.new_inst(g_cur_block, 31, -1)
-    ir.add_operand(cb2, ir.get_value(ic2), 0)
-    ir.add_operand(cb2, exit, 1)
-    ir.add_operand(cb2, idle, 1)
-    // 条件未满足（如等 done 但新消息未到）→ 空转限时后重查
-    g_cur_block = idle
-    tig_trmlite_call("trm_lite_sched$pool_idle_wait", tig_empty_types(), tig_empty_vals(), -1)
+    var ats: table<i64> = table_new_i64()
+    var avs: table<i64> = table_new_i64()
+    table_push(ats, T64)
+    table_push(avs, tig_int_lit_ty(1, T64))
+    tig_trmlite_call("tl_sync$sleep", ats, avs, -1)
     var bw = ir.new_inst(g_cur_block, 30, -1)  // br loop
     ir.add_operand(bw, loop, 1)
     g_cur_block = exit
@@ -665,9 +688,14 @@ func tig_actor_wait_reent(ptr: i64, rec_val: i64) {
     ir.add_operand(cb, icp, 0)
     ir.add_operand(cb, exit, 1)
     ir.add_operand(cb, chk, 1)
-    // 同步点：先让出（对齐 tig_actor_wait 的节流），未完成则嵌套排空
+    // 同步点：先让出（无锁 1ms 睡眠，对齐 tig_actor_wait 的修正——yield_wait
+    // 的 pend 谓词含自身任务，消费者上下文自死锁），未完成则嵌套排空
     g_cur_block = chk
-    tig_trmlite_call("trm_lite_sched$yield_wait", tig_empty_types(), tig_empty_vals(), T64)
+    var ats2: table<i64> = table_new_i64()
+    var avs2: table<i64> = table_new_i64()
+    table_push(ats2, T64)
+    table_push(avs2, tig_int_lit_ty(1, T64))
+    tig_trmlite_call("tl_sync$sleep", ats2, avs2, -1)
     var v2 = s21_load(ptr, T64)
     var ic2 = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
     ir.add_operand(ic2, v2, 0)
@@ -708,7 +736,14 @@ func tig_await(fut_val: i64, ret_ty: i64) -> i64 {
     } else {
         tig_actor_wait(donep, false)
     }
-    var res = s21_load(resp, ret_ty)
+    var res = s21_load(resp, T64)
+    if actor_ret_via_ptr(ret_ty) {
+        // p.9.11：ptr 表示返回——result@96 存 i64，inttoptr 还原（同
+        // gen_actor_sync_call 的读取侧）
+        var ptA = ir.new_inst(g_cur_block, 25, types.named(TK_STR))
+        ir.add_operand(ptA, res, 0)
+        res = ir.get_value(ptA)
+    }
     var failp = s21_gep(rec_ptr, 120, true)
     var fv = s21_load(failp, T64)
     var syncp = s21_gep(rec_ptr, 160, true)
@@ -805,6 +840,13 @@ func gen_actor_sync_call(rech: i64, mi: i64, args: table<i64>, argtys: table<i64
         tig_actor_wait(donep, false)
     }
     var res = s21_load(resp, T64)
+    if actor_ret_via_ptr(ret_ty) {
+        // p.9.11：ptr 表示返回（string/table/map/port）——result@96 存的是
+        // dispatch ptrtoint 后的 i64，此处 inttoptr 还原为指针值
+        var ptS = ir.new_inst(g_cur_block, 25, types.named(TK_STR))
+        ir.add_operand(ptS, res, 0)
+        res = ir.get_value(ptS)
+    }
     var failp = s21_gep(rec_ptr, 120, true)
     var fv = s21_load(failp, T64)
     // 清门闩：读完成果/失败标志后释放（下一同步 RPC 方可进入）
