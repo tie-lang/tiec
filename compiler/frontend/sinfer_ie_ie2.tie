@@ -24,15 +24,29 @@ pub func infer_expr_ternary(id: i64) -> i64 {
         if el < 0 {
             return -1
         }
-        if th != el && !(types.is_int(th) && types.is_int(el)) && !(types.is_float(th) && types.is_float(el)) {
-            sm_err_line = s_lines[id]
-            sm_err_col = s_cols[id]
-            sm_err_msg = "三目两分支类型不一致：" + types.type_name(th) + " 与 " + types.type_name(el)
-            return -1
+        // 两臂类型统一（2026-10-09 修）：数字族（int/float）允许按隐式拓宽方向
+        // 统一到较宽者（C2：同符号窄→宽、u→更宽 i、int→float、f32→f64）——
+        // 形态对齐二元算术；irgen 侧 tig_ternary 按本类型 tig_coerce 两臂值。
+        // 此前「同为 int/float 即放行、类型取 then 臂」会让 LLVM phi 两入边
+        // 类型不一致（then 宽 else 窄或反向都坏）。非数字族仍要求完全一致。
+        var common = th
+        if th != el {
+            var th_num = types.is_int(th) || types.is_float(th)
+            var el_num = types.is_int(el) || types.is_float(el)
+            if th_num && el_num && stype.types_compatible(th, el) {
+                // el 隐式拓宽进 th：公共类型 = th
+            } else if th_num && el_num && stype.types_compatible(el, th) {
+                common = el
+            } else {
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = "三目两分支类型不一致：" + types.type_name(th) + " 与 " + types.type_name(el)
+                return -1
+            }
         }
-        node_types[id] = th
+        node_types[id] = common
         g_typed = g_typed + 1
-        return th
+        return common
 }
 
 pub func infer_expr_switch_expr(id: i64) -> i64 {
@@ -64,11 +78,21 @@ pub func infer_expr_switch_expr(id: i64) -> i64 {
             }
             if res_ty < 0 {
                 res_ty = bty
-            } else if bty != res_ty && !(types.is_int(bty) && types.is_int(res_ty)) && !(types.is_float(bty) && types.is_float(res_ty)) {
-                sm_err_line = s_lines[c]
-                sm_err_col = s_cols[c]
-                sm_err_msg = "switch 表达式各分支类型不一致：" + types.type_name(bty) + " 与 " + types.type_name(res_ty)
-                return -1
+            } else if bty != res_ty {
+                // 分支类型统一（2026-10-09 修，与 infer_expr_ternary 同判据）：
+                // 数字族按隐式拓宽方向统一到较宽者，其余要求完全一致。
+                var res_num = types.is_int(res_ty) || types.is_float(res_ty)
+                var b_num = types.is_int(bty) || types.is_float(bty)
+                if res_num && b_num && stype.types_compatible(res_ty, bty) {
+                    // bty 隐式拓宽进 res_ty：保持
+                } else if res_num && b_num && stype.types_compatible(bty, res_ty) {
+                    res_ty = bty
+                } else {
+                    sm_err_line = s_lines[c]
+                    sm_err_col = s_cols[c]
+                    sm_err_msg = "switch 表达式各分支类型不一致：" + types.type_name(bty) + " 与 " + types.type_name(res_ty)
+                    return -1
+                }
             }
             k2 = k2 + 1
         }
@@ -80,11 +104,20 @@ pub func infer_expr_switch_expr(id: i64) -> i64 {
             }
             if res_ty < 0 {
                 res_ty = dty
-            } else if dty != res_ty && !(types.is_int(dty) && types.is_int(res_ty)) && !(types.is_float(dty) && types.is_float(res_ty)) {
-                sm_err_line = s_lines[id]
-                sm_err_col = s_cols[id]
-                sm_err_msg = "switch 表达式通配臂类型不一致：" + types.type_name(dty) + " 与 " + types.type_name(res_ty)
-                return -1
+            } else if dty != res_ty {
+                // 通配臂同判据（与分支循环一致，见上）
+                var res_num2 = types.is_int(res_ty) || types.is_float(res_ty)
+                var d_num = types.is_int(dty) || types.is_float(dty)
+                if res_num2 && d_num && stype.types_compatible(res_ty, dty) {
+                    // dty 隐式拓宽进 res_ty：保持
+                } else if res_num2 && d_num && stype.types_compatible(dty, res_ty) {
+                    res_ty = dty
+                } else {
+                    sm_err_line = s_lines[id]
+                    sm_err_col = s_cols[id]
+                    sm_err_msg = "switch 表达式通配臂类型不一致：" + types.type_name(dty) + " 与 " + types.type_name(res_ty)
+                    return -1
+                }
             }
         } else if types.kind(subj) == K_ENUM {
             var re = scheck.check_enum_exhaustive(subj, id)
