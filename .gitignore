@@ -51,3 +51,7 @@ tests/_p*/
 compiler/dbug/_*probe.tie
 docs/p916-memory-findings.md
 docs/p9216-findings.md
+tests/s31/config_smoke.tie
+lsp/lsp_smoke*.py
+ext/gfx/skia/smoke/
+gfx/skia/smoke/
