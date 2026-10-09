@@ -11,9 +11,8 @@
 *.exp
 *.so
 
-# 自举例外：tiec.exe 作为 stage0 引导二进制入库版本化（自举语言惯例：
-# 删除 Rust 种子后，clone 即可用 tiec 自举；源码变更后重新自举并提交同步更新）
-!compiler/tiec.exe
+# tiec.exe 只在本地构建（stage0 不入库；新 clone 需自行获取 stage0 自举）
+compiler/tiec.exe
 
 # LSP 构建暂存树：源码权威在 tie-lang/tsp 仓；此处只为满足 `../frontend/` 相对
 # import 而暂存一份（用于构建 compiler/lsp/tsp.exe），不入库以免两份漂移。
@@ -28,6 +27,9 @@ Thumbs.db
 *.tmp
 _tmp_*
 *_tr.txt
+/_*.tie
+/_ghidra_out/
+/_m6_out/
 
 # 记忆与本地配置
 .localmemory/
@@ -37,13 +39,15 @@ opencode.json
 .codegraph/
 .omo/
 .superpowers/
-_tiec_verify/esc_safety_out/
-_tiec_verify/fp/
 compiler/_*.txt
 tests/language/_*.tie
-tests/_*_probe/_*
-tests/_*/_*
 
-# _spec_audit build artifacts (probe .tie sources are kept as evidence)
-_spec_audit/**/*.zd
-_spec_audit/**/*.t
+# 探针与临时测试（本地工作材料，不入库）
+_spec_audit/
+_tiec_verify/
+tests/*probe*/
+tests/probe_*.tie
+tests/_p*/
+compiler/dbug/_*probe.tie
+docs/p916-memory-findings.md
+docs/p9216-findings.md
