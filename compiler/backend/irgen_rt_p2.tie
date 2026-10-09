@@ -185,14 +185,27 @@ func tig_actor_run(id: i64) -> i64 {
         var fty = ac_ftys[fbase + fk]
         var foff = ac_foffs[fbase + fk]
         var fdef = ac_fdefs[fbase + fk]
-        var dv = tig_default_val(fty)
+        var dv: i64 = -1
         if fdef >= 0 {
             // p.8.3.1：显式字段初值在启动记录时按声明顺序 store；字段初值
-            // 已在 scollect 阶段限制为字面量，复用 struct 构造的 tig_expr 发射路径。
+            // 已在 scollect 阶段限制为字面量或 const 白名单，复用 struct 构造
+            // 的 tig_expr 发射路径。
             dv = tig_expr(fdef)
             if dv < 0 {
                 return -1
             }
+        } else if types.is_table(fty) {
+            // ★ p.9.11 修正（actor 表/映射字段缺省——actor_str_probe v4 实锤
+            //   段错误）：无显式初值的表字段发**真实空表**，镜像 struct 构造
+            //   路径（irgen_agg_p3 同款）。曾用 tig_default_val(表) → 空字符串
+            //   常量指针冒充表句柄，table_push 打在只读串常量上 = 段错误。
+            var fele = types.table_elem(fty)
+            if fele <= 0 {
+                fele = types.named(TK_I64)
+            }
+            dv = s21_table_new_ty(fele, tig_int_lit_ty(elem_size(fele), T64))
+        } else {
+            dv = tig_default_val(fty)
         }
         s21_store(s21_gep(rec, foff, true), dv, fty)
         fk = fk + 1
@@ -790,9 +803,12 @@ func gen_actor_task_step_eager() {
     var proc = ir.new_block(fid, interner.intern("st.proc"))
     var bempty = ir.new_block(fid, interner.intern("st.emp"))
     var cb0 = ir.new_inst(g_cur_block, 31, -1)
+    // ★ 谓词 = icmp eq h,p（空队为真）：true → bempty（ret 1）；false → proc。
+    //   曾写反（true→proc）⇒ 空队处理垃圾槽（marks 被踩成指针值）、有消息反而不
+    //   消费（Qrun 恒落 S2 后）——reent_v8 事件日志 + IR 审读定位。
     ir.add_operand(cb0, emptyp, 0)
-    ir.add_operand(cb0, proc, 1)
     ir.add_operand(cb0, bempty, 1)
+    ir.add_operand(cb0, proc, 1)
     g_cur_block = bempty
     var r1a = ir.new_inst(g_cur_block, 32, T64)
     ir.add_operand(r1a, o64, 0)
