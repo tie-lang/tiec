@@ -337,6 +337,72 @@ pub func parse_switch_expr(line: i64, col: i64) -> i64 {
 }
 
 
+// ---------- if 表达式 ----------
+// `if cond { thenExpr } else { elseExpr }` / else if 链（表达式起始位，由
+// pexpr.parse_primary 分派——对齐 switch 表达式的 parse_switch_expr 挂载方式）。
+// 纯糖（对齐 parse_if_let 的脱糖先例）：脱糖为 N_TERNARY[cond, then, else]——
+// 复用三目的条件 bool 检查 + 两臂类型统一（infer_expr_ternary）与分支 phi 汇合
+//（tig_ternary），零新增节点、零后端改动。与语句位 if 分层：
+//   * 语句位（pstmt_flow.parse_stmt 分派）→ parse_if（N_IF，else 可省，臂为块）；
+//   * 表达式起始位 → 本函数（else 必须有——表达式须产出值；臂为单个表达式）。
+// 多行臂：臂体表达式行尾 ASI 补分号 → 先 eat 再吃 `}`（对齐 parse_switch_expr
+// 臂分隔对 lex_semi 的处理）；`}` 行尾不补分号（no_semi_end），跨行 `else` 无碍。
+pub func parse_if_expr(line: i64, col: i64) -> i64 {
+    putil.advance()   // if
+    putil.enter_cond()   // p.8.2.9：条件内不判定尾随闭包（对齐 parse_if）
+    var cond = pexpr.parse_expr()
+    putil.exit_cond()
+    if cond < 0 {
+        return -1
+    }
+    if !putil.expect(lex_lbrace, "'{'") {
+        return -1
+    }
+    var then_v = pexpr.parse_expr()
+    if then_v < 0 {
+        return -1
+    }
+    putil.eat(lex_semi)   // 臂体行尾 ASI 补分号
+    if !putil.expect(lex_rbrace, "'}'") {
+        return -1
+    }
+    if putil.peek_tag() != lex_else {
+        putil.set_err(putil.peek_line(), putil.peek_col(), "if 表达式必须有 else 分支（表达式位 if 须产出值）")
+        return -1
+    }
+    putil.advance()   // else
+    var else_v: i64 = -1
+    if putil.peek_tag() == lex_if {
+        // else if 链：右递归 → 嵌套三元
+        var el = putil.peek_line()
+        var ec = putil.peek_col()
+        else_v = parse_if_expr(el, ec)
+        if else_v < 0 {
+            return -1
+        }
+    } else {
+        if !putil.expect(lex_lbrace, "'{'") {
+            return -1
+        }
+        else_v = pexpr.parse_expr()
+        if else_v < 0 {
+            return -1
+        }
+        putil.eat(lex_semi)   // 臂体行尾 ASI 补分号
+        if !putil.expect(lex_rbrace, "'}'") {
+            return -1
+        }
+    }
+    var n = ast.new_node(N_TERNARY, -1, -1, -1, line, col)
+    var kids: table<i64> = table_new_i64()
+    table_push(kids, cond)
+    table_push(kids, then_v)
+    table_push(kids, else_v)
+    ast.set_children(n, kids)
+    return n
+}
+
+
 // `var name[: Ty] [= expr]` / `const ...`（解构返回 StmtList）
 
 }
