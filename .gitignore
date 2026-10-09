@@ -55,3 +55,13 @@ tests/s31/config_smoke.tie
 lsp/lsp_smoke*.py
 ext/gfx/skia/smoke/
 gfx/skia/smoke/
+
+# 回归夹具目录例外（regress-s21 按目录枚举，必须追踪）
+!tests/_cfg_probe/
+!tests/_compound_probe/
+!tests/_linefix_probe/
+!tests/_td_probe/
+!tests/_unsafe_probe/
+!tests/s21_probe/
+!tests/s22_probe/
+!tests/s23_probe/
