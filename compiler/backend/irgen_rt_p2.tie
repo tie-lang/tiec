@@ -738,6 +738,219 @@ func gen_actor_task_eager() {
     ir.add_operand(ret, zret, 0)
     g_cur_func = saved_func
     g_cur_block = saved_block
+    // p.9.11 `reentrant`（规范 §10.7）：step + nested 排空函数随任务一并生成
+    gen_actor_task_step_eager()
+    gen_actor_task_nested_eager()
+}
+
+// actor 单步处理 `actor_task_step(ptr rec) -> i64`（p.9.11 reentrant 配套）。
+// 返回 1 = 队列空 **或** 队头是同步消息（嵌套排空不消费——同步消息的 done@104
+// 单槽语义留给外层等待者，见 gen_actor_sync_call）；0 = 已处理一条。
+// 与 actor_task 主循环处理段同构，两处刻意差异：
+//   ① 不碰单飞标志 mq_act——嵌套排空期间外层消费者仍持有 act=1，主循环的
+//      CAS 清flag / 重新激活路径不会发生 ⇒ 排空全程单线程嵌套，无并行 dispatch；
+//   ② 不写 done@104（只处理异步消息：async 纯入队不等待，写 result@96 无害——
+//      外层同步消息的 result 在其 dispatch 返回后覆写）。
+func gen_actor_task_step_eager() {
+    if g_actor_step_gen == 1 {
+        return
+    }
+    g_actor_step_gen = 1
+    g_used_trmlite = true
+    var T64 = types.named(TK_I64)
+    var saved_func = g_cur_func
+    var saved_block = g_cur_block
+    var params: table<i64> = table_new_i64()
+    table_push(params, types.named(TK_STR))  // param0 = rec ptr
+    var fid = ir.new_func(interner.intern("actor_task_step"), T64, params)
+    g_cur_func = fid
+    var entry = ir.new_block(fid, interner.intern("st.entry"))
+    g_cur_block = entry
+    var recp = ir.param_val(fid, 0)
+    var headp = s21_gep(recp, 128, true)
+    var pubp = s21_gep(recp, 144, true)
+    var resp = s21_gep(recp, 96, true)
+    var failp = s21_gep(recp, 120, true)
+    var dispp = s21_gep(recp, 112, true)
+    var midp24 = s21_gep(recp, 24, true)
+    var mq_midp = s21_gep(recp, 168, true)
+    var mq_argp = s21_gep(recp, 680, true)
+    var mq_syncfp = s21_gep(recp, 4776, true)
+    llvmgen.catch_enable()
+    var z64 = tig_int_lit_ty(0, T64)
+    var o64 = tig_int_lit_ty(1, T64)
+    // h = load head; p = load pub; 空 → ret 1
+    var h = s21_atomic_load64(headp)
+    var p = s21_atomic_load64(pubp)
+    var empty = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
+    ir.add_operand(empty, h, 0)
+    ir.add_operand(empty, p, 0)
+    ir.add_operand(empty, 0, 2)
+    var emptyp = ir.get_value(empty)
+    var proc = ir.new_block(fid, interner.intern("st.proc"))
+    var bempty = ir.new_block(fid, interner.intern("st.emp"))
+    var cb0 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb0, emptyp, 0)
+    ir.add_operand(cb0, proc, 1)
+    ir.add_operand(cb0, bempty, 1)
+    g_cur_block = bempty
+    var r1a = ir.new_inst(g_cur_block, 32, T64)
+    ir.add_operand(r1a, o64, 0)
+    // proc：队头消息的 syncf 检查——同步消息不消费（留给外层/主任务）
+    g_cur_block = proc
+    var c8b = tig_int_lit_ty(8, T64)
+    var c63b = tig_int_lit_ty(63, T64)
+    var slot = ir.new_inst(g_cur_block, 6, T64)  // and h&63
+    ir.add_operand(slot, h, 0)
+    ir.add_operand(slot, c63b, 0)
+    var slotv = ir.get_value(slot)
+    var mid_off = ir.new_inst(g_cur_block, 2, T64)  // mul slot*8
+    ir.add_operand(mid_off, slotv, 0)
+    ir.add_operand(mid_off, c8b, 0)
+    var mido_v = ir.get_value(mid_off)
+    var sfv = s21_load(s21_gep(mq_syncfp, mido_v, false), T64)
+    var issync = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp ne
+    ir.add_operand(issync, sfv, 0)
+    ir.add_operand(issync, z64, 0)
+    ir.add_operand(issync, 1, 2)
+    var issp = ir.get_value(issync)
+    var bodyb = ir.new_block(fid, interner.intern("st.body"))
+    var cb1 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb1, issp, 0)
+    ir.add_operand(cb1, bempty, 1)   // 同步消息 → ret 1（不消费）
+    ir.add_operand(cb1, bodyb, 1)
+    // body：取 mid、拷参数、推进 head、setjmp、dispatch、写 result/fail、ret 0
+    g_cur_block = bodyb
+    var midv = s21_load(s21_gep(mq_midp, mido_v, false), T64)
+    var cslot64b = tig_int_lit_ty(64, T64)
+    var src_arg = ir.new_inst(g_cur_block, 2, T64)  // mul slot*64
+    ir.add_operand(src_arg, slotv, 0)
+    ir.add_operand(src_arg, cslot64b, 0)
+    var src_off = ir.get_value(src_arg)
+    var src_addr = s21_gep(mq_argp, src_off, false)
+    var dst_arg2 = s21_gep(recp, 32, true)
+    var n64b = tig_int_lit_ty(64, T64)
+    s21_memcpy(dst_arg2, src_addr, n64b)
+    var h1 = ir.new_inst(g_cur_block, 0, T64)  // add h+1
+    ir.add_operand(h1, h, 0)
+    ir.add_operand(h1, o64, 0)
+    s21_atomic_store64(headp, ir.get_value(h1))
+    s21_store(midp24, midv, T64)
+    // setjmp 捕获点（panic → longjmp 回此返回 1）
+    var fa2 = ir.new_inst(g_cur_block, 36, types.ptr_of(types.named(TK_I8)))  // frameaddress
+    ir.add_operand(fa2, interner.intern("llvm.frameaddress.p0"), 0)
+    ir.add_operand(fa2, types.ptr_of(types.named(TK_I8)), 2)
+    ir.add_operand(fa2, types.named(TK_I32), 2)
+    ir.add_operand(fa2, 0, 2)
+    var fa_v = ir.get_value(fa2)
+    var jb_id = interner.intern("@tie_panic_jb")
+    var sj = ir.new_inst(g_cur_block, 36, types.named(TK_I32))  // _setjmp
+    ir.add_operand(sj, interner.intern("_setjmp"), 0)
+    ir.add_operand(sj, types.named(TK_I32), 2)
+    ir.add_operand(sj, types.named(TK_STR), 2)
+    ir.add_operand(sj, jb_id, 3)
+    ir.add_operand(sj, types.named(TK_STR), 2)
+    ir.add_operand(sj, fa_v, 0)
+    var sj_v = ir.get_value(sj)
+    var z32 = tig_int_lit_ty(0, types.named(TK_I32))
+    var is0 = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
+    ir.add_operand(is0, sj_v, 0)
+    ir.add_operand(is0, z32, 0)
+    ir.add_operand(is0, 0, 2)
+    var wok = ir.new_block(fid, interner.intern("st.wok"))
+    var wcap = ir.new_block(fid, interner.intern("st.wcap"))
+    var cbr2 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cbr2, ir.get_value(is0), 0)
+    ir.add_operand(cbr2, wok, 1)
+    ir.add_operand(cbr2, wcap, 1)
+    var act_id = interner.intern("@tie_panic_active")
+    g_cur_block = wok
+    var trA = tig_bool_lit(1)
+    var stA1 = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(stA1, types.named(TK_BOOL), 2)
+    ir.add_operand(stA1, trA, 0)
+    ir.add_operand(stA1, act_id, 3)
+    var disp = s21_load(dispp, T64)
+    var fp = ir.new_inst(g_cur_block, 25, types.named(TK_STR))  // inttoptr
+    ir.add_operand(fp, disp, 0)
+    var fpv = ir.get_value(fp)
+    var ci = ir.new_inst(g_cur_block, 70, T64)  // call_indirect
+    ir.add_operand(ci, fpv, 0)
+    ir.add_operand(ci, T64, 2)
+    ir.add_operand(ci, recp, 0)
+    ir.add_operand(ci, T64, 2)
+    ir.add_operand(ci, midv, 0)
+    var res = ir.get_value(ci)
+    var fA0 = tig_bool_lit(0)
+    var stA2 = ir.new_inst(g_cur_block, 22, -1)  // active=0
+    ir.add_operand(stA2, types.named(TK_BOOL), 2)
+    ir.add_operand(stA2, fA0, 0)
+    ir.add_operand(stA2, act_id, 3)
+    s21_store(resp, res, T64)
+    s21_store(failp, z64, T64)
+    // ★ 不写 done@104：嵌套只处理异步消息（见函数头注释）
+    var r0a = ir.new_inst(g_cur_block, 32, T64)  // ret 0
+    ir.add_operand(r0a, z64, 0)
+    // wcap：panic → active=0 → result=0/fail=1 → ret 0（同样不写 done）
+    g_cur_block = wcap
+    var fA1 = tig_bool_lit(0)
+    var stA3 = ir.new_inst(g_cur_block, 22, -1)
+    ir.add_operand(stA3, types.named(TK_BOOL), 2)
+    ir.add_operand(stA3, fA1, 0)
+    ir.add_operand(stA3, act_id, 3)
+    s21_store(resp, z64, T64)
+    s21_store(failp, o64, T64)
+    var r0b = ir.new_inst(g_cur_block, 32, T64)
+    ir.add_operand(r0b, z64, 0)
+    g_cur_func = saved_func
+    g_cur_block = saved_block
+}
+
+// actor 嵌套排空 `actor_task_nested(ptr rec) -> i64`：循环单步处理直至队列空
+// 或队头为同步消息。供 reentrant 方法阻塞于对外同步 RPC 时调用（见
+// tig_actor_wait_reent）——在同一消费者线程上嵌套处理本 actor 的异步消息。
+func gen_actor_task_nested_eager() {
+    var T64 = types.named(TK_I64)
+    var saved_func = g_cur_func
+    var saved_block = g_cur_block
+    var params: table<i64> = table_new_i64()
+    table_push(params, types.named(TK_STR))  // param0 = rec ptr
+    var fid = ir.new_func(interner.intern("actor_task_nested"), T64, params)
+    g_cur_func = fid
+    var entry = ir.new_block(fid, interner.intern("nt.entry"))
+    g_cur_block = entry
+    var recp = ir.param_val(fid, 0)
+    var loop = ir.new_block(fid, interner.intern("nt.loop"))
+    var br0 = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(br0, loop, 1)
+    g_cur_block = loop
+    // r = call actor_task_step(rec)；r != 0 → ret 0；否则继续
+    var fa = tig_func_addr("actor_task_step")
+    var fp = ir.new_inst(g_cur_block, 25, types.named(TK_STR))  // inttoptr
+    ir.add_operand(fp, fa, 0)
+    var fpv = ir.get_value(fp)
+    var ci = ir.new_inst(g_cur_block, 70, T64)  // call_indirect
+    ir.add_operand(ci, fpv, 0)
+    ir.add_operand(ci, T64, 2)
+    ir.add_operand(ci, recp, 0)
+    ir.add_operand(ci, T64, 2)
+    var rv = ir.get_value(ci)
+    var z64 = tig_int_lit_ty(0, T64)
+    var nz = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp ne
+    ir.add_operand(nz, rv, 0)
+    ir.add_operand(nz, z64, 0)
+    ir.add_operand(nz, 1, 2)
+    var nzp = ir.get_value(nz)
+    var retp = ir.new_block(fid, interner.intern("nt.ret"))
+    var cb1 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb1, nzp, 0)
+    ir.add_operand(cb1, retp, 1)
+    ir.add_operand(cb1, loop, 1)
+    g_cur_block = retp
+    var ret = ir.new_inst(g_cur_block, 32, T64)
+    ir.add_operand(ret, z64, 0)
+    g_cur_func = saved_func
+    g_cur_block = saved_block
 }
 
 // 取 actor 节点的第 mi 个方法 FnDef 节点（children 中按 N_FN_DEF 声明序；字段在前）

@@ -32,18 +32,25 @@ namespace lexsym {
 // p.9.11.21 interface 关键字（tag 106，严格升序）：
 //   interface（i n t）在 inline（i n l）后——第三字节 't'(116)>'l'(108)；
 //   interface 在 macro（m）前——'i'<'m'。结构性接口（鸭子多态静态检查）。
+// p.9.11 `is` 关键字（tag 119，规范 §3.16 类型判定）：严格升序——
+//   is 在 interface（i n < i s，第三字节 'n'<'s'）后、macro（m）前。
+// p.9.11 `reentrant` 关键字（tag 120，规范 §10.7）：严格升序——
+//   reentrant 在 pub（p）后、ref（r e f）前（第三字节 'e'<'f'）。
+// p.9.11 `await` 关键字（tag 121，规范 §10.6）：严格升序——
+//   await 在 async（a s）后（第四字节 'y'<'w'？否：async=a s y n c，await=a w——
+//   第二字节 's'(115)<'w'(119) ⇒ async < await）、bool（b）前。
 func build_kw() {
-    var k: table<string> = ["actor", "alias", "any", "as", "asm", "async", "bool", "break",
+    var k: table<string> = ["actor", "alias", "any", "as", "asm", "async", "await", "bool", "break",
         "case", "char", "code", "const", "continue", "deep", "default", "else", "enum",
         "extends", "extern", "f32", "f64", "false", "for", "func", "goto", "i128", "i16",
-        "i32", "i64", "i8", "if", "immut", "impl", "import", "in", "inline", "interface", "macro", "map", "misc",
-        "move", "namespace", "num", "panic", "port", "pub", "ref", "repr", "return", "shared",
+        "i32", "i64", "i8", "if", "immut", "impl", "import", "in", "inline", "interface", "is", "macro", "map", "misc",
+        "move", "namespace", "num", "panic", "port", "pub", "reentrant", "ref", "repr", "return", "shared",
         "string", "struct", "switch", "table", "text", "trit", "true", "u128",
         "u16", "u32", "u64", "u8", "unsafe", "using", "var", "void", "when",
         "while", "with", "yield", "zero"]
-        var v: table<i64> = [92, 107, 32, 21, 84, 93, 32, 14, 17, 32, 32, 7, 15, 116, 18, 9, 81,
+        var v: table<i64> = [92, 107, 32, 21, 84, 93, 121, 32, 14, 17, 32, 32, 7, 15, 116, 18, 9, 81,
         23, 27, 32, 32, 29, 11, 5, 94, 32, 32, 32, 32, 32, 8, 103, 87,
-        20, 12, 102, 106, 88, 32, 32, 113, 24, 32, 85, 86, 25, 31, 83, 13, 117,
+        20, 12, 102, 106, 119, 88, 32, 32, 113, 24, 32, 85, 86, 25, 120, 31, 83, 13, 117,
         32, 22, 16, 32, 32, 32, 28, 32, 32, 32, 32, 32, 82, 26, 6, 32,
         19, 10, 98, 105, 30]
     kw_keys = table_new_string()

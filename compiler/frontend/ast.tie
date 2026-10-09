@@ -332,6 +332,11 @@ const N_FN_TYPE: i64 = 205;      // 函数值类型（S2.2）：FnType[children=
                                  //   children[1..]=参数类型。与 N_FN_DEF 的返回类型+
                                  //   参数布局呼应，语义解析按 children 顺序读取。
 const N_ARRAY_TYPE: i64 = 206;   // L1 定长数组类型：ArrayType[children=[元素类型, N_INT_LIT]]
+// p.9.11 `is` 类型判定（规范 §3.16）：Is[children=[左操作数表达式, 类型节点]]。
+// 左操作数须为动态类型 any（语义层校验）；右侧由 pexpr_type.parse_type 解析成
+// 类型节点（N_NAMED_TYPE/N_STRUCT_TYPE/N_TABLE_TYPE/N_MAP_TYPE…），语义层把
+// 解析出的类型 id 登记到 node_types[类型节点]（irgen 直读，免二次解析）。
+const N_IS: i64 = 207;
 
 // ---------- 二元/一元 op 码（对齐 Rust BinaryOp/UnaryOp 顺序，T2.5 补）----------
 // 二元：0=Add 1=Sub 2=Mul 3=Div 4=Mod 5=Eq 6=NotEq 7=Lt 8=Gt 9=Le 10=Ge
@@ -393,6 +398,9 @@ const U_PRE_DEC: i64 = 3;
 const U_POST_INC: i64 = 4;
 const U_POST_DEC: i64 = 5;
 const U_BIT_NOT: i64 = 6;
+// p.9.11 `await`（规范 §10.6）：future<T> 凭据取值前缀（unary op，operand =
+// future 表达式；结果类型 = T，由 sinfer 从 future 负载解出并登记 node_types）
+const U_AWAIT: i64 = 7;
 
 // ---------- 全局列式节点池（T0.4 全局表：下标对齐 = 节点 id）----------
 var node_tags: table<i64>;       // 第 0 列：节点 tag

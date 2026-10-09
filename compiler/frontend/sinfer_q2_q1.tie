@@ -8,8 +8,48 @@ import "./sinfer_ie_ie2.tie"
 import "./sinfer_ie_ie3.tie"
 
 namespace sinfer {
-pub func infer_expr(id: i64) -> i64 {
-    var tag = s_tags[id]
+
+// p.9.11 `is` 类型判定（规范 §3.16）：`v is T` → bool。
+// 契约：左操作数须为**动态类型 any**（静态类型的实际类型编译期已知，判定无意义）；
+// 右侧类型节点经 stype.parse_type_node 解析为类型 id，登记到 node_types[类型节点]
+//（irgen 直读免二次解析；类型 id 同时决定运行期期望 tag，单源 = stype.any_expected_tag）。
+// `v is any` 恒真（any 装箱值必为某类型的值）。
+pub func infer_expr_is(id: i64) -> i64 {
+    var lhs = sstate.child(id, 0)
+    var tnode = sstate.child(id, 1)
+    if lhs < 0 || tnode < 0 {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "'is' 缺少左操作数或类型"
+        return -1
+    }
+    var lt = infer_expr(lhs)
+    if lt < 0 {
+        return -1
+    }
+    if lt != types.named(TK_ANY) {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "'is' 左操作数须为动态类型 any，实际是 " + types.type_name(lt)
+        return -1
+    }
+    var rt = stype.parse_type_node(tnode)
+    if rt < 0 {
+        return -1
+    }
+    if rt != types.named(TK_ANY) && stype.any_expected_tag(rt) < 0 {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "'is' 暂不支持类型 " + types.type_name(rt) + "（该类型不能进 any 装箱）"
+        return -1
+    }
+    node_types[tnode] = rt
+    node_types[id] = types.named(TK_BOOL)
+    g_typed = g_typed + 1
+    return types.named(TK_BOOL)
+}
+
+pub func infer_expr(id: i64) -> i64 {    var tag = s_tags[id]
     // p.8.2.10 展开实参兜底：N_SPREAD_ARG 节点被当作独立表达式推断 = 其调用
     // 语境不受支持（方法/枚举构造/闭包调用/泛型等）。支持的普通变参调用已在
     // sinfer_ret.infer_call 显式处理（不会走到这里）。此处报诊断防崩溃。
@@ -61,6 +101,10 @@ pub func infer_expr(id: i64) -> i64 {
     // Range
     if tag == S_N_RANGE {
         return infer_expr_range(id)
+    }
+    // p.9.11 `is` 类型判定（规范 §3.16）：`v is T` → bool
+    if tag == S_N_IS {
+        return infer_expr_is(id)
     }
     // Unary
     if tag == S_N_UNARY {

@@ -107,6 +107,10 @@ func llvm_ty(t: i64) -> string {
         // 三期 A 组：guard<cap> 凭据类型 → i64（运行期占位，门禁编译期强制）
         return "i64"
     }
+    if agg_k == K_FUTURE {
+        // p.9.11：future<T> 凭据类型 → i64（actor record 句柄；await 时解引用）
+        return "i64"
+    }
     if agg_k == K_TUPLE {
         var tidx = t - BASE_TUPLE
         var toff = tup_offs[tidx]

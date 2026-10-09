@@ -611,6 +611,13 @@ pub func infer_call(id: i64) -> i64 {
                     var_elem = types.table_elem(types.fn_param_of(fv_ty, fn_np - 1))
                     want = var_elem
                 }
+                // p.9.11.34 短闭包实参位（上下文消歧）：固定形参位且形参是 fn 类型
+                if (fn_var == 0 || kf < fn_np - 1) && types.is_fn(want) {
+                    var lam_fv = try_lambda_arg(id, sstate.slot_off(id) + kf, args[kf], want)
+                    if lam_fv >= 0 {
+                        args[kf] = lam_fv
+                    }
+                }
                 var at = infer_expr(args[kf])
                 if at < 0 {
                     return -1
@@ -755,6 +762,17 @@ pub func infer_call(id: i64) -> i64 {
             node_types[args[j2]] = ot
             j2 = j2 + 1
             continue
+        }
+        // p.9.11.34 短闭包实参位（上下文消歧，用户裁决 2026-10-09）：实参是
+        // `ident -> expr` 形态且**固定形参**类型是 fn ⇒ 语义期展开为闭包并
+        // 原位替换实参 child。解析期该形态恒按管道解析；此处按形参类型分流
+        //（形参 fn 时管道解释不可能成立，消歧确定）。非 fn 形参原样保留
+        //（管道/箭头既有语义与诊断一字不变）。变参区实参不展开（元素类型）。
+        if want_fixed && types.is_fn(want) {
+            var lam_uc = try_lambda_arg(id, sstate.slot_off(id) + j2, args[j2], want)
+            if lam_uc >= 0 {
+                args[j2] = lam_uc
+            }
         }
         var at = infer_expr(args[j2])
         if at < 0 {

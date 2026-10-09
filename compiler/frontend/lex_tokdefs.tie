@@ -123,6 +123,18 @@ const lex_percentpercent: i64 = 111;  // `%%` floor 取余（与 `\` 成对）
 // 取号依据：本文件此前最大值 117；已按上方 RCA 纪律做重号扫描（无重复）。
 // 符号表排序（严格升序，最短优先）：`%` < `%%` < `%%=` < `%=`（第 2 字节 0x25 < 0x3D）。
 const lex_percentpercenteq: i64 = 118;  // `%%=` floor 取余复合赋值
+// p.9.11 `is` 类型判定（tag 119，规范 §3.16）：`v is i64` 询问动态类型值的实际类型。
+// 取号依据：本文件此前最大值 118；已按上方 RCA 纪律做重号扫描（无重复）。
+// 关键字插入位置：build_kw 表 "interface" 与 "macro" 之间（strcmp 升序：interface < is < macro）。
+const lex_is: i64 = 119;               // `is` 类型判定运算符
+// p.9.11 `reentrant`（tag 120，规范 §10.7 重入）：actor 消息方法修饰符——
+// 默认不重入（单消费者串行，环 A→B→A 死锁）；标注后该方法阻塞于对外同步 RPC
+// 期间允许嵌套处理本 actor 队列中的**异步**消息（同步消息因 done@104 单槽
+// 语义仍排队）。
+const lex_reentrant: i64 = 120;        // `reentrant` actor 方法重入修饰
+// p.9.11 `await`（tag 121，规范 §10.6 结果的延后取得）：`var f = w.compute(x)`
+// 产生 future<T> 凭据，`var r = await f` 需要时取值（等待 + 结果 + 错误同路径）。
+const lex_await: i64 = 121;            // `await` future 取值前缀
 // p.9.13.3 checked 幂 `**?`（tag 112）：与 `**` 同级；int 族溢出即运行期报错
 //（对齐 p.9.11.9 的 `+?`/`-?`/`*?` 族）。符号表排序 `**` < `**?` < `*=`。
 const lex_starstarq: i64 = 112;       // `**?` checked 幂

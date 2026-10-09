@@ -90,6 +90,10 @@ func tig_expr_seg1(id: i64) -> i64 {
         // Range：for 迭代起点/终点
         return tig_expr(sstate.child(id, 0))
     }
+    if tag == N_IS {
+        // p.9.11 `is` 类型判定（规范 §3.16）：读 any 装箱 tag 与期望 tag 比较
+        return tig_is_check(id)
+    }
     if tag == 7 {
         // Call：println/print / tie 运行时桥内置 / 字符串表数学内置 / 用户函数
         var nm = sstate.name_str(id)
@@ -165,6 +169,11 @@ func tig_expr_seg1(id: i64) -> i64 {
             return -1
         }
         var oty = node_types[operand]
+        if op == U_AWAIT {
+            // p.9.11 `await`（规范 §10.6）：future<T> 凭据取值；结果类型 = T
+            //（语义层已从 future 负载解出并登记 node_types[id]）
+            return tig_await(ov, node_types[id])
+        }
         if op == 2 || op == 3 || op == 4 || op == 5 {
             // 自增/自减（M4）：2=++i 3=--i 4=i++ 5=i--；操作数必须是变量
             // （语义层保证），直接读写其槽：load → add/sub 1 → store；

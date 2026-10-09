@@ -10,6 +10,8 @@ func parse_fn_def() -> i64 {
     var is_pub: i64 = 0
     var is_unsafe: i64 = 0
     var is_async: i64 = 0
+    // p.9.11 `reentrant`（规范 §10.7）：actor 消息方法重入修饰（val bit6）
+    var is_reentrant: i64 = 0
     // p.8.1.1：const fn 编译期求值——`const [pub] func/fn name(...)`（val bit4）。
     // const 位置：pub 前（`const func`）或 pub 后（`pub const func`）均接受。
     var is_const: i64 = 0
@@ -30,6 +32,16 @@ func parse_fn_def() -> i64 {
     }
     if putil.eat(lex_async) {
         is_async = 1
+    }
+    // p.9.11 `reentrant`（规范 §10.7）：actor 消息方法重入修饰（val bit6）。
+    // 仅 actor 体内合法（parse_actor 置 g_in_actor_body；顶层/普通函数标注在
+    // 此处即解析期拒绝，语义层不再重复判）。
+    if putil.eat(lex_reentrant) {
+        if g_in_actor_body == 0 {
+            putil.set_err(putil.peek_line(), putil.peek_col(), "'reentrant' 仅可用于 actor 消息方法（默认不重入；标注后阻塞期间允许嵌套处理异步消息）")
+            return -1
+        }
+        is_reentrant = 1
     }
     if putil.eat(lex_unsafe) {
         is_unsafe = 1
@@ -275,7 +287,7 @@ func parse_fn_def() -> i64 {
             }
         }
     }
-    var f = ast.new_node(N_FN_DEF, name, is_pub + is_unsafe * 2 + is_async * 4 + is_const * 16 + is_inline * 32, len(params), line, col)
+    var f = ast.new_node(N_FN_DEF, name, is_pub + is_unsafe * 2 + is_async * 4 + is_const * 16 + is_inline * 32 + is_reentrant * 64, len(params), line, col)
     var kids: table<i64> = table_new_i64()
     if fn_spec >= 0 {
         table_push(kids, fn_spec)   // p.8.1.3 显式特化：泛型槽存 N_TYPE_ARGS
@@ -610,8 +622,10 @@ func parse_actor() -> i64 {
             ast.set_children(f, fkids)
             table_push(items, f)
         } else if tag == lex_func || tag == lex_pub {
-            // 消息方法：`[pub] [async] func ...`（parse_fn_def 处理修饰缀）
+            // 消息方法：`[pub] [async] [reentrant] func ...`（parse_fn_def 处理修饰缀）
+            g_in_actor_body = 1
             var m = parse_fn_def()
+            g_in_actor_body = 0
             if m < 0 {
                 return -1
             }

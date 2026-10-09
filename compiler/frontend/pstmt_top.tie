@@ -14,6 +14,10 @@ import "./pstmt_flow.tie"
 // 0 = 无 pending；>0 = 属性全名池 id。解析完声明即清零。
 var g_pending_attr: i64 = 0;
 
+// p.9.11 `reentrant`（规范 §10.7）：parse_actor 解析方法期间置 1，供 parse_fn_def
+// 判「reentrant 仅可用于 actor 消息方法」（顶层/普通函数标注解析期即拒绝）。
+var g_in_actor_body: i64 = 0;
+
 // p.9.11.12 @注解/属性：声明前置注解 `@name` / `@name(args)`（元数据，无运行期
 // 行为）。注册表按「声明节点 id → 注解条目」平行存放（每个注解一条记录）：
 //   g_ann_nodes[序] = 声明节点 id（解析完声明回填；-1 = 尚未附着）

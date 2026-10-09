@@ -153,6 +153,16 @@ pub func parse_unary() -> i64 {
             return -1
         }
         expr = mk_unary(U_BIT_NOT, operand, line, col)
+    } else if tag == lex_await {
+        // p.9.11 `await`（规范 §10.6 结果的延后取得）：`var r = await f` ——
+        // 前缀一元，operand 为 future<T> 凭据表达式；结果类型 T 由语义层从
+        // future 负载解出（infer_expr_unary 的 U_AWAIT 分支）。
+        putil.advance()
+        var operand = parse_unary()
+        if operand < 0 {
+            return -1
+        }
+        expr = mk_unary(U_AWAIT, operand, line, col)
     } else if tag == lex_inc {
         putil.advance()
         var operand = parse_unary()

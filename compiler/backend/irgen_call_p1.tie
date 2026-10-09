@@ -358,7 +358,12 @@ func tig_method_call(id: i64) -> i64 {
                     table_push(atyp2, ac_mptys[aps2 + ap2])
                     ap2 = ap2 + 1
                 }
-                return gen_actor_sync_call(rech, mi2, argtab2, atyp2, act_ret, ac_masync[ac_mret[ai2] + mi2] == 1)
+                // p.9.11 future 模式：async 非 void 方法 → 凭据调用（发布后立即
+                // 返回 record 句柄，类型 = future<T> 由语义层登记）；async void
+                // 维持 fire-and-forget；同步方法原样阻塞。
+                var m_async2 = ac_masync[ac_mret[ai2] + mi2] == 1
+                var fut2 = m_async2 && act_ret != types.named(TK_VOID)
+                return gen_actor_sync_call(rech, mi2, argtab2, atyp2, act_ret, m_async2 && !fut2, fut2)
             }
             if types.kind(g_lookup_ty) == K_PORT {
                 // S2.4：port 对象方法调用（动态分发，vtable 间接调用）
@@ -409,7 +414,9 @@ func tig_method_call(id: i64) -> i64 {
             table_push(atypr, ac_mptys[apsr + apr])
             apr = apr + 1
         }
-        return gen_actor_sync_call(rrec, rmi, argtabr, atypr, rret, ac_masync[ac_mret[rai] + rmi] == 1)
+        var m_asyncr = ac_masync[ac_mret[rai] + rmi] == 1
+        var futr = m_asyncr && rret != types.named(TK_VOID)
+        return gen_actor_sync_call(rrec, rmi, argtabr, atypr, rret, m_asyncr && !futr, futr)
     }
     var prefix = sinfer.recv_path_name(recv)
     if prefix == "" {

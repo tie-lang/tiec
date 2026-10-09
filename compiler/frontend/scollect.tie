@@ -63,6 +63,69 @@ func is_scalar_t(t: i64) -> bool {
     return false
 }
 
+// p.9.0-L.3 默认值 const 白名单（结构性判据，单源供「命名参数默认值」与
+// 「actor 字段初值」共用）：字面量 / 空表 [] / const 全局引用 / 纯常量算术·
+// 比较·逻辑·位·移位·整除·幂·floor 取余 二元 / 一元负号·取反·按位非 / 三目。
+// 排除运行期表达式：函数调用、非空表字面量、闭包、下标、字段访问、箭头、
+// `in`、自增自减、可变全局/局部变量引用。
+// ★ 设计裁定（2026-10-09）：**结构性判定而非编译期求值**——const 全局的值在
+// 后端 global_init_fold 折叠，发射点直接生成等价代码；const 不可变 ⇒ 运行期
+// 求值与编译期折叠同值，无需前端先折叠（也避开「引用后文 const」的收集序问题）。
+// ★ 分工：struct 字段默认值**不在**本白名单内——字段默认值是「逐构造运行期
+// 求值」语义（tiu DrawList 的 table_new_*() 90 处存量依赖），与参数默认值的
+// const 白名单是两回事，见 ROAD p.9.0-L.3 条目。
+// depth 上限防病态深表达式（16 层足够任何可读默认值）。
+func is_const_default_expr(n: i64, depth: i64) -> bool {
+    if depth > 16 {
+        return false
+    }
+    if n < 0 {
+        return false
+    }
+    var t = s_tags[n]
+    if t == S_N_INT_LIT || t == S_N_FLOAT_LIT || t == S_N_BOOL_LIT ||
+        t == S_N_CHAR_LIT || t == S_N_STR_LIT {
+        return true
+    }
+    if t == S_N_TABLE_LIT {
+        // 仅空表 []（与既有字面量白名单同判；非空表是运行期构造）
+        return sstate.nchild(n) == 0
+    }
+    if t == S_N_VAR {
+        // 仅 const 全局（可变全局/局部变量随运行期变化，违背默认值常量语义）
+        var nid = intern.intern(sstate.name_str(n))
+        var idx = sstate.bs_find(gb_keys, nid)
+        if idx < 0 {
+            return false
+        }
+        return (gb_const[idx] & 1) == 1
+    }
+    if t == S_N_UNARY {
+        var op = s_vals[n]
+        // U_NEG=0 U_NOT=1 U_BIT_NOT=6；自增自减（2-5）是语句性操作，排除
+        if op != 0 && op != 1 && op != 6 {
+            return false
+        }
+        return is_const_default_expr(sstate.child(n, 0), depth + 1)
+    }
+    if t == S_N_BINARY {
+        var op = s_vals[n]
+        // 0-17（算术/比较/逻辑/位/移位）+ 21-23/27（checked 族，纯函数）+
+        // 24 整除 \ 25 幂 ** 26 floor 取余 %%；排除 18/19 箭头、20 elvis、28 in
+        if op < 0 || op > 27 || op == 18 || op == 19 || op == 20 {
+            return false
+        }
+        return is_const_default_expr(sstate.child(n, 0), depth + 1) &&
+            is_const_default_expr(sstate.child(n, 1), depth + 1)
+    }
+    if t == S_N_TERNARY {
+        return is_const_default_expr(sstate.child(n, 0), depth + 1) &&
+            is_const_default_expr(sstate.child(n, 1), depth + 1) &&
+            is_const_default_expr(sstate.child(n, 2), depth + 1)
+    }
+    return false
+}
+
 // S10：extern 边界合格类型 = 标量（is_scalar_t）或 ptr<T>/slice<T>。
 // 平台桥允许 unsafe extern 用指针传引用/出参（桥原生 Win32/OS API，如
 // GetConsoleMode 的指针形参、CreatePipe 的句柄出参）。表/map/struct 等堆布局仍拒绝。
@@ -302,7 +365,9 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
             sm_err_msg = "参数 '" + sstate.name_str(p) + "' 缺少默认值：可选参数（带默认值）必须连续排在必选参数之后"
             return -1
         }
-        // 默认值必须是字面量（数/布尔/字符/字符串或空表 []）
+        // 默认值白名单（p.9.0-L.3）：字面量（数/布尔/字符/字符串/空表 []）或
+        // const 白名单表达式（const 全局引用、常量算术/比较/拼接/三目——见
+        // is_const_default_expr）。曾仅字面量 ⇒ E00359 挡住 const 引用与常量算术。
         if has_def == 1 {
             var dt = def_node
             var dtag = s_tags[dt]
@@ -313,11 +378,13 @@ pub func collect_fn(fn_node: i64, full: string) -> i64 {
                 if sstate.nchild(dt) == 0 {
                     is_ok = true
                 }
+            } else if is_const_default_expr(dt, 0) {
+                is_ok = true
             }
             if !is_ok {
                 sm_err_line = s_lines[p]
                 sm_err_col = s_cols[p]
-                sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的默认值必须是字面量（数/布尔/字符/字符串或空表 []）"
+                sm_err_msg = "参数 '" + sstate.name_str(p) + "' 的默认值必须是字面量或编译期常量表达式（const 引用/常量算术；不可含调用或运行期依赖）"
                 return -1
             }
             // 默认值类型匹配：默认值推导类型必须与参数类型兼容

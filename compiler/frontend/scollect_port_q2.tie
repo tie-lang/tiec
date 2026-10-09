@@ -178,13 +178,15 @@ pub func collect_actor_decl(s: i64) -> i64 {
             }
             var fdef = sstate.child(item, 1)
             if fdef >= 0 {
-                // p.8.3.1：actor 字段初值只接受字面量，与函数默认值同一白名单。
+                // p.8.3.1 / p.9.0-L.3：actor 字段初值 = 字面量或 const 白名单
+                //（const 全局引用 / 常量算术——is_const_default_expr 单源）。
                 var dtag = s_tags[fdef]
                 if dtag != S_N_INT_LIT && dtag != S_N_FLOAT_LIT && dtag != S_N_BOOL_LIT &&
-                    dtag != S_N_CHAR_LIT && dtag != S_N_STR_LIT && dtag != S_N_TABLE_LIT {
+                    dtag != S_N_CHAR_LIT && dtag != S_N_STR_LIT && dtag != S_N_TABLE_LIT &&
+                    !is_const_default_expr(fdef, 0) {
                     sm_err_line = s_lines[item]
                     sm_err_col = s_cols[item]
-                    sm_err_msg = "actor 字段初值必须是字面量"
+                    sm_err_msg = "actor 字段初值必须是字面量或编译期常量表达式（const 引用/常量算术）"
                     return -1
                 }
             }
@@ -275,21 +277,44 @@ pub func collect_actor_decl(s: i64) -> i64 {
             } else {
                 table_push(ac_masync, 0)
             }
-            // async 方法必须 void 返回（fire-and-forget 无返回值契约）
+            // 登记 reentrant 标志（规范 §10.7 重入；s_vals bit6 = reentrant）
+            if s_vals[item] / 64 % 2 == 1 {
+                table_push(ac_mreent, 1)
+            } else {
+                table_push(ac_mreent, 0)
+            }
+            // p.9.11 async 返回值（规范 §10.6）：async 方法允许 **i64/u64** 返回
+            // ⇒ 调用产生 future<T> 凭据，await 取值（错误与结果同路径）。
+            // async void 维持 fire-and-forget。其余类型仍拒绝——result@96 是单
+            // i64 槽（actor 消息 ABI）：窄整数/f64/bool 需槽型适配、string/聚合
+            // 的 handler 返回表示未接通（实测 `ret ptr` 类型错，既有缺口）。
             if s_vals[item] / 4 % 2 == 1 {
                 var ret_node = rt_node
                 var ret_is_void = false
+                var ret_i64ish = false
                 if ret_node >= 0 {
                     if s_tags[ret_node] == S_N_NAMED_TYPE {
                         if s_vals[ret_node] == 14 {
                             ret_is_void = true
                         }
+                        var tkv = s_vals[ret_node]
+                        // 64 位整数：i64=3 / u64=7（result@96 原生 i64 槽）
+                        if tkv == 3 || tkv == 7 {
+                            ret_i64ish = true
+                        }
                     }
                 }
-                if !ret_is_void {
+                if !ret_is_void && !ret_i64ish {
+                    var tyn = "非 i64"
+                    if ret_node >= 0 {
+                        var rty2 = sgen.parse_generic_type_node(ret_node)
+                        if rty2 >= 0 {
+                            tyn = types.type_name(rty2)
+                        }
+                    }
                     sm_err_line = s_lines[item]
                     sm_err_col = s_cols[item]
-                    sm_err_msg = "async 消息方法 '" + mname + "' 必须返回 void（异步投递无返回值）"
+                    sm_err_msg = "async 消息方法 '" + mname + "' 的返回类型 " + tyn + " 不支持（须 void 或 i64/u64；其余类型的消息结果表示待接通）"
                     return -1
                 }
             }

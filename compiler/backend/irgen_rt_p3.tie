@@ -89,7 +89,16 @@ func gen_actor_method(aidx: i64, mi: i64, anode: i64) -> i64 {
     }
     // 函数体：children[slot_off + 1 + npars]
     var body = sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + npars)
+    // p.9.11 `reentrant`（规范 §10.7）：本 handler 的 record 指针值 id 与重入位
+    // 登记到生成器上下文——方法体内的 actor 同步 RPC 等待点（gen_actor_sync_call）
+    // 据此生成「嵌套排空本 actor 异步消息」分支。错误路径直接中止编译，无需恢复。
+    var s_arec9 = g_cur_actor_recval
+    var s_aree9 = g_cur_method_reent
+    g_cur_actor_recval = recp
+    g_cur_method_reent = ac_mreent[ac_mret[aidx] + mi] == 1
     var r = tig_block_stmts(body)
+    g_cur_actor_recval = s_arec9
+    g_cur_method_reent = s_aree9
     if r < 0 {
         return -1
     }
@@ -624,6 +633,111 @@ func tig_actor_wait(ptr: i64, cond_eq: bool) {
     g_cur_block = exit
 }
 
+// reentrant 等待（p.9.11，规范 §10.7）：与 tig_actor_wait 同判据（等 *ptr != 0，
+// 即 done@104 置位），差异在「条件未满足」分支——不空转，而是调用
+// actor_task_nested(rec) **嵌套排空本 actor 队列中的异步消息**（重入处理其它
+// 消息，破 A→B→A 环）。同步消息不被消费（step 的 syncf 检查；done 单槽留给
+// 本等待者）。rec_val 为本 handler 的 record 指针**值 id**（gen_actor_method
+// 的 recp，已是 ptr——勿再 inttoptr）。
+func tig_actor_wait_reent(ptr: i64, rec_val: i64) {
+    var T64 = types.named(TK_I64)
+    var P = types.named(TK_STR)
+    var recp = rec_val
+    var fa = tig_func_addr("actor_task_nested")
+    var fp = ir.new_inst(g_cur_block, 25, P)  // inttoptr
+    ir.add_operand(fp, fa, 0)
+    var fpv = ir.get_value(fp)
+    var loop = ir.new_block(g_cur_func, interner.intern("awr.l"))
+    var chk = ir.new_block(g_cur_func, interner.intern("awr.c"))
+    var reent = ir.new_block(g_cur_func, interner.intern("awr.r"))
+    var exit = ir.new_block(g_cur_func, interner.intern("awr.x"))
+    var br0 = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(br0, loop, 1)
+    g_cur_block = loop
+    var v = s21_load(ptr, T64)
+    var z = tig_int_lit_ty(0, T64)
+    var ic = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp ne
+    ir.add_operand(ic, v, 0)
+    ir.add_operand(ic, z, 0)
+    ir.add_operand(ic, 1, 2)
+    var icp = ir.get_value(ic)
+    var cb = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb, icp, 0)
+    ir.add_operand(cb, exit, 1)
+    ir.add_operand(cb, chk, 1)
+    // 同步点：先让出（对齐 tig_actor_wait 的节流），未完成则嵌套排空
+    g_cur_block = chk
+    tig_trmlite_call("trm_lite_sched$yield_wait", tig_empty_types(), tig_empty_vals(), T64)
+    var v2 = s21_load(ptr, T64)
+    var ic2 = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))
+    ir.add_operand(ic2, v2, 0)
+    ir.add_operand(ic2, z, 0)
+    ir.add_operand(ic2, 1, 2)
+    var ic2p = ir.get_value(ic2)
+    var cb2 = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb2, ic2p, 0)
+    ir.add_operand(cb2, exit, 1)
+    ir.add_operand(cb2, reent, 1)
+    // 重入：嵌套排空本 actor 的异步消息（同线程，非并行）
+    g_cur_block = reent
+    var ci = ir.new_inst(g_cur_block, 70, T64)  // call_indirect
+    ir.add_operand(ci, fpv, 0)
+    ir.add_operand(ci, T64, 2)
+    ir.add_operand(ci, recp, 0)
+    ir.add_operand(ci, T64, 2)
+    var bw = ir.new_inst(g_cur_block, 30, -1)  // br loop
+    ir.add_operand(bw, loop, 1)
+    g_cur_block = exit
+}
+
+// p.9.11 `await`（规范 §10.6 结果的延后取得）：future<T> 凭据取值。
+// fut_val = record 句柄（i64 值 id，future 模式调用在发布后立即返回的凭据）。
+// 流程 = 等待 done@104（reentrant 方法内嵌套排空，与 gen_actor_sync_call 的
+// 等待点同一分流）→ 读 result@96（类型 ret_ty）→ fail@120 非 0 → raise
+//（错误与结果走同一条路径）→ 清门闩（下一个同步 RPC / future 方可进入）。
+func tig_await(fut_val: i64, ret_ty: i64) -> i64 {
+    var T64 = types.named(TK_I64)
+    var P = types.named(TK_STR)
+    var rp = ir.new_inst(g_cur_block, 25, P)  // inttoptr handle → rec ptr
+    ir.add_operand(rp, fut_val, 0)
+    var rec_ptr = ir.get_value(rp)
+    var resp = s21_gep(rec_ptr, 96, true)
+    var donep = s21_gep(rec_ptr, 104, true)
+    if g_cur_method_reent && g_cur_actor_recval >= 0 {
+        tig_actor_wait_reent(donep, g_cur_actor_recval)
+    } else {
+        tig_actor_wait(donep, false)
+    }
+    var res = s21_load(resp, ret_ty)
+    var failp = s21_gep(rec_ptr, 120, true)
+    var fv = s21_load(failp, T64)
+    var syncp = s21_gep(rec_ptr, 160, true)
+    s21_atomic_store64(syncp, tig_int_lit_ty(0, T64))
+    var fz = tig_int_lit_ty(0, T64)
+    var isf = ir.new_inst(g_cur_block, 12, types.named(TK_BOOL))  // icmp ne
+    ir.add_operand(isf, fv, 0)
+    ir.add_operand(isf, fz, 0)
+    ir.add_operand(isf, 1, 2)
+    var raiseb = ir.new_block(g_cur_func, interner.intern("aw.raise"))
+    var okb = ir.new_block(g_cur_func, interner.intern("aw.ok"))
+    var cbf = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cbf, ir.get_value(isf), 0)
+    ir.add_operand(cbf, raiseb, 1)
+    ir.add_operand(cbf, okb, 1)
+    g_cur_block = raiseb
+    var fmtR = interner.intern("%s\n")
+    var msgR = tig_str_lit(interner.intern("\"actor 方法 panic\""))
+    var pri = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
+    ir.add_operand(pri, fmtR, 0)
+    ir.add_operand(pri, msgR, 0)
+    var oneR = tig_int_lit_ty(1, T64)
+    tig_ext_call1("exit", oneR, T64, -1)
+    var brR = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(brR, okb, 1)
+    g_cur_block = okb
+    return res
+}
+
 // 调用方同步 RPC 生成（p.9.5.x T2/T4：per-actor 多槽队列 + 原子单飞）：
 // `c.m(args...)` → 同步进门闩（mq_sync@160 CAS 抢占，至多一个同步 RPC 在途）
 // → 预留消息槽（tig_mq_reserve；队满背压限时等待空位）→ 写 mid/args 到
@@ -631,7 +745,7 @@ func tig_actor_wait(ptr: i64, cond_eq: bool) {
 // 消费者任务（actor_task）→ async 即返回（fire-and-forget，不依赖 pending 不
 // 等待）/ 同步等 done@104（tig_actor_wait）→ 读 result/fail → 清门闩（读完结果
 // 后释放）→ fail≠0 → raise。状态零锁：串行 dispatch 由单消费者保证。
-func gen_actor_sync_call(rech: i64, mi: i64, args: table<i64>, argtys: table<i64>, ret_ty: i64, is_async: bool) -> i64 {
+func gen_actor_sync_call(rech: i64, mi: i64, args: table<i64>, argtys: table<i64>, ret_ty: i64, is_async: bool, future_mode: bool) -> i64 {
     g_used_trmlite = true
     var T64 = types.named(TK_I64)
     var P = types.named(TK_STR)
@@ -667,6 +781,13 @@ func gen_actor_sync_call(rech: i64, mi: i64, args: table<i64>, argtys: table<i64
         mp0 = mp0 + 1
     }
     tig_mq_publish(rec_ptr, slot, mi, args, margtys, syncf)
+    // p.9.11 future 模式（async 非 void，规范 §10.6）：凭据 = record 句柄。
+    // 步骤 ①③④ 与同步同形（门闩占用 ⇒ 同一 actor 至多一个未 await 凭据；
+    // syncf=1 ⇒ 消费者完成后写 result@96/done@104）；差异仅在不等待——
+    // `await f` 时再等 done/读 result/清门闩（tig_await，同一套尾部）。
+    if future_mode {
+        return rech
+    }
     // async：投递即返回（fire-and-forget，不阻塞等 done）
     if is_async {
         return tig_int_lit_ty(0, T64)
@@ -674,7 +795,15 @@ func gen_actor_sync_call(rech: i64, mi: i64, args: table<i64>, argtys: table<i64
     // ⑤ 同步：等 done=1 → 读 result/fail → 清门闩（fail≠0 → raise）
     var resp = s21_gep(rec_ptr, 96, true)
     var donep = s21_gep(rec_ptr, 104, true)
-    tig_actor_wait(donep, false)
+    // p.9.11 `reentrant`：本方法标注 reentrant 且正运行在 actor handler 内
+    //（g_cur_actor_recval 为本方法的 record 句柄值 id）⇒ 等待期嵌套排空本
+    // actor 的异步消息（规范 §10.7 重入，破 A→B→A 环）；否则纯空转（默认
+    // 不重入语义一字不变）。
+    if g_cur_method_reent && g_cur_actor_recval >= 0 {
+        tig_actor_wait_reent(donep, g_cur_actor_recval)
+    } else {
+        tig_actor_wait(donep, false)
+    }
     var res = s21_load(resp, T64)
     var failp = s21_gep(rec_ptr, 120, true)
     var fv = s21_load(failp, T64)

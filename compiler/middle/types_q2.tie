@@ -76,6 +76,14 @@ pub func type_name(t: i64) -> string {
         // 三期 A 组 guard<cap> 凭据：显示 "guard<share>" 等
         return "guard<" + guard_cap_name(t) + ">"
     }
+    if k == K_FUTURE {
+        // p.9.11 future<T> 凭据：显示 "future<i64>" 等
+        var fe = future_elem(t)
+        if fe >= 0 {
+            return "future<" + type_name(fe) + ">"
+        }
+        return "future"
+    }
     if k == K_FN {
         var s: string = "fn("
         var np = fn_nparams_of(t)
