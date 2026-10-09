@@ -56,6 +56,12 @@ func parse_primary() -> i64 {
     if tag == lex_switch {
         return pstmt_flow.parse_switch_expr(line, col)
     }
+    // if 表达式：`if cond { thenExpr } else { elseExpr }`（else 必有，else if
+    // 链合法）。纯糖脱糖为 N_TERNARY（见 pstmt_flow.parse_if_expr）。语句位 if
+    // 由 parse_stmt 先行拦截（N_IF 语句），不达此处，互不影响。
+    if tag == lex_if {
+        return pstmt_flow.parse_if_expr(line, col)
+    }
     if tag == lex_int {
         var lex = putil.peek_lexeme()
         // trit 字面量（trit 优化 L1）：整数后缀 't' 且值域 -1..1。
