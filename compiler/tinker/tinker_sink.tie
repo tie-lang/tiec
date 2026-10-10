@@ -11,7 +11,8 @@ type tie<class>
 
 namespace tinker {
 
-// 出站帧累积（单一缓冲）。
+// 出站帧累积（单一缓冲，FIFO）：接收阶段的回执（hello-ack）与无落盘时的
+// 透传帧先入；发送阶段续写。**不在发送阶段清零**——清零会吞掉先入帧。
 pub func send_append(kind: i64, stage: i64, name: string, payload: table<i64>) {
     var env = env_encode(kind, stage, name, payload)
     var fr = frame_encode(env)
@@ -52,11 +53,7 @@ func product_path(rc: i64) -> string {
 // 发送阶段：回执帧 → stage 帧（--emit）→ diag 帧（失败）→ artifact 帧。
 // 写出：--tink → stdout；--tink-file → 文件（可同开）。
 pub func run_send(rc: i64) {
-    tk_out = table_new_i64()
-    // ① 接收侧回执（hello-ack 等；全双工节点）
-    if len(tk_reply) > 0 {
-        tk_out = byte_concat(tk_out, tk_reply)
-    }
+    // ① 回执/透传：接收阶段已入 tk_out（FIFO 先于本阶段帧）——此处不复位、不搬运。
     // ② stage 帧：--emit 各阶段（帧载荷恒为 zd 记录——design「不造新数据」）
     var i: i64 = 0
     while i < len(g_emit_specs) {
@@ -65,7 +62,9 @@ pub func run_send(rc: i64) {
         send_append(3, dbgem.stage_of(st), st, rec)
         i = i + 1
     }
-    // ③ diag 帧：编译失败 → 当前错误渲染文本入 name
+    // ③ diag 帧：失败（错误渲染文本）或成功但有警告（摘要）→ 帧载荷 = 结构化
+    // diag 记录（zd；与 --emit diag:zd 同一套数据换出口），name = 人读摘要。
+    var wc = semantic.warn_count()
     if rc != 0 {
         var msg = ""
         if str_len(dg_err_msg) > 0 {
@@ -75,7 +74,9 @@ pub func run_send(rc: i64) {
         } else {
             msg = "编译失败（退出码 " + to_string(rc) + "）"
         }
-        send_append(5, 4, msg, table_new_i64())
+        send_append(5, 4, msg, dbgem.spec_record_bytes("diag"))
+    } else if wc > 0 {
+        send_append(5, 4, "警告 " + to_string(wc) + " 条", dbgem.spec_record_bytes("diag"))
     }
     // ④ artifact 帧：产物文件字节（存在才发）
     var pp = product_path(rc)
