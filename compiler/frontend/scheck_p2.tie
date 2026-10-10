@@ -104,6 +104,9 @@ func check_arm_patterns_enum(c: i64, subj_ty: i64) -> i64 {
             var b: i64 = 0
             while b < nfld {
                 sinfer.lv_insert(sstate.child(p, 1 + b), en_ftys[foff + b], 0, -1, 0)
+                // p.9.22.6 全量符号表：解构绑定声明登记（kind 5；绑定名 id 存于
+                // N_CASE_BIND 槽位，节点取该绑定节点）。
+                xref.reg_decl(sstate.child(p, 1 + b), 5, en_ftys[foff + b], p)
                 b = b + 1
             }
         }
@@ -504,6 +507,11 @@ func check_closure_body(ci: i64) -> i64 {
         table_push(lv_dyn, cl_odyn[ooff + j])
         j = j + 1
     }
+    // p.9.22.6：闭包体 = 新 xref 作用域（owner = 闭包字面量节点）。先装载
+    // 登记时绑定快照（捕获变量的 use→decl 解析基础；与 cl_o* 快照同语义），
+    // 形参/局部随检查过程登记。退出时 pop（与 lv 五表恢复同点）。
+    xref.push_scope(fn_node)
+    xref.load_bind(ci)
     // 闭包参数插入 lv（telem/dyn 表类型处理同 check_fn 参数模板）
     var nparams = cl_nparams[ci]
     var poff = cl_paramoff[ci]
@@ -522,6 +530,8 @@ func check_closure_body(ci: i64) -> i64 {
             dyn = 1
         }
         sinfer.lv_insert(pnid, pty, 0, telem, dyn)
+        // p.9.22.6 全量符号表：闭包形参声明登记（kind 6；参数节点同布局）。
+        xref.reg_decl(pnid, 6, pty, sstate.child(fn_node, sstate.slot_off(fn_node) + 1 + k))
         k = k + 1
     }
     // 闭包局部/捕获段起点：检查开始时定位（覆盖登记时占位值，避免
@@ -557,6 +567,8 @@ func check_closure_body(ci: i64) -> i64 {
     lv_dyn = s_dyn
     lp_stack = s_lp
     lp_top = s_lpt
+    // p.9.22.6：退出闭包 xref 作用域（与 lv 恢复同点）。
+    xref.pop_scope()
     if r < 0 {
         return -1
     }

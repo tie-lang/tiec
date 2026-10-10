@@ -105,6 +105,9 @@ pub func check_debug_src(src: string, base_dir: string) -> string {
 // check 阶段仍要被读（node_names 存 intern id），只能在「AST 用完」后由
 // release_ast 一并清。
 func reset_sem_state() {
+    // p.9.22.6：结构化输出·交叉引用侧表随语义状态一并复位（单一出处——
+    // check_impl / check_ast / release_ast 三处判据不可能漂移）。
+    xref.reset()
     s_tags = table_new_i64()
     s_names = table_new_i64()
     s_vals = table_new_i64()

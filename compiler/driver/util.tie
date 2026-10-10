@@ -1,5 +1,15 @@
 type tie<class>
 // compiler/driver/util.tie —— driver 文本/路径工具子模块
+
+// p.9.22.10 tinker：人读文本出口（--tink 时 stdout 让位帧流，文本改走 stderr；
+// 非 tink 模式与 println 逐字节等价）。编译路径的 println 统一经此出口。
+func dbg_txt(s: string) {
+    if g_tink {
+        print_err(s + "\n")
+    } else {
+        println(s)
+    }
+}
 // ============================================================
 // 从 driver.tie 拆出（p.9.21 方法库化：driver 编排薄壳）。
 // 拆分范式：同编译单元跨文件（文本内联）——本文件只含函数与注释，

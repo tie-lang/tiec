@@ -248,6 +248,9 @@ pub func infer_expr_fn_lit(id: i64) -> i64 {
             ni = ni + 1
         }
         table_push(cl_nouter, len(lv_keys))
+        // p.9.22.6 全量符号表：闭包登记时快照 xref 绑定段（捕获变量在闭包
+        // 体内的 use→decl 解析基准；与上方 cl_o* 快照同一时刻、同一语义）。
+        xref.snapshot_bind(ci)
         // 闭包局部段起点（检查闭包体时 check_var_decl 动态追加）
         table_push(cl_locloff, len(cl_locals))
         // 捕获段起点（S_N_VAR 捕获登记时动态追加）

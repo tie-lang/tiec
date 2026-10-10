@@ -56,6 +56,11 @@ import "./keel/keel_executor.tie"
 import "./driver/util.tie"
 import "./driver/cli_args.tie"
 import "./driver/role_reg.tie"
+// p.9.22 结构化输出（dbgem）：置于 role_reg 之后（sym_wanted 依赖 role_output），
+// 先于 front_end/pipeline（两者出口调用 dbgem.*）。
+import "./dbug/dbgem.tie"
+// p.9.22 tinker：tink 帧协议收发（依赖 dbgem.spec_*；先于 front_end/pipeline 使用者）。
+import "./tinker/tinker.tie"
 import "./driver/prelude.tie"
 import "./driver/front_end.tie"
 import "./driver/keelcli.tie"
@@ -149,6 +154,18 @@ var g_tieir_out: string = "";     // --tieir-out 指定（空 = 不输出 .tir�
 var g_dump_irt: string = "";      // --dump-irt <f> 指定（空 = 不 dump）
 // p.9.11.29：--dump-docs 短路——解析输入源码后输出 doc 注释注册表摘要
 var g_dump_docs: bool = false;
+// p.9.22 结构化输出：--emit <stage>:<fmt> 规格（可重复；"stage:fmt" 原样存放）
+var g_emit_specs: table<string>;
+// p.9.22.1：--emit-only——只 dump 不继续编译（前端跑完即停，不产后端产物）
+var g_emit_only: bool = false;
+// p.9.22.7：--no-sym——关闭 library/class 默认伴生 .sym.zd
+var g_no_sym: bool = false;
+// p.9.22.9+：tinker 收发（stdout 帧流 / stdin 帧流 / 帧文件 / 落盘目录）
+var g_tink: bool = false;
+var g_tink_in: bool = false;
+var g_tink_file: string = "";
+var g_tink_in_file: string = "";
+var g_tink_save: string = "";
 // p.7.3.3：trm 目标（路线 B 可插拔后端）——--target=trm / --backend trm
 var g_trm_mode: bool = false;     // 已请求 trm 字节码目标（默认关闭，不捆绑）
 var g_trm_pipeline: i64 = 0;      // trm 管线注册项 id（keel_driver_boot 填充）
@@ -209,8 +226,16 @@ func main() -> i64 {
         return driver.usage()
     }
     if pr < 0 {
-        println(diagcode.render_error(-1, -1, "参数错误。输入 tiec --help 查看用法。"))
+        dbg_txt(diagcode.render_error(-1, -1, "参数错误。输入 tiec --help 查看用法。"))
         return 2
+    }
+    // p.9.22.9 tinker 接收入口（--tink-in / --tink-in-file）：编译前先消费输入帧。
+    // 拒帧（CRC/长度/信封非法）→ 本进程以非 0 退出（不静默传递损坏数据）。
+    if g_tink_in || str_len(g_tink_in_file) > 0 {
+        var rrc = tinker.run_recv()
+        if rrc != 0 {
+            return rrc
+        }
     }
     // 运行期安全检查（表越界 / 表负下标 / 除零）**常开、不可关闭** ——
     // 依规范 8.5 的裁决：「这些检查不可关闭，因为它们的成本相对故障后果可以忽略」。
@@ -239,7 +264,7 @@ func main() -> i64 {
             tsp_path = "lsp/tsp.exe"
         }
         if str_len(tsp_path) == 0 {
-            println("tsp 未找到：请先构建 compiler/lsp/server.tie → compiler/lsp/tsp.exe")
+            dbg_txt("tsp 未找到：请先构建 compiler/lsp/server.tie → compiler/lsp/tsp.exe")
             return 1
         }
         return exec_code(tsp_path)
@@ -248,7 +273,7 @@ func main() -> i64 {
     if str_len(g_dump_irt) > 0 {
         var drc = tieir.read(g_dump_irt)
         if drc != 0 {
-            println(diagcode.render_error(-1, -1, "tieir 读取失败: " + tieir.err_msg()))
+            dbg_txt(diagcode.render_error(-1, -1, "tieir 读取失败: " + tieir.err_msg()))
             return 1
         }
         print(tieir.dump_text())
@@ -256,7 +281,7 @@ func main() -> i64 {
     }
     // 读源码
     if !file_exists(g_input) {
-        println("读取源码失败: " + g_input)
+        dbg_txt("读取源码失败: " + g_input)
         return 1
     }
     // --compress-data：td → zd 压缩数据（表字面量 → DFS 平铺 → zd record）。
@@ -267,10 +292,10 @@ func main() -> i64 {
             outp = g_input + ".zd"
         }
         if tdzd.compress_data(g_input, outp) {
-            println("[compress-data] " + g_input + " -> " + outp)
+            dbg_txt("[compress-data] " + g_input + " -> " + outp)
             return 0
         }
-        println(diagcode.render_error(-1, -1, "compress-data 失败: " + tdzd.err_msg()))
+        dbg_txt(diagcode.render_error(-1, -1, "compress-data 失败: " + tdzd.err_msg()))
         return 1
     }
     // zd 二进制预判：xxx.zd.tie 是二进制文件（压缩的 tie:data），人类不可读，
@@ -278,7 +303,7 @@ func main() -> i64 {
     // 内容文本解码必然失败/乱码。zd 文件由 tiedb compact/decompress 原语处理。
     var zd_len: i64 = str_len(g_input)
     if zd_len >= 7 && slice(str.clone(g_input), zd_len - 7, zd_len) == ".zd.tie" {
-        println("[预处理] 识别为 zd 压缩数据文件（头: " + g_input + "），tie:data 压缩格式，用 tiedb compact/decompress 处理")
+        dbg_txt("[预处理] 识别为 zd 压缩数据文件（头: " + g_input + "），tie:data 压缩格式，用 tiedb compact/decompress 处理")
         return 0
     }
     // tsh 脚本预判：xxx.tsh.tie 是可读文本的 shell 脚本（由 tie 自己的 tshell
@@ -290,7 +315,7 @@ func main() -> i64 {
     }
     var src = file_read(g_input)
     if str_len(src) == 0 {
-        println("读取源码失败: " + g_input)
+        dbg_txt("读取源码失败: " + g_input)
         return 1
     }
     // S3.4：自定义角色注册表需先于头部扫描可用（config.data.tie roles 段）。 
@@ -298,7 +323,7 @@ func main() -> i64 {
     if !g_cfg_loaded {
         g_cfg_root = config.load_merge(g_config_path, g_cli_profile)
         if g_cfg_root < 0 {
-            println("构建配置加载失败: " + config.err_msg())
+            dbg_txt("构建配置加载失败: " + config.err_msg())
             return 1
         }
         g_cfg_loaded = true
@@ -325,7 +350,7 @@ func main() -> i64 {
     }
     var pruned = cfgpre.preprocess(src, cfg_target, cfg_profile)
     if has_prefix(str.clone(pruned), "ERR:") {
-        println(diagcode.render_err_proto(pruned))
+        dbg_txt(diagcode.render_err_proto(pruned))
         return 1
     }
     src = pruned
@@ -349,7 +374,7 @@ func main() -> i64 {
     // 置于 prelude_inject 之前：dump 只看用户所写内容，不受注入行位移影响。
     if g_dump_docs {
         if parser.parse_ast(clean) < 0 {
-            println(diagcode.render_err_proto(parser.ast_err_protocol()))
+            dbg_txt(diagcode.render_err_proto(parser.ast_err_protocol()))
             return 1
         }
         print(pstmt_top.pdoc_dump())
@@ -389,8 +414,8 @@ func main() -> i64 {
             }
         }
         if str_len(mismatch) > 0 {
-            println(diagcode.render_error(-1, -1, "文件名与头部角色声明不一致: " + mismatch))
-            println("（R3 单一真相原则：文件名与头部都是角色声明源，不一致 = 编译错误）")
+            dbg_txt(diagcode.render_error(-1, -1, "文件名与头部角色声明不一致: " + mismatch))
+            dbg_txt("（R3 单一真相原则：文件名与头部都是角色声明源，不一致 = 编译错误）")
             return 1
         }
     }
@@ -402,7 +427,7 @@ func main() -> i64 {
     // 现改为在 front_end 登记「本文件声明了 unsafe」，由 cap_apply_file 逐模块落到
     // 函数上、检查时按函数抬升（与域凭据完全对称）。调用方签名不受影响。
     if g_prep_only {
-        println("[预处理] 识别为 " + g_role + " 文件（头: " + g_input + "）")
+        dbg_txt("[预处理] 识别为 " + g_role + " 文件（头: " + g_input + "）")
         return 0
     }
     // 角色分派（表驱动，角色体系完全由注册表决定）：
@@ -412,20 +437,20 @@ func main() -> i64 {
     var disp = driver.role_output(str.clone(g_role))
     if disp == "pass" {
         if g_role == "data" {
-            println("[预处理] 识别为 data 数据交换文件（头: " + g_input + "），可用 --compress-data 压缩为 zd（见 tdzd）")
+            dbg_txt("[预处理] 识别为 data 数据交换文件（头: " + g_input + "），可用 --compress-data 压缩为 zd（见 tdzd）")
         } else if g_role == "ui" {
-            println("[预处理] 识别为 ui 界面文件（头: " + g_input + "），已转交 UI 工具链 —— v0.1 UI 工具链尚未实现")
+            dbg_txt("[预处理] 识别为 ui 界面文件（头: " + g_input + "），已转交 UI 工具链 —— v0.1 UI 工具链尚未实现")
         } else if g_role == "db" {
-            println("[预处理] 识别为 db 数据库文件（头: " + g_input + "），已转交数据库工具链 —— v0.1 数据库工具链尚未实现")
+            dbg_txt("[预处理] 识别为 db 数据库文件（头: " + g_input + "），已转交数据库工具链 —— v0.1 数据库工具链尚未实现")
         } else if g_role == "port" {
-            println("[预处理] 识别为 port 端口文件（头: " + g_input + "），已转交端口工具链 —— v0.1 端口工具链尚未实现")
+            dbg_txt("[预处理] 识别为 port 端口文件（头: " + g_input + "），已转交端口工具链 —— v0.1 端口工具链尚未实现")
         } else if g_role == "zd" {
-            println("[预处理] 识别为 zd 压缩数据文件（头: " + g_input + "），tie:data 压缩格式，用 tiedb compact/decompress 处理")
+            dbg_txt("[预处理] 识别为 zd 压缩数据文件（头: " + g_input + "），tie:data 压缩格式，用 tiedb compact/decompress 处理")
         } else if g_role == "tsh" {
-            println("[预处理] 识别为 tsh 脚本文件（头: " + g_input + "），推荐由 tshell 运行")
+            dbg_txt("[预处理] 识别为 tsh 脚本文件（头: " + g_input + "），推荐由 tshell 运行")
             return driver.tsh_dispatch(g_input)
         } else {
-            println("[预处理] 识别为 " + g_role + " 角色文件（头: " + g_input + "），已转交对应工具链 —— 由注册包提供，v0.1 尚未实现")
+            dbg_txt("[预处理] 识别为 " + g_role + " 角色文件（头: " + g_input + "），已转交对应工具链 —— 由注册包提供，v0.1 尚未实现")
         }
         return 0
     }
@@ -437,7 +462,7 @@ func main() -> i64 {
     // 并做边界检查（表/struct 不跨库）。
     if detect_shared_mode() {
         if g_role != "class" && g_role != "type" {
-            println(diagcode.render_error(-1, -1, "动态库模式错误: 要求 library 角色（type tie<class> / type tie<type>）"))
+            dbg_txt(diagcode.render_error(-1, -1, "动态库模式错误: 要求 library 角色（type tie<class> / type tie<type>）"))
             return 1
         }
         // 置位 g_shared（.dll/.so 扩展名触发的动态库模式也要让后续分派识别）
@@ -449,7 +474,7 @@ func main() -> i64 {
     if !g_cfg_loaded {
         g_cfg_root = config.load_merge(g_config_path, g_cli_profile)
         if g_cfg_root < 0 {
-            println(diagcode.render_error(-1, -1, "构建配置加载失败: " + config.err_msg()))
+            dbg_txt(diagcode.render_error(-1, -1, "构建配置加载失败: " + config.err_msg()))
             return 1
         }
     }
@@ -486,10 +511,16 @@ func main() -> i64 {
         backend = config.get_str(g_cfg_root, "tiec.backend")
     }
     if str_len(backend) > 0 && backend != "win32" && backend != "trm" {
-        println(diagcode.render_error(-1, -1, "后端实现未接入: tiec.backend=" + backend + "（win32/LLVM 工具链为当前默认；trm 为路线 B 字节码目标）"))
+        dbg_txt(diagcode.render_error(-1, -1, "后端实现未接入: tiec.backend=" + backend + "（win32/LLVM 工具链为当前默认；trm 为路线 B 字节码目标）"))
         return 1
     }
-    return driver.compile_program(clean)
+    var crc0 = driver.compile_program(clean)
+    // p.9.22.10 tinker 发送出口（--tink / --tink-file）：编译后统一发帧
+    //（stage 记录帧 / 失败 diag 帧 / 产物 artifact 帧；人为文本已在 stderr）。
+    if g_tink || str_len(g_tink_file) > 0 {
+        tinker.run_send(crc0)
+    }
+    return crc0
 }
 
 // p.7.1.1 Keel 接线：真实 pass 间传参载体（front 段输入；原 compile_program

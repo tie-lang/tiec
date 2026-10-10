@@ -91,7 +91,7 @@ pub func compiler_ident() -> string {
     }
     if !g_ident_warned {
         g_ident_warned = true
-        println("缓存提示：本编译器无构建戳（非自举构建或旧产物），缓存键退回手工盐 " + g_cache_salt)
+        dbg_txt("缓存提示：本编译器无构建戳（非自举构建或旧产物），缓存键退回手工盐 " + g_cache_salt)
     }
     return g_cache_salt
 }
@@ -435,7 +435,7 @@ pub func cache_try_hit_dep() -> i64 {
     if file_copy(ck, artifact) {
         // 产物二次指纹核对（防缓存对象损坏/被篡改）
         if dep_file_fp(artifact) == dep_file_fp(ck) {
-            println("缓存命中（依赖感知）: " + artifact)
+            dbg_txt("缓存命中（依赖感知）: " + artifact)
             return 1
         }
         return 0
@@ -469,7 +469,7 @@ pub func cache_store_dep() -> i64 {
             if file_write(mt, dep_manifest_text()) {
                 cache_publish(mt, ck + ".dep")
             }
-            println("已缓存编译产物（依赖感知）: " + artifact)
+            dbg_txt("已缓存编译产物（依赖感知）: " + artifact)
             return 0
         }
     }
@@ -675,7 +675,7 @@ pub func mod_cache_update() -> i64 {
                 // p.9.21.10：写失败不再静默（TIEC_INC=1 打印模块与原因）
                 var inc2 = get_env("TIEC_INC")
                 if inc2 == "1" {
-                    println("MODWRITE-FAIL " + p + " : " + tieir.err_msg())
+                    dbg_txt("MODWRITE-FAIL " + p + " : " + tieir.err_msg())
                 }
             }
         }
@@ -684,7 +684,7 @@ pub func mod_cache_update() -> i64 {
     var inc = get_env("TIEC_INC")
     if inc == "1" {
         // 机器可读（ASCII，跨编码管道安全）：MODCACHE <命中>/<总数> written <写入>
-        println("MODCACHE " + to_string(hits) + "/" + to_string(n) + " written " + to_string(written))
+        dbg_txt("MODCACHE " + to_string(hits) + "/" + to_string(n) + " written " + to_string(written))
     }
     return 0
 }

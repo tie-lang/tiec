@@ -103,6 +103,8 @@ pub func collect_global_var(v: i64, full: string) -> i64 {
             elem = types.named(TK_STR)
         }
         sstate.sorted_insert_gb(gb_keys, gb_vals, gb_const, gb_telem, gb_mod, nid, ty, is_const + is_pub * 2, elem, sstate.file_id_of_node(v))
+        // p.9.22.6 全量符号表：全局表变量声明登记（kind 4）。
+        xref.reg_decl(nid, 4, ty, v)
         return 0
     }
     // 标量全局：字面量初始化 + 类型匹配。
@@ -114,6 +116,8 @@ pub func collect_global_var(v: i64, full: string) -> i64 {
         table_push(gd_nms, full)
     }
     sstate.sorted_insert_gb(gb_keys, gb_vals, gb_const, gb_telem, gb_mod, nid, ty, is_const + is_pub * 2, -1, sstate.file_id_of_node(v))
+    // p.9.22.6 全量符号表：全局标量声明登记（kind 4）。
+    xref.reg_decl(nid, 4, ty, v)
     return 0
 }
 
@@ -471,6 +475,8 @@ pub func collect_top() -> i64 {
                 return -1
             }
             sstate.sorted_insert(alias_keys, alias_vals, anm, s)
+            // p.9.22.6 全量符号表：类型别名声明登记（kind 3）。
+            xref.reg_decl(anm, 3, -1, s)
         } else if tag == S_N_MACRO_DEF {
             // S3.3：跨文件宏未支持——主文件宏定义已在 mexpand 展开 pass 中
             // 收集并从顶层移除；此处残留说明宏定义来自被导入文件。

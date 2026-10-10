@@ -9,37 +9,46 @@ type tie<class>
 namespace driver {
 // 打印用法（--help）。返回 0。
 pub func usage() -> i64 {
-    println("tiec —— tie 自举编译器（tie 语言自写）")
-    println("用法: tiec <input.tie> [选项]")
-    println("  -o <file>        输出可执行文件（logic 默认输入同名 .exe；library 默认 .a）")
-    println("  -l<0-3>          LLVM/clang 优化轴：opt 子进程 + clang 档（默认 2；--llvm-opt= 等价；优先级 CLI > 配置/profile > 默认）")
-    println("  -t<0-3>          tiec 中端优化轴：tie-IR pass 管道（默认 0 = 零 pass；--tie-opt= 等价；p.9.20）")
-    println("            注：头部旧 `// tie:opt=N` 指令已移除（legacy），优化仅 CLI/config 控制")
-    println("  --mem-limit <MB>  内存上限（0 = 不限；>0 时 LLVM 轴 l3 受限自动降为 l2，利好老电脑）")
-    println("  --jobs <N>       编译并发度（0 = 默认；预留配置 advanced.threads，并行随 p.9.1.3 增量/缓存落地）")
-    println("  --no-cache       关闭编译缓存（默认开启：产物缓存到 ~/.tiec-cache 或 cache.dir，命中直接复制跳过编译）")
-    println("  --no-warn        跳过警告检查（tiec 警告与 LLVM 工具链警告一并静默；错误 error[E#####] 不受影响）")
-    println("  -w, --warn       显式开启前端警告检查（默认只报错，警告 pass 不运行）")
-    println("  -Werror, --warn-error  有警告即报错（隐含 -w；任一警告 ⇒ 退出码非 0，供 CI 与零警告纪律使用）")
-    println("  --target <三元组>  交叉编译目标（如 x86_64-pc-windows-msvc）")
-    println("  --emit-ir        只生成 LLVM IR（.ll），不继续编译")
-    println("  --keep-ir        保留中间 IR 文件（.ll / .opt.ll）")
-    println("  --ffast-math     编译产物启用 fast-math（训练/性能优先；默认关）")
-    println("  --check-bounds   调试期数组越界检查（越界 panic，默认关）")
-    println("  --visibility=<档>  可见性梯度（p.9.21.4 II1）：a1a 全开放 / a1b ns 级私有（默认）/" +
+    dbg_txt("tiec —— tie 自举编译器（tie 语言自写）")
+    dbg_txt("用法: tiec <input.tie> [选项]")
+    dbg_txt("  -o <file>        输出可执行文件（logic 默认输入同名 .exe；library 默认 .a）")
+    dbg_txt("  -l<0-3>          LLVM/clang 优化轴：opt 子进程 + clang 档（默认 2；--llvm-opt= 等价；优先级 CLI > 配置/profile > 默认）")
+    dbg_txt("  -t<0-3>          tiec 中端优化轴：tie-IR pass 管道（默认 0 = 零 pass；--tie-opt= 等价；p.9.20）")
+    dbg_txt("            注：头部旧 `// tie:opt=N` 指令已移除（legacy），优化仅 CLI/config 控制")
+    dbg_txt("  --mem-limit <MB>  内存上限（0 = 不限；>0 时 LLVM 轴 l3 受限自动降为 l2，利好老电脑）")
+    dbg_txt("  --jobs <N>       编译并发度（0 = 默认；预留配置 advanced.threads，并行随 p.9.1.3 增量/缓存落地）")
+    dbg_txt("  --no-cache       关闭编译缓存（默认开启：产物缓存到 ~/.tiec-cache 或 cache.dir，命中直接复制跳过编译）")
+    dbg_txt("  --no-warn        跳过警告检查（tiec 警告与 LLVM 工具链警告一并静默；错误 error[E#####] 不受影响）")
+    dbg_txt("  -w, --warn       显式开启前端警告检查（默认只报错，警告 pass 不运行）")
+    dbg_txt("  -Werror, --warn-error  有警告即报错（隐含 -w；任一警告 ⇒ 退出码非 0，供 CI 与零警告纪律使用）")
+    dbg_txt("  --target <三元组>  交叉编译目标（如 x86_64-pc-windows-msvc）")
+    dbg_txt("  --emit-ir        只生成 LLVM IR（.ll），不继续编译")
+    dbg_txt("  --keep-ir        保留中间 IR 文件（.ll / .opt.ll）")
+    dbg_txt("  --ffast-math     编译产物启用 fast-math（训练/性能优先；默认关）")
+    dbg_txt("  --check-bounds   调试期数组越界检查（越界 panic，默认关）")
+    dbg_txt("  --visibility=<档>  可见性梯度（p.9.21.4 II1）：a1a 全开放 / a1b ns 级私有（默认）/" +
         "a1c 包级 / a1d 全私有+显式导出")
-    println("  --shared         编译为动态库（.dll/.so；library 角色，M5）")
-    println("  --prep-only      只做头部识别并打印结果")
-    println("  --config <f>     构建配置文件（默认查当前目录 config.data.tie）")
-    println("            配置文件**就是 td（tie:data）**，格式见规范 §17.1：正文是 tie 的表字面量，")
-    println("            如 [\"tiec\": [\"backend\": \"win32\"]]（注释用 //；`k = v` / `{...}` 不是 td）")
-    println("  --profile <p>    构建 profile（dev/release，覆盖配置顶层 profile 键）")
-    println("  --backend <b>    后端实现选择（win32；trm 为路线 B 字节码目标，可插拔；其他 port 未接入）")
-    println("  --lib-root <dir>  内置库根目录（存放 std/ext/rdu/sys；覆盖 TIE_LIB_ROOT 与默认 ~/.tiec-lib/tlib）")
-    println("  --tieir-out <f>  编译后序列化 tieir 分发单元（S3.2；.tir 二进制）")
-    println("  --dump-irt <f>   只读 .tir 并输出可读摘要（S3.2；不编译）")
-    println("  --dump-docs      解析输入源码后输出 doc 注释注册表摘要（p.9.11.29；不编译）")
-    println("  --help           显示本帮助")
+    dbg_txt("  --shared         编译为动态库（.dll/.so；library 角色，M5）")
+    dbg_txt("  --prep-only      只做头部识别并打印结果")
+    dbg_txt("  --config <f>     构建配置文件（默认查当前目录 config.data.tie）")
+    dbg_txt("            配置文件**就是 td（tie:data）**，格式见规范 §17.1：正文是 tie 的表字面量，")
+    dbg_txt("            如 [\"tiec\": [\"backend\": \"win32\"]]（注释用 //；`k = v` / `{...}` 不是 td）")
+    dbg_txt("  --profile <p>    构建 profile（dev/release，覆盖配置顶层 profile 键）")
+    dbg_txt("  --backend <b>    后端实现选择（win32；trm 为路线 B 字节码目标，可插拔；其他 port 未接入）")
+    dbg_txt("  --lib-root <dir>  内置库根目录（存放 std/ext/rdu/sys；覆盖 TIE_LIB_ROOT 与默认 ~/.tiec-lib/tlib）")
+    dbg_txt("  --tieir-out <f>  编译后序列化 tieir 分发单元（S3.2；.tir 二进制）")
+    dbg_txt("  --dump-irt <f>   只读 .tir 并输出可读摘要（S3.2；不编译）")
+    dbg_txt("  --dump-docs      解析输入源码后输出 doc 注释注册表摘要（p.9.11.29；不编译）")
+    dbg_txt("  --emit <阶段>:<格式>  结构化输出阶段数据（p.9.22）：阶段 tokens|ast|symtab|diag，")
+    dbg_txt("            格式 td（可读表字面量）|zd（二进制列式）；可重复；落 <输入>.<阶段>.<格式>；与编译并存")
+    dbg_txt("  --emit-only      只做 --emit 落盘，不继续编译（前端跑完即停）")
+    dbg_txt("  --no-sym         关闭 library/class 产物默认伴生的 <产物>.sym.zd 符号表（p.9.22.7）")
+    dbg_txt("  --tink           stdout 帧流发送（tink 帧协议；人读文本改走 stderr）")
+    dbg_txt("  --tink-in        stdin 帧流接收（CRC 校验；拒帧报错退出非 0）")
+    dbg_txt("  --tink-file <f>  帧流写文件（与 --tink 同格式，离线回放）")
+    dbg_txt("  --tink-in-file <f> 读帧流文件（与 --tink-in 共用解析路径）")
+    dbg_txt("  --tink-save <dir> 收到的 stage/artifact 载荷落盘目录")
+    dbg_txt("  --help           显示本帮助")
     return 0
 }
 
@@ -109,7 +118,7 @@ pub func parse_args() -> i64 {
                 if str_len(a) == 2 {
                     hint = "优化档需粘连取值：-l<0-3>（LLVM/clang 轴）/ -t<0-3>（tiec 中端轴），例 -l2 -t0；不支持 '" + a + " <值>' 分离式"
                 }
-                println(diagcode.render_error(-1, -1, hint))
+                dbg_txt(diagcode.render_error(-1, -1, hint))
                 return -1
             }
             if str_char(a, 1) == "l" {
@@ -132,26 +141,26 @@ pub func parse_args() -> i64 {
             } else if vs == "a1d" {
                 g_cli_visibility = 3
             } else {
-                println(diagcode.render_error(-1, -1, "无效可见性档 '" + a + "'：应为 --visibility=<a1a|a1b|a1c|a1d>（默认 a1b）"))
+                dbg_txt(diagcode.render_error(-1, -1, "无效可见性档 '" + a + "'：应为 --visibility=<a1a|a1b|a1c|a1d>（默认 a1b）"))
                 return -1
             }
         } else if has_prefix(a, "--llvm-opt=") {
             g_llvm_opt = parse_opt_level(str.slice(a, 11, str_len(a)))
             if g_llvm_opt < 0 {
-                println(diagcode.render_error(-1, -1, "无效 LLVM 优化档 '" + a + "'：应为 --llvm-opt=<0-3>"))
+                dbg_txt(diagcode.render_error(-1, -1, "无效 LLVM 优化档 '" + a + "'：应为 --llvm-opt=<0-3>"))
                 return -1
             }
             g_llvm_set = true
         } else if has_prefix(a, "--tie-opt=") {
             g_tie_opt = parse_opt_level(str.slice(a, 10, str_len(a)))
             if g_tie_opt < 0 {
-                println(diagcode.render_error(-1, -1, "无效 tiec 优化档 '" + a + "'：应为 --tie-opt=<0-3>"))
+                dbg_txt(diagcode.render_error(-1, -1, "无效 tiec 优化档 '" + a + "'：应为 --tie-opt=<0-3>"))
                 return -1
             }
             g_tie_set = true
         } else if str_len(a) >= 2 && str_char(a, 1) == "O" {
             // p.9.20：-O* 硬移除（破坏性变更无兼容期），报错提示新用法
-            println(diagcode.render_error(-1, -1, "优化参数 -O* 已移除：拆分为 -l<L>（LLVM/clang 轴）与 -t<T>（tiec 中端轴），例：-l2 -t0；长参 --llvm-opt=<0-3> / --tie-opt=<0-3>"))
+            dbg_txt(diagcode.render_error(-1, -1, "优化参数 -O* 已移除：拆分为 -l<L>（LLVM/clang 轴）与 -t<T>（tiec 中端轴），例：-l2 -t0；长参 --llvm-opt=<0-3> / --tie-opt=<0-3>"))
             return -1
         } else if a == "--mem-limit" {
             if i + 1 >= n {
@@ -233,6 +242,55 @@ pub func parse_args() -> i64 {
             i = i + 1
         } else if a == "--dump-docs" {
             g_dump_docs = true
+        } else if a == "--emit" {
+            // p.9.22：结构化输出规格 <stage>:<fmt>（可重复；此处校验，错即明确诊断）
+            if i + 1 >= n {
+                return -1
+            }
+            var spec = arg_string(i + 1)
+            var col = find_char(str.clone(spec), ":")
+            var st = ""
+            var fm = ""
+            if col >= 0 {
+                st = str.slice(spec, 0, col)
+                fm = str.slice(spec, col + 1, str_len(spec))
+            }
+            if st != "tokens" && st != "ast" && st != "symtab" && st != "diag" {
+                dbg_txt(diagcode.render_error(-1, -1, "无效 --emit 阶段 '" + spec + "'：阶段应为 tokens|ast|symtab|diag，格式 td|zd（例 --emit ast:zd）"))
+                return -1
+            }
+            if fm != "td" && fm != "zd" {
+                dbg_txt(diagcode.render_error(-1, -1, "无效 --emit 格式 '" + spec + "'：格式应为 td|zd（例 --emit ast:zd）"))
+                return -1
+            }
+            table_push(g_emit_specs, spec)
+            i = i + 1
+        } else if a == "--emit-only" {
+            g_emit_only = true
+        } else if a == "--no-sym" {
+            g_no_sym = true
+        } else if a == "--tink" {
+            g_tink = true
+        } else if a == "--tink-in" {
+            g_tink_in = true
+        } else if a == "--tink-file" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_tink_file = arg_string(i + 1)
+            i = i + 1
+        } else if a == "--tink-in-file" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_tink_in_file = arg_string(i + 1)
+            i = i + 1
+        } else if a == "--tink-save" {
+            if i + 1 >= n {
+                return -1
+            }
+            g_tink_save = arg_string(i + 1)
+            i = i + 1
         } else if str_len(a) > 1 && str_char(a, 0) == "-" {
             // 未知选项
             return -1
@@ -348,10 +406,10 @@ pub func scan_header(src: string) -> i64 {
                     g_role = g_role_base
                     return 0
                 }
-                println(diagcode.render_error(-1, -1, "文件类型声明错误: " + g_role_err + "（第 " + to_string(line_no) + " 行）"))
+                dbg_txt(diagcode.render_error(-1, -1, "文件类型声明错误: " + g_role_err + "（第 " + to_string(line_no) + " 行）"))
                 return -1
             }
-            println(diagcode.render_error(-1, -1, "文件类型声明错误: 非法声明 '" + ln2 + "'（第 " + to_string(line_no) + " 行），应为 `type tie` 或 `type tie<类型>`"))
+            dbg_txt(diagcode.render_error(-1, -1, "文件类型声明错误: 非法声明 '" + ln2 + "'（第 " + to_string(line_no) + " 行），应为 `type tie` 或 `type tie<类型>`"))
             return -1
         }
         // 第一个非空非声明行：头部区结束

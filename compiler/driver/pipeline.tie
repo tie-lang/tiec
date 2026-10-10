@@ -77,7 +77,7 @@ pub func kpass_irgen() -> i64 {
                     }
                     var inc9 = get_env("TIEC_INC")
                     if inc9 == "1" {
-                        println("MODASM " + to_string(len(ap)) + "/" + to_string(len(ap)) + " assembled")
+                        dbg_txt("MODASM " + to_string(len(ap)) + "/" + to_string(len(ap)) + " assembled")
                     }
                     g_t_irgen = 0
                     return 0
@@ -87,9 +87,9 @@ pub func kpass_irgen() -> i64 {
                 g_used_trmlite = false
                 g_used_interp = false
                 g_used_wsock = false
-                println("MODASM fallback（副作用恢复失败降级全量）: " + asm_recover_err)
+                dbg_txt("MODASM fallback（副作用恢复失败降级全量）: " + asm_recover_err)
             } else {
-                println("MODASM fallback（装配失败降级全量）: " + tieir.err_msg())
+                dbg_txt("MODASM fallback（装配失败降级全量）: " + tieir.err_msg())
             }
             }
         }
@@ -104,7 +104,7 @@ pub func kpass_irgen() -> i64 {
         if str_len(msg) == 0 {
             msg = "irgen 最小集之外的语句（尚未支持）"
         }
-        println("IR 生成失败: " + msg)
+        dbg_txt("IR 生成失败: " + msg)
         return 1
     }
     // p.9.15.1：烘进「本次源码集指纹」当**编译器自身身份**（仅编译 tiec 自身时
@@ -114,7 +114,7 @@ pub func kpass_irgen() -> i64 {
     // 失败 = pass 内部错误（诊断由 pass 侧输出），终止编译。
     var mrc = passes.run(effective_tie_opt())
     if mrc != 0 {
-        println(diagcode.render_error(-1, -1, "中端 pass 失败（t" + to_string(effective_tie_opt()) + "）"))
+        dbg_txt(diagcode.render_error(-1, -1, "中端 pass 失败（t" + to_string(effective_tie_opt()) + "）"))
         return 1
     }
     // p.9.21.6-2 模块级 tieir 片段缓存：归属注入 + 逐模块命中/写入。
@@ -270,18 +270,18 @@ pub func asm_build_order() -> table<string> {
                 ci = ci + 1
             }
             if has_dollar {
-                println("ASMDBG gext_dollar[" + to_string(di) + "] tag=" + to_string(tg) + " name=" + nm3)
+                dbg_txt("ASMDBG gext_dollar[" + to_string(di) + "] tag=" + to_string(tg) + " name=" + nm3)
                 nm_dollar = nm_dollar + 1
             }
             if tg != 100 && tg != 101 && tg != 112 {
                 tag_other = tag_other + 1
                 if tag_other <= 10 {
-                    println("ASMDBG gext_othertag[" + to_string(di) + "] tag=" + to_string(tg) + " name=" + nm3)
+                    dbg_txt("ASMDBG gext_othertag[" + to_string(di) + "] tag=" + to_string(tg) + " name=" + nm3)
                 }
             }
             di = di + 1
         }
-        println("ASMDBG gext_total=" + to_string(len(g_extra_tops)) + " dollar=" + to_string(nm_dollar) + " othertag=" + to_string(tag_other))
+        dbg_txt("ASMDBG gext_total=" + to_string(len(g_extra_tops)) + " dollar=" + to_string(nm_dollar) + " othertag=" + to_string(tag_other))
     }
     // p.9.21.9 收口：原「含顶层 VarDecl → 空 order 降级」护栏已摘除——
     // 全局 var 登记族（含命名空间 const）与 vtable 登记由 irgen.asm_reg_globals
@@ -347,11 +347,19 @@ pub func kpass_tieir() -> i64 {
         // p.9.20 §6.3：tieir 单元头携带 t 档与 pass 管道版本（可复现性自证）
         ir_meta.set_tie_opt(effective_tie_opt())
         ir_meta.set_pass_ver(passes.pipeline_ver())
+        // p.9.22.8：段 8 语义符号表——采集开启时构建列组并注入尾部；
+        // 未开启时显式清空（进程内多编译防残留）。
+        if xref.enabled() == 1 {
+            dbgem.build_sym()
+            tieir.set_sec8(dbgem.sym8_section())
+        } else {
+            tieir.set_sec8(table_new_i64())
+        }
         if !tieir.write(g_tieir_out) {
-            println("tieir 序列化失败: " + tieir.err_msg())
+            dbg_txt("tieir 序列化失败: " + tieir.err_msg())
             return 1
         }
-        println("已生成 tieir: " + g_tieir_out)
+        dbg_txt("已生成 tieir: " + g_tieir_out)
     }
     return 0
 }
@@ -370,11 +378,18 @@ pub func kpass_trmemit() -> i64 {
     // p.9.20 §6.3：trm 分发单元同样携带 t 档 / pass 管道版本
     ir_meta.set_tie_opt(effective_tie_opt())
     ir_meta.set_pass_ver(passes.pipeline_ver())
+    // p.9.22.8：段 8 语义符号表（同 kpass_tieir）
+    if xref.enabled() == 1 {
+        dbgem.build_sym()
+        tieir.set_sec8(dbgem.sym8_section())
+    } else {
+        tieir.set_sec8(table_new_i64())
+    }
     if !tieir.write(out) {
-        println(diagcode.render_error(-1, -1, "trm 目标后端失败: " + tieir.err_msg()))
+        dbg_txt(diagcode.render_error(-1, -1, "trm 目标后端失败: " + tieir.err_msg()))
         return 1
     }
-    println("trm 目标产物: " + out + "（tieir 字节码，供 trm 引擎加载执行）")
+    dbg_txt("trm 目标产物: " + out + "（tieir 字节码，供 trm 引擎加载执行）")
     return 0
 }
 
@@ -391,7 +406,7 @@ pub func kpass_emit() -> i64 {
     g_t_emit = t3e - t3
     // r.1.4.4：未支持指令硬错误——不再静默降级为占位注释继续链接
     if str_len(llvmgen.err_msg()) > 0 {
-        println(diagcode.render_error(-1, -1, "代码生成失败: " + llvmgen.err_msg()))
+        dbg_txt(diagcode.render_error(-1, -1, "代码生成失败: " + llvmgen.err_msg()))
         return 1
     }
     // IR 文件路径（p.9.15.4：统一由 driver.ir_path 给；--emit-ir 落用户路径，
@@ -401,7 +416,7 @@ pub func kpass_emit() -> i64 {
         var t4 = clock()
     }
     if !file_write(ir_path, ll_text) {
-        println("文件操作失败: 写 IR 文件 " + ir_path)
+        dbg_txt("文件操作失败: 写 IR 文件 " + ir_path)
         return 1
     }
     unsafe {
@@ -411,11 +426,11 @@ pub func kpass_emit() -> i64 {
     if g_emit_ir {
         // 阶段计时报告（TIEC_TIME=1）：parse/sem/irgen/emit/write 五段
         if get_env("TIEC_TIME") == "1" {
-            println("[time] parse=" + to_string(g_t_parse) + "ms sem=" + to_string(g_t_sem) +
+            dbg_txt("[time] parse=" + to_string(g_t_parse) + "ms sem=" + to_string(g_t_sem) +
                 "ms irgen=" + to_string(g_t_irgen) + "ms emit=" + to_string(g_t_emit) +
                 "ms write=" + to_string(g_t_write) + "ms")
         }
-        println("已生成 LLVM IR: " + ir_path)
+        dbg_txt("已生成 LLVM IR: " + ir_path)
         return 0
     }
     return 0
@@ -443,7 +458,7 @@ pub func effective_llvm_opt() -> i64 {
     if limit > 0 && level >= 3 {
         // 降级行为不受 --no-warn 影响，只抑制打印
         if !g_no_warn {
-            println(warn_render(-1, -1, "内存上限 " + to_string(limit) + "MB 下 LLVM 优化档 l3 受限，已自动降为 l2"))
+            dbg_txt(warn_render(-1, -1, "内存上限 " + to_string(limit) + "MB 下 LLVM 优化档 l3 受限，已自动降为 l2"))
         }
         level = 2
     }
@@ -473,7 +488,7 @@ pub func kpass_link() -> i64 {
     var level = effective_llvm_opt()
     var orc = tc.opt(ir_path, opt_path, level)
     if orc != 0 {
-        println(diagcode.render_error(-1, -1, "中间优化失败: " + tc_err_msg))
+        dbg_txt(diagcode.render_error(-1, -1, "中间优化失败: " + tc_err_msg))
         return 1
     }
     // S3.1：target 优先级 CLI --target > 配置 target > 空（本机）
@@ -592,7 +607,7 @@ pub func keel_run_pipeline(pid: i64, max_steps: i64) -> i64 {
             unsafe { tf1 = GetTickCount() }
             var incf = get_env("TIEC_INC")
             if incf == "1" {
-                println("PHASE " + iname + " " + to_string(tf1 - tf0) + "ms")
+                dbg_txt("PHASE " + iname + " " + to_string(tf1 - tf0) + "ms")
             }
             if frc != 0 {
                 return frc
@@ -614,7 +629,7 @@ pub func keel_run_pipeline(pid: i64, max_steps: i64) -> i64 {
             unsafe { t1p = GetTickCount() }
             var incp = get_env("TIEC_INC")
             if incp == "1" {
-                println("PHASE " + iname + " " + to_string(t1p - t0p) + "ms")
+                dbg_txt("PHASE " + iname + " " + to_string(t1p - t0p) + "ms")
                 file_append("phase.log", "PHASE " + iname + " end " + to_string(t1p) + "\n")
             }
             if rc != 0 {
@@ -630,6 +645,18 @@ pub func compile_program(src: string) -> i64 {
     // base_dir：输入路径的目录（import 展开需要）；\\ 归一化为 /
     k_g_base_dir = dir_of(str.clone(g_input))
     k_g_src = src
+    // p.9.22：结构化输出初始化（列登记 + 错误槽；全局初值不生效）。
+    dbgem.boot()
+    // p.9.22：符号表采集门（单一出处）——需要 symtab 数据的输出路径才开启：
+    // --emit symtab* / --tieir-out（段 8）/ trm 目标 / library|class 伴生 .sym.zd。
+    // 默认关闭 ⇒ 普通编译零开销（xref 登记函数首行短路）。
+    if dbgem.sym_wanted() == 1 {
+        xref.set_enabled(1)
+    }
+    // p.9.22.1：--emit-only——只跑前端（内含 --emit 落盘），不进中端/后端。
+    if g_emit_only {
+        return kpass_front()
+    }
     // Keel 骨架引导：boot（内建默认注册项）→ driver 次引导（真实注册项）。
     // 幂等：重复调用不重复登记（register 重名返回原 id）。
     keelboot.boot()
@@ -690,17 +717,17 @@ pub func compile_logic(ir_path: string, opt_path: string, target: string) -> i64
     }
     var bres = tc.link_exe(opt_path, link_out, target, g_used_interp, g_used_trmlite, g_used_wsock)
     if bres != 0 {
-        println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
+        dbg_txt(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
         return 1
     }
     if link_out != exe_path {
         if !publish_artifact(link_out, exe_path) {
-            println(diagcode.render_error(-1, -1, "产物发布失败: " + exe_path))
+            dbg_txt(diagcode.render_error(-1, -1, "产物发布失败: " + exe_path))
             return 1
         }
     }
     cleanup_ir()
-    println("编译成功: " + exe_path)
+    dbg_txt("编译成功: " + exe_path)
     return 0
 }
 
@@ -713,17 +740,17 @@ pub func compile_library(ir_path: string, opt_path: string, target: string) -> i
     var obj_path = replace_ext(g_input, "o")
     var crc = tc.compile_object(opt_path, obj_path, target)
     if crc != 0 {
-        println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
+        dbg_txt(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
         return 1
     }
     var arc = tc.archive(obj_path, lib_path)
     if arc != 0 {
-        println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
+        dbg_txt(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
         return 1
     }
     cleanup_ir()
     file_delete(obj_path)
-    println("库编译成功: " + lib_path)
+    dbg_txt("库编译成功: " + lib_path)
     return 0
 }
 
@@ -741,11 +768,11 @@ pub func compile_shared(ir_path: string, opt_path: string, target: string) -> i6
     }
     var src = tc.link_shared(opt_path, dll_path, target, g_used_interp, g_used_trmlite, g_used_wsock)
     if src != 0 {
-        println(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
+        dbg_txt(diagcode.render_error(-1, -1, "后端失败: " + tc_err_msg))
         return 1
     }
     cleanup_ir()
-    println("动态库编译成功: " + dll_path)
+    dbg_txt("动态库编译成功: " + dll_path)
     return 0
 }
 

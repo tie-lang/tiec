@@ -87,6 +87,10 @@ pub func reg_fn(full_name: string, is_pub: i64, nparams: i64, required: i64, ret
         i = i + 1
     }
     sorted_insert_fn(fn_keys, fn_vals, fn_def_nodes, nid, sig, def_node)
+    // p.9.22.6 全量符号表：函数声明登记（kind 0；type = 签名 id）。
+    if def_node >= 0 {
+        xref.reg_decl(nid, 0, sig, def_node)
+    }
     return sig
 }
 

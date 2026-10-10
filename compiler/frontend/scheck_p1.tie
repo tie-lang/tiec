@@ -571,6 +571,9 @@ func check_arm_patterns_plain(c: i64, subj_ty: i64) -> i64 {
                     var s_ty = types.struct_of(st_vals[sidx])
                     if bind_id2 >= 0 {
                         sinfer.lv_insert(bind_id2, s_ty, 0, -1, 0)
+                        // p.9.22.6 全量符号表：case 绑定声明登记（kind 5；
+                        // 绑定名 id 存于 N_CASE_BIND 槽，节点取该绑定节点）。
+                        xref.reg_decl(bind_id2, 5, s_ty, p)
                     }
                     var key2 = "s:" + sname
                     var dd: i64 = 0

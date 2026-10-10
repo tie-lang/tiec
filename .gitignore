@@ -56,6 +56,10 @@ lsp/lsp_smoke*.py
 ext/gfx/skia/smoke/
 gfx/skia/smoke/
 
+# p.9.22 结构化输出：产物伴生符号表 + --emit 落盘是构建产物（不入库）
+*.sym.zd
+*.tir
+
 # 回归夹具目录例外（regress-s21 按目录枚举，必须追踪）
 !tests/_cfg_probe/
 !tests/_compound_probe/
