@@ -29,9 +29,10 @@ pub func frontend(src: string, base_dir: string) -> i64 {
     g_t_parse = t0e - t0
     if prc < 0 {
         dbg_txt(diagcode.render_err_proto(parser.ast_err_protocol()))
-        // p.9.22：解析失败路径——diag 记录此刻错误（--emit diag:* 仍落盘）
+        // p.9.22：解析失败——错误槽落定（--emit diag:* 落盘与 tinker diag 帧共用；
+        // 无条件，不在 emit 分支内——tink 管道同样要拿到真实错误文本）。
+        dbgem.set_err_proto(parser.ast_err_protocol())
         if len(g_emit_specs) > 0 {
-            dbgem.set_err_proto(parser.ast_err_protocol())
             dbgem.run_emit_dumps(1)
         }
         return -1
@@ -53,9 +54,9 @@ pub func frontend(src: string, base_dir: string) -> i64 {
     g_t_sem = t1e - t1
     if has_prefix(str.clone(sem), "ERR:") {
         dbg_txt(diagcode.render_err_proto(sem))
-        // p.9.22：语义失败路径——diag 记录此刻错误（--emit diag:* 仍落盘）
+        // p.9.22：语义失败——错误槽落定（同解析路径，无条件）。
+        dbgem.set_err_proto(sem)
         if len(g_emit_specs) > 0 {
-            dbgem.set_err_proto(sem)
             dbgem.run_emit_dumps(1)
         }
         return -1

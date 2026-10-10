@@ -96,7 +96,6 @@ pub func run_recv() -> i64 {
     var ndg: i64 = 0
     var nhl: i64 = 0
     var nuk: i64 = 0
-    tk_reply = table_new_i64()
     while pos < len(buf) {
         var fr = frame_next(buf, pos)
         var pl = fr.0
@@ -111,7 +110,8 @@ pub func run_recv() -> i64 {
         }
         var kind = tk_kind
         if kind == 1 {
-            // hello → hello-ack（回执缓冲；--tink 随发送出口写出）
+            // hello → hello-ack（入出站缓冲——FIFO 先于发送阶段帧；--tink 时随
+            // 发送出口一次写出）
             send_append(2, 0, "hello-ack", table_new_i64())
             nhl = nhl + 1
         } else if kind == 3 {

@@ -29,9 +29,8 @@ var tk_kind: i64 = -1;        // 信封 kind（-1 = 未解码）
 var tk_stage: i64 = 0;        // 信封 stage
 var tk_name: string = "";     // 信封 name
 var tk_pl: table<i64>;        // 信封 payload（内层记录/产物字节）
-// 出站缓冲：tk_out = 发送阶段累计；tk_reply = 接收侧回执（先于 tk_out 写出）。
+// 出站缓冲：接收阶段（回执/透传）与发送阶段共用的 FIFO 帧缓冲，写出口一次写出。
 var tk_out: table<i64>;
-var tk_reply: table<i64>;
 
 import "./tinker_frame.tie"
 import "./tinker_env.tie"
