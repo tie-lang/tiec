@@ -107,6 +107,8 @@ pub func check_var_decl(s: i64) -> i64 {
             decl_warn(nid, s_lines[s], s_cols[s])
             // 登记局部变量（port 对象 = ptr 槽）
             sinfer.lv_insert(nid, ty, is_const, -1, 0)
+            // p.9.22.6 全量符号表：局部变量声明登记（kind 5）。
+            xref.reg_decl(nid, 5, ty, s)
             return 0
         }
         // 安全边界重分类（§11.8，2026-10-01）：**类型本身不再是危险面** ——
@@ -233,6 +235,8 @@ pub func check_var_decl(s: i64) -> i64 {
         // W00008 / W00005：同名变量再次声明（作用域覆盖语义，后者遮蔽前者）
         decl_warn(nid, s_lines[s], s_cols[s])
         sinfer.lv_insert(nid, ty, is_const, telem, dyn)
+        // p.9.22.6 全量符号表：局部变量声明登记（kind 5）。
+        xref.reg_decl(nid, 5, ty, s)
         // S2.2 闭包：闭包体内声明的局部登记到当前闭包局部段（捕获遮蔽判定用）
         if g_clo_depth > 0 && g_clo_cur >= 0 {
             table_push(cl_locals, nid)
@@ -312,6 +316,8 @@ pub func check_var_decl(s: i64) -> i64 {
     // W00008 / W00005（无标注路径）：同名变量再次声明（作用域覆盖语义）
     decl_warn(nid, s_lines[s], s_cols[s])
     sinfer.lv_insert(nid, it2, is_const, telem2, dyn2)
+    // p.9.22.6 全量符号表：局部变量声明登记（kind 5，无标注路径）。
+    xref.reg_decl(nid, 5, it2, s)
     // S2.2 闭包：闭包体内声明的局部登记到当前闭包局部段（捕获遮蔽判定用）
     if g_clo_depth > 0 && g_clo_cur >= 0 {
         table_push(cl_locals, nid)
@@ -358,6 +364,9 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     g_gt_blk_seq = 0
     g_cf_depth = 0
     g_block_names = table_new_i64()
+    // p.9.22.6：函数是新的 xref 作用域（owner = 函数定义节点）。形参/局部
+    // 声明的 use→decl 解析基础；出口处 pop（含无体提前返回）。
+    xref.push_scope(fn_node)
     var nparams = sg_nparams[sig]
     var off = sg_off[sig]
     var i: i64 = 0
@@ -378,6 +387,8 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
             dyn = 1
         }
         sinfer.lv_insert(pnid, pty, 0, telem, dyn)
+        // p.9.22.6 全量符号表：形参声明登记（kind 6）。
+        xref.reg_decl(pnid, 6, pty, pnode)
         // p.9.11.11 immut 只读形参：N_PARAM val bit1 = immut（parser 登记；by_ref
         // 在 bit0 与既有 sp_refs 读取一致——此处读 bit1）。登记到 immut 集合。
         if (s_vals[pnode] & 2) != 0 {
@@ -428,6 +439,7 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     // 误当函数体成员扫到 → 假报「语句只能出现在文件顶层」。声明无需检查体，
     // 直接返回（goto 表为空，check_goto_refs 亦为空操作，语义等价）。
     if sstate.slot_off(fn_node) + 1 + nparams >= sstate.nchild(fn_node) {
+        xref.pop_scope()
         return 0
     }
     // S1.2：unsafe 函数体内开启 unsafe 上下文（safe 代码进 unsafe fn 已被调用
@@ -478,6 +490,7 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     cap_file_note(fn_node, body)
     g_held_caps = saved_caps
     if r < 0 {
+        xref.pop_scope()
         return -1
     }
     // p.9.14.2 独立警告 pass：W00011/15/5/19 四趟全函数子树遍历是自举性能病态
@@ -558,8 +571,10 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     // goto 可前向/后向任意位置，须全表收集后判定 R1/R2/R3）
     var gr = check_goto_refs()
     if gr < 0 {
+        xref.pop_scope()
         return -1
     }
+    xref.pop_scope()
     return 0
 }
 

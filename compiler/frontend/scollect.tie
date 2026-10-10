@@ -563,6 +563,8 @@ func collect_struct_decl(s: i64) -> i64 {
         sm_err_col = s_cols[s]
         return -1
     }
+    // p.9.22.6 全量符号表：struct 声明登记（kind 1；type = struct_of(idx)）。
+    xref.reg_decl(snid, 1, types.struct_of(idx), s)
     // p.9.21.6-1 模块边界显式化：struct 行来源模块回填（reg_struct 默认 0；
     // 此处持定义节点 s，反查真实文件 id）
     st_mod[idx] = sstate.file_id_of_node(s)

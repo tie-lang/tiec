@@ -52,6 +52,8 @@ pub func check_stmt_for(s: i64) -> i64 {
         decl_warn(vnid, s_lines[s], s_cols[s])
         // for 迭代变量：lv_insert 已实现覆盖
         sinfer.lv_insert(vnid, elem_ty, 0, -1, 0)
+        // p.9.22.6 全量符号表：for 迭代变量声明登记（kind 5；节点取 for 语句）。
+        xref.reg_decl(vnid, 5, elem_ty, s)
         var lbl = s_aux[s]
         // 逻辑压栈：复用槽位
         if lp_top < len(lp_stack) {

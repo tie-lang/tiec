@@ -67,16 +67,31 @@ const TIEIR_MAGIC3: i64 = 73;    // 'I'
 const TIEIR_MAGIC4: i64 = 82;    // 'R'
 // 格式版本（V3 迁移转换器触发条件）。v2（p.9.20）：模块头新增 t 轴档位与
 // pass 管道版本两个 i64——旧版读新版会错位，故 bump 并由版本校验拦截。
-const TIEIR_VERSION: i64 = 2;
+// v3（p.9.22.8）：尾部新增**段 8 语义符号表**（可选，由调用方经 set_sec8
+// 注入；无注入 = 与 v2 同构的字节流）；读侧放宽——段号大于已知最大段的段按
+// 「段号 + 段长」整体跳过（前向兼容路径），v2 文件仍可读。
+const TIEIR_VERSION: i64 = 3;
 const SEC_HEAD: i64 = 2;         // 段号：模块头
 const SEC_STRPOOL: i64 = 3;      // 段号：字符串池
 const SEC_SYMTAB: i64 = 4;       // 段号：符号表
 const SEC_IRBODY: i64 = 5;       // 段号：IR 主体
 const SEC_EXPORT: i64 = 6;       // 段号：导出表
 const SEC_SPAN: i64 = 7;         // 段号：span 段
+const SEC_SEMSYS: i64 = 8;       // 段号：语义符号表（p.9.22.8，可选段）
 
 // ---------- 全局状态 ----------
 var tieir_out: table<i64>;       // 序列化输出字节表
+// p.9.22.8 段 8 注入（模块边界纪律：本模块不 import driver/dbgem——调用方
+// （driver 经 dbgem）先构建列组字节，再经 set_sec8 注入「段头 + 段体」完整
+// 字节；空 = 不写段 8。同 tieir_slice.set_fn_mods 注入先例。）
+var sec8_tail: table<i64>;
+// 读侧：段 8 解析结果（列头 + 扁平值；kind 1 列为池 id——已按读入池重映射）。
+var tieir_ss_n: i64 = 0;         // 列数（0 = 无段 8）
+var tieir_ss_fno: table<i64>;    // 列字段号
+var tieir_ss_kind: table<i64>;   // 0=i64 1=池 id
+var tieir_ss_len: table<i64>;    // 列行数
+var tieir_ss_off: table<i64>;    // 列在 tieir_ss_val 的起点
+var tieir_ss_val: table<i64>;    // 扁平值
 var tieir_pos: i64 = 0;          // 反序列化解析游标（rd_* 推进）
 var tieir_err: string = "";      // 最近错误消息（空 = 无错误）
 var tieir_sec_end: i64 = 0; // 当前段体结束位置（段边界校验）
@@ -391,7 +406,57 @@ pub func serialize() -> table<i64> {
         spi = spi + 1
     }
     wr_sec_end(tieir_out, pp, ps)
+    // ---- 段 8：语义符号表（可选注入；字节 = 段头 + 段体，见 set_sec8） ----
+    if len(sec8_tail) > 0 {
+        tieir_out = byte_concat(tieir_out, sec8_tail)
+    }
     return tieir_out
+}
+
+// 注入段 8（含段头；空表 = 清除）。调用方须在 write/serialize 之前调用。
+pub func set_sec8(t: table<i64>) {
+    sec8_tail = t
+}
+
+// 读侧：段 8 是否已解析（1 = 有）。
+pub func semsym_present() -> i64 {
+    if tieir_ss_n > 0 {
+        return 1
+    }
+    return 0
+}
+
+// 读侧：段 8 列数 / 列行数（越界 0）。
+pub func semsym_cols() -> i64 {
+    return tieir_ss_n
+}
+pub func semsym_len(c: i64) -> i64 {
+    if c < 0 || c >= tieir_ss_n {
+        return 0
+    }
+    return tieir_ss_len[c]
+}
+pub func semsym_fno(c: i64) -> i64 {
+    if c < 0 || c >= tieir_ss_n {
+        return 0
+    }
+    return tieir_ss_fno[c]
+}
+pub func semsym_kind(c: i64) -> i64 {
+    if c < 0 || c >= tieir_ss_n {
+        return 0
+    }
+    return tieir_ss_kind[c]
+}
+// 列第 r 行值（kind 0 = 值；kind 1 = 字符串池 id，经读入池重映射）。
+pub func semsym_at(c: i64, r: i64) -> i64 {
+    if c < 0 || c >= tieir_ss_n {
+        return -1
+    }
+    if r < 0 || r >= tieir_ss_len[c] {
+        return -1
+    }
+    return tieir_ss_val[tieir_ss_off[c] + r]
 }
 
 // 序列化并写入文件（字节表直写）。成功返回 true。
@@ -425,13 +490,21 @@ pub func deserialize(t: table<i64>) -> i64 {
     if tieir_err != "" {
         return -1
     }
-    if ver != TIEIR_VERSION {
+    // v2（无段 8）与 v3（可选段 8）都可读；其余版本拒绝。
+    if ver != TIEIR_VERSION && ver != 2 {
         set_err("tieir 版本不兼容（文件 " + to_string(ver) + "，编译器支持 " + to_string(TIEIR_VERSION) + "；旧版请用 tieir-migrate 转换）")
         return -1
     }
     // 复位目标结构（本体 + 侧表配套）
     ir.new_module()
     ir_meta.reset_meta()
+    // p.9.22.8：段 8 读侧状态复位（无段 8 的 v2 文件读到 0 列）
+    tieir_ss_n = 0
+    tieir_ss_fno = table_new_i64()
+    tieir_ss_kind = table_new_i64()
+    tieir_ss_len = table_new_i64()
+    tieir_ss_off = table_new_i64()
+    tieir_ss_val = table_new_i64()
     // ---- 段 2：模块头 ----
     if !rd_sec_head(t, SEC_HEAD) {
         return -1
@@ -849,12 +922,79 @@ pub func deserialize(t: table<i64>) -> i64 {
         spi2 = spi2 + 1
     }
     tieir_pos = tieir_sec_end
-    // ---- 收尾：游标必须恰好落在文件末尾（防尾随垃圾） ----
-    if tieir_pos != n {
-        set_err("tieir 尾部多余数据（" + to_string(n - tieir_pos) + " 字节）")
-        return -1
+    // ---- 尾部段循环（p.9.22.8）：段 8 = 语义符号表；未知段（段号 > 已知
+    // 最大段）按「段号 + 段长」整体跳过——前向兼容路径，防尾随垃圾仍成立
+    // （跳过必须严格落在段体末尾且不越界）。
+    while tieir_pos < n {
+        var tsec = rd_i64(t)
+        var tlen = rd_i64(t)
+        if tieir_err != "" {
+            return -1
+        }
+        if tlen < 0 || tieir_pos + tlen > n {
+            set_err("tieir 尾部段体越界（段 " + to_string(tsec) + "，长度 " + to_string(tlen) + "）")
+            return -1
+        }
+        if tsec == SEC_SEMSYS {
+            if !parse_semsys(t, tieir_pos + tlen, pool_remap) {
+                return -1
+            }
+        }
+        // 未知段（含未来段号）：整体跳过，不致命。
+        tieir_pos = tieir_pos + tlen
     }
     return 0
+}
+
+// 段 8 解析：列数 + 每列「字段号 + kind + 行数 + 行值（kind1 = 池 id，
+// 经 pool_remap 重映射）」。返回 true 成功。
+func parse_semsys(t: table<i64>, body_end: i64, pool_remap: table<i64>) -> bool {
+    tieir_sec_end = body_end
+    var nc = rd_i64(t)
+    if tieir_err != "" || !in_sec() {
+        return false
+    }
+    if nc < 0 || nc > 10000 {
+        set_err("tieir 段 8 列数非法（" + to_string(nc) + "）")
+        return false
+    }
+    tieir_ss_n = nc
+    var c: i64 = 0
+    while c < nc {
+        var fno = rd_i64(t)
+        var kd = rd_i64(t)
+        var ln = rd_i64(t)
+        if tieir_err != "" || !in_sec() {
+            return false
+        }
+        if (kd != 0 && kd != 1) || ln < 0 || ln > 10000000 {
+            set_err("tieir 段 8 列头非法（列 " + to_string(c) + "）")
+            return false
+        }
+        table_push(tieir_ss_fno, fno)
+        table_push(tieir_ss_kind, kd)
+        table_push(tieir_ss_len, ln)
+        table_push(tieir_ss_off, len(tieir_ss_val))
+        var r: i64 = 0
+        while r < ln {
+            var v = rd_i64(t)
+            if tieir_err != "" || !in_sec() {
+                return false
+            }
+            if kd == 1 {
+                v = pool_remap_id(pool_remap, v)
+            }
+            table_push(tieir_ss_val, v)
+            r = r + 1
+        }
+        c = c + 1
+    }
+    // 列体必须恰好用尽段体（防段内尾随垃圾）
+    if tieir_pos != body_end {
+        set_err("tieir 段 8 尾部多余数据（" + to_string(body_end - tieir_pos) + " 字节）")
+        return false
+    }
+    return true
 }
 
 // 从文件读取并反序列化。返回 0 成功 / -1 失败。
@@ -883,6 +1023,15 @@ pub func dump_text() -> string {
     s = s + " 指令=" + to_string(ir.inst_count())
     s = s + " 值=" + to_string(ir.value_count())
     s = s + " | 侧表: span=" + to_string(ir_meta.span_count())
+    if tieir_ss_n > 0 {
+        var ss_rows: i64 = 0
+        var ssc: i64 = 0
+        while ssc < tieir_ss_n {
+            ss_rows = ss_rows + tieir_ss_len[ssc]
+            ssc = ssc + 1
+        }
+        s = s + " 语义符号表: " + to_string(tieir_ss_n) + " 列/" + to_string(ss_rows) + " 行"
+    }
     s = s + " 符号=" + to_string(ir_meta.sym_count())
     s = s + " 导出=" + to_string(ir_meta.export_count())
     s = s + " doc=" + to_string(ir_meta.doc_count())

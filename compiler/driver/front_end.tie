@@ -28,7 +28,12 @@ pub func frontend(src: string, base_dir: string) -> i64 {
     }
     g_t_parse = t0e - t0
     if prc < 0 {
-        println(diagcode.render_err_proto(parser.ast_err_protocol()))
+        dbg_txt(diagcode.render_err_proto(parser.ast_err_protocol()))
+        // p.9.22：解析失败路径——diag 记录此刻错误（--emit diag:* 仍落盘）
+        if len(g_emit_specs) > 0 {
+            dbgem.set_err_proto(parser.ast_err_protocol())
+            dbgem.run_emit_dumps(1)
+        }
         return -1
     }
     unsafe {
@@ -47,12 +52,21 @@ pub func frontend(src: string, base_dir: string) -> i64 {
     }
     g_t_sem = t1e - t1
     if has_prefix(str.clone(sem), "ERR:") {
-        println(diagcode.render_err_proto(sem))
+        dbg_txt(diagcode.render_err_proto(sem))
+        // p.9.22：语义失败路径——diag 记录此刻错误（--emit diag:* 仍落盘）
+        if len(g_emit_specs) > 0 {
+            dbgem.set_err_proto(sem)
+            dbgem.run_emit_dumps(1)
+        }
         return -1
     }
     // p.9.14.1：语义警告改结构化事件直发（driver 从 semantic.warn_* 直读渲染，
     // 不再解析 OK 协议中的 ;W: 文本段）
     print_warns()
+    // p.9.22：结构化输出落盘（--emit ...；辅助输出——失败只打印，不改变编译结果）
+    dbgem.run_emit_dumps(0)
+    // p.9.22.7：library/class 伴生 .sym.zd（--no-sym 关闭；采集未开时跳过）
+    dbgem.run_sidecar()
     // -Werror：有任何警告即中止，不进入中端/后端（不产出任何中间产物与可执行文件）。
     if warn_gate() != 0 {
         return -1
@@ -88,7 +102,7 @@ pub func warn_gate() -> i64 {
         if other_n > 0 {
             msg = msg + "（另有导入模块 " + to_string(other_n) + " 条，不计入）"
         }
-        println(msg)
+        dbg_txt(msg)
     }
     return 1
 }
@@ -104,7 +118,7 @@ pub func print_warns() -> string {
     var n = semantic.warn_count()
     var i: i64 = 0
     while i < n {
-        println(diagcode.render_warning(semantic.warn_line_at(i), semantic.warn_col_at(i), semantic.warn_msg_at(i)))
+        dbg_txt(diagcode.render_warning(semantic.warn_line_at(i), semantic.warn_col_at(i), semantic.warn_msg_at(i)))
         i = i + 1
     }
     // 未登记警告审计（TIEC_WARN_AUDIT=1）：新增了警告发射点却忘了 warn_reg 时立刻暴露，
@@ -112,7 +126,7 @@ pub func print_warns() -> string {
     if get_env("TIEC_WARN_AUDIT") == "1" {
         var uc = diagcode.warn_unreg_count()
         if uc > 0 {
-            println("[warn-audit] 未登记警告 " + to_string(uc) + " 条：" + diagcode.warn_unreg_list())
+            dbg_txt("[warn-audit] 未登记警告 " + to_string(uc) + " 条：" + diagcode.warn_unreg_list())
         }
     }
     return ""

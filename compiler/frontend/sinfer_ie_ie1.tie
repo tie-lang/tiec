@@ -31,6 +31,8 @@ pub func infer_expr_comprehension(id: i64) -> i64 {
             if ip_c >= 0 {
                 celem_loop = ip_c
                 lv_insert(cvnid, celem_loop, 0, -1, 0)
+                // p.9.22.6 全量符号表：推导式循环变量声明登记（kind 5）。
+                xref.reg_decl(cvnid, 5, celem_loop, id)
                 var celem_ty = infer_expr(celem)
                 if celem_ty < 0 {
                     return -1
@@ -62,6 +64,8 @@ pub func infer_expr_comprehension(id: i64) -> i64 {
         }
         // 登记循环变量（源元素类型；解构临时变量同此登记——字段访问再取 ItemK）
         lv_insert(cvnid, celem_loop, 0, -1, 0)
+        // p.9.22.6 全量符号表：推导式循环变量声明登记（kind 5）。
+        xref.reg_decl(cvnid, 5, celem_loop, id)
         var celem_ty = infer_expr(celem)
         if celem_ty < 0 {
             return -1
@@ -199,6 +203,8 @@ pub func infer_expr_var(id: i64) -> i64 {
             }
             node_types[id] = lt
             g_typed = g_typed + 1
+            // p.9.22.6 全量符号表：局部标识符引用登记（use→decl 经绑定栈）。
+            xref.reg_use(id, xref.bind_find(nid))
             return lt
         }
         // p.9.21.5 II2 A2b：裸名经前缀补全命中 ns 常量时同样跟随 L1 梯度
@@ -223,6 +229,9 @@ pub func infer_expr_var(id: i64) -> i64 {
             var gt = gb_find(gkey)
             node_types[id] = gt
             g_typed = g_typed + 1
+            // p.9.22.6 全量符号表：全局标识符引用登记（use→decl 经绑定栈；
+            // 全局声明在根 scope 段，命名空间补全键与登记键同一 id 空间）。
+            xref.reg_use(id, xref.bind_find(gkey))
             return gt
         }
         // S2.2 命名函数提升：变量查找失败后查函数签名（裸名 + 命名空间补全），
@@ -243,6 +252,8 @@ pub func infer_expr_var(id: i64) -> i64 {
             var fnty = types.fn_of(fret, fpts)
             node_types[id] = fnty
             g_typed = g_typed + 1
+            // p.9.22.6 全量符号表：命名函数引用登记（use→decl 直取定义节点）。
+            xref.reg_use(id, sstate.fn_def_node(full_f))
             return fnty
         }
         sm_err_line = s_lines[id]
@@ -444,6 +455,8 @@ pub func infer_expr_block_pipe(id: i64) -> i64 {
         return -1
     }
     lv_insert(s_names[id], dt, 0, -1, 0)
+    // p.9.22.6 全量符号表：循环体变量声明登记（kind 5）。
+    xref.reg_decl(s_names[id], 5, dt, id)
     var bt = infer_expr(body)
     if bt < 0 {
         return -1
