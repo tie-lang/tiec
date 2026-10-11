@@ -1,7 +1,7 @@
 type tie<class>
 // compiler/tinker/tinker_frame.tie —— tink 帧编解码（tink **v3 线格式**；p.9.22.9 升级）
 // ============================================================
-// 帧格式（与 tlib std/tink_v3.tie 逐字节一致，语言无关；设计见 tink v3 设计文档 §3）：
+// 帧格式（与 tlib std/tink.tie 逐字节一致，语言无关；设计见 tink v3 设计文档 §3）：
 //   16B 定长头：[magic 0x74 0x6B][ver=3][type=0x04 MESSAGE][flags u16]
 //               [stream_id u32=0][seq u32=0][len u16]
 //   载荷区：len 字节；**大载荷自动分片**（v3 §5.2）：分片帧 OFFSET 位置位、载荷前 4B
@@ -10,7 +10,7 @@ type tie<class>
 //   尾部：CRC32C（Castagnoli，4B BE；覆盖「头 + 载荷」，本工具无扩展区）。
 //   flags：1=EXT 2=PROTECTED 4=CRC 8=FIN 16=OFFSET 32=URGENT（保留位必须为 0）。
 // 断代说明：v3 不承诺 v1 线格式兼容——旧 [len u32][payload][crc32] 帧将被拒（拒帧语义）。
-// 与 tlib std/tink_v3.tie 的字节级互验由仓库外侧交叉探针覆盖（本地对拍，不入库）。
+// 与 tlib std/tink.tie 的字节级互验由仓库外侧交叉探针覆盖（本地对拍，不入库）。
 // 本文件零 import（被 driver 链内联；自包含纪律同 zdw）。
 
 // CRC32C 查表（惰性构建；Castagnoli 反射式 poly 0x82F63B78）。
@@ -40,7 +40,7 @@ func crc_tab_build() {
     tk_crc_ready = 1
 }
 
-// CRC32C 区间 [a, b)（与 std/tink_v3 crc32c_range 逐字节一致）。
+// CRC32C 区间 [a, b)（与 std/tink crc32c_range 逐字节一致）。
 // 向量：crc32c("123456789") = 0xE3069283（交叉探针断言）。
 pub func crc32c_range(p: table<i64>, a: i64, b: i64) -> i64 {
     if tk_crc_ready == 0 {
