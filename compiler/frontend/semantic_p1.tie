@@ -316,6 +316,9 @@ func expand_one_import(imp_node: i64) -> i64 {
     // 有别名时，把被导入文件顶层 namespace 的段名替换为别名（f2 作为唯一入口）。
     var alias_id = s_aux[imp_node]
     var new_root = len(s_tags) - 1
+    // 别名改名传播（修复：别名 × 分片库命名空间分裂）：记录被改名 ns 的原名
+    // 段 id，供递归展开的分片（多文件共享同名 namespace）继承改名。
+    var rn_orig: table<i64> = table_new_i64()
     if alias_id >= 0 {
         // p.9.11.14：别名登记 + 重复诊断（编译单元内 import 别名必须唯一；
         // 别名映射 → g_imp_alias_names/paths 平行表，供后续工具/诊断显示）。
@@ -349,6 +352,7 @@ func expand_one_import(imp_node: i64) -> i64 {
                 if nsegs > 0 {
                     // 只改第一段（namespace fmt → namespace f2）
                     var first_seg = sstate.child(as_, 0)
+                    table_push(rn_orig, s_names[first_seg])
                     s_names[first_seg] = alias_id
                 }
             }
@@ -447,11 +451,13 @@ func expand_one_import(imp_node: i64) -> i64 {
         while k3 < sstate.nchild(new_root) {
             var s2 = sstate.child(new_root, k3)
             if s_tags[s2] == S_N_IMPORT {
+                var fr3 = len(g_file_roots)
                 var r = expand_one_import(s2)
                 if r < 0 {
                     g_cur_dir = saved_dir
                     return -1
                 }
+                alias_propagate(fr3, alias_id, rn_orig)
             } else {
                 var keep = false
                 var j2: i64 = 0
@@ -478,17 +484,60 @@ func expand_one_import(imp_node: i64) -> i64 {
     while k < nc {
         var s = sstate.child(new_root, k)
         if s_tags[s] == S_N_IMPORT {
+            var fr0 = len(g_file_roots)
             var r = expand_one_import(s)
             if r < 0 {
                 g_cur_dir = saved_dir
                 return -1
             }
+            alias_propagate(fr0, alias_id, rn_orig)
         } else {
             table_push(g_extra_tops, s)
         }
         k = k + 1
     }
     g_cur_dir = saved_dir
+    return 0
+}
+
+// 别名改名传播（修复：别名 × 分片库命名空间分裂，2026-10-12）。
+// 背景：被导入文件内部递归展开的分片（多文件共享同名 namespace）不经该文件
+// 的别名改名 ⇒ 主文件 ns 改名而分片保持原名 ⇒ 命名空间分裂（跨文件裸调用
+// 全部「未定义」）。本函数把本次递归展开区间 [fr, len(g_file_roots)) 内、
+// 顶层 ns 首段名命中 rn_orig（改名前的原名集合）的文件一并改名。
+// 边界：显式 as 展开的分片在其自身展开内已改为自己的别名（≠ 原名），不会
+// 二次命中；无别名（alias_id < 0）或原名集为空时零开销直接返回。
+func alias_propagate(fr: i64, alias_id: i64, rn_orig: table<i64>) -> i64 {
+    if alias_id < 0 || len(rn_orig) == 0 {
+        return 0
+    }
+    var i = fr
+    while i < len(g_file_roots) {
+        var rt = g_file_roots[i]
+        var ncs = sstate.nchild(rt)
+        var ks: i64 = 0
+        while ks < ncs {
+            var st = sstate.child(rt, ks)
+            if s_tags[st] == S_N_NAMESPACE {
+                var nseg = s_aux[st]
+                if nseg > 0 {
+                    var seg0 = sstate.child(st, 0)
+                    var nm = s_names[seg0]
+                    var j: i64 = 0
+                    while j < len(rn_orig) {
+                        if rn_orig[j] == nm {
+                            s_names[seg0] = alias_id
+                            j = len(rn_orig)
+                        } else {
+                            j = j + 1
+                        }
+                    }
+                }
+            }
+            ks = ks + 1
+        }
+        i = i + 1
+    }
     return 0
 }
 
