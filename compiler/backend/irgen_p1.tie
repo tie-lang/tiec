@@ -420,6 +420,24 @@ func num_field_index(fname: string) -> i64 {
     return val  // 纯数字 → 字段下标
 }
 
+// 2026-10-12：Winsock 符号单一来源（net_* 内建与用户 extern 直调共用判据）：
+// is_libc_sym 据此判「非 interp 桥」；tig_ext_call_typed 据此置 g_used_wsock
+// 触发 -lws2_32 链接。select/ioctlsocket/WSACleanup 为用户事件循环直调符号
+// （内建阻塞模型不经它们），登记以支持自建事件面。
+func is_wsock_sym(sym: string) -> bool {
+    if sym == "socket" || sym == "bind" || sym == "connect" || sym == "listen" ||
+        sym == "accept" || sym == "send" || sym == "recv" || sym == "sendto" ||
+        sym == "recvfrom" || sym == "closesocket" || sym == "htons" ||
+        sym == "inet_addr" || sym == "gethostbyname" || sym == "WSAStartup" ||
+        sym == "select" || sym == "ioctlsocket" || sym == "WSACleanup" ||
+        sym == "WSAGetLastError" || sym == "WSASetLastError" ||
+        sym == "getsockopt" || sym == "setsockopt" ||
+        sym == "getsockname" || sym == "getpeername" {
+        return true
+    }
+    return false
+}
+
 // 符号是否为 libc（llvmgen 无条件 declare 的符号；不触发 tie_interp 链接）
 func is_libc_sym(sym: string) -> bool {
     if sym == "printf" || sym == "strlen" || sym == "strcmp" {
@@ -529,10 +547,9 @@ func is_libc_sym(sym: string) -> bool {
     // p.6.4.5 网络原语内联：Winsock2 符号（ws2_32，非 interp 桥）。仅 Windows
     // 目标下程序实际引用（net_* 调内联 IR 会 emit 这些符号），Linux 交叉目标
     // 若用 net_* 自然缺 ws2_32——与本文件其余 Win32 系统库符号处理一致。
-    if sym == "socket" || sym == "bind" || sym == "connect" || sym == "listen" ||
-        sym == "accept" || sym == "send" || sym == "recv" || sym == "sendto" ||
-        sym == "recvfrom" || sym == "closesocket" || sym == "htons" ||
-        sym == "inet_addr" || sym == "gethostbyname" || sym == "WSAStartup" {
+    // 2026-10-12：清单收敛至 is_wsock_sym 单一来源（新增 select/ioctlsocket/
+    // WSACleanup——用户事件循环 extern 直调；tig_ext_call_typed 同判据置位）。
+    if is_wsock_sym(sym) {
         return true
     }
     // r.1.6.2：Linux POSIX 文件系统符号（file_* 内置 Linux 分支，UTF-8 直通）。
@@ -559,6 +576,12 @@ func is_libc_sym(sym: string) -> bool {
     if sym == "socket" || sym == "connect" || sym == "bind" || sym == "listen" ||
         sym == "accept" || sym == "send" || sym == "recv" ||
         sym == "sendto" || sym == "recvfrom" {
+        return true
+    }
+    // 2026-10-12：Linux 事件面符号（epoll/非阻塞；libc，非 interp 桥）。
+    // 用户自建事件循环直调（select 在上方 Winsock 组已含，POSIX 亦在 libc）。
+    if sym == "epoll_create" || sym == "epoll_create1" || sym == "epoll_ctl" ||
+        sym == "epoll_wait" || sym == "fcntl" || sym == "poll" {
         return true
     }
     // r.1.6.16：Linux 目标私有豁免——由 trm_lite_linux.a 的 compat shim 成员解析

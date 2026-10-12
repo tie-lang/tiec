@@ -102,6 +102,11 @@ func tig_ext_call_typed(sym: string, argtys: table<i64>, argv: table<i64>, ret_t
     if !is_libc_sym(sym) {
         g_used_interp = true
     }
+    // 2026-10-12：用户 extern 直调 Winsock 符号 → 置位 g_used_wsock
+    // （driver 链 -lws2_32；net_* 内建路径的置位在 tig_net_* helper，判据对齐）。
+    if is_wsock_sym(sym) {
+        g_used_wsock = true
+    }
     var sid = interner.intern(sym)
     var inst = ir.new_inst(g_cur_block, 36, ret_ty)
     ir.add_operand(inst, sid, 0)
