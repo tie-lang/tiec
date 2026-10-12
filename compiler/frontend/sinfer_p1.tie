@@ -19,15 +19,35 @@ func infer_arrow(id: i64, op: i64) -> i64 {
     if data_ty < 0 {
         return -1
     }
+    // 链式追加目标（先前追加改写产物：table_push 调用 / 语句序列）放行；
+    // 尚为二元节点的嵌套链先推断触发就地改写再验形态；
+    // 其余非变量目标维持早拒（规范 3.11 的 t <- 1 <- 2 形态经此通道）。
+    var tgt_chain: i64 = 0
     if s_tags[tgt_n] != S_N_VAR {
-        sm_err_line = s_lines[id]
-        sm_err_col = s_cols[id]
-        sm_err_msg = "箭头目标必须是函数、调用或可赋值变量（函数 " + g_cur_fn_name + "）"
-        return -1
+        if s_tags[tgt_n] == S_N_BINARY {
+            var t0 = infer_expr(tgt_n)
+            if t0 < 0 {
+                return -1
+            }
+        }
+        if (s_tags[tgt_n] == S_N_CALL && sstate.name_str(tgt_n) == "table_push") ||
+            s_tags[tgt_n] == S_N_STMTLIST {
+            tgt_chain = 1
+        } else {
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = "箭头目标必须是函数、调用或可赋值变量（函数 " + g_cur_fn_name + "）"
+            return -1
+        }
     }
-    var t_ty = infer_expr(tgt_n)
-    if t_ty < 0 {
-        return -1
+    var t_ty: i64 = -1
+    if tgt_chain == 1 {
+        t_ty = node_types[tgt_n]
+    } else {
+        t_ty = infer_expr(tgt_n)
+        if t_ty < 0 {
+            return -1
+        }
     }
     if types.is_fn(t_ty) {
         // 传参：`f(data)`——校验 1 参 + 数据类型匹配
@@ -51,6 +71,15 @@ func infer_arrow(id: i64, op: i64) -> i64 {
         g_typed = g_typed + 1
         return frt
     }
+    // 规范 3.11：箭头指向**表**目标 = 元素追加（`t <- v` / `v -> t`），
+    // 链式形态（`t <- 1 <- 2`，目标为先前追加改写产物）同办。
+    if types.is_table(t_ty) {
+        return infer_arrow_append(id, tgt_n, data_n, t_ty, data_ty)
+    }
+    if (s_tags[tgt_n] == S_N_CALL && sstate.name_str(tgt_n) == "table_push") ||
+        s_tags[tgt_n] == S_N_STMTLIST {
+        return infer_arrow_append(id, tgt_n, data_n, t_ty, data_ty)
+    }
     // 赋值：`x <- data` / `data -> x`——数据类型可赋给目标变量类型
     if !stype.types_compatible(t_ty, data_ty) && !stype.types_match(t_ty, data_ty, data_n) &&
         !stype.types_narrow_int(t_ty, data_ty, data_n) {
@@ -62,6 +91,104 @@ func infer_arrow(id: i64, op: i64) -> i64 {
     node_types[id] = data_ty
     g_typed = g_typed + 1
     return data_ty
+}
+
+// 规范 3.11 表追加改写：单发（目标为表变量）→ 就地改写为 table_push 调用；
+// 链式（目标为先前追加改写产物）→ 就地改写为语句序列 [内层追加, table_push]。
+// 改写继承内建 table_push 的全部检查与降低路径（§6.4 亦定义 t.push(v) 为其
+// 显式形态）。值形态暂为 void（「追加返回自身」随后续批；语句位置为常规用法）。
+func infer_arrow_append(id: i64, tgt_n: i64, data_n: i64, t_ty: i64, data_ty: i64) -> i64 {
+    // 解析追加目标：单发表变量 / 链式产物 → 根变量 + 表类型
+    var root: i64 = -1
+    var tbl_ty = t_ty
+    if s_tags[tgt_n] == S_N_VAR {
+        root = tgt_n
+    } else {
+        var tail = tgt_n
+        if s_tags[tail] == S_N_STMTLIST && sstate.nchild(tail) > 0 {
+            tail = sstate.child(tail, sstate.nchild(tail) - 1)
+        }
+        if s_tags[tail] == S_N_EXPR_STMT && sstate.nchild(tail) > 0 {
+            tail = sstate.child(tail, 0)
+        }
+        if s_tags[tail] == S_N_CALL && sstate.name_str(tail) == "table_push" {
+            root = sstate.child(tail, sstate.slot_off(tail))
+            tbl_ty = node_types[root]
+        }
+    }
+    if root < 0 {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "箭头追加的目标必须是表变量或追加链（规范 3.11）"
+        return -1
+    }
+    // 元素类型匹配交由内建 table_push 自己的检查裁决（判据单一出处，
+    // 含表元素类型的正规解析路径）——此处不重复判定。
+    if s_tags[tgt_n] == S_N_VAR {
+        // 单发：本体就地改写为 table_push(root, data)，全量继承内建检查
+        s_tags[id] = S_N_CALL
+        s_names[id] = interner.intern("table_push")
+        s_vals[id] = -1
+        s_aux[id] = -1
+        s_coff[id] = len(s_children)
+        table_push(s_children, -1)
+        table_push(s_children, root)
+        table_push(s_children, data_n)
+        s_nchild[id] = 3
+        return infer_call(id)
+    }
+    // 链式：新建追加调用节点并先行校验，本体改写为语句序列
+    // [ExprStmt(内层), ExprStmt(追加调用)]（语句位按语句序列生成）。
+    var call = len(s_tags)
+    table_push(s_tags, S_N_CALL)
+    table_push(s_names, interner.intern("table_push"))
+    table_push(s_vals, -1)
+    table_push(s_aux, -1)
+    table_push(s_coff, len(s_children))
+    table_push(s_children, -1)
+    table_push(s_children, root)
+    table_push(s_children, data_n)
+    table_push(s_nchild, 3)
+    table_push(s_lines, s_lines[id])
+    table_push(s_cols, s_cols[id])
+    table_push(node_types, -1)
+    var ct = infer_call(call)
+    if ct < 0 {
+        return -1
+    }
+    var se1 = len(s_tags)
+    table_push(s_tags, S_N_EXPR_STMT)
+    table_push(s_names, -1)
+    table_push(s_vals, -1)
+    table_push(s_aux, -1)
+    table_push(s_coff, len(s_children))
+    table_push(s_children, tgt_n)
+    table_push(s_nchild, 1)
+    table_push(s_lines, s_lines[id])
+    table_push(s_cols, s_cols[id])
+    table_push(node_types, -1)
+    var se2 = len(s_tags)
+    table_push(s_tags, S_N_EXPR_STMT)
+    table_push(s_names, -1)
+    table_push(s_vals, -1)
+    table_push(s_aux, -1)
+    table_push(s_coff, len(s_children))
+    table_push(s_children, call)
+    table_push(s_nchild, 1)
+    table_push(s_lines, s_lines[id])
+    table_push(s_cols, s_cols[id])
+    table_push(node_types, -1)
+    s_tags[id] = S_N_STMTLIST
+    s_names[id] = -1
+    s_vals[id] = -1
+    s_aux[id] = -1
+    s_coff[id] = len(s_children)
+    table_push(s_children, se1)
+    table_push(s_children, se2)
+    s_nchild[id] = 2
+    node_types[id] = types.named(TK_VOID)
+    g_typed = g_typed + 1
+    return types.named(TK_VOID)
 }
 
 // ==================== S1.2 A1 atomic<T> 内置方法 ====================

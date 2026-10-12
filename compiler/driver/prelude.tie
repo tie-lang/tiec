@@ -92,7 +92,7 @@ func prelude_needs_result(immut raw: string) -> bool {
 // 注 1：形参名不可用 `code`（tie 保留类型名：宏参类型），故用 `body`。
 // 注 2：import 的**别名必须与 prelude 内的命名空间同名**（lang），否则 `using`
 //       找不到该命名空间（tie 的 using 按名匹配命名空间，实测）。
-func prelude_inject(body: string, role: string, raw: string) -> string {
+pub func prelude_inject(body: string, role: string, raw: string) -> string {
     if !prelude_role_ok(role) {
         return body
     }

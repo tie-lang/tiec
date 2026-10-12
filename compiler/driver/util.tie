@@ -3,7 +3,7 @@ type tie<class>
 
 // p.9.22.10 tinker：人读文本出口（--tink 时 stdout 让位帧流，文本改走 stderr；
 // 非 tink 模式与 println 逐字节等价）。编译路径的 println 统一经此出口。
-func dbg_txt(s: string) {
+pub func dbg_txt(s: string) {
     if g_tink || g_tink_serve {
         print_err(s + "\n")
     } else {
@@ -24,7 +24,7 @@ func dbg_txt(s: string) {
 // 不编译 driver ⇒ 这些函数缺失，**LSP 根本编不出来**（实测 E00489）。
 // 迁到 frontend 后：frontend 自足，driver 侧经同编译单元仍可见（零调用点改动）。
 // 在 s 中查找子串 needle 首次出现位置（0 起字符索引）；未找到返回 -1。
-func find_str(immut s: string, immut needle: string) -> i64 {
+pub func find_str(immut s: string, immut needle: string) -> i64 {
     var n = str_len(s)
     var m = str_len(needle)
     if m == 0 {
@@ -53,7 +53,7 @@ func find_str(immut s: string, immut needle: string) -> i64 {
 
 // 按字符拆分（码点级；driver 自写工具）
 // 源码目录（不含文件名/扩展名）；无分隔符返回 "."
-func base_dir_of(p: string) -> string {
+pub func base_dir_of(p: string) -> string {
     var n = str_len(p)
     var i: i64 = n - 1
     while i >= 0 {
@@ -68,7 +68,7 @@ func base_dir_of(p: string) -> string {
 
 // 取路径的目录部分（含末尾分隔符；无分隔符返回空串）；\ 与 / 都识别，
 // 输出归一化为 /（import 展开需要）。
-func dir_of(path: string) -> string {
+pub func dir_of(path: string) -> string {
     var n: i64 = str_len(path)
     var last: i64 = -1
     var i: i64 = 0
@@ -99,7 +99,7 @@ func dir_of(path: string) -> string {
 
 // 替换路径扩展名（basename 最后一个 . 后替换；无 . 直接追加）。
 // 例：examples/hello.tie + "exe" → examples/hello.exe；a.opt.ll + "ll" → a.opt.ll。
-func replace_ext(path: string, new_ext: string) -> string {
+pub func replace_ext(path: string, new_ext: string) -> string {
     var n: i64 = str_len(path)
     var last_dot: i64 = -1
     var i: i64 = 0
@@ -121,7 +121,7 @@ func replace_ext(path: string, new_ext: string) -> string {
 }
 
 // 取路径的文件名部分（最后一个 / 或 \ 之后；无分隔符返回原串）。
-func file_name_of(path: string) -> string {
+pub func file_name_of(path: string) -> string {
     var n: i64 = str_len(path)
     var last: i64 = -1
     var i: i64 = 0
@@ -138,7 +138,7 @@ func file_name_of(path: string) -> string {
     return slice(path, last + 1, n)
 }
 
-func role_from_filename(name: string) -> string {
+pub func role_from_filename(name: string) -> string {
     g_name_param = ""
     g_name_mods = table_new_string()
     var n: i64 = str_len(name)
@@ -206,7 +206,7 @@ func role_from_filename(name: string) -> string {
 }
 
 // 动态库模式检测：--shared 显式开关，或输出路径扩展名为 .dll / .so（大小写不敏感）。
-func detect_shared_mode() -> bool {
+pub func detect_shared_mode() -> bool {
     if g_shared {
         return true
     }
@@ -235,7 +235,7 @@ func has_dll_so_ext(path: string) -> bool {
 }
 
 // 目标三元组是否 Linux（.so 默认扩展名分派用）。
-func is_linux_target(target: string) -> bool {
+pub func is_linux_target(target: string) -> bool {
     var n: i64 = str_len(target)
     var i: i64 = 0
     while i <= n - 5 {

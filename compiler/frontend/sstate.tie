@@ -459,6 +459,7 @@ var g_imp_alias_paths: table<string>;   // 对应导入路径（归一化）
 // [g_file_base[k], g_file_base[k+1])（append_ast_mem 逐文件连续追加；
 // expand_imports 推进）。file_id_of_node 对基址二分定位任意节点的来源模块。
 var g_file_base: table<i64>;    // 文件 id -> 该文件首节点基址（升序；主文件 0）
+var g_file_stem: table<string>; // 文件 id -> 文件名词干（顶层限定通道，2026-10-12；宏展开文件为空）
 // 符号表来源模块列（与各表行对齐；登记时由 def_node 反查文件 id）：
 var sg_mod: table<i64>;         // 签名行来源模块（行号 = 签名 id，与 sg_* 对齐）
 var gb_mod: table<i64>;         // 全局变量行来源模块（与 gb_keys/vals 行对齐）

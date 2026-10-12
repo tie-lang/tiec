@@ -92,7 +92,7 @@ func map_set(n: i64, key: string, val: i64) -> i64 {
 }
 
 // 截取 s 的 [start, end) 子串（码点级）；越界自动收敛；start>=end 返回空串。
-func slice(s: string, start: i64, end: i64) -> string {
+pub func slice(s: string, start: i64, end: i64) -> string {
     var n: i64 = str_len(s)
     var lo: i64 = start
     if lo < 0 {
@@ -592,7 +592,7 @@ func strip_header(src: string) -> string {
 }
 
 // 去除字符串首尾空白（空格/制表/换行/回车）。
-func trim(s: string) -> string {
+pub func trim(s: string) -> string {
     var n: i64 = str_len(s)
     var start: i64 = 0
     while start < n {

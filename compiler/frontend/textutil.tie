@@ -19,7 +19,7 @@ type tie<class>
 // 性能重写（O(n)）：旧实现 out = out + ln 逐行拼接，每行复制全串 → O(n²)
 // （10k+ 行大文件显著）。改为单 StringBuilder 累积，语义逐字节等价：
 // 仅当此前已输出过非空行时才补 "\n"（等价于旧判据 str_len(out) > 0）。
-func strip_type_header(src: string) -> string {
+pub func strip_type_header(src: string) -> string {
     var lines = split_lines(src)
     var n: i64 = len(lines)
     var sb = string_builder()
@@ -87,7 +87,7 @@ func split_lines(s: string) -> table<string> {
 // `immut` = 只读借用（规范 §13.4：调用方继续用、只读取 ⇒ 声明 immut）。
 // 不写修饰符时形参按「值传递」处理，移动检查会认为调用方把值交了出去，
 // 于是调用方再用同一个变量就被判「已移动」——只读函数必须显式声明 immut。
-func has_prefix(immut s: string, immut prefix: string) -> bool {
+pub func has_prefix(immut s: string, immut prefix: string) -> bool {
     var n: i64 = str_len(s)
     var m: i64 = str_len(prefix)
     if n < m {
@@ -103,7 +103,7 @@ func has_prefix(immut s: string, immut prefix: string) -> bool {
     return true
 }
 // 找字符串中首个 ch 的位置；未找到 -1。
-func find_char(immut s: string, immut ch: string) -> i64 {
+pub func find_char(immut s: string, immut ch: string) -> i64 {
     var n: i64 = str_len(s)
     var i: i64 = 0
     while i < n {
@@ -115,7 +115,7 @@ func find_char(immut s: string, immut ch: string) -> i64 {
     return -1
 }
 // 取字符串 [start, end) 子串（码点级）。
-func slice(immut s: string, start: i64, end: i64) -> string {
+pub func slice(immut s: string, start: i64, end: i64) -> string {
     var sb = string_builder()
     var i: i64 = start
     while i < end {
@@ -125,7 +125,7 @@ func slice(immut s: string, start: i64, end: i64) -> string {
     return sb_build(sb)
 }
 // 去除字符串首尾空白（空格/制表）。
-func trim(immut s: string) -> string {
+pub func trim(immut s: string) -> string {
     var n: i64 = str_len(s)
     var start: i64 = 0
     var end: i64 = n
@@ -137,7 +137,7 @@ func trim(immut s: string) -> string {
     }
     return slice(s, start, end)
 }
-func split_char(s: string, sep: string) -> table<string> {
+pub func split_char(s: string, sep: string) -> table<string> {
     var out = table_new_string()
     var n = str_len(s)
     var start: i64 = 0

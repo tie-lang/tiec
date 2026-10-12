@@ -1,6 +1,6 @@
 type tie<class>
 // compiler/frontend/diagcode_cat.gen.tie —— 诊断标号目录（p.6.9.15 生成文件，勿手改）
-// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 910 条 + prefix 886 条。
+// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 913 条 + prefix 889 条。
 // 标号规范：五位纯序号 E+5 位（E00001 起全局连续）；家族仅记 JSON/td family 字段，不编码进标号。
 var cat_keys: table<string>;
 var cat_codes: table<string>;
@@ -969,6 +969,8 @@ pub func ensure() {
     table_push(cat_codes, "E00331")
     table_push(cat_keys, "函数%是命名空间%的私有函数（默认私有，%显式导出），不可在命名空间之外调用")
     table_push(cat_codes, "E00332")
+    table_push(cat_keys, "函数%是文件级私有函数（默认私有，%显式导出），不可跨文件调用")
+    table_push(cat_codes, "E00930")
     table_push(cat_keys, "函数%期望%个参数，实际%个")
     table_push(cat_codes, "E00333")
     table_push(cat_keys, "函数%期望%到%个参数，实际%个")
@@ -1593,6 +1595,8 @@ pub func ensure() {
     table_push(cat_codes, "E00548")
     table_push(cat_keys, "箭头赋值类型不匹配：%与%")
     table_push(cat_codes, "E00549")
+    table_push(cat_keys, "箭头追加的目标必须是表变量或追加链（规范%）")
+    table_push(cat_codes, "E00931")
     table_push(cat_keys, "类%未定义")
     table_push(cat_codes, "E00550")
     table_push(cat_keys, "类%没有字段%")
@@ -1817,6 +1821,8 @@ pub func ensure() {
     table_push(cat_codes, "E00875")
     table_push(cat_keys, "闭包返回类型解析失败")
     table_push(cat_codes, "E00642")
+    table_push(cat_keys, "限定名%有歧义：多个同名导入文件均声明%")
+    table_push(cat_codes, "E00932")
     table_push(cat_keys, "除零错误")
     table_push(cat_codes, "E00643")
     table_push(cat_keys, "除零错误（取模）")
@@ -2779,6 +2785,8 @@ pub func ensure() {
     table_push(pfx_codes, "E00331")
     table_push(pfx_keys, "函数%是命名空间%")
     table_push(pfx_codes, "E00332")
+    table_push(pfx_keys, "函数%是文件级私有函数（默认私有，%显式导出），不可跨文件调用")
+    table_push(pfx_codes, "E00930")
     table_push(pfx_keys, "函数%期望%")
     table_push(pfx_codes, "E00333")
     table_push(pfx_keys, "函数%的%参数需要可寻址的表变量实参（字面量%下标%调用结果不可取地址）")
@@ -3379,6 +3387,8 @@ pub func ensure() {
     table_push(pfx_codes, "E00548")
     table_push(pfx_keys, "箭头赋值类型不匹配：%与%")
     table_push(pfx_codes, "E00549")
+    table_push(pfx_keys, "箭头追加的目标必须是表变量或追加链（规范%）")
+    table_push(pfx_codes, "E00931")
     table_push(pfx_keys, "类%未定义")
     table_push(pfx_codes, "E00550")
     table_push(pfx_keys, "类%没有字段%")
@@ -3589,6 +3599,8 @@ pub func ensure() {
     table_push(pfx_codes, "E00875")
     table_push(pfx_keys, "闭包返回类型解析失败")
     table_push(pfx_codes, "E00642")
+    table_push(pfx_keys, "限定名%有歧义：多个同名导入文件均声明%")
+    table_push(pfx_codes, "E00932")
     table_push(pfx_keys, "除零错误")
     table_push(pfx_codes, "E00643")
     table_push(pfx_keys, "除零错误（取模）")
