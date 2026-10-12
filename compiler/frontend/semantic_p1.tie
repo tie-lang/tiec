@@ -364,6 +364,8 @@ func expand_one_import(imp_node: i64) -> i64 {
                     // 只改第一段（namespace fmt → namespace f2）
                     var first_seg = sstate.child(as_, 0)
                     table_push(rn_orig, s_names[first_seg])
+                    // 增名兼容（2026-10-12 缺陷修复）：登 旧名→别名，旧名解析自动落新名
+                    sstate.ns_rename_add(intern.lookup(s_names[first_seg]), anm)
                     s_names[first_seg] = alias_id
                 }
             }
@@ -567,6 +569,7 @@ func expand_imports() -> i64 {
     g_extra_tops = table_new_i64()
     // p.9.11.14：import 别名登记表重置（编译单元一次）
     g_imp_alias_names = table_new_string()
+    sstate.ns_rename_reset()
     g_imp_alias_paths = table_new_string()
     // dev33 批次10 任务29：文件起源跟踪复位；g_file_roots[文件 id] = 顶层
     // StmtList 根 id（平行表；主文件 = 0，导入文件按展开顺序递增）

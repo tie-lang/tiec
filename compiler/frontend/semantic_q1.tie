@@ -589,6 +589,7 @@ pub func release_ast() {
     g_imp_idvals = table_new_i64()
     g_extra_tops = table_new_i64()
     g_imp_alias_names = table_new_string()
+    sstate.ns_rename_reset()
     g_imp_alias_paths = table_new_string()
     g_file_roots = table_new_i64()
     g_file_count = 1

@@ -363,6 +363,40 @@ pub func infer_method_call(id: i64) -> i64 {
                 return -1
             }
         }
+        // 别名改名兼容（2026-10-12 增名修复）：旧命名空间名 → 别名再试一次——
+        // 同单元其他消费方（如 datetime 内部裸引 time.now()）的旧名引用由此
+        // 自动落到新名；整节点改写为普通调用（irgen 按真实全名解析）。
+        if sig < 0 {
+            var lq3 = sstate.rfind_ns(full)
+            if lq3 >= 0 {
+                var q3 = str.slice(full, 0, lq3)
+                var rn3 = sstate.ns_rename_target(q3)
+                if str_len(rn3) > 0 {
+                    var full3 = rn3 + "::" + mname
+                    var sig3 = sstate.fn_sig(full3)
+                    if sig3 >= 0 {
+                        sig = sig3
+                        full = full3
+                        if s_tags[id] != S_N_CALL {
+                            s_tags[id] = S_N_CALL
+                            s_names[id] = interner.intern(full3)
+                            s_vals[id] = -1
+                            s_aux[id] = -1
+                            s_coff[id] = len(s_children)
+                            table_push(s_children, -1)
+                            var ai4: i64 = 0
+                            while ai4 < len(args) {
+                                table_push(s_children, args[ai4])
+                                ai4 = ai4 + 1
+                            }
+                            s_nchild[id] = 1 + len(args)
+                        } else {
+                            s_names[id] = interner.intern(full3)
+                        }
+                    }
+                }
+            }
+        }
         if sig < 0 {
             sm_err_line = s_lines[id]
             sm_err_col = s_cols[id]

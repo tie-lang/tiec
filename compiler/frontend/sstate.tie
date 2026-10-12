@@ -452,6 +452,8 @@ var g_file_count: i64 = 1;       // 已分配文件 id 数（主文件 0 占位�
 // p.9.11.14 import 别名登记（平行表：别名 → 导入路径；编译单元内别名唯一，
 // 重复 = 诊断）。别名同时经 M2.1.7 语义把被导入文件顶层 namespace 首段改名。
 var g_imp_alias_names: table<string>;   // 别名（字符串）
+var g_ns_rename_old: table<string>;     // 别名改名映射：旧命名空间名（2026-10-12 增名兼容修复）
+var g_ns_rename_new: table<string>;     // → 新名（别名）；解析未命中时回退再试
 var g_imp_alias_paths: table<string>;   // 对应导入路径（归一化）
 // p.9.21.6-1 模块边界显式化（p921-prompt §1 第 1 步）：来源模块维度。
 // 模块 = import 的文件（主文件 = 模块 0，导入文件按展开顺序 1..k）。
