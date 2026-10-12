@@ -6,8 +6,9 @@ type tie<class>
 //   204 end_line · 205 end_col（v1：无结束位模型，= line/col 近似）·
 //   206 arg_off（args 段偏移）· 207 args（可变尾段，扁平）·
 //   208 fix_hints（警告建议；错误恒空）· 209 names（消息名）·
-//   210 file_ids（警告所属模块；错误 = 检查时模块或 0）
-// 行序：主错误（如有）在前，警告按语义收集序随后。
+//   210 file_ids（警告所属模块；错误 = 检查时模块或 0）·
+//   211 rendered（每条诊断的完整渲染文本——消费端（LSP 等）直接取用的 message）
+// 行序：主错误（如有）在前，警告按语义收集序随后；211 与行序一一对应。
 
 namespace dbgem {
 
@@ -98,6 +99,7 @@ pub func build_diag() {
     var tips: table<string> = table_new_string()
     var nms: table<string> = table_new_string()
     var fids: table<i64> = table_new_i64()
+    var rs: table<string> = table_new_string()
     if has_err == 1 {
         table_push(codes, diagcode.code_of(emsg))
         table_push(sevs, 0)
@@ -113,6 +115,7 @@ pub func build_diag() {
         table_push(tips, "")
         table_push(nms, diagcode.name_of(emsg))
         table_push(fids, efid)
+        table_push(rs, diagcode.render_error(eline, ecol, emsg))
     }
     var i: i64 = 0
     while i < nw {
@@ -129,6 +132,7 @@ pub func build_diag() {
         table_push(tips, diagcode.warn_tip_of(m))
         table_push(nms, diagcode.warn_name_of(m))
         table_push(fids, semantic.warn_file_at(i))
+        table_push(rs, diagcode.render_warning(l, c, m))
         i = i + 1
     }
     push_col_str_text(200, "codes", codes)
@@ -142,6 +146,7 @@ pub func build_diag() {
     push_col_str_text(208, "fix_hints", tips)
     push_col_str_text(209, "names", nms)
     push_col_i64(210, "file_ids", fids)
+    push_col_str_text(211, "rendered", rs)
 }
 
 }   // namespace dbgem
