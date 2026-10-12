@@ -221,6 +221,34 @@ func expand_one_import(imp_node: i64) -> i64 {
         return -1
     }
     if imported_has(full) {
+        // 别名 × 已加载文件（2026-10-12 增名修复二）：重复导入直接跳过时别名
+        // 仍须可用——按词干定位已加载文件的根，登记 别名 → 该文件顶层命名空间
+        // 的当前名（未改名时即原名；解析未命中回退再试）。
+        var al2 = s_aux[imp_node]
+        if al2 >= 0 {
+            var anm2 = intern.lookup(al2)
+            var st2 = sstate.stem_of_path(full)
+            var fi: i64 = 0
+            while fi < len(g_file_stem) {
+                if g_file_stem[fi] == st2 && fi < len(g_file_roots) {
+                    var fro2 = g_file_roots[fi]
+                    var ci2: i64 = 0
+                    while ci2 < sstate.nchild(fro2) {
+                        var ch2 = sstate.child(fro2, ci2)
+                        if s_tags[ch2] == S_N_NAMESPACE {
+                            var fseg2 = sstate.child(ch2, 0)
+                            sstate.ns_rename_add(anm2, intern.lookup(s_names[fseg2]))
+                            ci2 = sstate.nchild(fro2)
+                        } else {
+                            ci2 = ci2 + 1
+                        }
+                    }
+                    fi = len(g_file_stem)
+                } else {
+                    fi = fi + 1
+                }
+            }
+        }
         return 0
     }
     table_push(g_imported, full)

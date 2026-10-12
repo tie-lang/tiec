@@ -1,0 +1,8 @@
+type tie<class>
+// 顶层可见性收紧配套库（2026-10-12）：顶层函数默认文件私有，跨文件须 pub。
+pub func open_ok() -> i64 {
+    return 7
+}
+func hidden() -> i64 {
+    return 9
+}
