@@ -62,8 +62,12 @@ pub func frontend(src: string, base_dir: string) -> i64 {
         return -1
     }
     // p.9.14.1：语义警告改结构化事件直发（driver 从 semantic.warn_* 直读渲染，
-    // 不再解析 OK 协议中的 ;W: 文本段）
-    print_warns()
+    // 不再解析 OK 协议中的 ;W: 文本段）。
+    // 服务模式（--tink-serve）例外：警告只进结构化记录（diag 211），不向 stderr
+    // 打印——LSP 场景 stderr 管道无人清读，全库警告会塞满管道致服务阻塞（实测）。
+    if !g_tink_serve {
+        print_warns()
+    }
     // p.9.22：结构化输出落盘（--emit ...；辅助输出——失败只打印，不改变编译结果）
     dbgem.run_emit_dumps(0)
     // p.9.22.7：library/class 伴生 .sym.zd（--no-sym 关闭；采集未开时跳过）

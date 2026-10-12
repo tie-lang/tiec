@@ -63,6 +63,9 @@ import "./dbug/dbgem.tie"
 import "./tinker/tinker.tie"
 import "./driver/prelude.tie"
 import "./driver/front_end.tie"
+// tink 分析服务（--tink-serve）：置于 front_end/tinker/dbgem 之后（同单元复用
+// 前端与记录构建；不引入新数据面）。
+import "./driver/serve.tie"
 import "./driver/keelcli.tie"
 import "./driver/pipeline.tie"
 import "./driver/cache_drv.tie"
@@ -166,6 +169,8 @@ var g_tink_in: bool = false;
 var g_tink_file: string = "";
 var g_tink_in_file: string = "";
 var g_tink_save: string = "";
+// tink 分析服务（--tink-serve）：常驻 stdin/stdout 请求-应答（见 driver/serve.tie）
+var g_tink_serve: bool = false;
 // p.7.3.3：trm 目标（路线 B 可插拔后端）——--target=trm / --backend trm
 var g_trm_mode: bool = false;     // 已请求 trm 字节码目标（默认关闭，不捆绑）
 var g_trm_pipeline: i64 = 0;      // trm 管线注册项 id（keel_driver_boot 填充）
@@ -236,6 +241,11 @@ func main() -> i64 {
         if rrc != 0 {
             return rrc
         }
+    }
+    // tink 分析服务（--tink-serve）：常驻请求-应答循环（tsp 包化接口）。
+    // 与一次性编译路径互不影响；命中即进服务，进程随服务退出（EOF/停机帧）。
+    if g_tink_serve {
+        return driver.run_serve()
     }
     // 运行期安全检查（表越界 / 表负下标 / 除零）**常开、不可关闭** ——
     // 依规范 8.5 的裁决：「这些检查不可关闭，因为它们的成本相对故障后果可以忽略」。
