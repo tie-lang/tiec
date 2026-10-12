@@ -459,6 +459,53 @@ pub func infer_expr_field_access(id: i64) -> i64 {
     var tag = s_tags[id]
         var base_node = sstate.child(id, 0)
         var fnm = sstate.name_str(id)
+        // 文件词干限定的顶层值访问（2026-10-12 从属扩展）：`lib.K`——base 是未
+        // 声明变量（文件词干）时，查该文件的顶层全局/常量（gb 表 + 模块归属
+        // 校验；裸 key 查询天然限顶层——命名空间成员以限定名登记不会命中）。
+        // 命中按全局引用重写节点（infer_expr 走 VAR 分支解析类型与符号表）。
+        // 仅读取侧 v1；`lib.K = v` 写入侧后续批。
+        if s_tags[base_node] == S_N_VAR {
+            var bname2 = sstate.name_str(base_node)
+            var bnid2 = intern.intern(bname2)
+            if lv_find(bnid2) < 0 && gb_find_ns_key(bnid2) < 0 {
+                var mpos = gb_find_ns_key(intern.intern(fnm))
+                if mpos >= 0 {
+                    // 归属验证走活体树（gb_mod 存储列在注册期不可靠，见备忘）：
+                    // 词干命中文件 → 其根的直接子节点须含顶层 VAR_DECL 名为成员。
+                    var mnid2 = intern.intern(fnm)
+                    var hits2: i64 = 0
+                    var i3: i64 = 0
+                    while i3 < len(g_file_stem) {
+                        if g_file_stem[i3] == bname2 && i3 < len(g_file_roots) {
+                            var fro3 = g_file_roots[i3]
+                            var ci3: i64 = 0
+                            while ci3 < sstate.nchild(fro3) {
+                                var ch3 = sstate.child(fro3, ci3)
+                                if s_tags[ch3] == S_N_VAR_DECL && s_names[ch3] == mnid2 {
+                                    hits2 = hits2 + 1
+                                }
+                                ci3 = ci3 + 1
+                            }
+                        }
+                        i3 = i3 + 1
+                    }
+                    if hits2 == 1 {
+                        s_tags[id] = S_N_VAR
+                        s_names[id] = intern.intern(fnm)
+                        s_vals[id] = -1
+                        s_aux[id] = -1
+                        s_nchild[id] = 0
+                        return infer_expr(id)
+                    }
+                    if hits2 > 1 {
+                        sm_err_line = s_lines[id]
+                        sm_err_col = s_cols[id]
+                        sm_err_msg = "限定名 '" + bname2 + "' 有歧义：多个同名导入文件均声明顶层 '" + fnm + "'"
+                        return -1
+                    }
+                }
+            }
+        }
         // 枚举变体常量探测（EnumName.Variant）：base 是未绑定变量（枚举名）时，
         // 查 en_keys 命中 → 变体引用。必须在 infer_expr(base) 之前拦截——
         // 否则枚举名被当未声明变量报错。无 payload 变体 = 常量值；带 payload
