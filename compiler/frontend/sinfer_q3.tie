@@ -236,9 +236,6 @@ pub func infer_method_call(id: i64) -> i64 {
         } else if types.is_guard(rt2) {
             // 三期 A 组：guard<cap>.delegate(cap') 同域派生（第1批，最小权限移交）
             return infer_guard_method(rt2, mname, args, id)
-        } else if types.is_table(rt2) {
-            // 规范 §6.4 / 2.20：表内建操作的点形态（t.push(v) 与 t <- v 等价）
-            return infer_table_method(recv, mname, args, id)
         } else if rt2 == types.named(TK_STR) && mname == "chars" {
             // 字符串码点迭代器：`s.chars()` 是 for-in 专用（S2.1 后置语法糖，
             // dev33 批次4）。无实参；返回类型 = string（单字符元素，语义层
@@ -633,25 +630,11 @@ pub func recv_path_name(recv: i64) -> string {
     return out2
 }
 
-// 表方法转发（规范 §6.4 / 2.20）：t.X(args) → table_X(t, args)。存在性经
-// infer_call 常规解析裁决（现行内建族 push/pop/at/trunc；2.20 集合批落地后
-// 自动点亮）；t.push(v) 与 t <- v 等价。
-pub func infer_table_method(recv: i64, mname: string, args: table<i64>, id: i64) -> i64 {
-    s_tags[id] = S_N_CALL
-    s_names[id] = interner.intern("table_" + mname)
-    s_vals[id] = -1
-    s_aux[id] = -1
-    s_coff[id] = len(s_children)
-    table_push(s_children, -1)
-    table_push(s_children, recv)
-    var ai: i64 = 0
-    while ai < len(args) {
-        table_push(s_children, args[ai])
-        ai = ai + 1
-    }
-    s_nchild[id] = 2 + len(args)
-    return infer_call(id)
-}
+// 表方法转发：**已删除**（2026-10-12 记号制度：点 = 从属专用）。
+// 表是纯数据、无成员可"从属"——t.pop() 一类点形态会虚构归属关系；
+// 表操作走既有三条渠道：原地写 `t <- v` / `t[i] = v`，变换 `t -> table_op(…)`
+// （数据作末参，如 `t -> table_pop()` / `9 -> table_push(t)`），显式 `table_op(t, …)`。
+// 详情与全部从属用法目录见规范 §3.11 修编。
 
 // struct 实例方法转发
 pub func infer_struct_method(recv: i64, recv_ty: i64, mname: string, ref args: table<i64>, id: i64) -> i64 {
