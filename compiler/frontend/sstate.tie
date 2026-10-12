@@ -100,6 +100,12 @@ var g_im_vals: table<i64>;
 // 属最该出声音的一类，故单列一集合供 W00031 判定。
 var g_vp_keys: table<i64>;
 
+// 规范 §13.1「不可观测写入」目标集合（2026-10-12，常开检查用、每函数重置）：
+// 非 ref / 非 shared / 非 move 的**表**形参名（与 irgen r.1.6.14 入口 retain
+// 条件同源——正是会触发写时复制分离的那一类形参）。登记见 scheck_q3.check_fn，
+// 消费见 scheck_ie_ie1.uw_write_check。
+var g_uwt_keys: table<i64>;
+
 var st_keys: table<i64>;      // struct 名 id（升序）
 var st_vals: table<i64>;      // struct 索引
 // p.9.11.32 类型别名注册表（名 id 升序；val = S_N_TYPE_ALIAS 节点 id）

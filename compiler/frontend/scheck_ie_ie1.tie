@@ -1133,4 +1133,122 @@ pub func w31_deadcopy_check(body: i64) {
     }
 }
 
+// ============ 不可观测写入（规范 §13.1，常开检查，2026-10-12）============
+// 按值表形参（非 ref / 非 shared / 非 move，登记见 scheck_q3.check_fn 的
+// sstate.uwt_insert）的直接写入只作用于本函数副本：函数返回后修改随之消失，
+// 调用方手里的值从未改变。写出来像是修改、运行后什么也没有发生——这类
+// 沉默不是语言愿意给的，规范 §13.1 定案为编译期错误。
+// 目标形态（取法与 W00031 同款）：
+//   * S_N_INDEX_ASSIGN：下标写入 t[i] = v（含 t[i] <- v）——基址须为纯变量；
+//   * S_N_CALL / S_N_METHOD_CALL：变更内建（table_push/pop/set/remove/insert/
+//     clear/trunc，名单与 w31_dc_is_mut 单一出处）的首实参为纯变量。
+// 口径说明：字段基址（s.t[i] = v）不触发写前分离，元素写入本就会穿给调用方，
+// 与 W00031 同款不判定；闭包体（S_N_FN_LIT）不下潜——捕获槽跨调用持久，
+// 写入可被后续调用读到，不属于 §13.1 的「永不外传」类（同 W00031 的循环回边口径）。
+// 遮蔽保守化：名字在函数体内出现过任何声明（var 或嵌套函数形参）即跳过——
+// 宁可漏报不可误报（同 W00031 精神；防闭包同名形参误伤）。
+// 审计模式：TIE_UW_AUDIT=1 时只打印不阻断（存量修复波普查用；打印含函数全名，
+// 行号为编译单元内坐标）。
+func uw_shadow_collect(node: i64, ref loc: table<i64>) -> i64 {
+    if node < 0 {
+        return 0
+    }
+    var tg = s_tags[node]
+    if tg == S_N_VAR_DECL || tg == S_N_PARAM {
+        var nid = s_names[node]
+        if nid >= 0 {
+            table_push(loc, nid)
+        }
+    }
+    var nc = sstate.nchild(node)
+    var k: i64 = 0
+    while k < nc {
+        uw_shadow_collect(sstate.child(node, k), loc)
+        k = k + 1
+    }
+    return 0
+}
+
+func uw_shadow_has(nid: i64, ref loc: table<i64>) -> bool {
+    var i: i64 = 0
+    while i < len(loc) {
+        if loc[i] == nid {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+// 违规上报：审计模式只列不拦；否则置错误并返回 -1。
+func uw_report(nid: i64, line: i64, col: i64, full: string) -> i64 {
+    var nm = sstate.im_name(nid)
+    if get_env("TIE_UW_AUDIT") == "1" {
+        println("uw-audit: " + full + " @" + to_string(line) + ":" + to_string(col) +
+            " 对按值表形参 '" + nm + "' 的写入不可观测")
+        return 0
+    }
+    sm_err_line = line
+    sm_err_col = col
+    sm_err_msg = "对按值表形参 '" + nm + "' 的写入不可观测：改动不会外传；请使用 ref 形参，或返回合并后的新值（规范 §13.1）"
+    return -1
+}
+
+func uw_walk(node: i64, ref loc: table<i64>, full: string) -> i64 {
+    if node < 0 {
+        return 0
+    }
+    var tg = s_tags[node]
+    if tg == S_N_FN_LIT {
+        // 闭包体不下潜：捕获槽跨调用持久，写入可被后续调用观察到。
+        return 0
+    }
+    if tg == S_N_INDEX_ASSIGN {
+        var tgt = sstate.child(node, 0)
+        var bv: i64 = -1
+        if tgt >= 0 {
+            var b0 = sstate.child(tgt, 0)
+            if b0 >= 0 && s_tags[b0] == S_N_VAR {
+                bv = b0
+            }
+        }
+        if bv >= 0 {
+            var nid = s_names[bv]
+            if sstate.uwt_is(nid) && !uw_shadow_has(nid, loc) {
+                return uw_report(nid, s_lines[node], s_cols[node], full)
+            }
+        }
+    } else if tg == S_N_CALL || tg == S_N_METHOD_CALL {
+        if w31_dc_is_mut(sstate.name_str(node)) {
+            var off = sstate.slot_off(node)
+            var a0 = sstate.child(node, off)
+            if a0 >= 0 && s_tags[a0] == S_N_VAR {
+                var nid2 = s_names[a0]
+                if sstate.uwt_is(nid2) && !uw_shadow_has(nid2, loc) {
+                    return uw_report(nid2, s_lines[node], s_cols[node], full)
+                }
+            }
+        }
+    }
+    var nc: i64 = sstate.nchild(node)
+    var k: i64 = 0
+    while k < nc {
+        if uw_walk(sstate.child(node, k), loc, full) < 0 {
+            return -1
+        }
+        k = k + 1
+    }
+    return 0
+}
+
+// 函数粒度入口（check_fn 在主体检查通过后调用；返回 -1 = 已报错）。
+pub func uw_write_check(body: i64, full: string) -> i64 {
+    if body < 0 {
+        return 0
+    }
+    var loc: table<i64> = table_new_i64()
+    uw_shadow_collect(body, loc)
+    return uw_walk(body, loc, full)
+}
+
 }

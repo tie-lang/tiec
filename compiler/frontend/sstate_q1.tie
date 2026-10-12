@@ -520,6 +520,41 @@ pub func vp_is(nid: i64) -> bool {
     return false
 }
 
+// ============ 不可观测写入目标集合（规范 §13.1）============
+// 登记对象：非 ref / 非 shared / 非 move 的**表**形参——它们的直接写入只改
+// 本函数副本（irgen 入口 retain ⇒ rc≥2 ⇒ 写时复制分离），调用方永不观察。
+// 与 irgen r.1.6.14 retain 条件同源；move 形参被调方已取得所有权，其写入是
+// 对自己值的正常使用，不登记。
+pub func uwt_reset() {
+    g_uwt_keys = table_new_i64()
+}
+
+pub func uwt_insert(nid: i64) {
+    var i: i64 = 0
+    while i < len(g_uwt_keys) {
+        if g_uwt_keys[i] == nid {
+            return
+        }
+        i = i + 1
+    }
+    table_push(g_uwt_keys, nid)
+}
+
+// nid 是否为当前函数的「按值表形参」（不可观测写入的目标）
+pub func uwt_is(nid: i64) -> bool {
+    if nid < 0 {
+        return false
+    }
+    var i: i64 = 0
+    while i < len(g_uwt_keys) {
+        if g_uwt_keys[i] == nid {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
 // 取赋值目标链的根变量名池 id：从 base 沿 child(0) 上行，遇 S_N_VAR 返回其名；
 // 非纯变量/字段/索引链（S_N_UNARY/方法返回值等）返回 -1（不判定 immut）。
 pub func im_root(base: i64) -> i64 {

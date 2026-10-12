@@ -337,6 +337,7 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     g_curfn = sig
     sstate.im_reset()   // p.9.11.11 immut 收集重置（每函数）
     sstate.vp_reset()   // r.1.6.10 按值形参收集重置（每函数，W00031 用）
+    sstate.uwt_reset()  // 规范 §13.1 不可观测写入目标集合重置（每函数）
     lv_keys = table_new_i64()
     lv_vals = table_new_i64()
     lv_const = table_new_i64()
@@ -402,6 +403,14 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
         //   第一形态只作用于 struct 形参，而 ref 不支持 struct ⇒ 过滤对它是零影响。
         if prefs == 0 {
             sstate.vp_insert(pnid)
+        }
+        // 规范 §13.1「不可观测写入」：非 ref / 非 shared / 非 move 的**表**形参。
+        // 与 irgen r.1.6.14 入口 retain 条件同源（shared 跳过：纯借用就地改；
+        // move 跳过：所有权已移交被调方）；any 动态类型与 retain 同步排除。
+        var is_move_uw = (s_vals[pnode] / 4) % 2 == 1
+        var is_shared_uw = (s_vals[pnode] & 32) != 0
+        if prefs == 0 && !is_move_uw && !is_shared_uw && types.is_table(pty) && pty != types.named(TK_ANY) {
+            sstate.uwt_insert(pnid)
         }
         i = i + 1
     }
@@ -490,6 +499,12 @@ pub func check_fn(fn_node: i64, full: string) -> i64 {
     cap_file_note(fn_node, body)
     g_held_caps = saved_caps
     if r < 0 {
+        xref.pop_scope()
+        return -1
+    }
+    // 规范 §13.1「不可观测写入」：按值表形参的直接写入只改本函数副本——常开
+    // 检查（不随 -w 告警门）。审计模式 TIE_UW_AUDIT=1 只列不拦（存量普查用）。
+    if uw_write_check(body, full) < 0 {
         xref.pop_scope()
         return -1
     }
