@@ -104,6 +104,15 @@ func resolve_call_name(fnm: string) -> string {
         if sstate.fn_sig(cand2) >= 0 {
             return cand2
         }
+        // 别名增名（2026-10-12，镜像 sinfer.resolve_call_name）：using 记录的
+        // 名称可能已被改名为别名——回退再试（两处实现必须同时对齐）
+        var rn5 = sstate.ns_rename_target(full2)
+        if str_len(rn5) > 0 {
+            var cand3 = rn5 + "::" + fnm
+            if sstate.fn_sig(cand3) >= 0 {
+                return cand3
+            }
+        }
         off = off + ln
         u = u + 1
     }

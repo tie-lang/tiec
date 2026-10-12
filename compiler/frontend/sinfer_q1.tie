@@ -352,6 +352,14 @@ pub func resolve_call_name(name: string) -> string {
         if sstate.fn_sig(cand) >= 0 || sstate.gt_find(cand) >= 0 {
             return cand
         }
+        // 别名增名（2026-10-12）：using 记录的名称可能已被改名为别名——回退再试
+        var rn4 = sstate.ns_rename_target(full)
+        if str_len(rn4) > 0 {
+            var cand2 = rn4 + "::" + name
+            if sstate.fn_sig(cand2) >= 0 || sstate.gt_find(cand2) >= 0 {
+                return cand2
+            }
+        }
         off = off + ln
         u = u + 1
     }

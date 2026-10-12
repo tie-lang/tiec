@@ -47,6 +47,17 @@ pub func sorted_insert_gb(ref keys: table<i64>, ref vals: table<i64>, ref cons: 
 
 // 函数签名登记（重复定义检查，返回签名 id 或 -1）。
 // def_node：函数定义 AST 节点 id（fn_def_nodes 平行登记，check_fn_walk 查表用）。
+//
+// ★ E00340 触发域（2026-10-12 实证明文化）：
+//   唯一性键 = **限定全名**（`ns::name` / 顶层裸名），登记表 fn_keys 为**编译
+//   单元级全局**——与导入拓扑无关：
+//     · 两个**顶层**同名函数，无论直接双导入、传递导入还是直接+传递混合，
+//       第二个登记一律 E00340；无「不同导入链豁免」。
+//     · **命名空间成员**按限定名分列（`a::d` 与 `b::d` 各安其位），跨命名
+//       空间同名不冲突——命名空间是顶层裸名的唯一解毒剂。
+//     · 推论：库作者要么给顶层函数取单元级唯一名，要么装进命名空间。
+//   实测依据：v1 直接双导入 / v2 传递式 / v3 混合，三者均 E00340；
+//   `namespace interp` 内的 find_char 与顶层工具函数跨文件共存无碍。
 pub func reg_fn(full_name: string, is_pub: i64, nparams: i64, required: i64, ret_ty: i64, p_tys: table<i64>, p_refs: table<i64>, p_defs: table<i64>, p_vars: table<i64>, def_node: i64) -> i64 {
     var nid = intern.intern(full_name)
     if bs_find(fn_keys, nid) >= 0 {
