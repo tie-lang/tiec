@@ -261,11 +261,22 @@ func expand_one_import(imp_node: i64) -> i64 {
     //      （strip_type_decl 只剥行不解读）⇒ 库文件无法按模块授权。
     // 父模块授权**不继承**（与「文件级授权不随 import 扩散」同一规则，方向相反
     // 的那一半）：子模块要什么域，自己头部声明。
+    // p.9.11.13 扩展（2026-10-12）：被导入文件的 #cfg 预处理（与主文件同规则；
+    // target/profile 由 driver 经 semantic.set_cfg_env 单点注入）——此前仅主
+    // 文件过预处理，库文件中的 #cfg 行会被词法器当作 `#[` 属性误判（E00449）。
+    // 先于一切状态变更（defer 之前），错误路径直接返回、无需恢复。
+    var src_c = cfgpre.preprocess(src, g_cfg_env_target, g_cfg_env_profile)
+    if sstate.has_prefix_str(src_c, "ERR:") {
+        sm_err_line = s_lines[imp_node]
+        sm_err_col = s_cols[imp_node]
+        sm_err_msg = "导入文件 '" + full + "' 的 #cfg 预处理失败: " + src_c
+        return -1
+    }
     var saved_imp_fc = sstate.file_caps()
     // 用 defer 覆盖本函数的**全部** return 路径：本函数 return 点多（文件不存在、
     // 解析失败、别名重复、append 失败…），逐点恢复必漏。
     defer { sstate.set_file_caps(saved_imp_fc) }
-    sstate.set_file_caps(sstate.scan_file_caps(src))
+    sstate.set_file_caps(sstate.scan_file_caps(src_c))
     // 2026-10-07：上下文（`unsafe`）与域凭据**同一规则的另一半** —— 上面 2026-10-01
     // 只修了 caps。若只切 caps，则 ① 主文件声明了 `unsafe` 时，其上下文会**扩散给
     // 被导入的模块**（模块白拿）；② 模块自己头部的 `unsafe` 被完全忽略（库无法自证）。
@@ -273,8 +284,8 @@ func expand_one_import(imp_node: i64) -> i64 {
     // 的授权」。故同样按模块切到**它自己的**声明，并在 defer 里还原。
     var saved_imp_uc = sstate.file_uctx()
     defer { sstate.set_file_uctx(saved_imp_uc) }
-    sstate.set_file_uctx(sstate.scan_file_unsafe(src))
-    var src2 = strip_type_decl(src)
+    sstate.set_file_uctx(sstate.scan_file_unsafe(src_c))
+    var src2 = strip_type_decl(src_c)
     unsafe { tt1 = GetTickCount() }
     sm_t_imp_strip = sm_t_imp_strip + (tt1 - tt0)
     // T5.3 内存版 + 细分计时：lex 与语法构建分开计量（run_lex → stage1 →

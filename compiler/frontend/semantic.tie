@@ -33,6 +33,12 @@ var g_cur_dir: string = "";
 // 取值序：--lib-root CLI > TIE_LIB_ROOT 环境变量 > 默认 ~/.tiec-lib/tlib。
 var g_lib_root: string = "";
 
+// p.9.11.13 扩展（2026-10-12）：#cfg 求值环境——被导入文件的预处理与主文件
+// 共用同一 target/profile（driver 归一化后经 semantic.set_cfg_env 单点注入；
+// 空 = 主机 / 无 profile，与主文件路径默认语义一致）。
+var g_cfg_env_target: string = "";
+var g_cfg_env_profile: string = "";
+
 // 泛型预扫描展开状态（T3b）：g_extra_tops 已扫描位置游标（新展开的函数
 // 追加到 g_extra_tops 末尾，主循环从该位置续扫）
 var g_scan_extra_last: i64 = 0;

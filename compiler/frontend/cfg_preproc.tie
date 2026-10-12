@@ -212,6 +212,23 @@ func eval_cond(cond: string, target: string, profile: string) -> bool {
 // 参数：target = 目标三元组（--target > 配置 target > 空）；profile = 生效
 // profile（--profile > 配置顶层 profile 键）。
 pub func preprocess(src: string, target: string, profile: string) -> string {
+    // 性能快路径（2026-10-12）：源中不含 '#' 字节 ⇒ 必无任何指令/属性行，
+    // 原样返回（免逐行拆分与重建——被导入文件现全部经此函数，自举链多数
+    // 文件走此路径）。含 '#' 的文件走下方原路径（行为不变）。
+    var fast = true
+    var q: i64 = 0
+    var qn = len(src)
+    while q < qn {
+        if str_byte(src, q) == 35 {
+            fast = false
+            q = qn
+        } else {
+            q = q + 1
+        }
+    }
+    if fast {
+        return src
+    }
     var out = string_builder()
     var n = len(src)
     var i: i64 = 0

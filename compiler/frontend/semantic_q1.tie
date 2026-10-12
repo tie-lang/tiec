@@ -45,6 +45,13 @@ pub func set_lib_root(p: string) {
     }
 }
 
+// p.9.11.13 扩展（2026-10-12）：#cfg 求值环境注入——driver 在编译入口单点调用
+// （cfg_target/cfg_profile 归一化后），供被导入文件的 #cfg 预处理复用（判据单一来源）。
+pub func set_cfg_env(target: string, profile: string) {
+    g_cfg_env_target = target
+    g_cfg_env_profile = profile
+}
+
 // 解析 import 路径：相对当前文件目录（处理 "./" 与 "../"）；
 // 结果统一经 normalize_path 归一化（去重键一致，见 normalize_path 注释）。
 pub func resolve_import_path(path: string) -> string {

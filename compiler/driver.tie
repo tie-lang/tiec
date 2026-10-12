@@ -348,6 +348,9 @@ func main() -> i64 {
             cfg_profile = config.get_str(g_cfg_root, "profile")
         }
     }
+    // p.9.11.13 扩展（2026-10-12）：向 semantic 注入 #cfg 求值环境——被导入
+    // 文件的预处理（expand_one_import）复用同一 target/profile 判据。
+    semantic.set_cfg_env(cfg_target, cfg_profile)
     var pruned = cfgpre.preprocess(src, cfg_target, cfg_profile)
     if has_prefix(str.clone(pruned), "ERR:") {
         dbg_txt(diagcode.render_err_proto(pruned))
