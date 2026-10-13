@@ -79,18 +79,18 @@ type tie<class>
 // 之后的首个未消费字符；失败时 g_cpos 指向错误处）。
 
 // ==================== 节点存储（模块级全局，命名空间外） ====================
-var c_types: table<i64>;
-var c_ivals: table<i64>;
-var c_fvals: table<f64>;
-var c_strs: table<string>;
-var c_kids: table<i64>;
-var c_ovals: table<i64>;
-var c_elem_flat: table<i64>;
-var c_key_flat: table<i64>;
-var c_val_flat: table<i64>;
-var c_err_msg: string = "";
+pub var c_types: table<i64>;
+pub var c_ivals: table<i64>;
+pub var c_fvals: table<f64>;
+pub var c_strs: table<string>;
+pub var c_kids: table<i64>;
+pub var c_ovals: table<i64>;
+pub var c_elem_flat: table<i64>;
+pub var c_key_flat: table<i64>;
+pub var c_val_flat: table<i64>;
+pub var c_err_msg: string = "";
 // 解析器位置游标（全局，见文件头"位置推进"说明）
-var g_cpos: i64 = 0;
+pub var g_cpos: i64 = 0;
 
 namespace config {
 // ---------- 节点构造（内部） ----------

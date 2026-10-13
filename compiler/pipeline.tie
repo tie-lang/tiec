@@ -43,7 +43,7 @@ pub func set_pass_link(f: fn() -> i64) {
 }
 
 // ---- pass 间数据槽（全局状态池的显式契约面）----
-var g_src: string = ""        // 源文本（front 的输入）
+pub var g_src: string = ""        // 源文本（front 的输入）
 var g_base_dir: string = ""   // 输入文件目录（import 展开基准）
 var g_ll_text: string = ""    // .ll 文本（emit 的输出 / link 的输入）
 var g_ir_path: string = ""    // IR 文件路径（emit 写盘目标）

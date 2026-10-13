@@ -21,22 +21,22 @@ type tie<class>
 
 // ==================== 全局（主文件持） ====================
 // 列登记（dbgem_colzd 登记；dbgem_env / dbgem_coltd 消费）。
-var dc_fno: table<i64>;       // 列字段号
-var dc_kind: table<i64>;      // 0=i64 1=str
-var dc_label: table<string>;  // td 键（语义名）
-var dc_len: table<i64>;       // 列行数
-var dc_off: table<i64>;       // 列在扁平段起点
-var dc_i64: table<i64>;       // i64 列数据（扁平）
-var dc_str: table<string>;    // str 列数据（扁平）
-var dc_ids: table<i64>;       // str 列源池 id（tieir 段 8 用；-1 = 非池来源）
+pub var dc_fno: table<i64>;       // 列字段号
+pub var dc_kind: table<i64>;      // 0=i64 1=str
+pub var dc_label: table<string>;  // td 键（语义名）
+pub var dc_len: table<i64>;       // 列行数
+pub var dc_off: table<i64>;       // 列在扁平段起点
+pub var dc_i64: table<i64>;       // i64 列数据（扁平）
+pub var dc_str: table<string>;    // str 列数据（扁平）
+pub var dc_ids: table<i64>;       // str 列源池 id（tieir 段 8 用；-1 = 非池来源）
 // 注：标量全局必须带初始值（语法要求）；初值**不生效**（tie 全局 var 初值
 // 不运行）——真实初值由 boot()/cols_reset() 显式置位。
-var dg_sym_ready: i64 = 0;    // symtab 列就绪标记（1 = tieir 段 8 可写）
+pub var dg_sym_ready: i64 = 0;    // symtab 列就绪标记（1 = tieir 段 8 可写）
 // 解析错误槽（driver 解析失败路径经 set_err_proto 注入；diag 来源优先级：
 // 本槽 > sm_err_*）。
-var dg_err_line: i64 = -1;
-var dg_err_col: i64 = -1;
-var dg_err_msg: string = "";
+pub var dg_err_line: i64 = -1;
+pub var dg_err_col: i64 = -1;
+pub var dg_err_msg: string = "";
 
 import "./dbgem_colzd.tie"
 import "./dbgem_coltd.tie"

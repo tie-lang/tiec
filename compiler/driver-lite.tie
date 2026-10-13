@@ -173,7 +173,7 @@ func d_replace_ext(path: string, ext: string) -> string {
 
 // ==================== 命令行参数 ====================
 
-var g_input: string = ""   // 输入文件路径
+pub var g_input: string = ""   // 输入文件路径
 var g_out: string = ""     // -o 产物路径（.ll / .exe）
 var g_check: i64 = 0       // --check 标志
 var g_emit: i64 = 0        // --emit-ir 标志
