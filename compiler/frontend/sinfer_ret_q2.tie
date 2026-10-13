@@ -582,6 +582,30 @@ pub func infer_call(id: i64) -> i64 {
             fv_ty = gb_find(fv_nid)
         }
         if fv_ty >= 0 && types.is_fn(fv_ty) {
+            // 2026-10-13：**被调也是一种使用**——闭包体内调用捕获的 fn 值必须
+            // 在此收录捕获（VAR 分支的捕获分析只扫值节点，被调名不在 child 里，
+            // 实测 ncap=0 → irgen 走按名调用报「无签名」）。守卫与 VAR 分支同款。
+            if g_clo_depth > 0 && g_clo_cur >= 0 {
+                var ci_c = g_clo_cur
+                var is_param_c = sstate.seg_has(cl_params, cl_paramoff[ci_c], cl_nparams[ci_c], fv_nid)
+                if is_param_c == 0 {
+                    var is_local_c = sstate.seg_has(cl_locals, cl_locloff[ci_c], len(cl_locals) - cl_locloff[ci_c], fv_nid)
+                    if is_local_c == 0 {
+                        if ci_c < len(cl_owner_unsafe) && cl_owner_unsafe[ci_c] == 0 && ci_c < len(cl_owner_sig) &&
+                            sstate.is_ref_param_of(cl_owner_sig[ci_c], fnm) == 1 {
+                            sm_err_line = s_lines[id]
+                            sm_err_col = s_cols[id]
+                            sm_err_msg = "安全区禁止闭包捕获 ref 形参 '" + fnm + "'（捕获 ref 是借用而非副本，闭包逃逸会导致悬垂引用；需在 unsafe 块内或改用值/immut 形参）"
+                            return -1
+                        }
+                        var is_cap_c = sstate.seg_has(cl_capkeys, cl_capoff[ci_c], len(cl_capkeys) - cl_capoff[ci_c], fv_nid)
+                        if is_cap_c == 0 {
+                            table_push(cl_capkeys, fv_nid)
+                            table_push(cl_capvals, fv_ty)
+                        }
+                    }
+                }
+            }
             var fn_np = types.fn_nparams_of(fv_ty)
             var fn_var = types.fn_has_var_of(fv_ty)
             var req_fn = fn_np
