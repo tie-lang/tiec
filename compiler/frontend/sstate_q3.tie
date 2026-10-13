@@ -66,15 +66,18 @@ pub func file_path_of(fid: i64) -> string {
     return g_imported[fid - 1]
 }
 
-// 签名来源模块（越界兜底 0）
+// 签名来源模块（2026-10-13 修复：改为**活体推导**——sg_mod 存储列在注册期
+// file_id_of_node 尚不可用（兜底 0），不可信；sg_defnode 是可靠锚点。
+// 生成物/无源签名 def_node 越界时 file_id_of_node 兜底 0，与旧语义一致。）
 pub func sig_module(sig: i64) -> i64 {
-    if sig < 0 || sig >= len(sg_mod) {
+    if sig < 0 || sig >= len(sg_defnode) {
         return 0
     }
-    return sg_mod[sig]
+    return file_id_of_node(sg_defnode[sig])
 }
 
-// 全局变量行来源模块（pos = gb_keys 二分命中下标；越界兜底 0）
+// 全局变量行来源模块（⚠ 存储列不可靠：注册期 file_id_of_node 早于文件基址填充，
+// 实测兜底 0。当前零消费方；如需可靠推导，请按 gb_decl_file 走活体树反查。）
 pub func gb_module(pos: i64) -> i64 {
     if pos < 0 || pos >= len(gb_mod) {
         return 0
@@ -82,7 +85,7 @@ pub func gb_module(pos: i64) -> i64 {
     return gb_mod[pos]
 }
 
-// struct 行来源模块（idx = struct 索引；越界兜底 0）
+// struct 行来源模块（⚠ 同 gb_module：存储列注册期不可靠、零消费方。）
 pub func st_module(idx: i64) -> i64 {
     if idx < 0 || idx >= len(st_mod) {
         return 0

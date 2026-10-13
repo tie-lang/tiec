@@ -213,6 +213,11 @@ pub func expect_stmt_end() -> bool {
     if peek_line() > g_last_line {
         return true
     }
+    // 2026-10-13 修复：文件结束（EOF）即语句结束——顶层 var/const 恰为文件最后
+    // 一行（末尾带换行）时，此前会误报「期望 语句结束符，实际是 文件结束」。
+    if peek_tag() == lex_eof {
+        return true
+    }
     set_err(peek_line(), peek_col(), errors.syn_expect("语句结束符", describe(peek_tag())))
     return false
 }
