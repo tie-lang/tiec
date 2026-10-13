@@ -1154,10 +1154,18 @@ pub func w31_deadcopy_check(body: i64) {
 // 宁可漏报不可误报（同 W00031 精神；防闭包同名形参误伤）。
 // 审计模式：TIE_UW_AUDIT=1 时只打印不阻断（存量修复波普查用；打印含函数全名，
 // 行号为编译单元内坐标）。
-func uw_shadow_collect(node: i64, ref loc: table<i64>) -> i64 {
+func uw_shadow_collect(node: i64, ref loc: table<i64>, ref seen: table<i64>) -> i64 {
     if node < 0 {
         return 0
     }
+    // 2026-10-13：**访问集防环**——AST 存在结构回边（parser 产出的 N_CASE_BIND
+    // 引用其 case 祖先等），盲目全孩子递归会死循环（实测 138k 层栈溢出 → 段错误；
+    // 触发面：任何含 switch 的函数体，与 subject 是全局/局部无关）。已访问跳过
+    // ——对本收集（名字集合）与 uw_walk（首击上报）语义均幂等安全。
+    if sstate.seg_has(seen, 0, len(seen), node) == 1 {
+        return 0
+    }
+    table_push(seen, node)
     var tg = s_tags[node]
     if tg == S_N_VAR_DECL || tg == S_N_PARAM {
         var nid = s_names[node]
@@ -1168,7 +1176,7 @@ func uw_shadow_collect(node: i64, ref loc: table<i64>) -> i64 {
     var nc = sstate.nchild(node)
     var k: i64 = 0
     while k < nc {
-        uw_shadow_collect(sstate.child(node, k), loc)
+        uw_shadow_collect(sstate.child(node, k), loc, seen)
         k = k + 1
     }
     return 0
@@ -1199,10 +1207,15 @@ func uw_report(nid: i64, line: i64, col: i64, full: string) -> i64 {
     return -1
 }
 
-func uw_walk(node: i64, ref loc: table<i64>, full: string) -> i64 {
+func uw_walk(node: i64, ref loc: table<i64>, full: string, ref seen: table<i64>) -> i64 {
     if node < 0 {
         return 0
     }
+    // 同 uw_shadow_collect：访问集防环（结构回边）。
+    if sstate.seg_has(seen, 0, len(seen), node) == 1 {
+        return 0
+    }
+    table_push(seen, node)
     var tg = s_tags[node]
     if tg == S_N_FN_LIT {
         // 闭包体不下潜：捕获槽跨调用持久，写入可被后续调用观察到。
@@ -1238,7 +1251,7 @@ func uw_walk(node: i64, ref loc: table<i64>, full: string) -> i64 {
     var nc: i64 = sstate.nchild(node)
     var k: i64 = 0
     while k < nc {
-        if uw_walk(sstate.child(node, k), loc, full) < 0 {
+        if uw_walk(sstate.child(node, k), loc, full, seen) < 0 {
             return -1
         }
         k = k + 1
@@ -1252,8 +1265,12 @@ pub func uw_write_check(body: i64, full: string) -> i64 {
         return 0
     }
     var loc: table<i64> = table_new_i64()
-    uw_shadow_collect(body, loc)
-    return uw_walk(body, loc, full)
+    var seen: table<i64> = table_new_i64()
+    uw_shadow_collect(body, loc, seen)
+    // 各遍独立访问集（含防环）：collect 的访问集不得供 walk 复用——否则 walk
+    // 视全部节点为已访、E00925 上报全灭（自查险破，语料 uw 审计兜底）。
+    var seen2: table<i64> = table_new_i64()
+    return uw_walk(body, loc, full, seen2)
 }
 
 }
