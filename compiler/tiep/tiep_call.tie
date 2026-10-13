@@ -18,6 +18,6 @@ namespace interp {
 
 
 }   // namespace interp
-import "./interp_call_p1.tie"
-import "./interp_call_p2.tie"
-import "./interp_call_p3.tie"
+import "./tiep_call_p1.tie"
+import "./tiep_call_p2.tie"
+import "./tiep_call_p3.tie"

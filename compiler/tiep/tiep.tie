@@ -42,11 +42,11 @@ type tie<class>
 //   （每个控制流语句/表达式类别一个函数），任务规格固定为三模块布局。
 
 import "./session.tie"
-import "./interp_bin.tie"    // 二元运算分区（eval_binary 及算术/比较/位运算辅助）
-import "./interp_call.tie"   // 函数调用分区（call_fn/参数绑定/call_builtin/join_print）
-import "./interp_macro.tie"  // 宏执行分区（eval_proto/eval_macro/eval_macro_proc/exec_code_proto）
-import "./interp_code.tie"   // code 值构造分区（gen_code_lit/卫生/插值/协议拼接）
-import "./interp_dbug.tie"   // p.9.2 工具链共享仪器（崩溃/DAP/剖析；默认关）
+import "./tiep_bin.tie"    // 二元运算分区（eval_binary 及算术/比较/位运算辅助）
+import "./tiep_call.tie"   // 函数调用分区（call_fn/参数绑定/call_builtin/join_print）
+import "./tiep_macro.tie"  // 宏执行分区（eval_proto/eval_macro/eval_macro_proc/exec_code_proto）
+import "./tiep_code.tie"   // code 值构造分区（gen_code_lit/卫生/插值/协议拼接）
+import "./tiep_dbug.tie"   // p.9.2 工具链共享仪器（崩溃/DAP/剖析；默认关）
 import "../frontend/parser.tie"
 import "../frontend/sstate.tie"
 import "../middle/types.tie"   // S3.3：TK_TRIT 等类型关键字常量（树合并后
@@ -463,6 +463,6 @@ pub func eval_call(name: string, arg: string) -> string {
 }   // namespace interp
 
 
-import "./interp_p1.tie"
-import "./interp_p2.tie"
-import "./interp_p3.tie"
+import "./tiep_p1.tie"
+import "./tiep_p2.tie"
+import "./tiep_p3.tie"
