@@ -410,6 +410,18 @@ func tig_global_var(s: i64, full: string) -> i64 {
                 llvmgen.global_scalar_init(nm, hv)
             }
         }
+        // 2026-10-13 聚合全局初值物化：struct/enum 初值（构造器/调用形态）无法
+        // 静态折叠——登记到聚合 init 列表，main 入口求值存回（槽零初始化兜底）。
+        // 与"表全局 main 入口创建"同构。
+        var gk2 = types.kind(ty)
+        if gk2 == K_STRUCT || gk2 == K_ENUM {
+            var ainit = sstate.child(s, 1)
+            if ainit >= 0 {
+                table_push(g_agginit_names, intern.intern(nm))
+                table_push(g_agginit_nodes, ainit)
+                table_push(g_agginit_tys, ty)
+            }
+        }
     }
 }
 

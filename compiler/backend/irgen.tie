@@ -101,6 +101,12 @@ pub var g_used_trmlite: bool = false;
 // 整体构造，含逐元素 push）。空表/无初值不入表（main 建空表既有路径）。
 pub var g_ginit_names: table<i64>;
 pub var g_ginit_nodes: table<i64>;
+// 2026-10-13 聚合全局（struct/enum）初值物化：无法静态折叠（构造器/调用形态）的
+// 初值节点在 main 入口（--shared 走 tie$rt_init）逐条求值存回 @g。槽已由
+// llvmgen 以 `@g = global %agg zeroinitializer` 就位，本段只补运行期赋值。
+pub var g_agginit_names: table<i64>;
+pub var g_agginit_nodes: table<i64>;
+pub var g_agginit_tys: table<i64>;
 // p.6.4.5：程序是否使用了网络原语（net_* 内联 Winsock2 直调）。置位后
 // driver 链接 ws2_32（-lws2_32）；脱离 tie_interp 后独立链，净程序无需桥。
 pub var g_used_wsock: bool = false;
@@ -615,6 +621,21 @@ pub func gen_global_tbl_init() -> i64 {
             ir.add_operand(gst, interner.intern("@" + intern.lookup(gb_keys[gi])), 3)  // 全局槽
         }
         gi = gi + 1
+    }
+    // 2026-10-13 聚合全局初值物化：main 入口逐条求值存回（对齐表全局初始化）。
+    // 缺此段则 @g 恒为 zeroinitializer——struct 读出全 0、fn（已门禁）读野指针。
+    var ai: i64 = 0
+    while ai < len(g_agginit_names) {
+        var av = tig_expr(g_agginit_nodes[ai])
+        if av < 0 {
+            return -1
+        }
+        var aty = g_agginit_tys[ai]
+        var ast = ir.new_inst(g_cur_block, 22, -1)  // store agg → @g
+        ir.add_operand(ast, aty, 2)
+        ir.add_operand(ast, av, 0)
+        ir.add_operand(ast, interner.intern("@" + intern.lookup(g_agginit_names[ai])), 3)
+        ai = ai + 1
     }
     return 0
 }
