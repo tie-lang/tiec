@@ -627,7 +627,11 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     // 参数入作用域（alloca + store；T0.3 by_ref 参数不 alloca，直接绑定参数寄存器）
     var off = ir.func_params_off(fid)
     var sig0 = sstate.fn_sig(full_name)
-    var sig_off = sg_off[sig0]
+    // sig0 < 0（签名缺失异常兜底）时禁取 sg_off[-1]——负索引垃圾值会误判 ref
+    var sig_off = 0
+    if sig0 >= 0 {
+        sig_off = sg_off[sig0]
+    }
     i = 0
     while i < nparams {
         // 第 i 个参数：children[slot_off + 1 + i]

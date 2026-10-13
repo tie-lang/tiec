@@ -102,6 +102,7 @@ pub func collect_global_var(v: i64, full: string) -> i64 {
         } else {
             elem = types.named(TK_STR)
         }
+
         sstate.sorted_insert_gb(gb_keys, gb_vals, gb_const, gb_telem, gb_mod, nid, ty, is_const + is_pub * 2, elem, sstate.file_id_of_node(v))
         // p.9.22.6 全量符号表：全局表变量声明登记（kind 4）。
         xref.reg_decl(nid, 4, ty, v)
@@ -115,6 +116,7 @@ pub func collect_global_var(v: i64, full: string) -> i64 {
         table_push(gd_tys, ty)
         table_push(gd_nms, full)
     }
+
     sstate.sorted_insert_gb(gb_keys, gb_vals, gb_const, gb_telem, gb_mod, nid, ty, is_const + is_pub * 2, -1, sstate.file_id_of_node(v))
     // p.9.22.6 全量符号表：全局标量声明登记（kind 4）。
     xref.reg_decl(nid, 4, ty, v)
@@ -403,13 +405,6 @@ pub func collect_top() -> i64 {
                 sm_err_msg = "extern 声明必须标注 unsafe（`unsafe extern fn " + full + "(...)`），安全代码禁止直接调用外部符号"
                 return -1
             }
-            // extern 与已有函数重复定义（对齐 Rust：extern 专用消息）
-            if sstate.fn_sig(full) >= 0 {
-                sm_err_line = s_lines[s]
-                sm_err_col = s_cols[s]
-                sm_err_msg = "extern 函数 '" + full + "' 与已有函数重复定义"
-                return -1
-            }
             var ret_ty = sgen.parse_generic_type_node(sstate.child(s, 0))
             if ret_ty < 0 {
                 return -1
@@ -454,6 +449,40 @@ pub func collect_top() -> i64 {
                 table_push(p_vars, 0)
                 k = k + 1
             }
+            // 2026-10-13：同名 extern 重声明——签名全同 = 合法重声明（库组合常态，
+            // 如 window/polite 同 extern kernel32 Sleep），静默共享既有登记；
+            // 签名不同或旧登记非 extern（普通函数）仍拒 E00039。
+            var old_sig = sstate.fn_sig(full)
+            var redecl_ok = false
+            if old_sig >= 0 {
+                var old_node = sstate.fn_def_node(full)
+                if old_node >= 0 && s_tags[old_node] == S_N_EXTERN &&
+                    sg_nparams[old_sig] == nparams && types.type_name(sg_ret[old_sig]) == types.type_name(ret_ty) {
+                    // 参数逐位按**渲染名**等价（类型 id 为解析期行号分配、跨相位不可比——
+                    // 2026-10-13 实测：同一 i64 两次解析得 14 与 2）
+                    redecl_ok = true
+                    var ooff = sg_off[old_sig]
+                    var q: i64 = 0
+                    while q < nparams {
+                        if types.type_name(sp_tys[ooff + q]) != types.type_name(p_tys[q]) {
+                            redecl_ok = false
+                            q = nparams
+                        } else {
+                            q = q + 1
+                        }
+                    }
+                }
+                if !redecl_ok {
+                    sm_err_line = s_lines[s]
+                    sm_err_col = s_cols[s]
+                    sm_err_msg = "extern 函数 '" + full + "' 与已有函数重复定义"
+                    return -1
+                }
+            }
+            // 合法重声明（redecl_ok）：共享既有登记，**不 return**——collect_top 的
+            // 分支内联于 while 循环，return 会整函数退出、吞掉后续全部顶层语句
+            //（2026-10-13 实测：s5/main 未登记 → irgen sig=-1 OOB）。
+            if !redecl_ok {
             // S1.2：extern 签名登记为 unsafe（pub 位 + unsafe 位，sg_pub 组合标志）
             if sstate.reg_fn(full, 1 + s_vals[s] * 2, nparams, nparams, ret_ty, p_tys, p_refs, p_defs, p_vars, s) < 0 {
                 sm_err_line = s_lines[s]
@@ -462,6 +491,7 @@ pub func collect_top() -> i64 {
             }
             // extern 名集合（语义登记）
             sstate.sorted_insert(ext_keys, ext_keys, intern.intern(full), 0)
+            }
         } else if tag == S_N_IMPORT {
             // import 展开在 semantic 主入口处理（读文件 + 递归）
         } else if tag == S_N_TYPE_ALIAS {
