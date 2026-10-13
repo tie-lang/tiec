@@ -60,27 +60,27 @@ import "/std/bytes.tie"
 
 // ---------- 格式常量（字面量 + 注释，防 import 合并顶层重名）----------
 // 魔数 "TIEIR" 的 5 个 ASCII 码点
-const TIEIR_MAGIC0: i64 = 84;    // 'T'
-const TIEIR_MAGIC1: i64 = 73;    // 'I'
-const TIEIR_MAGIC2: i64 = 69;    // 'E'
-const TIEIR_MAGIC3: i64 = 73;    // 'I'
-const TIEIR_MAGIC4: i64 = 82;    // 'R'
+pub const TIEIR_MAGIC0: i64 = 84;    // 'T'
+pub const TIEIR_MAGIC1: i64 = 73;    // 'I'
+pub const TIEIR_MAGIC2: i64 = 69;    // 'E'
+pub const TIEIR_MAGIC3: i64 = 73;    // 'I'
+pub const TIEIR_MAGIC4: i64 = 82;    // 'R'
 // 格式版本（V3 迁移转换器触发条件）。v2（p.9.20）：模块头新增 t 轴档位与
 // pass 管道版本两个 i64——旧版读新版会错位，故 bump 并由版本校验拦截。
 // v3（p.9.22.8）：尾部新增**段 8 语义符号表**（可选，由调用方经 set_sec8
 // 注入；无注入 = 与 v2 同构的字节流）；读侧放宽——段号大于已知最大段的段按
 // 「段号 + 段长」整体跳过（前向兼容路径），v2 文件仍可读。
 const TIEIR_VERSION: i64 = 3;
-const SEC_HEAD: i64 = 2;         // 段号：模块头
-const SEC_STRPOOL: i64 = 3;      // 段号：字符串池
-const SEC_SYMTAB: i64 = 4;       // 段号：符号表
-const SEC_IRBODY: i64 = 5;       // 段号：IR 主体
-const SEC_EXPORT: i64 = 6;       // 段号：导出表
+pub const SEC_HEAD: i64 = 2;         // 段号：模块头
+pub const SEC_STRPOOL: i64 = 3;      // 段号：字符串池
+pub const SEC_SYMTAB: i64 = 4;       // 段号：符号表
+pub const SEC_IRBODY: i64 = 5;       // 段号：IR 主体
+pub const SEC_EXPORT: i64 = 6;       // 段号：导出表
 const SEC_SPAN: i64 = 7;         // 段号：span 段
 const SEC_SEMSYS: i64 = 8;       // 段号：语义符号表（p.9.22.8，可选段）
 
 // ---------- 全局状态 ----------
-var tieir_out: table<i64>;       // 序列化输出字节表
+pub var tieir_out: table<i64>;       // 序列化输出字节表
 // p.9.22.8 段 8 注入（模块边界纪律：本模块不 import driver/dbgem——调用方
 // （driver 经 dbgem）先构建列组字节，再经 set_sec8 注入「段头 + 段体」完整
 // 字节；空 = 不写段 8。同 tieir_slice.set_fn_mods 注入先例。）
@@ -92,9 +92,9 @@ var tieir_ss_kind: table<i64>;   // 0=i64 1=池 id
 var tieir_ss_len: table<i64>;    // 列行数
 var tieir_ss_off: table<i64>;    // 列在 tieir_ss_val 的起点
 var tieir_ss_val: table<i64>;    // 扁平值
-var tieir_pos: i64 = 0;          // 反序列化解析游标（rd_* 推进）
-var tieir_err: string = "";      // 最近错误消息（空 = 无错误）
-var tieir_sec_end: i64 = 0; // 当前段体结束位置（段边界校验）
+pub var tieir_pos: i64 = 0;          // 反序列化解析游标（rd_* 推进）
+pub var tieir_err: string = "";      // 最近错误消息（空 = 无错误）
+pub var tieir_sec_end: i64 = 0; // 当前段体结束位置（段边界校验）
 
 namespace tieir {
 

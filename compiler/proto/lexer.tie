@@ -139,30 +139,30 @@ const T_QUESTION: i64 = 78;
 const T_EOF: i64 = 79;
 
 // ---------- 全局列式 token 表（T0.4 全局表：下标对齐 = token 序号）----------
-var tok_tags: table<i64>;
-var tok_lines: table<i64>;
-var tok_cols: table<i64>;
-var tok_lexemes: table<i64>;
+pub var tok_tags: table<i64>;
+pub var tok_lines: table<i64>;
+pub var tok_cols: table<i64>;
+pub var tok_lexemes: table<i64>;
 
 // ---------- 关键字排序表（全局并行表，build_kw 一次性构建）----------
 var kw_keys: table<string>;
 var kw_vals: table<i64>;
 
 // ---------- 扫描器共享状态（一次 tokenize 的生命周期）----------
-var g_codes: table<i64>;      // 当前源码码点表（regex O(N) 切分）
-var g_src: string = "";       // 当前源码（lexeme 切片用）
-var g_n: i64 = 0;             // 码点数
-var g_line_starts: table<i64>; // 各行起点位置（第 i 行起点 = g_line_starts[i]）
+pub var g_codes: table<i64>;      // 当前源码码点表（regex O(N) 切分）
+pub var g_src: string = "";       // 当前源码（lexeme 切片用）
+pub var g_n: i64 = 0;             // 码点数
+pub var g_line_starts: table<i64>; // 各行起点位置（第 i 行起点 = g_line_starts[i]）
 
 // ---------- ASI 追踪状态（等价 Rust Lexer 的三个字段）----------
-var g_line_has_token: bool = false;  // 本行是否已产出过 token
-var g_last_line_tag: i64 = 0;       // 行尾最后一个 token 的 tag（-1 = 无，运行期重置）
-var g_paren_depth: i64 = 0;          // 括号深度（只统计 ( 与 [）
+pub var g_line_has_token: bool = false;  // 本行是否已产出过 token
+pub var g_last_line_tag: i64 = 0;       // 行尾最后一个 token 的 tag（-1 = 无，运行期重置）
+pub var g_paren_depth: i64 = 0;          // 括号深度（只统计 ( 与 [）
 
 // ---------- 词法错误槽位（tokenize 返回 ERR: 协议）----------
-var g_err_line: i64 = 0;
-var g_err_col: i64 = 0;
-var g_err_msg: string = "";
+pub var g_err_line: i64 = 0;
+pub var g_err_col: i64 = 0;
+pub var g_err_msg: string = "";
 
 namespace lexer {
 

@@ -10,54 +10,54 @@ type tie<class>
 import "./scollect.tie"
 
 // switch case 值去重表（跨 case 检测重复；switch 分支检查时重置）
-var g_case_seen: table<string>;
+pub var g_case_seen: table<string>;
 // 三期 goto 标签表（§7.1.5，函数级）：标签名 → 所在块链/块内序号/全局序号。
 // 每函数 check_fn 重置。R1 同函数 / R2 同块或已执行外层块 / R3 不越过初始化。
-var g_gt_keys: table<i64>;      // 标签名池 id
-var g_gt_chain: table<string>;  // 标签所在块链（"/" 分隔块 id）
-var g_gt_blkidx: table<i64>;    // 标签在所在块内语句序号
-var g_gt_seq: table<i64>;       // 标签全局语句序号（函数内单调）
-var g_gt_depths: table<i64>;    // 标签块深度
-var g_gt_blknode: table<i64>;   // 标签所在块 StmtList 节点（R3 扫描用）
+pub var g_gt_keys: table<i64>;      // 标签名池 id
+pub var g_gt_chain: table<string>;  // 标签所在块链（"/" 分隔块 id）
+pub var g_gt_blkidx: table<i64>;    // 标签在所在块内语句序号
+pub var g_gt_seq: table<i64>;       // 标签全局语句序号（函数内单调）
+pub var g_gt_depths: table<i64>;    // 标签块深度
+pub var g_gt_blknode: table<i64>;   // 标签所在块 StmtList 节点（R3 扫描用）
 // goto 请求表（延迟校验）：goto 可能在标签前（前向跳），函数体检查完统一校验。
 // 与标签表同位布局：目标名 / goto 所在块链 / 块内序号 / 全局序号 / 行列。
-var g_gtg_keys: table<i64>;
-var g_gtg_chain: table<string>;
-var g_gtg_blkidx: table<i64>;
-var g_gtg_seq: table<i64>;
-var g_gtg_line: table<i64>;
-var g_gtg_col: table<i64>;
+pub var g_gtg_keys: table<i64>;
+pub var g_gtg_chain: table<string>;
+pub var g_gtg_blkidx: table<i64>;
+pub var g_gtg_seq: table<i64>;
+pub var g_gtg_line: table<i64>;
+pub var g_gtg_col: table<i64>;
 // 当前块追踪（函数级）：块链 / 块深度 / 块内语句序号 / 当前块 StmtList 节点
-var g_cur_chain: string = "";   // 当前块链
-var g_cur_depth: i64 = 0;       // 当前块深度
-var g_cur_blkidx: i64 = 0;      // 当前块内语句序号（check_block 循环设置）
-var g_cur_blknode: i64 = -1;    // 当前块 StmtList 节点（R3 扫描用）
-var g_gt_seq_cnt: i64 = 0;      // 函数内语句全局序号
-var g_gt_blk_seq: i64 = 0;      // 块 id 计数器（函数级）
+pub var g_cur_chain: string = "";   // 当前块链
+pub var g_cur_depth: i64 = 0;       // 当前块深度
+pub var g_cur_blkidx: i64 = 0;      // 当前块内语句序号（check_block 循环设置）
+pub var g_cur_blknode: i64 = -1;    // 当前块 StmtList 节点（R3 扫描用）
+pub var g_gt_seq_cnt: i64 = 0;      // 函数内语句全局序号
+pub var g_gt_blk_seq: i64 = 0;      // 块 id 计数器（函数级）
 // 警告辅助：当前块内已声明名集合（控制变量遮蔽 vs 重复声明的判定）。
 // check_block 进入/退出 save/restore，使同名内层声明可被识别为遮蔽外层。
-var g_block_names: table<i64> = []
+pub var g_block_names: table<i64> = []
 // 警告辅助：控制流嵌套深度（W00017，进入 if/while/for/switch/try/... 体 +1）
-var g_cf_depth: i64 = 0
+pub var g_cf_depth: i64 = 0
 
 
 // ==================== W00019 / W00016 全局状态与辅助 ====================
 
 // W00019：静态长度可确定的表变量（`var t = [字面量...]`）长度表（名池 id → 长度）。
-var w19_len_keys: table<i64> = []
-var w19_len_vals: table<i64> = []
+pub var w19_len_keys: table<i64> = []
+pub var w19_len_vals: table<i64> = []
 // 名池 id → 出现次数（S_N_VAR 读节点数）
-var w19_occ_keys: table<i64> = []
-var w19_occ_vals: table<i64> = []
+pub var w19_occ_keys: table<i64> = []
+pub var w19_occ_vals: table<i64> = []
 // 名池 id → 作为下标赋值目标的次数（S_N_INDEX_ASSIGN 的根变量）
-var w19_idx_keys: table<i64> = []
-var w19_idx_vals: table<i64> = []
+pub var w19_idx_keys: table<i64> = []
+pub var w19_idx_vals: table<i64> = []
 
 // W00016：全局可变表写点累积（名池 id → 写点计数 / 首个写点位置）。
-var w16_keys: table<i64> = []
-var w16_cnt: table<i64> = []
-var w16_ln: table<i64> = []
-var w16_cl: table<i64> = []
+pub var w16_keys: table<i64> = []
+pub var w16_cnt: table<i64> = []
+pub var w16_ln: table<i64> = []
+pub var w16_cl: table<i64> = []
 
 namespace scheck {
 

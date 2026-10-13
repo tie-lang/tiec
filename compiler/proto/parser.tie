@@ -117,108 +117,108 @@ import "./lexer.tie"
 using lexer;
 
 // ---------- AST 节点 tag 常量（对齐 Rust ast.rs 变体顺序）----------
-const N_INT_LIT: i64 = 0;
-const N_FLOAT_LIT: i64 = 1;
-const N_STR_LIT: i64 = 2;
-const N_CHAR_LIT: i64 = 3;
-const N_BOOL_LIT: i64 = 4;
-const N_TRIT_LIT: i64 = 5;
-const N_VAR: i64 = 6;
-const N_CALL: i64 = 7;
-const N_UNARY: i64 = 8;
-const N_BINARY: i64 = 9;
-const N_TERNARY: i64 = 10;
-const N_RANGE: i64 = 11;
-const N_TABLE_LIT: i64 = 12;
-const N_INDEX: i64 = 13;
-const N_TUPLE_LIT: i64 = 14;
-const N_FIELD_ACCESS: i64 = 15;
-const N_PATH: i64 = 16;
-const N_TYPE_LIT: i64 = 17;
-const N_METHOD_CALL: i64 = 18;
-const N_TABLE_CELL: i64 = 19;
-const N_TABLE_ID: i64 = 20;
-const N_TUPLE_FIELD: i64 = 21;
-const N_SEGMENT: i64 = 22;
-const N_VAR_DECL: i64 = 100;
-const N_FN_DEF: i64 = 101;
-const N_EXPR_STMT: i64 = 102;
-const N_ASSIGN: i64 = 103;
-const N_RETURN: i64 = 104;
-const N_IF: i64 = 105;
-const N_WHILE: i64 = 106;
-const N_FOR: i64 = 107;
-const N_BREAK: i64 = 108;
-const N_CONTINUE: i64 = 109;
-const N_SWITCH: i64 = 110;
-const N_IMPORT: i64 = 111;
-const N_NAMESPACE: i64 = 112;
-const N_USING: i64 = 113;
-const N_STRUCT: i64 = 114;
-const N_FIELD_ASSIGN: i64 = 115;
-const N_INDEX_ASSIGN: i64 = 116;
-const N_EXTERN: i64 = 117;
-const N_PARAM: i64 = 118;
-const N_SWITCH_CASE: i64 = 120;
-const N_PATTERN_LIST: i64 = 121;
-const N_STMTLIST: i64 = 122;
-const N_CLASS_FIELD: i64 = 123;
-const N_TUPLE_TYPE_FIELD: i64 = 124;
-const N_NAMED_TYPE: i64 = 200;
-const N_TUPLE_TYPE: i64 = 201;
-const N_STRUCT_TYPE: i64 = 202;
-const N_TABLE_TYPE: i64 = 203;
-const N_MAP_TYPE: i64 = 204;
+pub const N_INT_LIT: i64 = 0;
+pub const N_FLOAT_LIT: i64 = 1;
+pub const N_STR_LIT: i64 = 2;
+pub const N_CHAR_LIT: i64 = 3;
+pub const N_BOOL_LIT: i64 = 4;
+pub const N_TRIT_LIT: i64 = 5;
+pub const N_VAR: i64 = 6;
+pub const N_CALL: i64 = 7;
+pub const N_UNARY: i64 = 8;
+pub const N_BINARY: i64 = 9;
+pub const N_TERNARY: i64 = 10;
+pub const N_RANGE: i64 = 11;
+pub const N_TABLE_LIT: i64 = 12;
+pub const N_INDEX: i64 = 13;
+pub const N_TUPLE_LIT: i64 = 14;
+pub const N_FIELD_ACCESS: i64 = 15;
+pub const N_PATH: i64 = 16;
+pub const N_TYPE_LIT: i64 = 17;
+pub const N_METHOD_CALL: i64 = 18;
+pub const N_TABLE_CELL: i64 = 19;
+pub const N_TABLE_ID: i64 = 20;
+pub const N_TUPLE_FIELD: i64 = 21;
+pub const N_SEGMENT: i64 = 22;
+pub const N_VAR_DECL: i64 = 100;
+pub const N_FN_DEF: i64 = 101;
+pub const N_EXPR_STMT: i64 = 102;
+pub const N_ASSIGN: i64 = 103;
+pub const N_RETURN: i64 = 104;
+pub const N_IF: i64 = 105;
+pub const N_WHILE: i64 = 106;
+pub const N_FOR: i64 = 107;
+pub const N_BREAK: i64 = 108;
+pub const N_CONTINUE: i64 = 109;
+pub const N_SWITCH: i64 = 110;
+pub const N_IMPORT: i64 = 111;
+pub const N_NAMESPACE: i64 = 112;
+pub const N_USING: i64 = 113;
+pub const N_STRUCT: i64 = 114;
+pub const N_FIELD_ASSIGN: i64 = 115;
+pub const N_INDEX_ASSIGN: i64 = 116;
+pub const N_EXTERN: i64 = 117;
+pub const N_PARAM: i64 = 118;
+pub const N_SWITCH_CASE: i64 = 120;
+pub const N_PATTERN_LIST: i64 = 121;
+pub const N_STMTLIST: i64 = 122;
+pub const N_CLASS_FIELD: i64 = 123;
+pub const N_TUPLE_TYPE_FIELD: i64 = 124;
+pub const N_NAMED_TYPE: i64 = 200;
+pub const N_TUPLE_TYPE: i64 = 201;
+pub const N_STRUCT_TYPE: i64 = 202;
+pub const N_TABLE_TYPE: i64 = 203;
+pub const N_MAP_TYPE: i64 = 204;
 
 // ---------- 二元/一元 op 码（对齐 Rust BinaryOp/UnaryOp 顺序）----------
-const B_ADD: i64 = 0;
-const B_SUB: i64 = 1;
-const B_MUL: i64 = 2;
-const B_DIV: i64 = 3;
-const B_MOD: i64 = 4;
-const B_EQ: i64 = 5;
-const B_NOTEQ: i64 = 6;
-const B_LT: i64 = 7;
-const B_GT: i64 = 8;
-const B_LE: i64 = 9;
-const B_GE: i64 = 10;
-const B_AND: i64 = 11;
-const B_OR: i64 = 12;
-const B_BITAND: i64 = 13;
-const B_BITOR: i64 = 14;
-const B_BITXOR: i64 = 15;
-const B_SHL: i64 = 16;
-const B_SHR: i64 = 17;
+pub const B_ADD: i64 = 0;
+pub const B_SUB: i64 = 1;
+pub const B_MUL: i64 = 2;
+pub const B_DIV: i64 = 3;
+pub const B_MOD: i64 = 4;
+pub const B_EQ: i64 = 5;
+pub const B_NOTEQ: i64 = 6;
+pub const B_LT: i64 = 7;
+pub const B_GT: i64 = 8;
+pub const B_LE: i64 = 9;
+pub const B_GE: i64 = 10;
+pub const B_AND: i64 = 11;
+pub const B_OR: i64 = 12;
+pub const B_BITAND: i64 = 13;
+pub const B_BITOR: i64 = 14;
+pub const B_BITXOR: i64 = 15;
+pub const B_SHL: i64 = 16;
+pub const B_SHR: i64 = 17;
 
-const U_NEG: i64 = 0;
-const U_NOT: i64 = 1;
-const U_PRE_INC: i64 = 2;
-const U_PRE_DEC: i64 = 3;
-const U_POST_INC: i64 = 4;
-const U_POST_DEC: i64 = 5;
+pub const U_NEG: i64 = 0;
+pub const U_NOT: i64 = 1;
+pub const U_PRE_INC: i64 = 2;
+pub const U_PRE_DEC: i64 = 3;
+pub const U_POST_INC: i64 = 4;
+pub const U_POST_DEC: i64 = 5;
 
 // ---------- 类型关键字 TyKw 索引（对齐 Rust TyKw 顺序）----------
-const TK_I8: i64 = 0;
-const TK_I16: i64 = 1;
-const TK_I32: i64 = 2;
-const TK_I64: i64 = 3;
-const TK_U8: i64 = 4;
-const TK_U16: i64 = 5;
-const TK_U32: i64 = 6;
-const TK_U64: i64 = 7;
-const TK_F32: i64 = 8;
-const TK_F64: i64 = 9;
-const TK_BOOL: i64 = 10;
-const TK_TRIT: i64 = 11;
-const TK_CHAR: i64 = 12;
-const TK_STR: i64 = 13;
-const TK_VOID: i64 = 14;
-const TK_CODE: i64 = 15;
-const TK_NUM: i64 = 16;
-const TK_TEXT: i64 = 17;
-const TK_MISC: i64 = 18;
-const TK_TABLE: i64 = 19;
-const TK_MAP: i64 = 20;
+pub const TK_I8: i64 = 0;
+pub const TK_I16: i64 = 1;
+pub const TK_I32: i64 = 2;
+pub const TK_I64: i64 = 3;
+pub const TK_U8: i64 = 4;
+pub const TK_U16: i64 = 5;
+pub const TK_U32: i64 = 6;
+pub const TK_U64: i64 = 7;
+pub const TK_F32: i64 = 8;
+pub const TK_F64: i64 = 9;
+pub const TK_BOOL: i64 = 10;
+pub const TK_TRIT: i64 = 11;
+pub const TK_CHAR: i64 = 12;
+pub const TK_STR: i64 = 13;
+pub const TK_VOID: i64 = 14;
+pub const TK_CODE: i64 = 15;
+pub const TK_NUM: i64 = 16;
+pub const TK_TEXT: i64 = 17;
+pub const TK_MISC: i64 = 18;
+pub const TK_TABLE: i64 = 19;
+pub const TK_MAP: i64 = 20;
 
 // ---------- 全局列式 AST 表（T0.4 全局表：下标对齐 = 节点 id）----------
 var node_tags: table<i64>;
@@ -232,19 +232,19 @@ var node_lines: table<i64>;
 var node_cols: table<i64>;
 
 // ---------- 词法游标与 pending（>> 分裂）状态 ----------
-var g_pos: i64 = 0;           // 真实 token 流游标
-var g_pending: table<i64>;    // 待消费虚拟 token 队列（FIFO）
-var g_pending_idx: i64 = 0;   // 指向 g_pending 中下一个待消费位置
-var g_pending_lines: table<i64>;  // 虚拟 token 的旁路行号
-var g_pending_cols: table<i64>;   // 虚拟 token 的旁路列号
+pub var g_pos: i64 = 0;           // 真实 token 流游标
+pub var g_pending: table<i64>;    // 待消费虚拟 token 队列（FIFO）
+pub var g_pending_idx: i64 = 0;   // 指向 g_pending 中下一个待消费位置
+pub var g_pending_lines: table<i64>;  // 虚拟 token 的旁路行号
+pub var g_pending_cols: table<i64>;   // 虚拟 token 的旁路列号
 
 // ---------- 语法错误槽位（parse 返回 ERR: 协议）----------
-var p_err_line: i64 = 0;
-var p_err_col: i64 = 0;
-var p_err_msg: string = "";
+pub var p_err_line: i64 = 0;
+pub var p_err_col: i64 = 0;
+pub var p_err_msg: string = "";
 
 // ---------- 元组解构临时变量计数器（生成 _tmpN 唯一名）----------
-var g_tmp: i64 = 0;
+pub var g_tmp: i64 = 0;
 
 // ---------- tag 名称表（懒构建，仅供 describe/parse_debug 使用）----------
 var g_tag_names: table<string>;   // 节点 tag → 名称

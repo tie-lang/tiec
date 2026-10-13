@@ -29,7 +29,7 @@ type tie<class>
 // 故所有字符串处理只用语言底座原语（str_len / str_char / + 拼接）。
 
 // 最近一次工具调用的错误消息（stderr 文本；成功时空串）
-var tc_err_msg: string = "";
+pub var tc_err_msg: string = "";
 
 // S1.4 --ffast-math：编译产物启用 fast-math（训练/性能优先；默认关）。
 // driver 经 tc.set_fast_math(...) 置位，clang 链接/编译目标文件命令追加 -ffast-math

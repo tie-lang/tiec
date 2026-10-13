@@ -28,64 +28,64 @@ import "./semantic_gen.tie"
 
 // ==================== import 展开状态 ====================
 // 当前文件目录（相对 import 解析基准）
-var g_cur_dir: string = "";
+pub var g_cur_dir: string = "";
 // p.9.13.7-B 内置库零副本：/std /ext /rdu /sys 别名解析到内置库根。
 // 取值序：--lib-root CLI > TIE_LIB_ROOT 环境变量 > 默认 ~/.tiec-lib/tlib。
-var g_lib_root: string = "";
+pub var g_lib_root: string = "";
 
 // p.9.11.13 扩展（2026-10-12）：#cfg 求值环境——被导入文件的预处理与主文件
 // 共用同一 target/profile（driver 归一化后经 semantic.set_cfg_env 单点注入；
 // 空 = 主机 / 无 profile，与主文件路径默认语义一致）。
-var g_cfg_env_target: string = "";
-var g_cfg_env_profile: string = "";
+pub var g_cfg_env_target: string = "";
+pub var g_cfg_env_profile: string = "";
 
 // 泛型预扫描展开状态（T3b）：g_extra_tops 已扫描位置游标（新展开的函数
 // 追加到 g_extra_tops 末尾，主循环从该位置续扫）
-var g_scan_extra_last: i64 = 0;
+pub var g_scan_extra_last: i64 = 0;
 
 // 子阶段计时（性能诊断，TIEC_TIME=1 时输出）：sem 内部分布定位。
 // 声明须在文件顶层（命名空间体内只允许函数）。符号 = kernel32 GetTickCount
 //（毫秒精度；driver 已声明 CRT clock，extern 不允许跨文件重复定义）。
 unsafe extern fn GetTickCount() -> i64;
-var sm_t_copy: i64 = 0
-var sm_t_mexp: i64 = 0
-var sm_t_imp: i64 = 0
-var sm_t_coll: i64 = 0
-var sm_t_impl: i64 = 0
-var sm_t_gen: i64 = 0
-var sm_t_flds: i64 = 0
-var sm_t_fns: i64 = 0
+pub var sm_t_copy: i64 = 0
+pub var sm_t_mexp: i64 = 0
+pub var sm_t_imp: i64 = 0
+pub var sm_t_coll: i64 = 0
+pub var sm_t_impl: i64 = 0
+pub var sm_t_gen: i64 = 0
+pub var sm_t_flds: i64 = 0
+pub var sm_t_fns: i64 = 0
 // import 展开三级细分计时（TIEC_TIME=1）：strip=头部剥离 / lex=run_lex /
 // build=fill_pending+parse_program / append=append_ast_mem——imports 总量
 // 24.8s（driver 闭包）病源定位用。
-var sm_t_imp_strip: i64 = 0
-var sm_t_imp_lex: i64 = 0
-var sm_t_imp_build: i64 = 0
-var sm_t_imp_append: i64 = 0
-var sm_t_imp_fill: i64 = 0
+pub var sm_t_imp_strip: i64 = 0
+pub var sm_t_imp_lex: i64 = 0
+pub var sm_t_imp_build: i64 = 0
+pub var sm_t_imp_append: i64 = 0
+pub var sm_t_imp_fill: i64 = 0
 // p.9.14.2 性能优化：import 去重索引（intern id，有序二分）——imported_has 原为
 // 对 g_imported(table<string>) 的线性查找，driver 数百文件时 O(n²) 累积成 import
 // 展开病态；改用 intern.intern(id) + sstate.bs_find 二分，import 展开近线性。
-var g_imp_idkeys: table<i64> = []
-var g_imp_idvals: table<i64> = []
+pub var g_imp_idkeys: table<i64> = []
+pub var g_imp_idvals: table<i64> = []
 
 // ---------- 警告通道（p.6.9.15 诊断标号体系） ----------
 // 语义检查期间的警告平行收集（错误仍走 sm_err_* 单条；警告可多条）：
 // 检查结束并入 OK 协议返回（sm_ok_protocol），driver 打印 warning[W#####]。
 // 每函数检查前不重置（一个文件编译内跨函数累积），check_impl/check_ast
 // 入口统一清零（sm_warn_reset）。
-var sm_warn_lines: table<i64>;   // 警告行（平行表）
-var sm_warn_cols: table<i64>;
-var sm_warn_msgs: table<string>; // 警告核心消息（与 diagcode 警告目录逐字一致）
-var sm_warn_files: table<i64>;   // 警告所属模块序号（0 = 主输入文件，见 g_file_base 约定）
+pub var sm_warn_lines: table<i64>;   // 警告行（平行表）
+pub var sm_warn_cols: table<i64>;
+pub var sm_warn_msgs: table<string>; // 警告核心消息（与 diagcode 警告目录逐字一致）
+pub var sm_warn_files: table<i64>;   // 警告所属模块序号（0 = 主输入文件，见 g_file_base 约定）
 // 「当前正在检查的模块序号」：由 scheck.check_fn_walk 按函数定义节点设置，
 // sm_warn_add 据此打归属。**0 = 主输入文件**（g_file_base[0] = 0 的约定）。
 // 目的是让 -Werror 只判「你编的这个文件」，不被 std/prelude 自身的告警拖垮
 //（与 cap_idle_flush「只判主输入文件」同一裁决）。
-var sm_cur_file: i64 = 0;
+pub var sm_cur_file: i64 = 0;
 // p.9.14.2 独立警告 pass：总开关（默认 false = 只报错，警告检查不付任何成本）。
 // driver 用 -w 开启、--no-warn 保持关闭；仅 true 时语义侧警告收集/渲染进行。
-var sm_warn_active: bool = false;
+pub var sm_warn_active: bool = false;
 
 
 namespace semantic {

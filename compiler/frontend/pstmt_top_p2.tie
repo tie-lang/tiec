@@ -49,7 +49,8 @@ func parse_namespace() -> i64 {
                 table_push(body_stmts, st)
             } else if tag == lex_pub {
                 // p.9.21.5 II2：pub func / pub const（val bit1 = ispub，
-                // 常量可见性跟随 L1 梯度）；其余 pub 形态落到 parse_fn_def
+                // 常量可见性跟随 L1 梯度）；2026-10-13 增 pub var；
+                // 其余 pub 形态落到 parse_fn_def
                 if putil.peek_n(1) == lex_const {
                     putil.advance()   // pub
                     var sc = pstmt.parse_var_decl(1)
@@ -58,6 +59,14 @@ func parse_namespace() -> i64 {
                     }
                     ast.set_val(sc, ast.val(sc) + 2)   // val bit1 = ispub
                     table_push(body_stmts, sc)
+                } else if putil.peek_n(1) == lex_var {
+                    putil.advance()   // pub
+                    var sv = pstmt.parse_var_decl(0)
+                    if sv < 0 {
+                        return -1
+                    }
+                    ast.set_val(sv, ast.val(sv) + 2)   // val bit1 = ispub
+                    table_push(body_stmts, sv)
                 } else {
                     var st = parse_fn_def()
                     if st < 0 {
@@ -164,8 +173,8 @@ func parse_namespace() -> i64 {
             if tag == lex_eof {
                 done = true
             } else if tag == lex_pub {
-                // pub 后：pub func / pub import / p.9.21.5 II2 pub const
-                // （val bit1 = ispub，常量可见性跟随 L1 梯度）
+                // pub 后：pub func / pub import / p.9.21.5 II2 pub const /
+                // 2026-10-13 pub var（val bit1 = ispub，跨文件引用须 pub）
                 if putil.peek_n(1) == lex_import {
                     var st = parse_import()
                     if st < 0 {
@@ -180,6 +189,14 @@ func parse_namespace() -> i64 {
                     }
                     ast.set_val(sc, ast.val(sc) + 2)   // val bit1 = ispub
                     table_push(body_stmts, sc)
+                } else if putil.peek_n(1) == lex_var {
+                    putil.advance()   // pub
+                    var sv = pstmt.parse_var_decl(0)
+                    if sv < 0 {
+                        return -1
+                    }
+                    ast.set_val(sv, ast.val(sv) + 2)   // val bit1 = ispub
+                    table_push(body_stmts, sv)
                 } else {
                     var st = parse_fn_def()
                     if st < 0 {

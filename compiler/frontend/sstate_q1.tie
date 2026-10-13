@@ -971,6 +971,26 @@ pub func has_prefix_str(s: string, pre: string) -> bool {
 }
 
 // 查找最后一个 "::" 的位置（命名空间分隔；返回 ':' 下标，-1 = 无）
+// 全局/常量声明所在文件（活体树反查：各文件根的顶层 VAR_DECL 子节点里找同
+// 名者；顶层全局经 E00285 单元级唯一，首个命中即唯一）。未找到返回 -1。
+// 背景：gb_mod 存储列在注册期 file_id_of_node 尚不可用（兜底 0），不可信。
+pub func gb_decl_file(nid: i64) -> i64 {
+    var i: i64 = 0
+    while i < len(g_file_roots) {
+        var root = g_file_roots[i]
+        var k: i64 = 0
+        while k < sstate.nchild(root) {
+            var ch = sstate.child(root, k)
+            if s_tags[ch] == S_N_VAR_DECL && s_names[ch] == nid {
+                return i
+            }
+            k = k + 1
+        }
+        i = i + 1
+    }
+    return -1
+}
+
 // ---------- 别名改名映射（2026-10-12「增名不除名」缺陷修复） ----------
 // 别名把被导入库的顶层命名空间改名（内联模型 M2.1.7）；同单元的其他消费方
 // （如 datetime 内部裸引 time.now()）会因此断链。此处登记 旧名→新名，
@@ -1163,7 +1183,23 @@ pub func check_const_visibility_nid(nid: i64, node: i64) -> i64 {
     var full_name = intern.lookup(nid)
     var last = rfind_ns(full_name)
     if last < 0 {
-        return 0
+        // 顶层全局/常量（2026-10-13 收紧，与函数同制度）：同一文件内照旧；
+        // 跨文件引用须 pub。声明文件经活体树反查（gb_mod 存储列在注册期不
+        // 可靠，grep gb_module 注释）；无法定位者保守放行。
+        // 审计模式 TIE_VIS_AUDIT=1 只列不拦（存量普查用）。
+        var df = gb_decl_file(nid)
+        var cf = file_id_of_node(node)
+        if df < 0 || cf < 0 || df == cf {
+            return 0
+        }
+        if get_env("TIE_VIS_AUDIT") == "1" {
+            println("vis-audit-global: " + full_name)
+            return 0
+        }
+        sm_err_line = s_lines[node]
+        sm_err_col = s_cols[node]
+        sm_err_msg = "全局 '" + full_name + "' 是文件级私有（默认私有，pub 前缀显式导出），不可跨文件引用"
+        return -1
     }
     var prefix = str.slice(full_name, 0, last)
     var cur = cur_ns_prefix()

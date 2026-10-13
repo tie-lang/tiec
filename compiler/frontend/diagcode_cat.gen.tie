@@ -1,6 +1,6 @@
 type tie<class>
 // compiler/frontend/diagcode_cat.gen.tie —— 诊断标号目录（p.6.9.15 生成文件，勿手改）
-// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 913 条 + prefix 889 条。
+// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 915 条 + prefix 891 条。
 // 标号规范：五位纯序号 E+5 位（E00001 起全局连续）；家族仅记 JSON/td family 字段，不编码进标号。
 var cat_keys: table<string>;
 var cat_codes: table<string>;
@@ -851,6 +851,8 @@ pub func ensure() {
     table_push(cat_codes, "E00280")
     table_push(cat_keys, "全局%对象变量暂不支持（第一版请用局部变量提升：%具体实例%）")
     table_push(cat_codes, "E00281")
+    table_push(cat_keys, "全局%是文件级私有（默认私有，%前缀显式导出），不可跨文件引用")
+    table_push(cat_codes, "E00933")
     table_push(cat_keys, "全局变量%与函数名冲突")
     table_push(cat_codes, "E00282")
     table_push(cat_keys, "全局变量%初始化类型不匹配：期望%，实际%")
@@ -1823,6 +1825,8 @@ pub func ensure() {
     table_push(cat_codes, "E00642")
     table_push(cat_keys, "限定名%有歧义：多个同名导入文件均声明%")
     table_push(cat_codes, "E00932")
+    table_push(cat_keys, "限定名%有歧义：多个同名导入文件均声明顶层%")
+    table_push(cat_codes, "E00934")
     table_push(cat_keys, "除零错误")
     table_push(cat_codes, "E00643")
     table_push(cat_keys, "除零错误（取模）")
@@ -2667,6 +2671,8 @@ pub func ensure() {
     table_push(pfx_codes, "E00280")
     table_push(pfx_keys, "全局%对象变量暂不支持（第一版请用局部变量提升：%具体实例%）")
     table_push(pfx_codes, "E00281")
+    table_push(pfx_keys, "全局%是文件级私有（默认私有，%前缀显式导出），不可跨文件引用")
+    table_push(pfx_codes, "E00933")
     table_push(pfx_keys, "全局变量%与函数名冲突")
     table_push(pfx_codes, "E00282")
     table_push(pfx_keys, "全局变量%初始化类型不匹配：期望%")
@@ -3601,6 +3607,8 @@ pub func ensure() {
     table_push(pfx_codes, "E00642")
     table_push(pfx_keys, "限定名%有歧义：多个同名导入文件均声明%")
     table_push(pfx_codes, "E00932")
+    table_push(pfx_keys, "限定名%有歧义：多个同名导入文件均声明顶层%")
+    table_push(pfx_codes, "E00934")
     table_push(pfx_keys, "除零错误")
     table_push(pfx_codes, "E00643")
     table_push(pfx_keys, "除零错误（取模）")

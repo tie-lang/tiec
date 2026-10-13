@@ -33,24 +33,24 @@ type tie<class>
 import "../interp/interp.tie"
 
 // ==================== 宏表 ====================
-var g_macro_keys: table<i64>;   // 宏名池 id（升序语义：线性查找即可）
-var g_macro_nodes: table<i64>;  // 宏定义节点 id（与 keys 平行）
-var g_macro_isproc: table<i64>; // 过程宏标记（1 = #[macro] token 流宏，与 keys 平行）
-var g_macro_ispub: table<i64>;  // pub 导出标记（1 = pub macro 跨文件可见）
-var g_macro_file: table<i64>;   // 宏定义所属文件 id（g_file_roots 编号；主文件 0）
+pub var g_macro_keys: table<i64>;   // 宏名池 id（升序语义：线性查找即可）
+pub var g_macro_nodes: table<i64>;  // 宏定义节点 id（与 keys 平行）
+pub var g_macro_isproc: table<i64>; // 过程宏标记（1 = #[macro] token 流宏，与 keys 平行）
+pub var g_macro_ispub: table<i64>;  // pub 导出标记（1 = pub macro 跨文件可见）
+pub var g_macro_file: table<i64>;   // 宏定义所属文件 id（g_file_roots 编号；主文件 0）
 
 // p.8.2.12 声明式宏表（与 g_macro_keys 平行索引）：g_macro_isdecl[mi] =
 // 1 = 声明式宏（裸形参模板宏，N_DECL_MACRO_DEF）；g_dbody[mi] = 宏体 StmtList
 // 的 AST 协议文本。声明式宏不注册进 interp（不编译期执行），展开时由 mexpand
 // 直接模板代换 + 卫生唯一化（形参名/个数每次展开从登记定义节点现场读取）。
-var g_macro_isdecl: table<i64>;
-var g_dbody: table<string>;
+pub var g_macro_isdecl: table<i64>;
+pub var g_dbody: table<string>;
 // 声明式宏展开时的卫生改名映射（每次展开重置）：g_dhyk/g_dhyv 平行（原名字
 // id -> 唯一化后名字 id）；g_dhyseq = 序号生成器（跨展开单调，保证多处展开
 // 的卫生临时名互不冲突）。
-var g_dhyk: table<i64>;
-var g_dhyv: table<i64>;
-var g_dhyseq: i64 = 0;
+pub var g_dhyk: table<i64>;
+pub var g_dhyv: table<i64>;
+pub var g_dhyseq: i64 = 0;
 
 // ==================== s_* 池快照（宏执行隔离） ====================
 // 宏执行（interp.eval_proto / eval_macro / eval_code / .call()）内部会
@@ -58,17 +58,17 @@ var g_dhyseq: i64 = 0;
 // 的工作池（主文件 AST + 已展开追加）会被破坏。方案：每次宏执行前后
 // 保存/恢复池快照（10 张表深拷贝；展开次数少，代价可接受）。
 // 注意：表赋值是句柄共享，快照必须逐元素拷贝；恢复 = 重新绑定全局表。
-var g_pool_tags: table<i64>;
-var g_pool_names: table<i64>;
-var g_pool_vals: table<i64>;
-var g_pool_aux: table<i64>;
-var g_pool_coff: table<i64>;
-var g_pool_nchild: table<i64>;
-var g_pool_children: table<i64>;
-var g_pool_lines: table<i64>;
-var g_pool_cols: table<i64>;
-var g_pool_types: table<i64>;
-var g_pool_sn: i64 = 0;        // 池快照节点总数（宏执行重建 s_* 池后恢复）
+pub var g_pool_tags: table<i64>;
+pub var g_pool_names: table<i64>;
+pub var g_pool_vals: table<i64>;
+pub var g_pool_aux: table<i64>;
+pub var g_pool_coff: table<i64>;
+pub var g_pool_nchild: table<i64>;
+pub var g_pool_children: table<i64>;
+pub var g_pool_lines: table<i64>;
+pub var g_pool_cols: table<i64>;
+pub var g_pool_types: table<i64>;
+pub var g_pool_sn: i64 = 0;        // 池快照节点总数（宏执行重建 s_* 池后恢复）
 
 namespace mexpand {
 

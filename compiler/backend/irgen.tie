@@ -55,180 +55,180 @@ import "./irgen_switch.tie"
 // 与 sstate 的 lp_top/ns_top 同款）。函数/块（if/while/for/switch 体）进入
 // 时 push（记录当前长度），退出时 pop（游标回退）——同名变量遮蔽 + 跨块
 // 不串用。scope_put/scope_get 只查 [0, g_sc_top) 区间。
-var g_sc_keys: table<i64>;
-var g_sc_allocas: table<i64>;
-var g_sc_tys: table<i64>;
-var g_sc_top: i64 = 0;
+pub var g_sc_keys: table<i64>;
+pub var g_sc_allocas: table<i64>;
+pub var g_sc_tys: table<i64>;
+pub var g_sc_top: i64 = 0;
 // 循环上下文栈（break → exit 块、continue → 条件/步进块）：最近循环在栈顶。
 // 并行表：标签池 id（-1 = 无标签）、break 块、continue 块、栈顶游标。
-var g_lp_labels: table<i64>;
-var g_lp_breaks: table<i64>;
-var g_lp_cont: table<i64>;
-var g_lp_top: i64 = 0;
+pub var g_lp_labels: table<i64>;
+pub var g_lp_breaks: table<i64>;
+pub var g_lp_cont: table<i64>;
+pub var g_lp_top: i64 = 0;
 // 三期 goto 标签表（§7.1.5，函数级）：标签名池 id → 目标基本块 id。
 // 语义层已做 R1/R2/R3 校验；irgen 按标签表生成 br 目标块。
-var g_gt_names: table<i64>;
-var g_gt_blks: table<i64>;
+pub var g_gt_names: table<i64>;
+pub var g_gt_blks: table<i64>;
 // p.9.11.4 defer 资源释放（编译期注册表 + 出口 LIFO 发射）：
 //   g_def_bodies/g_def_flags/g_def_scopes —— defer 体节点 id / 运行时标志 alloca
 //   / 注册作用域（0 函数体，>0 循环嵌套层，对齐 g_lp_top）；
 //   g_def_cnt —— 已注册计数；g_def_sc_cnt —— （保留）作用域计数；
 //   g_block_lvl —— tig_block_stmts 嵌套深度；g_in_fn_body —— 命名函数体标记。
-var g_def_bodies: table<i64>;
-var g_def_flags: table<i64>;
-var g_def_scopes: table<i64>;
-var g_def_cnt: i64 = 0;
+pub var g_def_bodies: table<i64>;
+pub var g_def_flags: table<i64>;
+pub var g_def_scopes: table<i64>;
+pub var g_def_cnt: i64 = 0;
 var g_def_sc_cnt: i64 = 0;
-var g_block_lvl: i64 = 0;
-var g_in_fn_body: i64 = 0;
+pub var g_block_lvl: i64 = 0;
+pub var g_in_fn_body: i64 = 0;
 // 字符串常量收集（池 id → 全局序号）；llvmgen 生成 @.str.N
-var g_str_keys: table<i64>;
-var g_str_count: i64 = 0;
+pub var g_str_keys: table<i64>;
+pub var g_str_count: i64 = 0;
 // 当前函数/块（生成中）
-var g_cur_func: i64 = 0;
-var g_cur_block: i64 = 0;
+pub var g_cur_func: i64 = 0;
+pub var g_cur_block: i64 = 0;
 // 参数区是否已输出（entry 顶部）
 var g_params_done: bool = false;
 // 阶段 A：程序是否使用了 tie-interp 库桥（file_*/regex_*/exec_output 等 Rust 桥）。
 // 置位后 driver 链接 tie_interp.lib（Rust 桥）。exec_code/get_env/time_now 已
 // 内联到 libc（runtime.a 退役），不再置位本标志。
-var g_used_interp: bool = false;
+pub var g_used_interp: bool = false;
 // trm-lite 阶段1块2：程序是否使用了轻量执行体内置（spawn/yield/collect）。
 // 置位后 driver 链接 trm_lite.a（Go 式静态内置运行时；TIE_TRM_LITE_LIB 定位）。
-var g_used_trmlite: bool = false;
+pub var g_used_trmlite: bool = false;
 // r.1.1.3：全局表字面量初值记录（表全局 + 非空表字面量）——
 // 并行表：全局名池 id ↔ 初始化 AST 节点 id（main 入口创建后 tig_table_lit
 // 整体构造，含逐元素 push）。空表/无初值不入表（main 建空表既有路径）。
-var g_ginit_names: table<i64>;
-var g_ginit_nodes: table<i64>;
+pub var g_ginit_names: table<i64>;
+pub var g_ginit_nodes: table<i64>;
 // p.6.4.5：程序是否使用了网络原语（net_* 内联 Winsock2 直调）。置位后
 // driver 链接 ws2_32（-lws2_32）；脱离 tie_interp 后独立链，净程序无需桥。
-var g_used_wsock: bool = false;
+pub var g_used_wsock: bool = false;
 // p.6.4.7 消息系统（msg_* 纯 tie 内联）：模块级惰性登记标记——运行期程序全局槽
 // （@__msg_lang / @__msg_keys / @__msg_langs / @__msg_texts）首次 msg_* 调用时登记
 // 一次（tig_ast/tig_src 每模块重置；实现见 irgen_expr.tie tig_msg_* 系列）。
-var g_msg_reg_done: i64 = 0;
+pub var g_msg_reg_done: i64 = 0;
 // p.6.4.10 rand_range 64 位 LCG：模块级惰性登记标记——运行期程序全局槽 @__rng_state
 //（i64，存 LCG 状态，首次 rand_range 调用时登记一次；tig_ast/tig_src 每模块重置；
 // 实现见 irgen_expr.tie tig_rng_reg）。状态存运行期全局，兼容「编译器给用户程序建
 // 全局变量」约定，脱离 tie_interp 桥（g_used_interp 不置位）。
-var g_rng_reg_done: i64 = 0;
+pub var g_rng_reg_done: i64 = 0;
 // M5 动态库模式（dev33 批次 12）：driver 在 tig_ast 前经 set_dynlib 注入。
 // 置位后 irgen 登记导出面（ir.func_exported）供 llvmgen 输出 dllexport，
 // 并对导出函数做边界检查（表/struct 不跨动态库边界）。
-var g_dynlib: bool = false;
+pub var g_dynlib: bool = false;
 // S1.4 --check-bounds：数组越界检查（默认关；driver 经 set_check_bounds 注入）。
-var g_check_bounds: bool = false;
+pub var g_check_bounds: bool = false;
 // 当前编译目标三元组（driver 在 tig_ast 前经 set_target 注入；空 = 未设置）。
 // 任务17 asm! 平台条件编译：target("arch") 按此目标匹配。
-var g_asm_target: string = "";
+pub var g_asm_target: string = "";
 // 当前函数的**全名**（命名空间函数含 "::"，如 sstate::child）——调用名解析
 // 需要当前命名空间前缀补全（对齐 sinfer.resolve_call_name 的候选 2）。
-var g_cur_fn_name: string = "";
+pub var g_cur_fn_name: string = "";
 // 当前函数返回类型 id（Return 的 BoolLit 适配 trit 用：`return false` 在返回
 // trit 的函数里生成 i8 而非 i1）
-var g_cur_ret_ty: i64 = 0;
+pub var g_cur_ret_ty: i64 = 0;
 // p.9.11.15 生成器（yield）IR 上下文：当前函数为生成器时 g_gen_tbl = 产出表
 // 句柄的 alloca 槽（ptr 值），g_gen_elem = 产出元素 LLVM 类型 id（表 push 槽
 // 类型）。非生成器函数 g_gen_tbl = -1。tig_fn_def 按 sstate.is_gen 设置/复位。
-var g_gen_tbl: i64 = -1;
-var g_gen_elem: i64 = -1;
+pub var g_gen_tbl: i64 = -1;
+pub var g_gen_elem: i64 = -1;
 // p.6.4.8 正则引擎（irgen_regex.tie）：编译期解析状态 + 生成期上下文。
 // 解析状态（rx_compile 期间）：
-var g_rx_u: i64 = 0;             // 模块唯一块名后缀
-var g_rx_pstr: string = "";      // 当前 pattern
-var g_rx_plen: i64 = 0;          // pattern 字节长
-var g_rx_ppos: i64 = 0;          // 解析游标
-var g_rx_prog: table<i64>;       // 编译产物：指令程序
-var g_rx_cls: table<i64>;        // 编译产物：字符类位集（每类 4×i64）
-var g_rx_ngroups: i64 = 0;       // 捕获组数
-var g_rx_ingrp: i64 = 0;         // 分组深度（0=顶层；>0 时 ')' 终止 seq）
-var g_rx_ok: bool = true;        // 解析成功标志
+pub var g_rx_u: i64 = 0;             // 模块唯一块名后缀
+pub var g_rx_pstr: string = "";      // 当前 pattern
+pub var g_rx_plen: i64 = 0;          // pattern 字节长
+pub var g_rx_ppos: i64 = 0;          // 解析游标
+pub var g_rx_prog: table<i64>;       // 编译产物：指令程序
+pub var g_rx_cls: table<i64>;        // 编译产物：字符类位集（每类 4×i64）
+pub var g_rx_ngroups: i64 = 0;       // 捕获组数
+pub var g_rx_ingrp: i64 = 0;         // 分组深度（0=顶层；>0 时 ')' 终止 seq）
+pub var g_rx_ok: bool = true;        // 解析成功标志
 // 生成期上下文（tig_regex_* 生成 IR 期间）：
-var g_rx_s: i64 = 0;             // 输入串 IR 值
-var g_rx_slen: i64 = 0;          // 输入串长度 IR 值
-var g_rx_nsl: i64 = 0;           // 捕获槽数 = 2*(ngroups+1)
-var g_rx_rprog: i64 = 0;         // 运行时 prog 表句柄 IR 值
-var g_rx_rcls: i64 = 0;          // 运行时 clsbits 表句柄 IR 值
-var g_rx_okptr: i64 = 0;         // table_at 出参 alloca i8
-var g_rx_posa: i64 = 0;          // 匹配位置 alloca
-var g_rx_pcsa: i64 = 0;          // 程序计数器 alloca
-var g_rx_spa: i64 = 0;           // 搜索起点 alloca
-var g_rx_enda: i64 = 0;          // 匹配终点 alloca
-var g_rx_slotsv: i64 = 0;        // 本次匹配尝试的捕获槽表句柄（SSA 值）
+pub var g_rx_s: i64 = 0;             // 输入串 IR 值
+pub var g_rx_slen: i64 = 0;          // 输入串长度 IR 值
+pub var g_rx_nsl: i64 = 0;           // 捕获槽数 = 2*(ngroups+1)
+pub var g_rx_rprog: i64 = 0;         // 运行时 prog 表句柄 IR 值
+pub var g_rx_rcls: i64 = 0;          // 运行时 clsbits 表句柄 IR 值
+pub var g_rx_okptr: i64 = 0;         // table_at 出参 alloca i8
+pub var g_rx_posa: i64 = 0;          // 匹配位置 alloca
+pub var g_rx_pcsa: i64 = 0;          // 程序计数器 alloca
+pub var g_rx_spa: i64 = 0;           // 搜索起点 alloca
+pub var g_rx_enda: i64 = 0;          // 匹配终点 alloca
+pub var g_rx_slotsv: i64 = 0;        // 本次匹配尝试的捕获槽表句柄（SSA 值）
 // 表变量元素类型表（函数级）：变量名池 id → 元素类型 id。语义层 lv_telem
 // 是 per-function 且在 irgen 阶段已过期（只可靠查到最后一个函数），跨函数
 // 场景（exmath::parse_series 里 table_push(result, parse_float(...))）必须由
 // irgen 自己登记 table_new_f64()/table<T> 变量的元素类型。
-var g_tv_keys: table<i64>;
-var g_tv_elems: table<i64>;
+pub var g_tv_keys: table<i64>;
+pub var g_tv_elems: table<i64>;
 // r.1.6.7 编译期「独占局部表」逃逸分析：候选表变量（名池 id）与并行存活位。
 // 详见 irgen_esc.tie 头注释（判据 / 泄漏点 / 控制流处理 / 为何必须编译期）。
-var g_esc_names: table<i64>;
-var g_esc_live: table<i64>;
-var g_esc_audit: bool = false;
-var g_esc_hits: i64 = 0;
+pub var g_esc_names: table<i64>;
+pub var g_esc_live: table<i64>;
+pub var g_esc_audit: bool = false;
+pub var g_esc_hits: i64 = 0;
 // esc_scan 递归深度计数（2026-10-03）：逃逸扫描无 visited 集，畸形 AST 会无限
 // 递归爆栈。上限兜底用，正常 AST 深度远小于 4000。
-var g_esc_depth: i64 = 0;
+pub var g_esc_depth: i64 = 0;
 // r.1.6.7 显式 lock 凭据（语法层去锁）：持 `guard<lock>` 凭据的作用域深度。
 // >0 ⇒ 该作用域内所有表访问走免锁入口（开发者显式声明无并发访问，责任归开发者）。
-var g_lock_depth: i64 = 0;
+pub var g_lock_depth: i64 = 0;
 // 凭据路径的去锁命中计数（审计/探针断言用）。
-var g_lock_hits: i64 = 0;
+pub var g_lock_hits: i64 = 0;
 // 文件级授权（`type tie<logic, unsafe:lock>`）：整文件所有函数的 lock 作用域初值。
-var g_file_lock: bool = false;
+pub var g_file_lock: bool = false;
 // p.6.10.3：函数参数表名集合（intern id → 1）——出口析构跳过参数（借用语义，
 // 所有权在调用方）；参数槽被赋值覆盖也不 release（避免收回调用方所有权）。
-var g_param_nids: table<i64>;
+pub var g_param_nids: table<i64>;
 // r.1.6.14 值语义过渡开关（TIE_TBL_VALUE=1 开启；默认关＝当前共享语义不变）。
 // 关闭时全部 COW 接线为 no-op ⇒ 逐指令等价，回归可用来证明「没接线坏」。
-var g_tbl_value: bool = false;
-var g_tbl_value_init: bool = false;
+pub var g_tbl_value: bool = false;
+pub var g_tbl_value_init: bool = false;
 // `shared` 形参名 id（bit5）——写路径遇到它们**不做 COW**（显式共享＝就地改）。
 // 与 g_param_nids 同生命周期（每编译重置 + 闭包体生成时保存/恢复）。
-var g_shared_param_nids: table<i64>;
+pub var g_shared_param_nids: table<i64>;
 // 值语义形参的出口释放候选（r.1.6.14）：入口 retain 过的表形参槽地址。
 // **每函数重置**（否则 B 函数出口会释放 A 函数的形参 ⇒ 双释放）。
-var g_ownparam_slots: table<i64>;
+pub var g_ownparam_slots: table<i64>;
 // p.6.10.3：entry 级（函数顶层块创建的）局部表变量 alloca 清单——供函数出口
 // 析构（entry alloca 被任意出口块 load 均满足支配关系；循环/分支内 var 的 alloca
 // 在非 entry 块，排除以避免 LLVM「instruction does not dominate」）。
-var g_entry_block: i64 = 0;
-var g_tblcand_allocas: table<i64>;
+pub var g_entry_block: i64 = 0;
+pub var g_tblcand_allocas: table<i64>;
 // r.1.6.13：**聚合（struct）**析构候选——与 g_tblcand_allocas 分离，避免动到表路径
 // （闭包那份会交换 g_tblcand_allocas，混入聚合会牵连）。两表平行：槽地址 + 类型。
 // 出口按类型递归 release 各表字段，与绑定处的 tig_agg_retain_bound 成对。
-var g_aggcand_allocas: table<i64>;
-var g_aggcand_tys: table<i64>;
+pub var g_aggcand_allocas: table<i64>;
+pub var g_aggcand_tys: table<i64>;
 // 闭包 env 释放候选（A 方案，2026-10-02）：初值为**闭包字面量**、且该闭包确有捕获的
 // 局部变量。三张平行表：变量名 id（查 esc 不逃逸）/ fn 值槽地址 / fn 类型 id。
 // 出口按 esc_is_live 判定——未逃逸才发 drop（保守：逃逸者不释放，残余泄漏但安全）。
-var g_clov_nids: table<i64>;
-var g_clov_slots: table<i64>;
-var g_clov_cids: table<i64>;   // 闭包字面量节点 id ⇒ drop 名("drop_"+id) 与 fn 类型(node_types)
+pub var g_clov_nids: table<i64>;
+pub var g_clov_slots: table<i64>;
+pub var g_clov_cids: table<i64>;   // 闭包字面量节点 id ⇒ drop 名("drop_"+id) 与 fn 类型(node_types)
 // (b) 静态空闭包 env（2026-10-02）：每函数一份，**单元级缓存**（按函数名），
 // 故不参与按函数的重置——重置会导致同一函数重复生成符号 ⇒ 链接冲突。
-var g_eenv_fns: table<i64>;
-var g_eenv_refs: table<i64>;
-var g_eenv_ready: i64 = 0;
+pub var g_eenv_fns: table<i64>;
+pub var g_eenv_refs: table<i64>;
+pub var g_eenv_ready: i64 = 0;
 // p.9.12.6 行池（table<R>，R 为 struct）登记表：name 池 id → 结构化行池。
 // 行池变量降为 R 各字段的平行列（每字段一根 table<fld>）+ 共享行数（各列恒齐平，
 // len 取第 0 列句柄长度）。rp_keys/rp_si/rp_ncol 并行；rp_allocas[r] = 该行池各
 // 字段列 alloca（TK_STR ptr 槽，存列表句柄）。scope 槽存第 0 列 alloca（len 直用）。
-var rp_keys: table<i64>;
-var rp_si: table<i64>;
-var rp_ncol: table<i64>;
-var rp_allocas: table<table<i64>>;
+pub var rp_keys: table<i64>;
+pub var rp_si: table<i64>;
+pub var rp_ncol: table<i64>;
+pub var rp_allocas: table<table<i64>>;
 // p.6.1.7-RCA-2【2026-09-06】：tuple **返回**路径需要对表元素 retain 的标记（见
 // irgen_stmt Return / irgen_agg tig_tuple_lit_typed）——返回的元组表元素 retain 后
 // 交给调用方，出口析构减回；普通 tuple 构造不置位。
-var g_ret_tup_tbl: i64 = 0;
+pub var g_ret_tup_tbl: i64 = 0;
 // p.6.10.4：非 entry 块（循环/分支）表变量声明的「首次进入」哨兵计数——每个此类
 // 声明唯一分配一个零值全局标志，用于区分首次写槽（槽未初始化，禁止负载）与
 // 回边重写（槽持上一轮表，store 前须 release）。零值全局天然首版为 0，无需入口
 // 初始化（循环内栈槽无法安全置空：alloca 在非 entry 块）。
-var g_tf_ctr: i64 = 0;
+pub var g_tf_ctr: i64 = 0;
 // r.1.1.4：loopf 哨兵名按「所在函数名 + 计数」命名（tig_loopvar_release）——
 // 独立编译再静态链接的单元（用户程序 vs trm_lite.a）函数名天然不同，哨兵
 // 名 tl_loopf_<fn>_<n> 互不冲突（LNK2005 多重定义根治），且命名逻辑随源码
@@ -238,60 +238,60 @@ var g_tf_ctr: i64 = 0;
 // （llvmgen 侧维护 g_global_* 登记表，irgen 仅转发登记。）
 
 // 变量查作用域：命中返回 1 并置 out 参数（tie 无引用返回，用全局槽）
-var g_lookup_found: bool = false;
-var g_lookup_alloca: i64 = 0;
-var g_lookup_ty: i64 = 0;
+pub var g_lookup_found: bool = false;
+pub var g_lookup_alloca: i64 = 0;
+pub var g_lookup_ty: i64 = 0;
 // 一期并发 A4：actor 工作循环 thunk（@actor_loop）惰性生成标记（每模块仅一次）
-var g_actor_task_gen: i64 = 0;
+pub var g_actor_task_gen: i64 = 0;
 // 一期并发 A4：actor dispatch/handler 函数急切生成标记（每模块仅一次）
-var g_actor_disp_gen: i64 = 0;
+pub var g_actor_disp_gen: i64 = 0;
 // p.9.11 `reentrant`：actor 单步处理/嵌套排空函数急切生成标记（与 step+nested
 // 一起每模块仅一次；随 gen_actor_task_eager 末尾一并生成）
-var g_actor_step_gen: i64 = 0;
+pub var g_actor_step_gen: i64 = 0;
 // p.9.11 `reentrant`（规范 §10.7）：actor 方法 handler 生成期上下文——
 // g_cur_actor_recval = 本方法的 record 指针**值 id**（-1 = 非 actor 方法体）；
 // g_cur_method_reent = 本方法是否标注 reentrant。gen_actor_sync_call 据此在
 // 同步 RPC 等待点生成「嵌套排空」分支（仅本 actor 队列中的异步消息）。
 // ★ per-function 状态：闭包入口生成（tig_closure_entry_fn）须保存/清零/恢复
 //（闭包是独立函数，recp 值 id 跨函数引用会产生 undefined value）。
-var g_cur_actor_recval: i64 = -1;
-var g_cur_method_reent: bool = false;
+pub var g_cur_actor_recval: i64 = -1;
+pub var g_cur_method_reent: bool = false;
 // p.6.7.6：S-pool 常驻 worker（@tie_s_pool_worker）急切生成标记（每模块仅一次）
-var g_s_pool_worker_gen: i64 = 0;
+pub var g_s_pool_worker_gen: i64 = 0;
 // 阶段 A：变量命中形态（0=本地/1=全局标量/2=全局表，scope_get_global 置位）
-var g_lookup_is_global: i64 = 0;
+pub var g_lookup_is_global: i64 = 0;
 // 内置调用结果全局槽（builtin_expr 置位；tie 无引用返回）
-var g_builtin_res: i64 = 0;
+pub var g_builtin_res: i64 = 0;
 // 批次5 任务13：用户 extern 名集（顶层 S_N_EXTERN=117，仅声明无函数体）。
 // 稀疏收集（用户程序通常 0~若干；编译器自身 0）→ tig_user_call 判定 extern → 路由
 // op36（llvmgen 推导 declare + 字符串返回自动扫描 char* → {ptr,len}）。
-var g_extern_ids: table<i64>;
-var g_extern_ready: i64 = 0;
+pub var g_extern_ids: table<i64>;
+pub var g_extern_ready: i64 = 0;
 // p.6.8.2：repr(C) struct 显式 C ABI 布局表（编译期计算，C 自然对齐——每字段按
 // 自身对齐放置、struct 对齐 = 最大成员对齐、总大小向上取整到对齐）。
 //   g_stl_fbase[si] -> g_stl_offs 段起点；g_stl_offs[..] -> 拍平字段绝对字节偏移
 //   g_stl_size[si]  -> struct 总大小；g_stl_align[si] -> struct 对齐；g_stl_done 幂等。
 // 由 irgen_str.agg_ensure_layout 惰性构建（幂等），struct_field_off / struct_align_of 读取。
-var g_stl_fbase: table<i64>;
-var g_stl_offs: table<i64>;
-var g_stl_size: table<i64>;
-var g_stl_align: table<i64>;
-var g_stl_done: i64 = 0;
+pub var g_stl_fbase: table<i64>;
+pub var g_stl_offs: table<i64>;
+pub var g_stl_size: table<i64>;
+pub var g_stl_align: table<i64>;
+pub var g_stl_done: i64 = 0;
 // 循环内字符串自加提升（p.6.1.4 增强）：捕捉 `out = out + x`（循环体内 string
 // 变量自加拼接）→ 自动 StringBuilder 提升（s21_sb_*），根治 O(n²) 无名分配
 // 引起的内存无界增长（str_cat 每次新分配、旧中间串从不释放，tie 无 GC）。
 // 提升期间 out 存储槽不更新（循环内保证无其它引用），循环结束 sb_build 回写。
 // per-函数状态：变量名池 id → sb 句柄值。
-var g_sb_keys: table<i64>;
-var g_sb_hv: table<i64>;
+pub var g_sb_keys: table<i64>;
+pub var g_sb_hv: table<i64>;
 // 字节表自加提升（p.6.1.4 增强）：`t = byte_concat(t, seg)` 循环累积 = 每迭代
 // 新建整表 + 旧表永不释放（tie 无 GC）→ O(n²) 无名分配（dpcodec/jcc-pack 内存
 // 无界增长根因，与字符串 str_cat 同族）。提升：循环前拷贝 t 到私有累积表 acc
 // （唯一引用），循环内 byte_concat 自加 → acc 就地追加（ensure+memcpy+set_len，
 // tbl_ensure 内部 free 旧块 → 摊销 O(1)），循环出口把 acc 写回 t 槽。
 // 与原语义（t 最终=全部段顺序拼接）完全等价；旧 t 表只读不写 → 无别名污染。
-var g_cbs_keys: table<i64>;   // 提升中变量名池 id（字节表变量）
-var g_cbs_acc: table<i64>;    // 平行：私有累积表句柄
+pub var g_cbs_keys: table<i64>;   // 提升中变量名池 id（字节表变量）
+pub var g_cbs_acc: table<i64>;    // 平行：私有累积表句柄
 
 namespace irgen {
 

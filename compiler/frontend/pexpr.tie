@@ -22,7 +22,7 @@ import "./pexpr_type.tie"
 //   * 只影响「本可写匿名函数、且形参未标注」的新情形；
 //   * 既有代码（形参全都标注）行为完全不变；
 //   * 嵌套时由保存/恢复自然隔离。
-var g_expect_fn_ty: i64 = -1;
+pub var g_expect_fn_ty: i64 = -1;
 
 namespace pexpr {
 

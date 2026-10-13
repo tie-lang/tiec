@@ -45,78 +45,78 @@ import "./tieir_asm_replay.tie"
 
 
 // ---------- 元数据转存（v3：片段头/sym/exp 不再拒收，重放回 ir_meta） ----------
-var asm_m_pkg: table<i64>;       // 片段 → 包名池 id（set_pkg_name）
-var asm_m_ver: table<i64>;       // 片段 → 版本串池 id（set_pkg_version）
-var asm_m_irver: table<i64>;     // 片段 → ir 版本
-var asm_m_topt: table<i64>;      // 片段 → t 档
-var asm_m_pver: table<i64>;      // 片段 → pass 版本
-var asm_m_cver: table<i64>;      // 片段 → 编译器版本串池 id
-var asm_m_dep_base: table<i64>;  // 片段 → 依赖对基址（len = n+1）
-var asm_m_dep: table<i64>;       // 扁平依赖对 [name_pid, ver_pid, ...]
-var asm_sym_base: table<i64>;    // 片段 → sym 行基址（len = n+1）
-var asm_sym: table<i64>;         // 扁平 sym 行 [name_pid, sig_pid, kind, vis, line, col]
-var asm_exp_base: table<i64>;    // 片段 → exp 行基址（len = n+1）
-var asm_exp: table<i64>;         // 扁平 exp 行 [name_pid, sig_pid, line, col]
+pub var asm_m_pkg: table<i64>;       // 片段 → 包名池 id（set_pkg_name）
+pub var asm_m_ver: table<i64>;       // 片段 → 版本串池 id（set_pkg_version）
+pub var asm_m_irver: table<i64>;     // 片段 → ir 版本
+pub var asm_m_topt: table<i64>;      // 片段 → t 档
+pub var asm_m_pver: table<i64>;      // 片段 → pass 版本
+pub var asm_m_cver: table<i64>;      // 片段 → 编译器版本串池 id
+pub var asm_m_dep_base: table<i64>;  // 片段 → 依赖对基址（len = n+1）
+pub var asm_m_dep: table<i64>;       // 扁平依赖对 [name_pid, ver_pid, ...]
+pub var asm_sym_base: table<i64>;    // 片段 → sym 行基址（len = n+1）
+pub var asm_sym: table<i64>;         // 扁平 sym 行 [name_pid, sig_pid, kind, vis, line, col]
+pub var asm_exp_base: table<i64>;    // 片段 → exp 行基址（len = n+1）
+pub var asm_exp: table<i64>;         // 扁平 exp 行 [name_pid, sig_pid, line, col]
 
 // ---------- 转存表（per-片段基址索引；tie 无二维表，扁平 + 基址） ----------
-var asm_f_base: table<i64>;      // 片段 → 函数记录基址（len = n+1）
-var asm_f_gname: table<i64>;     // 函数记录 → 全局池 id
-var asm_f_ret: table<i64>;
-var asm_f_pcnt: table<i64>;
-var asm_f_ex: table<i64>;
-var asm_f_vbase: table<i64>;     // 片段值基址（解析回填）
-var asm_f_pty_base: table<i64>;  // 函数 → 参数类型扁平基址
-var asm_f_pty: table<i64>;
-var asm_f_blk_base: table<i64>;  // 函数 → 块段基址（下标进 asm_fb_idx，见下）
-var asm_f_blk_cnt: table<i64>;
+pub var asm_f_base: table<i64>;      // 片段 → 函数记录基址（len = n+1）
+pub var asm_f_gname: table<i64>;     // 函数记录 → 全局池 id
+pub var asm_f_ret: table<i64>;
+pub var asm_f_pcnt: table<i64>;
+pub var asm_f_ex: table<i64>;
+pub var asm_f_vbase: table<i64>;     // 片段值基址（解析回填）
+pub var asm_f_pty_base: table<i64>;  // 函数 → 参数类型扁平基址
+pub var asm_f_pty: table<i64>;
+pub var asm_f_blk_base: table<i64>;  // 函数 → 块段基址（下标进 asm_fb_idx，见下）
+pub var asm_f_blk_cnt: table<i64>;
 // p.9.21.9 收口：块/指令的**按函数分组**索引（原实现假设「块表内同函数的块
 // 连续」——闭包/嵌套生成会让同一函数的块在块表里交错，导致指令区间串到别的
 // 函数、值偏移整体错位。改为显式分组：asm_fb_idx = 每函数的块记录下标段（
 // 块表相对序保序），asm_bi_base/cnt = 每块记录的指令区间）。
-var asm_fb_idx: table<i64>;      // 扁平：函数段 → 块记录下标（块表序）
-var asm_bi_base: table<i64>;     // 块记录 → 指令记录基址
-var asm_bi_cnt: table<i64>;      // 块记录 → 指令数
-var asm_i_blk: table<i64>;       // 指令记录 → 全局块记录下标（重放单趟挂块用）
-var asm_f_used: table<i64>;      // 装配序命中标记（0/1）
-var asm_b_base: table<i64>;      // 片段 → 块记录基址
-var asm_b_fid: table<i64>;       // 块记录 → 全局函数记录下标
-var asm_b_gname: table<i64>;     // 块记录 → 全局池 id
-var asm_b_gid: table<i64>;       // 块记录 → 重放后全局块 id
-var asm_i_base: table<i64>;      // 片段 → 指令记录基址
-var asm_i_op: table<i64>;
-var asm_i_ty: table<i64>;
-var asm_i_val: table<i64>;       // 片段结果值（-1 = 无）
-var asm_i_cnt: table<i64>;
-var asm_i_obase: table<i64>;     // 指令 → 操作数基址
-var asm_o_v: table<i64>;         // 操作数载荷（值 = 片段值；池类 = 全局池 id；块 = 片段块 lid；立即数原样）
-var asm_o_k: table<i64>;         // 操作数 kind（原样）
-var asm_o_pool: table<i64>;      // 1 = 池载荷（载荷已是全局池 id）
-var asm_pr_base: table<i64>;     // 片段 → 池 remap 基址
-var asm_pr: table<i64>;          // 片段池 id → 全局池 id
-var asm_frag_fn: table<i64>;     // 片段 → 函数数
+pub var asm_fb_idx: table<i64>;      // 扁平：函数段 → 块记录下标（块表序）
+pub var asm_bi_base: table<i64>;     // 块记录 → 指令记录基址
+pub var asm_bi_cnt: table<i64>;      // 块记录 → 指令数
+pub var asm_i_blk: table<i64>;       // 指令记录 → 全局块记录下标（重放单趟挂块用）
+pub var asm_f_used: table<i64>;      // 装配序命中标记（0/1）
+pub var asm_b_base: table<i64>;      // 片段 → 块记录基址
+pub var asm_b_fid: table<i64>;       // 块记录 → 全局函数记录下标
+pub var asm_b_gname: table<i64>;     // 块记录 → 全局池 id
+pub var asm_b_gid: table<i64>;       // 块记录 → 重放后全局块 id
+pub var asm_i_base: table<i64>;      // 片段 → 指令记录基址
+pub var asm_i_op: table<i64>;
+pub var asm_i_ty: table<i64>;
+pub var asm_i_val: table<i64>;       // 片段结果值（-1 = 无）
+pub var asm_i_cnt: table<i64>;
+pub var asm_i_obase: table<i64>;     // 指令 → 操作数基址
+pub var asm_o_v: table<i64>;         // 操作数载荷（值 = 片段值；池类 = 全局池 id；块 = 片段块 lid；立即数原样）
+pub var asm_o_k: table<i64>;         // 操作数 kind（原样）
+pub var asm_o_pool: table<i64>;      // 1 = 池载荷（载荷已是全局池 id）
+pub var asm_pr_base: table<i64>;     // 片段 → 池 remap 基址
+pub var asm_pr: table<i64>;          // 片段池 id → 全局池 id
+pub var asm_frag_fn: table<i64>;     // 片段 → 函数数
 // p.9.21.9 收口：值映射表（片段值 id → 重放后的全局 ir 值 id；-1 = 未登记）。
 // 替代原「per-fn 结果表 + 偏移」算法——后者隐含「同函数的值域连续」假设，而
 // 闭包/嵌套生成会让两个函数的值在原始值空间**交错**（父函数体生成途中生成
 // 闭包函数 → 闭包的值插在父函数值中间），偏移算法必然错位（实测 driver 树
 // str::trim_start 报「值操作数引用未登记结果」）。显式按值 id 建表则与交错
 // 无关：片段值 id 是唯一键，登记即查。
-var asm_vmap: table<i64>;
+pub var asm_vmap: table<i64>;
 // p.9.21.10：每片段值空间的全局基址——各片段值 id 独立从 0 压缩，vmap 是
 // 全局键空间，必须加片段基址才唯一（否则跨片段键碰撞 → 装配错值）。
-var asm_frag_vbase: table<i64>;
-var asm_frag_vtotal: i64 = 0;    // 此前各片段值空间大小的全局累计
+pub var asm_frag_vbase: table<i64>;
+pub var asm_frag_vtotal: i64 = 0;    // 此前各片段值空间大小的全局累计
 // p.9.21.9 收口：指令 gid 回执表（下标 = 指令记录；重放两趟法的中间态）。
 // 两趟法动因：真实 IR 存在**前向值引用**（phi/合并类指令 op33、load op21 等
 // 的操作数指向创建序更靠后的值——irgen 先建指令、后补操作数，离线核查 driver
 // 片段共 910 处）。单趟「建指令即加操作数」必然撞未登记值 → 装配失败降级。
 // 两趟：①建函数/块/指令（值登记进 asm_vmap）→ ②按指令序补操作数（此时值
 // 全部就绪）。操作数表顺序与单趟一致（仍按指令序、指令内操作数序）。
-var asm_i_gid: table<i64>;
-var asm_seq: table<i64>;         // 装配序 → 函数记录下标
-var asm_flag_sso: bool = false;   // 片段引用 s21_sso_* 全局（llvmgen.sso_enable 恢复用）
-var asm_flag_wsock: bool = false; // 片段引用 @g_wsock_init
-var asm_flag_catch: bool = false; // 片段引用 tie_panic_jb/active
-var asm_flag_sc: bool = false;    // 片段 call @tie_sc_off（str_char 缓存 helper）
+pub var asm_i_gid: table<i64>;
+pub var asm_seq: table<i64>;         // 装配序 → 函数记录下标
+pub var asm_flag_sso: bool = false;   // 片段引用 s21_sso_* 全局（llvmgen.sso_enable 恢复用）
+pub var asm_flag_wsock: bool = false; // 片段引用 @g_wsock_init
+pub var asm_flag_catch: bool = false; // 片段引用 tie_panic_jb/active
+pub var asm_flag_sc: bool = false;    // 片段 call @tie_sc_off（str_char 缓存 helper）
 // p.9.21.9 收口：装配路径的 irgen 副作用恢复素材——
 //   asm_grefs = 片段引用的全局名（kind 3 操作数池 id，去重）→ driver 据此
 //     恢复全局登记族（linux_args/msg/rng/循环哨兵）与做「登记完备」校验；

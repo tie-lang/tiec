@@ -20,7 +20,7 @@ type tie<class>
 // （剖析接口预留，见 profiler.tie 头注释）。
 
 // ==================== 共享状态（顶层 var，全局可见） ====================
-var dbg_on: bool = false;          // 总开关（默认关）
+pub var dbg_on: bool = false;          // 总开关（默认关）
 var dbg_sample: bool = false;      // 是否记录时间戳（剖析用；成本更高，可独立开）
 // 调用栈（当前深度 = len(dbg_stack_f)）
 var dbg_stack_f: table<string>;    // 帧函数名

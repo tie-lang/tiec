@@ -43,17 +43,17 @@ import "/std/utf.tie"
 import "../lib/interner.tie"
 
 // ==================== 类型码常量（与 ivalue 的 T_* 逐值一致：对外契约） ====================
-const W_INT: i64 = 0;
-const W_FLOAT: i64 = 1;
-const W_BOOL: i64 = 2;
-const W_TRIT: i64 = 3;
-const W_CHAR: i64 = 4;
-const W_STR: i64 = 5;
-const W_RANGE: i64 = 6;
-const W_TABLE: i64 = 7;
-const W_MAP: i64 = 8;
-const W_VOID: i64 = 9;
-const W_CODE: i64 = 10;
+pub const W_INT: i64 = 0;
+pub const W_FLOAT: i64 = 1;
+pub const W_BOOL: i64 = 2;
+pub const W_TRIT: i64 = 3;
+pub const W_CHAR: i64 = 4;
+pub const W_STR: i64 = 5;
+pub const W_RANGE: i64 = 6;
+pub const W_TABLE: i64 = 7;
+pub const W_MAP: i64 = 8;
+pub const W_VOID: i64 = 9;
+pub const W_CODE: i64 = 10;
 
 // ==================== 值类型（拆箱核心） ====================
 enum Value {
@@ -81,12 +81,12 @@ var w_svals: table<string>;    // 文本槽（Str / Code）
 
 // 键值表写入的键槽（沿用 ivalue 的 g_ms_key 范式：混合实参嵌套调用会错位，
 // 故键走全局槽、值走参数）。w_ms_key 由调用方在 map_set 前设置。
-var w_ms_key: i64 = 0;
+pub var w_ms_key: i64 = 0;
 
 // 错误槽。**刻意不叫 g_err**：`ivalue`（value.tie）已有同名顶层变量，而本模块与它
 // 需在同一二进制内共存（parity 门禁同时引入两者），import 内联后同作用域重名即
 // 重复定义报错。第二步（统一值模型）时两者合一。
-var w_err: string = "";
+pub var w_err: string = "";
 
 namespace vval {
 

@@ -85,150 +85,150 @@ const S_T_MAP: i64 = 20
 //   一元：0=Neg 1=Not 2=PreInc 3=PreDec 4=PostInc 5=PostDec
 
 // ==================== AST 节点 tag 常量（对齐 parser.tie 的 N_* 表）====================
-const S_N_INT_LIT: i64 = 0
-const S_N_FLOAT_LIT: i64 = 1
-const S_N_STR_LIT: i64 = 2
-const S_N_CHAR_LIT: i64 = 3
-const S_N_BOOL_LIT: i64 = 4
-const S_N_TRIT_LIT: i64 = 5
-const S_N_VAR: i64 = 6
-const S_N_CALL: i64 = 7
-const S_N_UNARY: i64 = 8
-const S_N_BINARY: i64 = 9
-const S_N_TERNARY: i64 = 10
-const S_N_RANGE: i64 = 11
-const S_N_TABLE_LIT: i64 = 12
-const S_N_INDEX: i64 = 13
-const S_N_TUPLE_LIT: i64 = 14
-const S_N_FIELD_ACCESS: i64 = 15
-const S_N_PATH: i64 = 16
+pub const S_N_INT_LIT: i64 = 0
+pub const S_N_FLOAT_LIT: i64 = 1
+pub const S_N_STR_LIT: i64 = 2
+pub const S_N_CHAR_LIT: i64 = 3
+pub const S_N_BOOL_LIT: i64 = 4
+pub const S_N_TRIT_LIT: i64 = 5
+pub const S_N_VAR: i64 = 6
+pub const S_N_CALL: i64 = 7
+pub const S_N_UNARY: i64 = 8
+pub const S_N_BINARY: i64 = 9
+pub const S_N_TERNARY: i64 = 10
+pub const S_N_RANGE: i64 = 11
+pub const S_N_TABLE_LIT: i64 = 12
+pub const S_N_INDEX: i64 = 13
+pub const S_N_TUPLE_LIT: i64 = 14
+pub const S_N_FIELD_ACCESS: i64 = 15
+pub const S_N_PATH: i64 = 16
 const S_N_TYPELIT: i64 = 17
-const S_N_METHOD_CALL: i64 = 18
+pub const S_N_METHOD_CALL: i64 = 18
 const S_N_TABLE_CELL: i64 = 19
-const S_N_TABLE_ID: i64 = 20
-const S_N_TUPLE_FIELD: i64 = 21
+pub const S_N_TABLE_ID: i64 = 20
+pub const S_N_TUPLE_FIELD: i64 = 21
 const S_N_SEGMENT: i64 = 22
-const S_N_VAR_DECL: i64 = 100
-const S_N_FN_DEF: i64 = 101
-const S_N_EXPR_STMT: i64 = 102
-const S_N_ASSIGN: i64 = 103
-const S_N_RETURN: i64 = 104
-const S_N_IF: i64 = 105
-const S_N_WHILE: i64 = 106
-const S_N_FOR: i64 = 107
-const S_N_BREAK: i64 = 108
-const S_N_CONTINUE: i64 = 109
-const S_N_SWITCH: i64 = 110
-const S_N_IMPORT: i64 = 111
-const S_N_NAMESPACE: i64 = 112
-const S_N_USING: i64 = 113
-const S_N_STRUCT: i64 = 114
-const S_N_FIELD_ASSIGN: i64 = 115
-const S_N_INDEX_ASSIGN: i64 = 116
-const S_N_EXTERN: i64 = 117
-const S_N_PARAM: i64 = 118
-const S_N_SWITCH_CASE: i64 = 120
+pub const S_N_VAR_DECL: i64 = 100
+pub const S_N_FN_DEF: i64 = 101
+pub const S_N_EXPR_STMT: i64 = 102
+pub const S_N_ASSIGN: i64 = 103
+pub const S_N_RETURN: i64 = 104
+pub const S_N_IF: i64 = 105
+pub const S_N_WHILE: i64 = 106
+pub const S_N_FOR: i64 = 107
+pub const S_N_BREAK: i64 = 108
+pub const S_N_CONTINUE: i64 = 109
+pub const S_N_SWITCH: i64 = 110
+pub const S_N_IMPORT: i64 = 111
+pub const S_N_NAMESPACE: i64 = 112
+pub const S_N_USING: i64 = 113
+pub const S_N_STRUCT: i64 = 114
+pub const S_N_FIELD_ASSIGN: i64 = 115
+pub const S_N_INDEX_ASSIGN: i64 = 116
+pub const S_N_EXTERN: i64 = 117
+pub const S_N_PARAM: i64 = 118
+pub const S_N_SWITCH_CASE: i64 = 120
 const S_N_PATTERN_LIST: i64 = 121
 const S_N_STMT_LIST: i64 = 122
 const S_N_CLASS_FIELD: i64 = 123
-const S_N_TUPLE_TYPE_FIELD: i64 = 124
-const S_N_NAMED_TYPE: i64 = 200
-const S_N_TUPLE_TYPE: i64 = 201
-const S_N_STRUCT_TYPE: i64 = 202
-const S_N_TABLE_TYPE: i64 = 203
-const S_N_MAP_TYPE: i64 = 204
+pub const S_N_TUPLE_TYPE_FIELD: i64 = 124
+pub const S_N_NAMED_TYPE: i64 = 200
+pub const S_N_TUPLE_TYPE: i64 = 201
+pub const S_N_STRUCT_TYPE: i64 = 202
+pub const S_N_TABLE_TYPE: i64 = 203
+pub const S_N_MAP_TYPE: i64 = 204
 
 // ==================== AST 全局列式表（协议解析结果）====================
-var s_tags: table<i64>;       // 节点 tag
-var s_names: table<i64>;      // 字符串池 id（-1=无）
-var s_vals: table<i64>;       // 主整数值（字面量值/运算符/标志）
-var s_aux: table<i64>;        // 次整数值（nparams/nsegs/ncases/label）
-var s_coff: table<i64>;       // 子节点偏移（s_children 段起点）
-var s_nchild: table<i64>;     // 子节点数
-var s_children: table<i64>;   // 扁平子节点 id 段
-var s_lines: table<i64>;      // 起始行（1-based）
-var s_cols: table<i64>;       // 起始列（1-based）
-var s_n: i64 = 0             // 节点总数
+pub var s_tags: table<i64>;       // 节点 tag
+pub var s_names: table<i64>;      // 字符串池 id（-1=无）
+pub var s_vals: table<i64>;       // 主整数值（字面量值/运算符/标志）
+pub var s_aux: table<i64>;        // 次整数值（nparams/nsegs/ncases/label）
+pub var s_coff: table<i64>;       // 子节点偏移（s_children 段起点）
+pub var s_nchild: table<i64>;     // 子节点数
+pub var s_children: table<i64>;   // 扁平子节点 id 段
+pub var s_lines: table<i64>;      // 起始行（1-based）
+pub var s_cols: table<i64>;       // 起始列（1-based）
+pub var s_n: i64 = 0             // 节点总数
 
 // ==================== 符号表全局 ====================
-var fn_keys: table<i64>;      // 函数全名 id（升序）
-var fn_vals: table<i64>;      // 签名 id
-var sg_nparams: table<i64>;   // 签名表：参数总数
-var sg_required: table<i64>;  // 必选参数数（默认值前）
-var sg_ret: table<i64>;       // 返回类型 id
-var sg_pub: table<i64>;       // 0/1
-var sg_off: table<i64>;       // 参数段偏移（sp_tys/sp_refs/sp_defs）
-var sp_tys: table<i64>;       // 参数类型 id（扁平段）
-var sp_refs: table<i64>;      // 参数 by_ref 标志（扁平段）
-var sp_defs: table<i64>;      // 参数有默认值（扁平段）
+pub var fn_keys: table<i64>;      // 函数全名 id（升序）
+pub var fn_vals: table<i64>;      // 签名 id
+pub var sg_nparams: table<i64>;   // 签名表：参数总数
+pub var sg_required: table<i64>;  // 必选参数数（默认值前）
+pub var sg_ret: table<i64>;       // 返回类型 id
+pub var sg_pub: table<i64>;       // 0/1
+pub var sg_off: table<i64>;       // 参数段偏移（sp_tys/sp_refs/sp_defs）
+pub var sp_tys: table<i64>;       // 参数类型 id（扁平段）
+pub var sp_refs: table<i64>;      // 参数 by_ref 标志（扁平段）
+pub var sp_defs: table<i64>;      // 参数有默认值（扁平段）
 
-var st_keys: table<i64>;      // struct 名 id（升序）
-var st_vals: table<i64>;      // struct 索引
-var cls_parent: table<i64>;   // struct 父名 id（-1=无）
-var cls_fldoff: table<i64>;   // 字段段偏移（fld_names/fld_tys）
-var cls_nfld: table<i64>;     // 字段数（含继承拍平）
-var cls_done: table<i64>;     // struct 字段收集完成标志（0/1，拍平递归防重）
-var fld_names: table<i64>;    // 拍平字段名 id
-var fld_tys: table<i64>;      // 拍平字段类型 id
+pub var st_keys: table<i64>;      // struct 名 id（升序）
+pub var st_vals: table<i64>;      // struct 索引
+pub var cls_parent: table<i64>;   // struct 父名 id（-1=无）
+pub var cls_fldoff: table<i64>;   // 字段段偏移（fld_names/fld_tys）
+pub var cls_nfld: table<i64>;     // 字段数（含继承拍平）
+pub var cls_done: table<i64>;     // struct 字段收集完成标志（0/1，拍平递归防重）
+pub var fld_names: table<i64>;    // 拍平字段名 id
+pub var fld_tys: table<i64>;      // 拍平字段类型 id
 
-var gb_keys: table<i64>;      // 全局变量名 id（升序）
-var gb_vals: table<i64>;      // 类型 id
-var gb_const: table<i64>;     // 0/1
-var gb_telem: table<i64>;     // 全局表元素类型 id（-1=非表）
+pub var gb_keys: table<i64>;      // 全局变量名 id（升序）
+pub var gb_vals: table<i64>;      // 类型 id
+pub var gb_const: table<i64>;     // 0/1
+pub var gb_telem: table<i64>;     // 全局表元素类型 id（-1=非表）
 
-var ext_keys: table<i64>;     // extern 函数名 id（升序）
+pub var ext_keys: table<i64>;     // extern 函数名 id（升序）
 
-var tre_keys: table<i64>;     // 返回表的函数名 id（升序）
-var tre_vals: table<i64>;     // 元素类型 id
+pub var tre_keys: table<i64>;     // 返回表的函数名 id（升序）
+pub var tre_vals: table<i64>;     // 元素类型 id
 
-var node_types: table<i64>;   // 节点 id -> 类型 id（-1=未推断）
+pub var node_types: table<i64>;   // 节点 id -> 类型 id（-1=未推断）
 
 // ==================== 每函数重置的局部状态 ====================
-var lv_keys: table<i64>;      // 作用域变量名 id（升序）
-var lv_vals: table<i64>;      // 类型 id
-var lv_const: table<i64>;     // 0/1
-var lv_telem: table<i64>;     // 表变量元素类型 id（-1=非表）
-var lv_dyn: table<i64>;       // 表变量动态标志（0/1）
+pub var lv_keys: table<i64>;      // 作用域变量名 id（升序）
+pub var lv_vals: table<i64>;      // 类型 id
+pub var lv_const: table<i64>;     // 0/1
+pub var lv_telem: table<i64>;     // 表变量元素类型 id（-1=非表）
+pub var lv_dyn: table<i64>;       // 表变量动态标志（0/1）
 
-var lp_stack: table<i64>;     // 循环标签栈（break/continue 上下文；-1=无标签）
-var lp_top: i64 = 0            // lp_stack 逻辑栈顶游标（tie 表无法截断，用游标模拟 pop）
-var ns_stack: table<i64>;     // 命名空间段栈（全名补全）
-var ns_top: i64 = 0            // ns_stack 逻辑栈顶游标（同 lp_top）
-var using_prefixes: table<i64>;  // using 引入的命名空间段名 id（string 池 id，扁平段 + 长度表）
-var using_lens: table<i64>;      // using 前缀段数（与 using_prefixes 并行，按段号分组）
+pub var lp_stack: table<i64>;     // 循环标签栈（break/continue 上下文；-1=无标签）
+pub var lp_top: i64 = 0            // lp_stack 逻辑栈顶游标（tie 表无法截断，用游标模拟 pop）
+pub var ns_stack: table<i64>;     // 命名空间段栈（全名补全）
+pub var ns_top: i64 = 0            // ns_stack 逻辑栈顶游标（同 lp_top）
+pub var using_prefixes: table<i64>;  // using 引入的命名空间段名 id（string 池 id，扁平段 + 长度表）
+pub var using_lens: table<i64>;      // using 前缀段数（与 using_prefixes 并行，按段号分组）
 
 // 返回表的内置函数预登记（元素类型 id）
-var tre_bi_keys: table<i64>;  // 内置名 id（list_dir/walk_dir/byte_read/byte_concat/regex_find_all）
-var tre_bi_vals: table<i64>;  // 元素类型 id
+pub var tre_bi_keys: table<i64>;  // 内置名 id（list_dir/walk_dir/byte_read/byte_concat/regex_find_all）
+pub var tre_bi_vals: table<i64>;  // 元素类型 id
 
 // ==================== 错误状态 ====================
-var sm_err_line: i64 = 0
-var sm_err_col: i64 = 0
-var sm_err_msg: string = ""
+pub var sm_err_line: i64 = 0
+pub var sm_err_col: i64 = 0
+pub var sm_err_msg: string = ""
 
 // 当前函数全名 id（check_fn 期间）
-var g_curfn: i64 = 0            // 当前函数签名 id（check_fn 期间；IR 全局初始化不支持负数）
+pub var g_curfn: i64 = 0            // 当前函数签名 id（check_fn 期间；IR 全局初始化不支持负数）
 // 当前扫描函数节点（collect 阶段返回表元素预扫描用）
-var g_cur_scan_fn: i64 = 0
+pub var g_cur_scan_fn: i64 = 0
 // 当前命名空间深度（裸名解析用）
-var g_ns_depth: i64 = 0
+pub var g_ns_depth: i64 = 0
 // 表达式类型计数（OK: 返回）
-var g_typed: i64 = 0
+pub var g_typed: i64 = 0
 
 // 类型名表（TyKw 索引 -> 名字，错误消息用）
-var tykw_names: table<string>;
+pub var tykw_names: table<string>;
 // 已登记 struct 类型 id 缓存（struct 索引 -> 3<<40|idx）
 var struct_tys: table<i64>;
 // 已登记 tuple 类型 id 缓存（tuple 索引 -> 4<<40|idx）
-var tuple_tys: table<i64>;
+pub var tuple_tys: table<i64>;
 // tuple 字段段（与 struct 拍平不同，tuple 字段按 tuple 登记序）
-var tup_names: table<i64>;
-var tup_tys: table<i64>;
-var tup_offs: table<i64>;
-var tup_n: table<i64>;
+pub var tup_names: table<i64>;
+pub var tup_tys: table<i64>;
+pub var tup_offs: table<i64>;
+pub var tup_n: table<i64>;
 
 // 顶层 StmtList 根（parse_program 创建的最后节点 id）
-var g_root: i64 = 0
+pub var g_root: i64 = 0
 
 // ==================== 工具：协议解析 ====================
 // 输入 parser 的 AST 协议文本（首行 N: + 每行 id tag name val aux line col nchild c1...）

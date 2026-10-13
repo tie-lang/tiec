@@ -25,8 +25,8 @@ type tie<logic>
 import "./semantic.tie"
 
 // ---------- 全局参数状态（T0.4 标量全局：显式类型 + 字面量初始化） ----------
-var g_input: string = ""    // 输入文件路径
-var g_emit_ir: i64 = 0      // --emit-ir 标志（stub 输出模式）
+pub var g_input: string = ""    // 输入文件路径
+pub var g_emit_ir: i64 = 0      // --emit-ir 标志（stub 输出模式）
 var g_debug: i64 = 0        // --debug 标志（统计输出）
 
 // ---------- 参数解析 ----------

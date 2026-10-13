@@ -27,7 +27,7 @@ import "./sgen_inst.tie"
 
 // p.9.11.32 别名展开深度护栏（防循环别名；文件顶层变量——命名空间体内
 // 不允许 var 声明）
-var alias_depth: i64 = 0
+pub var alias_depth: i64 = 0
 
 namespace sgen {
 

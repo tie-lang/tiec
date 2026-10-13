@@ -331,6 +331,11 @@ pub func check_stmt_assign(s: i64) -> i64 {
                 sm_err_msg = "不能给 const 变量 '" + nm + "' 赋值"
                 return -1
             }
+            // 2026-10-13 收紧：跨文件写入非 pub 全局同样拒绝（与读取同门）
+            var vcg = sstate.check_const_visibility_nid(gkey, s)
+            if vcg < 0 {
+                return -1
+            }
             // W00016：全局可变表的（整体）重赋值写点
             w16_record(gkey, s_lines[s], s_cols[s])
         } else {

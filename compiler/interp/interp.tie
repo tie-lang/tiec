@@ -60,45 +60,45 @@ unsafe extern fn Sleep(ms: i64) -> i32
 // trit 类型关键字索引（TyKw 顺序，types.tie 权威；经 ../middle/types.tie
 // import 传递可达，TK_TRIT 常量来自 types）
 // 循环 flow 消费的上下文（while/for 共享 consume_flow；标签判定用）
-var g_loop_label: string = "";          // 当前循环标签（空串 = 无标签）
-var g_consume_outer: i64 = 0;           // 需上抛的 flow（FL_NORMAL；仅字面量可初始化）
-var g_consume_outer_val: Value = vval.new_void(); // 需上抛的 return 值（reset 置 void）
+pub var g_loop_label: string = "";          // 当前循环标签（空串 = 无标签）
+pub var g_consume_outer: i64 = 0;           // 需上抛的 flow（FL_NORMAL；仅字面量可初始化）
+pub var g_consume_outer_val: Value = vval.new_void(); // 需上抛的 return 值（reset 置 void）
 // 命名空间段收集（ns_segments 的全局输出槽；tie 无多返回值）
-var g_ns_segs: table<string>;
+pub var g_ns_segs: table<string>;
 // switch 模式辅助输出槽
 var g_subj_ok: bool = false;
 // tsh 脚本退出请求（脚本内 exit(n) 内建置位；eval_script 循环检测后停止，
 // tshell 宿主读取 exit_requested/exit_code_val 透传为进程退出码）
-var g_tsh_exit_req: bool = false;
-var g_tsh_exit_code: i64 = 0;
+pub var g_tsh_exit_req: bool = false;
+pub var g_tsh_exit_code: i64 = 0;
 // tsh 脚本参数（rn_run_script 在整文件求值前注入；脚本内 arg_count/arg_at 优先读
 // 此表——跳过 `-f <path>` 前缀，见 interp_call.tie。REPL/非脚本路径该模式关闭，
 // arg_count/arg_at 回退读进程 argv）
 var g_tsh_sargs: table<string>;
 var g_tsh_args_mode: bool = false;
 // split_top 累加槽（整文件脚本拆分；tie 无多返回值，经全局槽回写调用方）
-var g_split_defs: string = "";
-var g_split_stmts: string = "";
+pub var g_split_defs: string = "";
+pub var g_split_stmts: string = "";
 
 // ==================== S3.3 宏执行环境状态 ====================
 // H2 词法卫生（默认）：宏体准引用内的绑定（var/func 声明名）克隆时改名
 // "__hyg<计数>_<原名>"——每次准引用求值计数递增，展开多次不冲突；调用方
 // 插值嵌入的代码保持原名（不捕获、不被捕获）。
-var g_hyg_counter: i64 = 0;    // 卫生改名计数器
+pub var g_hyg_counter: i64 = 0;    // 卫生改名计数器
 // H3 显式 gensym：gensym("前缀") → "__tie_gensym<计数>_<前缀>"（唯一标识符，
 // 跨卫生边界共享/导出的名字由用户显式 gen 并插值使用）。
-var g_gensym_n: i64 = 0;       // gensym 计数器
-var g_macro_depth: i64 = 0;    // 宏调用嵌套深度（上限防无限递归）
-var g_clone_old: table<i64>;   // 克隆 id 映射（归档池旧 id）
-var g_clone_new: table<i64>;   // 克隆 id 映射（s_* 池新 id）
-var g_hyg_old: table<i64>;     // 卫生改名映射（旧 name 池 id）
-var g_hyg_new: table<i64>;     // 卫生改名映射（新 name 池 id）
+pub var g_gensym_n: i64 = 0;       // gensym 计数器
+pub var g_macro_depth: i64 = 0;    // 宏调用嵌套深度（上限防无限递归）
+pub var g_clone_old: table<i64>;   // 克隆 id 映射（归档池旧 id）
+pub var g_clone_new: table<i64>;   // 克隆 id 映射（s_* 池新 id）
+pub var g_hyg_old: table<i64>;     // 卫生改名映射（旧 name 池 id）
+pub var g_hyg_new: table<i64>;     // 卫生改名映射（新 name 池 id）
 
 // ==================== M4 token 流解析缓存 ====================
 // tokenize/deparse/token_* 内置（dev33 批次9）共享：parse_tokens 把 token 流
 // 文本解析为 tag 与 lexeme 两平行表，供检视内置与 deparse 复用。
-var g_tk_tags: table<i64>;       // 解析后的 token 流 tag 表
-var g_tk_lexemes: table<string>; // 解析后的 token 流 lexeme 表（未转义）
+pub var g_tk_tags: table<i64>;       // 解析后的 token 流 tag 表
+pub var g_tk_lexemes: table<string>; // 解析后的 token 流 lexeme 表（未转义）
 
 namespace interp {
 

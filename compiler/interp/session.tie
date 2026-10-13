@@ -46,20 +46,20 @@ var a_kids: table<i64>;
 var a_lines: table<i64>;
 var a_cols: table<i64>;
 var a_n: i64 = 0;      // 归档节点总数（下一批拷贝的 id 基数）
-var a_root: i64 = 0;   // 最近一次归档的根 StmtList 节点 id（reset 置 -1）
+pub var a_root: i64 = 0;   // 最近一次归档的根 StmtList 节点 id（reset 置 -1）
 
 // ==================== globals（顶层 var，REPL 持久） ====================
 // p.9.17.3：键用 **interned id**（整数）替代字符串——变量读写是解释器最热的路径，
 // 旧实现每次查找都要与候选名做字符串内容比较（实测 ~143ns/次，且成本随条目数线性
 // 增长）。AST 节点名本就以 interner id 存放（a_names），热路径天然持有 id，无需
 // 文本往返；字符串版 API 仅作兼容薄包装（内部 intern 一次，冷路径用）。
-var g_nids: table<i64>;
+pub var g_nids: table<i64>;
 var g_vals: table<Value>;
 
 // ==================== funcs（已注册函数：全名 → 归档 FnDef 节点 id） ====================
 // f_nids = interned id 键（热路径整数线性扫描）；f_keys 保留全名字符串
 // （显示/调试用，与 f_nids 下标对齐，由 f_put_nid 维护）。
-var f_keys: table<string>;
+pub var f_keys: table<string>;
 var f_nids: table<i64>;
 var f_nodes: table<i64>;
 
@@ -84,8 +84,8 @@ var env_seg: table<i64>;    // 每条目所属的活动段索引（扁平表并�
 var env_soff: table<i64>;   // (活动段) 段起点（env_keys 偏移）；段索引 = 扁平表下标
 var env_scnt: table<i64>;   // (活动段) 段条目数
 var env_depth: i64 = 0;     // 活动作用域段数（逻辑栈深；env_soff[0..env_depth-1] 为活动段）
-var env_base: i64 = 0;      // 当前函数作用域起点（跨函数隔离；顶层为 0）
-var env_ns: table<string>;  // 当前执行函数的命名空间前缀段（裸调用补全用）
+pub var env_base: i64 = 0;      // 当前函数作用域起点（跨函数隔离；顶层为 0）
+pub var env_ns: table<string>;  // 当前执行函数的命名空间前缀段（裸调用补全用）
 
 // ==================== by_ref 引用槽栈（T0.3：形参名 → 调用方变量名） ====================
 var r_nids: table<i64>;    // 当前函数各 ref 形参名（interned id）
@@ -93,18 +93,18 @@ var r_cnids: table<i64>;   // 对应调用方变量名（interned id；lookup/as
 var r_soff: table<i64>;    // 每层引用槽段起点（对齐作用域段方案）
 
 // ==================== 流程槽（exec_stmt/exec_block 结果通道） ====================
-var g_flow: i64 = 0;       // 0=正常 1=return 2=break 3=continue
-var g_flow_val: Value = vval.new_void();  // return 携带的值（p.9.17.2 拆箱；void = Nil）
-var g_flow_label: string = "";  // break/continue 标签（空串 = 无标签）
-var g_lastval: Value = vval.new_void(); // 最后一条表达式语句的值（配合 g_has_last）
-var g_has_last: bool = false;       // g_lastval 是否携带有效值（Nil 亦为合法 void 值，
+pub var g_flow: i64 = 0;       // 0=正常 1=return 2=break 3=continue
+pub var g_flow_val: Value = vval.new_void();  // return 携带的值（p.9.17.2 拆箱；void = Nil）
+pub var g_flow_label: string = "";  // break/continue 标签（空串 = 无标签）
+pub var g_lastval: Value = vval.new_void(); // 最后一条表达式语句的值（配合 g_has_last）
+pub var g_has_last: bool = false;       // g_lastval 是否携带有效值（Nil 亦为合法 void 值，
                                     // 不能兼作「无值」哨兵，故拆出显式标志）
 
 // 流程码常量
-const FL_NORMAL: i64 = 0;
-const FL_RETURN: i64 = 1;
-const FL_BREAK: i64 = 2;
-const FL_CONTINUE: i64 = 3;
+pub const FL_NORMAL: i64 = 0;
+pub const FL_RETURN: i64 = 1;
+pub const FL_BREAK: i64 = 2;
+pub const FL_CONTINUE: i64 = 3;
 
 namespace isess {
 

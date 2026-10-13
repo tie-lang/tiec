@@ -26,16 +26,16 @@ type tie<class>
 // 局限：{n,m}、反向引用、前瞻/后顾、Unicode 类、\b 不支持；pattern 非字符串
 // 字面量时返回空/假（编译期无法内联解析，见各函数头部）。
 
-const RX_CHAR: i64 = 1;
-const RX_CLS: i64 = 2;
-const RX_CLSNEG: i64 = 3;
-const RX_ANY: i64 = 4;
-const RX_ASTART: i64 = 5;
-const RX_AEND: i64 = 6;
-const RX_SAVE: i64 = 7;
-const RX_SPLIT: i64 = 8;
-const RX_JMP: i64 = 9;
-const RX_MATCH: i64 = 10;
+pub const RX_CHAR: i64 = 1;
+pub const RX_CLS: i64 = 2;
+pub const RX_CLSNEG: i64 = 3;
+pub const RX_ANY: i64 = 4;
+pub const RX_ASTART: i64 = 5;
+pub const RX_AEND: i64 = 6;
+pub const RX_SAVE: i64 = 7;
+pub const RX_SPLIT: i64 = 8;
+pub const RX_JMP: i64 = 9;
+pub const RX_MATCH: i64 = 10;
 
 namespace irgen {
 // =====================================================================

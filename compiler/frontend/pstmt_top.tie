@@ -12,11 +12,11 @@ import "./pstmt_flow.tie"
 // 三期通用 `#[]` 属性通道（§7.1）：解析 `#[unsafe.share]` 等声明属性后暂存
 // 在此，附着到下一 actor/func 声明节点（N_ACTOR / N_FN_DEF 的 val bit3）。
 // 0 = 无 pending；>0 = 属性全名池 id。解析完声明即清零。
-var g_pending_attr: i64 = 0;
+pub var g_pending_attr: i64 = 0;
 
 // p.9.11 `reentrant`（规范 §10.7）：parse_actor 解析方法期间置 1，供 parse_fn_def
 // 判「reentrant 仅可用于 actor 消息方法」（顶层/普通函数标注解析期即拒绝）。
-var g_in_actor_body: i64 = 0;
+pub var g_in_actor_body: i64 = 0;
 
 // p.9.11.12 @注解/属性：声明前置注解 `@name` / `@name(args)`（元数据，无运行期
 // 行为）。注册表按「声明节点 id → 注解条目」平行存放（每个注解一条记录）：
@@ -26,13 +26,13 @@ var g_in_actor_body: i64 = 0;
 //   g_ann_lines/cols = 注解起始位置（诊断/工具链展示）
 // 每次 parse_program（含 import 展开的每份文件）独立重置；查询接口见
 // pstmt_top 命名空间 pann_*（工具链消费（Keel 注册表/tieapi/tdiag）在组件层做）。
-var g_ann_nodes: table<i64>;
-var g_ann_names: table<i64>;
-var g_ann_arg_off: table<i64>;
-var g_ann_arg_cnt: table<i64>;
-var g_ann_arg_ids: table<i64>;
-var g_ann_lines: table<i64>;
-var g_ann_cols: table<i64>;
+pub var g_ann_nodes: table<i64>;
+pub var g_ann_names: table<i64>;
+pub var g_ann_arg_off: table<i64>;
+pub var g_ann_arg_cnt: table<i64>;
+pub var g_ann_arg_ids: table<i64>;
+pub var g_ann_lines: table<i64>;
+pub var g_ann_cols: table<i64>;
 
 // p.9.11.29 doc 注释 `///`：声明前连续 ///（或 /** */）行经词法 collect_doc/
 // flush_doc 落表后，此处按「doc 声明起始行 == ast.line(声明节点)」完成归属
@@ -40,10 +40,10 @@ var g_ann_cols: table<i64>;
 // Keel/tdiag 落盘在组件层做）。每份文件 parse_program 独立重置（同 pann）。
 // 附着面：函数/import/using/namespace/struct/enum/extern/宏/port/interface/
 // actor/字段与全局变量（N_VAR）；walk 不进函数/宏体——体内局部 var 不附着。
-var g_doc_nodes: table<i64>;     // 声明节点 id
-var g_doc_texts: table<i64>;    // 文本池 id（与 lextok.doc_entry_text_id 同源）
-var g_doc_dlines: table<i64>;   // 声明起始行（1 起，报告用）
-var doc_claimed: table<i64>;    // doc 已消费标记（0/1，一条 doc 至多附着一个声明）
+pub var g_doc_nodes: table<i64>;     // 声明节点 id
+pub var g_doc_texts: table<i64>;    // 文本池 id（与 lextok.doc_entry_text_id 同源）
+pub var g_doc_dlines: table<i64>;   // 声明起始行（1 起，报告用）
+pub var doc_claimed: table<i64>;    // doc 已消费标记（0/1，一条 doc 至多附着一个声明）
 
 namespace pstmt_top {
 
@@ -113,6 +113,16 @@ pub func parse_program() -> i64 {
                 }
                 ast.set_val(s, ast.val(s) + 2)   // val bit1 = ispub
                 ast.collect_stmt(stmts, s)
+            } else if nxt == lex_var {
+                // 2026-10-13：`pub var` —— 可变全局纳入 pub API 面（跨文件
+                // 引用须 pub；bit1 = ispub 与 const 同款）。
+                putil.advance()   // pub
+                var sv = pstmt.parse_var_decl(0)
+                if sv < 0 {
+                    return -1
+                }
+                ast.set_val(sv, ast.val(sv) + 2)   // val bit1 = ispub
+                ast.collect_stmt(stmts, sv)
             } else if nxt == lex_import {
                 // p.9.11.14 重导出：`pub import "path" [as 别名]`（内联模型
                 // 零成本；parse_import 内部消化 pub 前缀）
