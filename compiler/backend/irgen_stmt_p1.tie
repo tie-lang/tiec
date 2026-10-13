@@ -212,6 +212,10 @@ func tig_index_read(id: i64) -> i64 {
         var mret = types.named(TK_I64)
         if map_val_ty == types.named(TK_STR) {
             mret = types.named(TK_STR)
+        } else if types.is_table(map_val_ty) || types.is_map(map_val_ty) || types.kind(map_val_ty) == K_PORT {
+            // 2026-10-13 修复：表/映射/端口值在 IR 层是 ptr → 值槽取 ptr 形状
+            //（与 agg_p2 with 拷贝的槽模型对齐；此前落入 i64 支导致 store/load 类型错）
+            mret = types.named(TK_STR)
         } else if map_val_ty == types.named(TK_ANY) {
             // P2c：map<any> 读——值槽存堆指针 → 读指针 → 从堆还原 {i64,i64} any
             var hp = s21_map_get(t, iv, types.named(TK_STR))
@@ -607,6 +611,10 @@ func tig_index_assign(id: i64) -> i64 {
         var is_str_m = map_val_ty == types.named(TK_STR)
         var pty_m = types.named(TK_I64)
         if is_str_m {
+            pty_m = types.named(TK_STR)
+        } else if types.is_table(map_val_ty) || types.is_map(map_val_ty) || types.kind(map_val_ty) == K_PORT {
+            // 2026-10-13 修复：表/映射/端口值槽 = ptr 形状（同读侧；此前
+            // map<table<T>> 写入触发 store i64(ptr) 的 IR 类型错）
             pty_m = types.named(TK_STR)
         } else if map_val_ty == types.named(TK_ANY) {
             // P2c：map<any> 值槽存堆指针（any 16 字节放不进 8 字节值槽）
