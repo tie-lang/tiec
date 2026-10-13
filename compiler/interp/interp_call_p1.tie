@@ -267,6 +267,8 @@ pub func is_builtin_nid(nid: i64) -> bool {
         table_push(bi_nids, interner.intern("dyn_call"))
         table_push(bi_nids, interner.intern("dyn_call_p"))
         table_push(bi_nids, interner.intern("cstr_to_string"))
+        // p.9.17.4 第二步：JIT 源码库查询
+        table_push(bi_nids, interner.intern("fn_source"))
         // 批次④确定性内建：remove_file（确定删单文件，替代 exec del 的 flake）、
         // sort_strings（字符串表按字节序排序）、regex_findstr（findstr 正则子集
         // 命中判断）、sleep_ms（libc Sleep 短暂等待）。

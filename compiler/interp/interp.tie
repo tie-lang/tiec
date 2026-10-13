@@ -100,6 +100,15 @@ pub var g_hyg_new: table<i64>;     // 卫生改名映射（新 name 池 id）
 pub var g_tk_tags: table<i64>;       // 解析后的 token 流 tag 表
 pub var g_tk_lexemes: table<string>; // 解析后的 token 流 lexeme 表（未转义）
 
+// ==================== p.9.17.4 第二步：JIT 源码库 ====================
+// 顶层函数定义源码切片：split_top/flush_statement 在源码扫描时顺带捕获
+// （脚本 eval_script 与 REPL eval 两条入口都经 split_top 副作用）；fn_source
+// 内建按名查询，返回原文切片供宿主装配临时编译单元（JIT 管线）。
+// 平行表：names[i] 对应 texts[i]；同名重定义追加在尾部，查询从尾取最新。
+pub var g_fn_src_names: table<string>; // 顶层函数名
+pub var g_fn_src_texts: table<string>; // 对应定义源码切片（原文）
+pub var g_fn_src_ready: bool = false;  // 惰性初始化守卫
+
 namespace interp {
 
 // ==================== 入口 ====================
@@ -121,6 +130,10 @@ pub func reset() {
     // M4 token 流解析缓存清零
     g_tk_tags = table_new_i64()
     g_tk_lexemes = table_new_string()
+    // p.9.17.4 第二步：JIT 源码库清零（建好即置 ready，捕获侧无需再判空表）
+    g_fn_src_names = table_new_string()
+    g_fn_src_texts = table_new_string()
+    g_fn_src_ready = true
     // tsh 脚本退出请求清零
     g_tsh_exit_req = false
     g_tsh_exit_code = 0
@@ -148,6 +161,9 @@ pub func script_args() -> table<string> {
 // 求值一段代码：顶层定义注册，否则包装为 main 体执行，返回格式化结果或错误。
 pub func eval(src: string) -> string {
     w_err = ""
+    // p.9.17.4 第二步：顶层函数源码捕获（split_top 扫描的副作用——把
+    // 定义段里的 func 源码切片存入 JIT 源码库；结果丢弃，主流程不变）。
+    split_top(src)
     // 第一趟：原样解析（顶层定义）
     var proto: string = "ERR:first-pass-failed"
     var ok1 = lexer.run_lex(src)

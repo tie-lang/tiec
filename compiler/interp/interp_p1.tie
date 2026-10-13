@@ -155,6 +155,7 @@ func split_top(src: string) -> table<string> {
 }
 
 // 依据 first_word 把 src[lo:hi) 追加到 g_split_defs（定义词）或 g_split_stmts。
+// p.9.17.4 第二步：顶层 `func` 定义段顺带入 JIT 源码库（名称 + 原文切片）。
 func flush_statement(src: string, lo: i64, hi: i64, first_word: string, have: bool) {
     if !have {
         return
@@ -162,9 +163,93 @@ func flush_statement(src: string, lo: i64, hi: i64, first_word: string, have: bo
     var slice = slice_str(src, lo, hi)
     if is_def_word(first_word) {
         g_split_defs = g_split_defs + slice + "\n"
+        if first_word == "func" {
+            fn_src_capture(slice)
+        }
     } else {
         g_split_stmts = g_split_stmts + slice + "\n"
     }
+}
+
+// p.9.17.4 第二步：捕获一个顶层函数定义段（源码原文切片）到 JIT 源码库。
+// 同名重定义追加在尾部（fn_src_lookup 从尾取最新）；名字提取失败则丢弃。
+func fn_src_capture(slice: string) {
+    if !g_fn_src_ready {
+        g_fn_src_names = table_new_string()
+        g_fn_src_texts = table_new_string()
+        g_fn_src_ready = true
+    }
+    var fname = fn_name_of_slice(slice)
+    if str_len(fname) == 0 {
+        return
+    }
+    table_push(g_fn_src_names, fname)
+    table_push(g_fn_src_texts, slice)
+}
+
+// 从 FnDef 源码切片提取函数名：跳过前导空白与注释（// 行注释、/* 块注释
+// ——flush 段起点含前导注释）、再跳过 "func" 词与空白，收集第一个标识符
+//（泛型 `func f<T>(...)` 取 `f`；`<` 非标识符字符自然截断）。
+func fn_name_of_slice(s: string) -> string {
+    var n = str_len(s)
+    var i: i64 = 0
+    var go: bool = true
+    while go && i < n {
+        go = false
+        while i < n && is_ws_c(str_char(s, i)) {
+            i = i + 1
+        }
+        var c = ""
+        var c2 = ""
+        if i < n {
+            c = str_char(s, i)
+        }
+        if i + 1 < n {
+            c2 = str_char(s, i + 1)
+        }
+        if c == "/" && c2 == "/" {
+            while i < n && str_char(s, i) != "\n" {
+                i = i + 1
+            }
+            go = true
+        } else if c == "/" && c2 == "*" {
+            i = i + 2
+            while i + 1 < n && !(str_char(s, i) == "*" && str_char(s, i + 1) == "/") {
+                i = i + 1
+            }
+            if i + 1 < n {
+                i = i + 2
+            }
+            go = true
+        }
+    }
+    while i < n && is_ident_char(str_char(s, i)) {
+        i = i + 1
+    }
+    while i < n && is_ws_c(str_char(s, i)) {
+        i = i + 1
+    }
+    var name = ""
+    while i < n && is_ident_char(str_char(s, i)) {
+        name = name + str_char(s, i)
+        i = i + 1
+    }
+    return name
+}
+
+// p.9.17.4 第二步：查 JIT 源码库（从尾向前取最新同名）。未命中返回空串。
+func fn_src_lookup(name: string) -> string {
+    if !g_fn_src_ready {
+        return ""
+    }
+    var i = len(g_fn_src_names) - 1
+    while i >= 0 {
+        if g_fn_src_names[i] == name {
+            return g_fn_src_texts[i]
+        }
+        i = i - 1
+    }
+    return ""
 }
 
 // p.9.3.9 修复：var **不再**归定义词——顶层 var 声明（含带副作用的 init，

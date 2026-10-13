@@ -123,6 +123,16 @@ func call_builtin_seg2(name: string, args: table<Value>) -> Value {
     if name == "exec_code" {
         return vval.new_int(exec_code(vval.str_val(args[0])))
     }
+    // p.9.17.4 第二步：JIT 源码库查询——fn_source("name") 返回该顶层函数的
+    // 定义源码切片（split_top/flush_statement 捕获的原文）；未命中返回空串
+    //（宿主据此判定不可 JIT / 编译失败时回退解释器）。
+    if name == "fn_source" {
+        if len(args) != 1 || vval.type_of(args[0]) != W_STR {
+            w_err = "fn_source 需要一个字符串参数（函数名）"
+            return Value.Nil
+        }
+        return vval.new_str(fn_src_lookup(vval.str_val(args[0])))
+    }
     // ---------- 动态加载原语（p.9.17.4 第一步：编译端 p.6.6.20 四件套移植）----------
     // 语言内置原语直调（interp.tie 被 AOT 编译时 irgen 展开为 LoadLibraryW/
     // GetProcAddress/call-ptr，与 std/sqlite.tie 同机制）。语义对齐编译端
