@@ -40,6 +40,19 @@ pub func collect_global_var(v: i64, full: string) -> i64 {
         sm_err_msg = "全局 port 对象变量暂不支持（第一版请用局部变量提升：unsafe { var d: " + types.type_name(ty) + " = 具体实例 }）"
         return -1
     }
+    // 2026-10-13 安全加固：**不可安全承载的聚合全局拒绝**。定档依据（实测）：
+    //   · fn 全局   → 读出野 entry 调用即**段错误**（红线）——拒绝；
+    //   · tuple/array 全局 → 后端报错——拒绝（干净报错优于后端炸）；
+    //   · struct/enum 全局 → 内存安全但初始化**物化缺陷**（global_init_fold
+    //     无聚合分支，init 值静默丢失、槽零初始化；tiec 自源 interp 的
+    //     `Value = new_void()` 即靠 Nil≡0 巧合可用）——暂留（物化修复另批）。
+    var gk = types.kind(ty)
+    if gk == K_FN || gk == K_TUPLE || gk == K_ARRAY || gk == K_ACTOR || gk == K_FUTURE {
+        sm_err_line = s_lines[v]
+        sm_err_col = s_cols[v]
+        sm_err_msg = "全局 " + types.type_name(ty) + " 变量暂不支持（该形态全局槽不可安全承载）；请改用标量/string/表类型，或降为局部变量"
+        return -1
+    }
     var nid = intern.intern(nm)
     if sstate.bs_find(gb_keys, nid) >= 0 {
         sm_err_line = s_lines[v]
