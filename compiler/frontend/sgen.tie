@@ -242,6 +242,32 @@ pub func parse_generic_type_node(tid: i64) -> i64 {
         }
         return types.map_of(v)
     }
+    if tag == S_N_FN_TYPE {
+        // S2.2 函数值类型 `fn(A,B)->R`（children=[返回类型]+参数类型...）。
+        // 2026-10-13 修复：本解析器此前无 fn 分支，fn 返回类型落到 stype 的
+        // parse_type_node——那里能查枚举实例但**无实例化能力**（reg_enum 惰性
+        // 注册在 sgen）⇒ `fn() -> Option<i64>` 报「类型 'Option' 未定义」。
+        // 内层类型统一走本解析器的递归（枚举/泛型实例化能力齐备），再 fn_of 收口。
+        var nfy = sstate.nchild(tid)
+        if nfy < 1 {
+            return -1
+        }
+        var f_ret = parse_generic_type_node(sstate.child(tid, 0))
+        if f_ret < 0 {
+            return -1
+        }
+        var f_ps: table<i64> = table_new_i64()
+        var fk2: i64 = 1
+        while fk2 < nfy {
+            var f_pt = parse_generic_type_node(sstate.child(tid, fk2))
+            if f_pt < 0 {
+                return -1
+            }
+            table_push(f_ps, f_pt)
+            fk2 = fk2 + 1
+        }
+        return types.fn_of(f_ret, f_ps)
+    }
     if tag == S_N_STRUCT_TYPE {
         var nm = sstate.name_str(tid)
         // S1.2 内建不安全类型引用：`ptr<T>` / `slice<T>` / `atomic<T>`

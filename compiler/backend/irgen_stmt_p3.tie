@@ -242,6 +242,121 @@ func tig_for_iter(id: i64, iter: i64, body: i64, it_ty: i64) -> i64 {
     return 0
 }
 
+// for-over-流（拉取协议 `fn() -> Option<T>`，2026-10-13）：求值一次 → loop {
+//   m = it()；Some → 载荷还原入循环变量槽 + 语义体；None → 退出 }。
+// 骨架对齐 tig_for_iter；间接调用（opcode 70）发射对齐 tig_call_indirect。
+func tig_for_pull(id: i64, iter: i64, body: i64, elem_ty: i64) -> i64 {
+    var T64 = types.named(TK_I64)
+    var fty = node_types[iter]
+    var fv = tig_expr(iter)
+    if fv < 0 {
+        return -1
+    }
+    var fa = ir.new_inst(g_cur_block, 20, fty)
+    ir.add_operand(fa, fty, 2)
+    var fap = ir.get_value(fa)
+    s21_store(fap, fv, fty)
+    var elem_llvm = elem_ty
+    var suf = bridge_suffix(elem_ty)
+    var ek = types.kind(elem_ty)
+    if ek == K_STRUCT || ek == K_ENUM || ek == K_FN || ek == K_TUPLE || elem_ty == types.named(TK_ANY) {
+        elem_llvm = elem_ty
+    } else if types.is_table(elem_ty) || types.is_map(elem_ty) || ek == K_PORT {
+        elem_llvm = types.named(TK_STR)
+    } else if suf == "bool" {
+        elem_llvm = types.named(TK_BOOL)
+    } else if suf == "f64" {
+        elem_llvm = types.named(TK_F64)
+    } else {
+        elem_llvm = types.named(TK_I64)
+    }
+    var va = ir.new_inst(g_cur_block, 20, elem_llvm)
+    ir.add_operand(va, elem_llvm, 2)
+    var vap = ir.get_value(va)
+    scope_put(interner.intern(sstate.name_str(id)), vap, elem_ty)
+    var opt_ty = types.fn_ret_ty(fty)
+    var cond_blk = ir.new_block(g_cur_func, interner.intern("fp.cond"))
+    var body_blk = ir.new_block(g_cur_func, interner.intern("fp.body"))
+    var exit_blk = ir.new_block(g_cur_func, interner.intern("fp.exit"))
+    loop_push(s_aux[id], exit_blk, cond_blk)
+    var b0 = ir.new_inst(g_cur_block, 30, -1)
+    ir.add_operand(b0, cond_blk, 1)
+    g_cur_block = cond_blk
+    var g0 = ir.new_inst(g_cur_block, 27, fty)
+    ir.add_operand(g0, fap, 0)
+    ir.add_operand(g0, 0, 2)
+    var ld0 = ir.new_inst(g_cur_block, 21, types.named(TK_STR))
+    ir.add_operand(ld0, ir.get_value(g0), 0)
+    var g1 = ir.new_inst(g_cur_block, 27, fty)
+    ir.add_operand(g1, fap, 0)
+    ir.add_operand(g1, 1, 2)
+    var ld1 = ir.new_inst(g_cur_block, 21, types.named(TK_STR))
+    ir.add_operand(ld1, ir.get_value(g1), 0)
+    var ty70: i64 = -1
+    if opt_ty != types.named(TK_VOID) {
+        ty70 = opt_ty
+    }
+    var call_i = ir.new_inst(g_cur_block, 70, ty70)
+    ir.add_operand(call_i, ir.get_value(ld1), 0)
+    ir.add_operand(call_i, opt_ty, 2)
+    ir.add_operand(call_i, ir.get_value(ld0), 0)
+    var mv = ir.get_value(call_i)
+    var mo = ir.new_inst(g_cur_block, 20, opt_ty)
+    ir.add_operand(mo, opt_ty, 2)
+    var mop = ir.get_value(mo)
+    s21_store(mop, mv, opt_ty)
+    var egp = ir.new_inst(g_cur_block, 27, opt_ty)
+    ir.add_operand(egp, mop, 0)
+    ir.add_operand(egp, 0, 2)
+    var eld = ir.new_inst(g_cur_block, 21, T64)
+    ir.add_operand(eld, ir.get_value(egp), 0)
+    var tagv = ir.get_value(eld)
+    var is_some = tig_icmp_c(tagv, tig_int_lit(0), 0)
+    var cb = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cb, is_some, 0)
+    ir.add_operand(cb, body_blk, 1)
+    ir.add_operand(cb, exit_blk, 1)
+    g_cur_block = body_blk
+    var gj = ir.new_inst(g_cur_block, 27, opt_ty)
+    ir.add_operand(gj, mop, 0)
+    ir.add_operand(gj, 1, 2)
+    var gjp = ir.get_value(gj)
+    var ld = ir.new_inst(g_cur_block, 21, T64)
+    ir.add_operand(ld, gjp, 0)
+    var pv = ir.get_value(ld)
+    var bv: i64 = pv
+    if elem_ty == types.named(TK_STR) {
+        var ip = ir.new_inst(g_cur_block, 25, types.named(TK_STR))
+        ir.add_operand(ip, pv, 0)
+        bv = ir.get_value(ip)
+    } else if elem_ty == types.named(TK_F64) {
+        var ldf = ir.new_inst(g_cur_block, 21, types.named(TK_F64))
+        ir.add_operand(ldf, gjp, 0)
+        bv = ir.get_value(ldf)
+    } else if types.is_table(elem_ty) || types.is_map(elem_ty) {
+        var ip2 = ir.new_inst(g_cur_block, 25, elem_ty)
+        ir.add_operand(ip2, pv, 0)
+        bv = ir.get_value(ip2)
+    } else if elem_ty != T64 && types.is_int(elem_ty) {
+        var cv = tig_coerce(bv, T64, elem_ty)
+        if cv < 0 {
+            return -1
+        }
+        bv = cv
+    }
+    s21_store(vap, bv, elem_llvm)
+    var bb = tig_block_stmts(body)
+    if bb < 0 {
+        return -1
+    }
+    if !block_terminated() {
+        var bb2 = ir.new_inst(g_cur_block, 30, -1)
+        ir.add_operand(bb2, cond_blk, 1)
+    }
+    g_cur_block = exit_blk
+    return 0
+}
+
 // for-in 表迭代：`for item in t`（t 为动态表变量/表达式）。
 // 布局（对齐 Rust gen_for_dyn_table）：计数器 alloca（0..len(t)，cond 块每次
 // 调 tie_table_len）+ 循环变量 alloca（元素类型 T）；body 每次迭代

@@ -673,6 +673,15 @@ pub func tig_stmt_b_107_For(id: i64) -> i64 {
             }
         }
         if iter_tag != 11 {
+            // 拉取协议（2026-10-13 惰性流）：`fn() -> Option<T>` → 拉取循环
+            var itf = node_types[iter]
+            if itf >= 0 && types.is_fn(itf) && sinfer.fn_opt_elem(itf) >= 0 {
+                var fpp = tig_for_pull(id, iter, body, sinfer.fn_opt_elem(itf))
+                if fpp < 0 {
+                    return -1
+                }
+                return 0
+            }
             // p.9.11.16 迭代器协议对象（struct 实现 has_next/next）：先于表迭代
             // 探测（语义层已登记 node_types[iter]；协议命中 → 方法调用循环）。
             var itp = node_types[iter]

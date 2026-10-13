@@ -791,6 +791,32 @@ pub func infer_struct_method(recv: i64, recv_ty: i64, mname: string, ref args: t
 // for x in it / 推导式 [e for x in it] 消费分派：while it.has_next() { x = it.next() }。
 // 返回 next 的返回类型（元素类型）；未实现协议返回 -1（调用方报错/回退）。
 // 校验：两方法均须存在、各恰好 1 参（self）、has_next 返回 bool。
+// fn 型拉取协议（2026-10-13 惰性流）：`fn() -> Option<T>` 形态 →
+// 返回元素类型 T；非该形态返回 -1。for-over-流与流适配共用。
+pub func fn_opt_elem(ty: i64) -> i64 {
+    if types.kind(ty) != K_FN {
+        return -1
+    }
+    var rt = types.fn_ret_ty(ty)
+    if types.kind(rt) != K_ENUM {
+        return -1
+    }
+    var ei = types.low(rt)
+    // 枚举实例以 mangled 名登记（Option$i64）——按前缀判形
+    var enm = sstate.enum_name_of(ei)
+    if enm != "Option" && !sstate.has_prefix_str(enm, "Option$") {
+        return -1
+    }
+    if en_nvar[ei] < 1 {
+        return -1
+    }
+    var varoff = en_varoff[ei]
+    if en_vnfld[varoff] < 1 {
+        return -1
+    }
+    return en_ftys[en_vfldoff[varoff]]
+}
+
 pub func iter_proto_elem(ty: i64) -> i64 {
     if types.kind(ty) != K_STRUCT {
         return -1
