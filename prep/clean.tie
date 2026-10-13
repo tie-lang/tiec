@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 // prep/clean.tie：源码清理转换器脚本（tie 语言自写，自举精神——能 tie 实现不用 Rust）
 //
 // 协议：顶层 `func process(src: string) -> string`——输入已去 BOM / CRLF 归一的

@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 
 // p.9.0-L.3 默认值 const 白名单探针：命名参数默认值 / actor 字段初值接受
 // const 引用与常量算术；struct 字段默认值保持逐构造求值语义。

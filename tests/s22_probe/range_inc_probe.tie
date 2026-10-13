@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 
 // p.9.11 `..=` 闭区间确认探针（ROAD §2.1：716c961 重进后的行为锁定）。
 // 覆盖：for-in 闭区间 / start==end / switch 表达式区间臂 / 语句位区间模式 /

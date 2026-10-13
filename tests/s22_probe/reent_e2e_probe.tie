@@ -1,4 +1,4 @@
-type tie<script, unsafe:raw>
+type tie<tsc, unsafe:raw>
 
 // p.9.11 `reentrant`（规范 §10.7）探针（async 形态）：A.slow（async + reentrant）
 // 在消费者线程上阻塞于 B 的同步 RPC 期间，main 投递的异步消息 quick() 被嵌套

@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 
 actor B {
     pub func val() -> i64 { return 5 }

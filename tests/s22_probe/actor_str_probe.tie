@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 
 // gap 1 修复探针：string 字段（无初值/带初值）+ string/table 经消息 ABI 回传
 //（dispatch ptrtoint / 调用方 inttoptr，规范消息结果槽 result@96 单 i64）。

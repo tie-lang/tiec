@@ -2,7 +2,7 @@ type tie<class>
 // compiler/driver/prelude.tie —— p.9.13.2 语言前置注入
 // EN: p.9.13.2 language prelude injection.
 // ============================================================
-// 职责：为**应用代码**（logic / script 角色）在正文首部隐式注入 prelude，
+// 职责：为**应用代码**（logic / tsc 角色）在正文首部隐式注入 prelude，
 // 使其免 import、免前缀即可使用 str / math 域的精选平台无关基元。
 // prelude 内的 pub 函数经 `using` 暴露为裸名；**同名用户定义优先遮蔽**
 // （tie 的 using 语义，实测：用户自定义 trim 覆盖 str.trim）。
@@ -26,7 +26,7 @@ func prelude_role_ok(immut r: string) -> bool {
     if r == "logic" {
         return true
     }
-    if r == "script" {
+    if r == "tsc" {
         return true
     }
     return false

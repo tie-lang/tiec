@@ -110,9 +110,9 @@ type tie<class>
 //
 // 角色识别：**头部扫描**（读源文件头部声明行，前 20 行；无声明默认 logic），
 // 不依赖 prep/core.tie 的 import。新文件类型声明体系（2026-08-14）：
-// `type tie` → type 角色；`type tie<X>` → X（X ∈ script/data/ui/class/logic/port/db）；
+// `type tie` → type 角色；`type tie<X>` → X（X ∈ tsc/data/ui/class/logic/port/db）；
 // 旧 `// tie:xxx` 注释指令已彻底移除（普通注释，不再识别角色与 opt/target 选项）。
-// logic/script → 编译可执行文件（clang 链接）；class/type → 编译静态库（clang -c +
+// logic/tsc → 编译可执行文件（clang 链接）；class/type → 编译静态库（clang -c +
 // llvm-ar rcs）；data/ui/db/port → 提示对应工具链未实现（v0.1 尚未实现）。
 // 文件命名约定：`xxx.<角色>.tie` 提供默认角色，与头部声明不一致时警告并采用头部声明。
 // opt/target 优先级：仅 CLI（默认 O2 / 本机）。

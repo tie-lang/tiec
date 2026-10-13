@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 
 import "../../compiler/tiep/tiep.tie"
 

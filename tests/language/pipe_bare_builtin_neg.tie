@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 
 func main() -> i64 {
     var xs: table<i64> = [1]

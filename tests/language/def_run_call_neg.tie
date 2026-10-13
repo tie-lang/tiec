@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 
 // 负例：默认值含运行期调用 ⇒ 拒绝（const 白名单排除运行期表达式）。
 

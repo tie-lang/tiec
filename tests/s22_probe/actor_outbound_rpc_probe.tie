@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 
 // 最小拓扑：actor 方法内 run 另一 actor + 出站同步 RPC（无 quick、无 reentrant）
 

@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 // prep/alias_kw_clean.tie —— p.9.11.32 alias 保留字化的一键预处理
 //
 // 把源码中以 `alias` 作为**标识符**的出现点统一改名为 `alias_id`：

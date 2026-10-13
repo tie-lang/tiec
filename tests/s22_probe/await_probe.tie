@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 
 // p.9.11 `await` + async 返回值（规范 §10.6 结果的延后取得）探针：
 // async 非 void 方法调用产生 future<T> 凭据；await 取值（立即完成或等待）。

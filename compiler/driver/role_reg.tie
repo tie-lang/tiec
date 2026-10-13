@@ -39,7 +39,7 @@ pub func role_registry_init_default() {
     t_cr_p_val = table_new_string()
     // 基础角色：lib（静态库）/ exe（可执行）/ check（仅 LLVM IR）/ pass（提示转移）
     reg_base("logic", "exe", "")
-    reg_base("script", "exe", "")
+    reg_base("tsc", "exe", "")
     reg_base("class", "lib", "")
     reg_base("type", "lib", "")
     reg_base("ir", "check", "")
@@ -526,7 +526,7 @@ pub func parse_role_decl(sub: string) -> i64 {
             g_role_base = item
             base_set = true
         } else {
-            g_role_err = "未知角色 '" + item + "'（基础: script/data/ui/class/logic/port/db/ir/zd/tieir/test/bench；修饰: unsafe/owned/embedded）"
+            g_role_err = "未知角色 '" + item + "'（基础: tsc/data/ui/class/logic/port/db/ir/zd/tieir/test/bench；修饰: unsafe/owned/embedded）"
             return -1
         }
         k = k + 1

@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 
 // p.9.11 `is` 类型判定探针（规范 §3.16 / §2.10）。
 // 覆盖：any 装 i64/f64/bool/char/string 的判定与翻转 · as_* 解包往返 ·

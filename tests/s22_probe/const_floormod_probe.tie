@@ -1,4 +1,4 @@
-type tie<script>
+type tie<tsc>
 
 // p.9.11 `%%=` const 上下文探针：const fn 体内的 `%%=` 复合赋值必须可折叠
 // （consteval exec_stmt 此前缺 op 26 路径 ⇒ cv_failed）。
