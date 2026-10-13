@@ -1,6 +1,6 @@
 type tie<script>
 
-import "../../compiler/interp/interp.tie"
+import "../../compiler/tiep/tiep.tie"
 
 var g_fail: i64 = 0
 

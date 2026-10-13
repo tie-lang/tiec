@@ -6,7 +6,7 @@ type tie<logic>
 // dyn_table_at_out_of_bounds_errors / dyn_table_string_build_and_for /
 // dyn_table_bool_and_f64 / ref表参数内容修改与重绑定写回调用方。
 
-import "../../interp/interp.tie"
+import "../../tiep/tiep.tie"
 
 var g_fail: i64 = 0;
 

@@ -5,7 +5,7 @@ type tie<logic>
 // 多值/区间/守卫/字符区间/类型匹配/组合。注意：块语句（switch）以 } 结束，
 // 后不能加分号；块内语句需分号。
 
-import "../../interp/interp.tie"
+import "../../tiep/tiep.tie"
 
 var g_fail: i64 = 0;
 

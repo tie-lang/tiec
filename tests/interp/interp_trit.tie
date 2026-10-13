@@ -6,7 +6,7 @@ type tie<logic>
 // 注意：var a: trit = true 会把 bool 字面量适配为 trit（true→+1/false→-1）；
 // 每个用例前 reset（对齐 Rust 独立 Session）。
 
-import "../../interp/interp.tie"
+import "../../tiep/tiep.tie"
 
 var g_fail: i64 = 0;
 

@@ -6,7 +6,7 @@ type tie<logic>
 // 注意：表达式级 eval_call（interp.eval("eval_call(...)")）在 tie interp 存在
 // 已知缺陷（未能找到已注册函数，返回"未定义的函数"），已标注 SKIP。
 
-import "../../interp/interp.tie"
+import "../../tiep/tiep.tie"
 
 var g_fail: i64 = 0;
 

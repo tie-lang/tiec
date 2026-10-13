@@ -6,7 +6,7 @@ type tie<logic>
 // eval_default_arg_省略与传参 / eval_table元素类型参数。
 // 命名空间内函数互调用裸名（helper 内直接调用），跨命名空间用点分全名。
 
-import "../../interp/interp.tie"
+import "../../tiep/tiep.tie"
 
 var g_fail: i64 = 0;
 

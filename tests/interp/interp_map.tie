@@ -4,7 +4,7 @@ type tie<logic>
 // 移植自 crates/tie-interp/src/lib.rs tests：eval_map_literal_and_index /
 // eval_map_set_and_compound / eval_map_missing_key_errors / eval_map_as_argument。
 
-import "../../interp/interp.tie"
+import "../../tiep/tiep.tie"
 
 var g_fail: i64 = 0;
 

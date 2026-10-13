@@ -6,7 +6,7 @@ type tie<logic>
 // builtin_parse_int_valid_invalid / builtin_parse_float_valid_invalid /
 // builtin_len_table / builtin_str_len。
 
-import "../../interp/interp.tie"
+import "../../tiep/tiep.tie"
 
 var g_fail: i64 = 0;
 

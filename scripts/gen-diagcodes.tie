@@ -398,7 +398,7 @@ func gn_family(immut rel: string, immut key: string) -> i64 {
     if gn_contains(rel, "frontend/") {
         return 3
     }
-    if gn_contains(rel, "/interp/") {
+    if gn_contains(rel, "/tiep/") {
         return 4
     }
     if gn_contains(rel, "/driver.tie") || gn_contains(rel, "/config.tie") ||

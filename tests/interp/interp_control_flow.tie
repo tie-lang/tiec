@@ -5,7 +5,7 @@ type tie<logic>
 // eval_return_top / eval_persistent_vars。
 // 注意：块语句（if/while/for）以 } 结束，后不能加分号；块内语句需分号。
 
-import "../../interp/interp.tie"
+import "../../tiep/tiep.tie"
 
 var g_fail: i64 = 0;
 

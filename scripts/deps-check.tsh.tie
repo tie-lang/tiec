@@ -522,7 +522,7 @@ func init_rules() {
     rule(1, "compiler\\backend\\tig_expr_seg", L_IRGEN)
     rule(1, "compiler\\backend\\llvmgen", L_LLVMGEN)
     rule(1, "compiler\\backend\\toolchain", L_LLVMGEN)
-    rule(1, "compiler\\interp\\", L_INTERP)
+    rule(1, "compiler\\tiep\\", L_INTERP)
     rule(1, "compiler\\middle\\pass\\", L_PASSES)
     rule(1, "compiler\\middle\\passes", L_PASSES)
     rule(1, "compiler\\middle\\types", L_TYPES)

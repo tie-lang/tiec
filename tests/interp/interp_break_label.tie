@@ -5,7 +5,7 @@ type tie<logic>
 // 注意：tie interp 存在已知缺陷——嵌套循环中带标签的 break/continue 无法
 // 正确跨层传播（返回"只能出现在循环体内"），本测试标注 SKIP 并记录期望行为。
 
-import "../../interp/interp.tie"
+import "../../tiep/tiep.tie"
 
 var g_fail: i64 = 0;
 

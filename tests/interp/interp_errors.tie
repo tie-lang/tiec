@@ -6,7 +6,7 @@ type tie<logic>
 // eval_顶层表全局变量跨函数持久化 / eval_extern调用报错仅编译路径可用 /
 // eval_extern声明注册不影响其他函数。
 
-import "../../interp/interp.tie"
+import "../../tiep/tiep.tie"
 
 var g_fail: i64 = 0;
 

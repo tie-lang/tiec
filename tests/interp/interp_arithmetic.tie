@@ -5,7 +5,7 @@ type tie<logic>
 // eval_vars / eval_bitwise / eval_ternary / eval_inc_dec / eval_compound_assign。
 // 每个用例前 interp.reset()（对齐 Rust 每用例独立 Session 的 ev() 语义）。
 
-import "../../interp/interp.tie"
+import "../../tiep/tiep.tie"
 
 var g_fail: i64 = 0;
 
