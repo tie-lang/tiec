@@ -468,24 +468,16 @@ pub func infer_expr_field_access(id: i64) -> i64 {
             var bname2 = sstate.name_str(base_node)
             var bnid2 = intern.intern(bname2)
             if lv_find(bnid2) < 0 && gb_find_ns_key(bnid2) < 0 {
-                var mpos = gb_find_ns_key(intern.intern(fnm))
+                var mpos = sstate.bs_find(gb_keys, intern.intern(fnm))
                 if mpos >= 0 {
-                    // 归属验证走活体树（gb_mod 存储列在注册期不可靠，见备忘）：
-                    // 词干命中文件 → 其根的直接子节点须含顶层 VAR_DECL 名为成员。
-                    var mnid2 = intern.intern(fnm)
+                    // 归属验证走正册 API：行下标 → gb_module（来源文件 id，注册期
+                    // 由 file_id_of_node(声明节点) 写入——2026-10-13 复诊实证可靠）。
+                    var mmod2 = sstate.gb_module(mpos)
                     var hits2: i64 = 0
                     var i3: i64 = 0
                     while i3 < len(g_file_stem) {
-                        if g_file_stem[i3] == bname2 && i3 < len(g_file_roots) {
-                            var fro3 = g_file_roots[i3]
-                            var ci3: i64 = 0
-                            while ci3 < sstate.nchild(fro3) {
-                                var ch3 = sstate.child(fro3, ci3)
-                                if s_tags[ch3] == S_N_VAR_DECL && s_names[ch3] == mnid2 {
-                                    hits2 = hits2 + 1
-                                }
-                                ci3 = ci3 + 1
-                            }
+                        if g_file_stem[i3] == bname2 && i3 == mmod2 {
+                            hits2 = hits2 + 1
                         }
                         i3 = i3 + 1
                     }
