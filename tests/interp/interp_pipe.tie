@@ -14,14 +14,14 @@ func check(actual: string, expected: string, label: string) {
 }
 
 func main() -> i64 {
-    interp.reset()
-    check(interp.eval("var r = 21 -> { v -> v * 2 }; r"), "42", "块管道求值")
-    interp.reset()
-    check(interp.eval("var r = 5 -> { a -> a + 1 } -> { b -> b * 10 }; r"), "60", "块管道链式")
-    interp.reset()
-    check(interp.eval("var xs = [1, 2]; var t2 = xs -> + [9]; len(t2)"), "3", "接运算符产生新表")
-    interp.reset()
-    check(interp.eval("var xs = [1, 2]; var t2 = xs -> + [9]; len(xs)"), "2", "接运算符原表不变")
+    tiep.reset()
+    check(tiep.eval("var r = 21 -> { v -> v * 2 }; r"), "42", "块管道求值")
+    tiep.reset()
+    check(tiep.eval("var r = 5 -> { a -> a + 1 } -> { b -> b * 10 }; r"), "60", "块管道链式")
+    tiep.reset()
+    check(tiep.eval("var xs = [1, 2]; var t2 = xs -> + [9]; len(t2)"), "3", "接运算符产生新表")
+    tiep.reset()
+    check(tiep.eval("var xs = [1, 2]; var t2 = xs -> + [9]; len(xs)"), "2", "接运算符原表不变")
     if g_fail == 0 {
         println("pipe interp 验收通过")
         return 0

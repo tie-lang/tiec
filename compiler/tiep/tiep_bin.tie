@@ -3,12 +3,12 @@ type tie<class>
 // （从 interp.tie 拆出：eval_binary 及算术/比较/位运算辅助函数）
 // ============================================================
 // 范式：tie import 是文本内联——被 import 文件全部代码并入编译单元，一切
-// 符号全局可见。本文件与主文件 interp.tie 共享一个 `namespace interp`（跨
+// 符号全局可见。本文件与主文件 interp.tie 共享一个 `namespace tiep`（跨
 // 文件闭合并集，同 len 如 irgen/llvmgen 的 str/vtable/closure 先例），函数
 // 可互相裸名调用、访问主文件顶层全局 var（w_err/g_flow 等）与 vval 等。
 // 本文件不自建全局 var，不含 import。
 
-namespace interp {
+namespace tiep {
 
 // ==================== 二元运算 ====================
 
@@ -465,4 +465,4 @@ func op_symbol(op: i64) -> string {
     return ">>"
 }
 
-}   // namespace interp
+}   // namespace tiep

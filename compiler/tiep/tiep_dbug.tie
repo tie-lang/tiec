@@ -2,7 +2,7 @@ type tie<class>
 // compiler/interp/interp_dbug.tie —— 自举 v4 工具链共享仪器
 //（p.9.2.1 崩溃诊断 / p.9.2.3 DAP 调试 / p.9.2.4 剖析 的共享底层）
 // ============================================================
-// 范式：与 interp_call.tie 同——`namespace interp` 跨文件闭合并集覆盖
+// 范式：与 interp_call.tie 同——`namespace tiep` 跨文件闭合并集覆盖
 // call_fn / exec_stmt，顶层 var 全局可见、默认关闭（dbg_on=false），零行为
 // 侵入——不启用时 call_fn / exec_stmt 只多一个 `if dbg_on` 分支（常量假），
 // 编进 tiec.exe 不改变任何默认语义（自举不动点前提）。
@@ -36,7 +36,7 @@ var dbg_err_captured: bool = false;
 var dbg_err_stack_f: table<string>;   // 崩溃点调用栈（自外向内）
 var dbg_err_stack_l: table<i64>;
 
-namespace interp {
+namespace tiep {
 
 // 清空仪器状态并关闭（重置后复用；interp.reset 不自动清，工具显式调）。
 pub func dbg_reset() {
@@ -233,4 +233,4 @@ func slice_i64_to(t: table<i64>, n: i64) -> table<i64> {
     return r
 }
 
-}   // namespace interp
+}   // namespace tiep

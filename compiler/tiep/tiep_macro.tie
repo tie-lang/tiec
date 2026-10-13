@@ -4,7 +4,7 @@ type tie<class>
 // 里程碑：解耦宏任务（compiler-decouple.md 子任务A 前置步）——把宏执行机制从
 // interp 主文件拆出，收束宏子系统的函数归属。
 // 范式：tie import 是文本内联——被 import 文件全部代码并入编译单元，一切
-// 符号全局可见；**同名 `namespace interp` 跨文件闭合并集**。故把 interp 主
+// 符号全局可见；**同名 `namespace tiep` 跨文件闭合并集**。故把 interp 主
 // 文件里宏执行入口函数搬家到本文件，interp 主文件 import 本文件即可
 // **零逻辑改动**（对齐 interp_bin / interp_call 既有拆分模式）。
 //
@@ -24,7 +24,7 @@ type tie<class>
 //   本文件不直接 import——依赖 interp 主文件的 import 链传递可见（对齐
 //   interp_bin / interp_call）。
 
-namespace interp {
+namespace tiep {
 
 // ==================== S3.3 宏展开执行入口 ====================
 
@@ -398,4 +398,4 @@ func deparse_tokens(stream: string) -> string {
     return out
 }
 
-}   // namespace interp
+}   // namespace tiep

@@ -232,7 +232,7 @@ var L_PARSE: i64 = 8
 var L_SEMA: i64 = 9
 var L_IRGEN: i64 = 10
 var L_LLVMGEN: i64 = 11
-var L_INTERP: i64 = 12
+var L_TIEP: i64 = 12
 var L_PASSES: i64 = 13
 var L_TIEIR: i64 = 14
 var L_CONFIG: i64 = 15
@@ -411,7 +411,7 @@ func init_libs() {
     push_name("sema")
     push_name("irgen")
     push_name("llvmgen")
-    push_name("interp")
+    push_name("tiep")
     push_name("passes")
     push_name("tieir")
     push_name("config")
@@ -445,7 +445,7 @@ func init_matrix() {
     allow(L_IRGEN, L_IR)
     allow(L_IRGEN, L_SEMA)
     allow(L_LLVMGEN, L_IR)
-    allow(L_INTERP, L_IR)
+    allow(L_TIEP, L_IR)
     allow(L_PASSES, L_IR)
     allow(L_TIEIR, L_IR)
     allow(L_TRM, L_IR)
@@ -522,7 +522,7 @@ func init_rules() {
     rule(1, "compiler\\backend\\tig_expr_seg", L_IRGEN)
     rule(1, "compiler\\backend\\llvmgen", L_LLVMGEN)
     rule(1, "compiler\\backend\\toolchain", L_LLVMGEN)
-    rule(1, "compiler\\tiep\\", L_INTERP)
+    rule(1, "compiler\\tiep\\", L_TIEP)
     rule(1, "compiler\\middle\\pass\\", L_PASSES)
     rule(1, "compiler\\middle\\passes", L_PASSES)
     rule(1, "compiler\\middle\\types", L_TYPES)

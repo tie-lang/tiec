@@ -14,18 +14,18 @@ func check(actual: string, expected: string, label: string) {
 }
 
 func main() -> i64 {
-    interp.reset()
-    check(interp.eval("var v: any = 42; if v is i64 { 1 } else { 0 }"), "1", "any-int is i64")
-    interp.reset()
-    check(interp.eval("var v: any = 42; if v is string { 1 } else { 0 }"), "0", "any-int is string")
-    interp.reset()
-    check(interp.eval("var v: any = \"s\"; if v is string { 1 } else { 0 }"), "1", "any-str is string")
-    interp.reset()
-    check(interp.eval("var v: any = 2.5; if v is f64 { 1 } else { 0 }"), "1", "any-f64 is f64")
-    interp.reset()
-    check(interp.eval("var v: any = true; if v is bool { 1 } else { 0 }"), "1", "any-bool is bool")
-    interp.reset()
-    check(interp.eval("var v: any = 1; if v is any { 1 } else { 0 }"), "1", "is any 恒真")
+    tiep.reset()
+    check(tiep.eval("var v: any = 42; if v is i64 { 1 } else { 0 }"), "1", "any-int is i64")
+    tiep.reset()
+    check(tiep.eval("var v: any = 42; if v is string { 1 } else { 0 }"), "0", "any-int is string")
+    tiep.reset()
+    check(tiep.eval("var v: any = \"s\"; if v is string { 1 } else { 0 }"), "1", "any-str is string")
+    tiep.reset()
+    check(tiep.eval("var v: any = 2.5; if v is f64 { 1 } else { 0 }"), "1", "any-f64 is f64")
+    tiep.reset()
+    check(tiep.eval("var v: any = true; if v is bool { 1 } else { 0 }"), "1", "any-bool is bool")
+    tiep.reset()
+    check(tiep.eval("var v: any = 1; if v is any { 1 } else { 0 }"), "1", "is any 恒真")
     if g_fail == 0 {
         println("interp_is 验收通过")
         return 0

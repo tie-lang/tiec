@@ -109,7 +109,7 @@ pub var g_fn_src_names: table<string>; // 顶层函数名
 pub var g_fn_src_texts: table<string>; // 对应定义源码切片（原文）
 pub var g_fn_src_ready: bool = false;  // 惰性初始化守卫
 
-namespace interp {
+namespace tiep {
 
 // ==================== 入口 ====================
 
@@ -460,7 +460,7 @@ pub func eval_call(name: string, arg: string) -> string {
 // ==================== 工具 ====================
 
 
-}   // namespace interp
+}   // namespace tiep
 
 
 import "./tiep_p1.tie"

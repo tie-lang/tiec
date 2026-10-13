@@ -5,7 +5,7 @@ type tie<class>
 // 构造（准引用求值 + 词法卫生 + 插值拼接）从 interp 主文件拆出，收束宏
 // 子系统的函数归属。
 // 范式：tie import 是文本内联——被 import 文件全部代码并入编译单元，一切
-// 符号全局可见；**同名 `namespace interp` 跨文件闭合并集**。故把 interp 主
+// 符号全局可见；**同名 `namespace tiep` 跨文件闭合并集**。故把 interp 主
 // 文件里 code 值构造相关函数搬家到本文件，interp 主文件 import 本文件即可
 // **零逻辑改动**（对齐 interp_bin / interp_call / interp_macro 既有拆分）。
 //
@@ -26,7 +26,7 @@ type tie<class>
 //   本文件不直接 import——依赖 interp 主文件的 import 链传递可见（对齐
 //   interp_bin / interp_call / interp_macro）。
 
-namespace interp {
+namespace tiep {
 
 // ==================== S3.3 准引用求值（code 值构造） ====================
 
@@ -685,4 +685,4 @@ func join_parts(parts: table<string>) -> string {
     return out
 }
 
-}   // namespace interp
+}   // namespace tiep

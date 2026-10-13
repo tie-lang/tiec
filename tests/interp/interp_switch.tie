@@ -21,29 +21,29 @@ func check(actual: string, expected: string) {
 
 func main() {
     // 多值：任一相等即命中
-    interp.reset()
-    check(interp.eval("var x = 2; switch x { case 1, 2: 10; default: 0; }"), "10")
+    tiep.reset()
+    check(tiep.eval("var x = 2; switch x { case 1, 2: 10; default: 0; }"), "10")
     // 区间命中（3 ≤ 5 < 7）
-    interp.reset()
-    check(interp.eval("var x = 5; switch x { case 3..7: 20; default: 0; }"), "20")
+    tiep.reset()
+    check(tiep.eval("var x = 5; switch x { case 3..7: 20; default: 0; }"), "20")
     // 左闭右开：x = 7 不命中 3..7 → default
-    interp.reset()
-    check(interp.eval("var x = 7; switch x { case 3..7: 20; default: 0; }"), "0")
+    tiep.reset()
+    check(tiep.eval("var x = 7; switch x { case 3..7: 20; default: 0; }"), "0")
     // 守卫拦截：flag = false → 落入 default
-    interp.reset()
-    check(interp.eval("var f = false; var x = 8; switch x { case 8 when f: 30; default: 0; }"), "0")
+    tiep.reset()
+    check(tiep.eval("var f = false; var x = 8; switch x { case 8 when f: 30; default: 0; }"), "0")
     // 守卫放行：值匹配 且 守卫为真 → 进入分支
-    interp.reset()
-    check(interp.eval("var f = true; var x = 8; switch x { case 8 when f: 30; default: 0; }"), "30")
+    tiep.reset()
+    check(tiep.eval("var f = true; var x = 8; switch x { case 8 when f: 30; default: 0; }"), "30")
     // 类型匹配：interp 动态类型按 Value 变体匹配（eval 路径允许）
-    interp.reset()
-    check(interp.eval("var s = \"hi\"; switch s { case string: 50; default: 0; }"), "50")
+    tiep.reset()
+    check(tiep.eval("var s = \"hi\"; switch s { case string: 50; default: 0; }"), "50")
     // 多值 + 区间 + 守卫组合：任一 pattern 命中 且 守卫为真
-    interp.reset()
-    check(interp.eval("var f = true; var x = 4; switch x { case 1, 3..5 when f: 60; default: 0; }"), "60")
+    tiep.reset()
+    check(tiep.eval("var f = true; var x = 4; switch x { case 1, 3..5 when f: 60; default: 0; }"), "60")
     // default 省略且全不匹配 → 无输出（switch 返回 None）
-    interp.reset()
-    check(interp.eval("var x = 99; switch x { case 1: 1; } 0"), "0")
+    tiep.reset()
+    check(tiep.eval("var x = 99; switch x { case 1: 1; } 0"), "0")
 
     // 字符区间：'a' ≤ 'b' < 'e' —— SKIP（tie interp 已知缺陷：字符字面量
     // 'b' 反转义后取到单引号码点 39 而非 'b' 的码点 98，字符区间比较失准）。

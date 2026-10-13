@@ -30,34 +30,34 @@ func check_err(actual: string, expected: string) {
 
 func main() {
     // ---- eval_map_literal_and_index：字面量 + 下标读取 + len ----
-    interp.reset()
-    check(interp.eval("var m = [\"a\": 1, \"b\": 2]\nm[\"a\"] + m[\"b\"] + len(m)"), "5")
-    interp.reset()
-    check(interp.eval("var m = [\"k\": \"v\"]\nm[\"k\"]"), "v")
-    interp.reset()
-    check(interp.eval("var m: map = [\"x\": 10]\nm[\"x\"]"), "10")
+    tiep.reset()
+    check(tiep.eval("var m = [\"a\": 1, \"b\": 2]\nm[\"a\"] + m[\"b\"] + len(m)"), "5")
+    tiep.reset()
+    check(tiep.eval("var m = [\"k\": \"v\"]\nm[\"k\"]"), "v")
+    tiep.reset()
+    check(tiep.eval("var m: map = [\"x\": 10]\nm[\"x\"]"), "10")
 
     // ---- eval_map_set_and_compound：下标赋值新增键 + 复合赋值 ----
-    interp.reset()
-    check(interp.eval("var m = [\"a\": 1]\nm[\"b\"] = 5\nm[\"a\"] += 10\nm[\"a\"] + m[\"b\"] + len(m)"), "18")
-    interp.reset()
-    check(interp.eval("var m = [\"a\": 1]\nm[\"a\"] = 99\nm[\"a\"]"), "99")
+    tiep.reset()
+    check(tiep.eval("var m = [\"a\": 1]\nm[\"b\"] = 5\nm[\"a\"] += 10\nm[\"a\"] + m[\"b\"] + len(m)"), "18")
+    tiep.reset()
+    check(tiep.eval("var m = [\"a\": 1]\nm[\"a\"] = 99\nm[\"a\"]"), "99")
 
     // ---- eval_map_missing_key_errors：缺失键/整数下标/混合元素报错 ----
-    interp.reset()
-    check_err(interp.eval("var m = [\"a\": 1]; m[\"zzz\"]"), "运行时错误: map_get 键不存在：'zzz'")
-    interp.reset()
-    check_err(interp.eval("var m = [\"a\": 1]; m[0]"), "键值表下标必须是字符串键")
-    interp.reset()
-    check_err(interp.eval("var bad = [\"a\": 1, 2]"), "键值表元素必须全部带字符串键")
+    tiep.reset()
+    check_err(tiep.eval("var m = [\"a\": 1]; m[\"zzz\"]"), "运行时错误: map_get 键不存在：'zzz'")
+    tiep.reset()
+    check_err(tiep.eval("var m = [\"a\": 1]; m[0]"), "键值表下标必须是字符串键")
+    tiep.reset()
+    check_err(tiep.eval("var bad = [\"a\": 1, 2]"), "键值表元素必须全部带字符串键")
 
     // ---- eval_map_as_argument：map 作实参 ----
-    interp.reset()
-    check(interp.eval("func f(m: map) -> i64 { return m[\"x\"]; }"), "已定义 1 个函数")
-    check(interp.eval("f([\"x\": 9])"), "9")
-    interp.reset()
-    check(interp.eval("func g(m: map) -> i64 { return m[\"q\"]; }"), "已定义 1 个函数")
-    check(interp.eval("g([\"q\": 7])"), "7")
+    tiep.reset()
+    check(tiep.eval("func f(m: map) -> i64 { return m[\"x\"]; }"), "已定义 1 个函数")
+    check(tiep.eval("f([\"x\": 9])"), "9")
+    tiep.reset()
+    check(tiep.eval("func g(m: map) -> i64 { return m[\"q\"]; }"), "已定义 1 个函数")
+    check(tiep.eval("g([\"q\": 7])"), "7")
 
     if g_fail == 0 {
         println("interp_map 验收通过：全部比对一致（golden 对齐 Rust interp）")

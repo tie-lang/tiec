@@ -82,7 +82,7 @@ namespace mexpand {
 // s_* 池 = 主文件 AST，g_root = 顶层 StmtList）。返回 0 成功；-1 失败
 //（错误写入 sm_err_line/sm_err_col/sm_err_msg）。
 pub func expand_sstate() -> i64 {
-    interp.reset()
+    tiep.reset()
     g_macro_keys = table_new_i64()
     g_macro_nodes = table_new_i64()
     g_macro_isproc = table_new_i64()

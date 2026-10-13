@@ -39,7 +39,7 @@ func main() -> i64 {
         }
         // 空行直接跳过；其余交给 tie 自写解释器求值，非空结果打印
         if line != "" {
-            var result = interp.eval(line)
+            var result = tiep.eval(line)
             if result != "" {
                 println(result)
             } else {

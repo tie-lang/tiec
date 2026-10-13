@@ -33,12 +33,12 @@ func main() -> i64 {
     }
     if hit == 2 { ok = ok + 1 } else { println("F5 hit=" + to_string(hit)) }
     // 6. interp 侧 `..=` 模式匹配（经 interp.eval，解释器 nval==1 路径）
-    interp.reset()
-    var r1 = interp.eval("var x = 7; switch x { case 3..=7: 20; default: 0; }")
+    tiep.reset()
+    var r1 = tiep.eval("var x = 7; switch x { case 3..=7: 20; default: 0; }")
     if r1 == "20" { ok = ok + 1 } else { println("F6 r1=" + r1) }
     // 7. interp 侧闭区间上界不命中时落 default
-    interp.reset()
-    var r2 = interp.eval("var x = 8; switch x { case 3..=7: 20; default: 0; }")
+    tiep.reset()
+    var r2 = tiep.eval("var x = 8; switch x { case 3..=7: 20; default: 0; }")
     if r2 == "0" { ok = ok + 1 } else { println("F7 r2=" + r2) }
     // 8. for-in 开区间对照：0..5 求和 = 10（语义差异仍在）
     var s2: i64 = 0
