@@ -11,6 +11,7 @@ type tie<class>
 // 同步调用 llvmgen.set_linux，irgen 不再持有后端引用。
 import "./../frontend/semantic.tie"
 import "./../frontend/consteval.tie"
+import "./rt_abi.tie"
 import "./irgen_str.tie"
 import "./irgen_vtable.tie"
 import "./irgen_closure.tie"
