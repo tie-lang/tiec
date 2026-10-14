@@ -707,6 +707,19 @@ pub func builtin_call_b_table_trunc_p(fn_name: string, args: table<i64>, call_no
         return types.named(TK_VOID)
 }
 
+pub func builtin_call_b_table_append_p(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
+    var nargs = len(args)
+    // 表批量追加：table_append(dst, src, n) → min(n, len(src)) 个元素批量追加到 dst 尾
+    // （与连续 table_push 逐元素等价；元素类型/类别门见 irgen bi_table_append）。
+        if nargs != 3 {
+            sm_err_line = s_lines[call_node]
+            sm_err_col = s_cols[call_node]
+            sm_err_msg = "table_append() 期望 3 个参数（目标表, 源表, 个数），实际 " + to_string(nargs) + " 个"
+            return -2
+        }
+        return types.named(TK_VOID)
+}
+
 pub func builtin_call_b_exit(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
     var nargs = len(args)
     // ---------- S1.2 unsafe 指针/内存内置（固定返回类型部分） ----------

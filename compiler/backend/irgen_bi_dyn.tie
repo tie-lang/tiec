@@ -438,6 +438,113 @@ if nm == "table_push" {
 }
 }
 
+// 内置 `table_append`（appfuse 底座：把 src 前 n 个元素批量追加到 dst 尾）
+// 语义：与「连续 min(n, len(src)) 次 table_push」逐元素等价（同扩容规则、同 len
+// 提交、同 COW 分离与免锁判据）；元素宽以 dst 为准，两侧元素类型一致（此处校验）。
+// 元素类别门（v1）：仅拷贝型元素（标量/字符串）——深表须逐元素 retain、复合/any
+// 须逐元素桥/装箱，一律拒绝。发射 tl_tbl$tbl_append_tbl[_nl]（_nl = dst 写侧
+// esc_take ∧ src 读侧 esc_live_or_lock 双成立）。
+pub func bi_table_append(nm: string, id: i64) -> i64 {
+if nm == "table_append" {
+    var tname_node = call_arg(id, 0)
+    var tname = sstate.name_str(tname_node)
+    var tnid = interner.intern(tname)
+    if rp_is(tnid) {
+        sm_err_msg = "table_append 不支持作用于行池 table<R>（p.9.12.6 边界，函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    // 目标元素类型解析级联（对齐 table_push）
+    var elem: i64 = types.named(TK_I64)
+    var te: i64 = -1
+    var tv_own = tblvar_get(tnid)
+    if tv_own >= 0 {
+        te = tv_own
+    } else if scope_get(tnid) >= 0 && types.is_table(g_lookup_ty) {
+        var le = types.table_elem(g_lookup_ty)
+        if le > 0 {
+            te = le
+        }
+    }
+    if te < 0 {
+        var aty = node_types[tname_node]
+        if types.is_table(aty) && !types.is_map(aty) && aty != types.named(TK_TABLE) {
+            var ale = types.table_elem(aty)
+            if ale > 0 {
+                te = ale
+            }
+        }
+    }
+    if te < 0 {
+        te = sinfer.var_table_elem(tnid)
+    }
+    if te >= 0 {
+        elem = te
+    }
+    // 元素类别门（v1）：拷贝型元素（标量/字符串）才可整段 memcpy
+    var ek = types.kind(elem)
+    if types.is_table(elem) || types.is_map(elem) || elem == types.named(TK_ANY) ||
+        ek == K_STRUCT || ek == K_ENUM || ek == K_FN || ek == K_TUPLE {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "table_append 暂不支持该元素类型（深表/复合/any 须逐元素处理，函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    // 源元素类型（尽力解析：两侧皆可知且不一致 ⇒ 拒绝；不可知则信任调用方）
+    var s_node = call_arg(id, 1)
+    var se: i64 = -1
+    var sty = node_types[s_node]
+    if sty >= 0 && types.is_table(sty) && !types.is_map(sty) && sty != types.named(TK_TABLE) {
+        var sle = types.table_elem(sty)
+        if sle > 0 {
+            se = sle
+        }
+    }
+    if se < 0 && s_tags[s_node] == 6 {   // 6 = S_N_VAR
+        var sid = interner.intern(sstate.name_str(s_node))
+        var sv_own = tblvar_get(sid)
+        if sv_own >= 0 {
+            se = sv_own
+        } else if scope_get(sid) >= 0 && types.is_table(g_lookup_ty) {
+            var sl2 = types.table_elem(g_lookup_ty)
+            if sl2 > 0 {
+                se = sl2
+            }
+        }
+    }
+    if se >= 0 && te >= 0 && se != te {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "table_append 两侧元素类型不一致：目标 " + types.type_name(te) + " ← 源 " + types.type_name(se)
+        return -1
+    }
+    var t = tig_expr(tname_node)
+    if t < 0 {
+        return -1
+    }
+    var s = tig_expr(s_node)
+    if s < 0 {
+        return -1
+    }
+    var nv = tig_expr(call_arg(id, 2))
+    if nv < 0 {
+        return -1
+    }
+    // r.1.6.7 免锁：dst 写侧 esc_take（对齐 table_push）；src 读侧 esc_live_or_lock
+    // （只查询版本，不重复计数）。双成立才走 _nl 入口。
+    var nl_ok = esc_take(tname_node, "table_append") && esc_live_or_lock(s_node)
+    // r.1.6.14 值语义分离（默认关 ⇒ no-op；非全局槽目标，对齐 table_push）
+    t = tig_cow_before_write(t, tnid)
+    g_used_trmlite = true
+    if nl_ok {
+        tl_void_3("tl_tbl$tbl_append_tbl_nl", t21_ptri(t), t21_ptri(s), nv)
+    } else {
+        tl_void_3("tl_tbl$tbl_append_tbl", t21_ptri(t), t21_ptri(s), nv)
+    }
+    g_builtin_res = tig_int_lit(0)  // void 结果：哑值（调用方丢弃）
+    return 0
+}
+}
+
 // 动态加载原语（p.6.6.20 std/sqlite：winsqlite3.dll C ABI 桥）
 // 内置 `exit`（p.9.21.2 两步制①：自 builtin_expr 提取）
 pub func bi_exit(nm: string, id: i64) -> i64 {

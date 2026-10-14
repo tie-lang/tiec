@@ -292,7 +292,7 @@ func is_builtin_name(nm: string) -> bool {
     if nm == "table_new_i64" || nm == "table_new_f64" || nm == "table_new_string" || nm == "table_new_bool" {
         return true
     }
-    if nm == "table_push" || nm == "table_at" || nm == "table_pop" || nm == "table_trunc" || nm == "exit" {
+    if nm == "table_push" || nm == "table_at" || nm == "table_pop" || nm == "table_trunc" || nm == "table_append" || nm == "exit" {
         return true
     }
     if nm == "arg_count" || nm == "arg_string" {

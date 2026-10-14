@@ -95,6 +95,7 @@ pub func builtin_call(fn_name: string, args: table<i64>, call_node: i64) -> i64 
     if fn_name == "table_at" { return builtin_call_b_table_at(fn_name, args, call_node) }
     if fn_name == "table_pop" { return builtin_call_b_table_pop_p(fn_name, args, call_node) }
     if fn_name == "table_trunc" { return builtin_call_b_table_trunc_p(fn_name, args, call_node) }
+    if fn_name == "table_append" { return builtin_call_b_table_append_p(fn_name, args, call_node) }
     if fn_name == "exit" { return builtin_call_b_exit(fn_name, args, call_node) }
     if fn_name == "read_line" || fn_name == "file_read" || fn_name == "file_delete" || fn_name == "file_exists" { return builtin_call_b_read_line(fn_name, args, call_node) }
     // 完整 fs 元数据内置（UTF-8 桥）：file_size → i64（失败 -1）；
