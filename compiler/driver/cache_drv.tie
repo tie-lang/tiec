@@ -91,7 +91,7 @@ pub func compiler_ident() -> string {
     }
     if !g_ident_warned {
         g_ident_warned = true
-        dbg_txt("缓存提示：本编译器无构建戳（非自举构建或旧产物），缓存键退回手工盐 " + g_cache_salt)
+        dbg_txt("缓存提示：本编译器无构建戳，缓存键退回手工盐 " + g_cache_salt)
     }
     return g_cache_salt
 }

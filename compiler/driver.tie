@@ -528,7 +528,7 @@ func main() -> i64 {
         backend = config.get_str(g_cfg_root, "tiec.backend")
     }
     if str_len(backend) > 0 && backend != "win32" && backend != "trm" {
-        dbg_txt(diagcode.render_error(-1, -1, "后端实现未接入: tiec.backend=" + backend + "（win32/LLVM 工具链为当前默认；trm 为路线 B 字节码目标）"))
+        dbg_txt(diagcode.render_error(-1, -1, "后端实现未接入: tiec.backend=" + backend + "；可选 win32 / trm"))
         return 1
     }
     var crc0 = driver.compile_program(clean)
