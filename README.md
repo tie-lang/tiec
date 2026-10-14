@@ -23,16 +23,6 @@ compiler\tiec.exe repl\repl.tie        # 无参数 → REPL
 
 ## 内容 / Contents
 
-- `compiler/` 编译器全源码（frontend/middle/backend/interp/keel + `driver.tie`/
-  `tdzd.tie`/`zdpub.tie` 等；`tiec.exe` stage0 引导二进制入库）
-- `std/` `ext/` `rdu/` 语言标准 / 扩展 / 精简库
-- `repl/` REPL 源；`prep/` 预处理与迁移工具
-- `scripts/` 构建与回归脚本（bench、regress-*、selfhost-gate、zero-rust-check 等）
-- `tests/` `examples/` 测试套件与示例源码
-- `diagdocs/` 诊断标号数据（`diagcodes.data.tie` / `diagcodes.zd`）
-- `sys/` 平台专用层（`sys/win32.tie` 命名空间 sys_win32）
-- `archive/compiler-v1/` v1 编译器历史归档
-
 ## 相关组件 / Related components
 
 - [tie-lang/tsp](https://github.com/tie-lang/tsp) — LSP 服务器（`tie --lsp`）
@@ -43,7 +33,7 @@ compiler\tiec.exe repl\repl.tie        # 无参数 → REPL
 
 ## License
 
-本仓库按 **Tie Public License v2.0（TPL 2.0）** 授权发布（全文见 [LICENSE](LICENSE)）：
+本仓库按 **Tie Public License v2.3（TPL 2.3）** 授权发布（全文见 [LICENSE](LICENSE)）：
 你可自由使用、修改并分发本软件源码，包括用于商业产品，仅需保留版权声明并附本许可证。
 
 EN: This repository is released under the **Tie Public License v2.0 (TPL 2.0)**
