@@ -385,6 +385,11 @@ func run_t2() -> i64 {
     }
     cse_blockwise(repl, nvals)
     apply_repl(repl, nvals)
+    // appfuse：逐元素表操作循环 → 批量原语（passes_p3；见文件头）
+    var ra = appfuse()
+    if ra != 0 {
+        return ra
+    }
     return dce()
 }
 

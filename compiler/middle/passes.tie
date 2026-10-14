@@ -37,7 +37,7 @@ type tie<class>
 import "./ir.tie"
 import "../lib/interner.tie"
 
-var g_pass_pipeline_ver: i64 = 3;   // pass 集合版本（新增/改动 pass 必须 +1；3 = t2 块内 CSE 接入）
+var g_pass_pipeline_ver: i64 = 4;   // pass 集合版本（新增/改动 pass 必须 +1；4 = appfuse 融合接入）
 
 // 折叠涉及 opcode（实现权威字面量）
 pub const P_ADD: i64 = 0;
@@ -118,3 +118,4 @@ const INLINE_MAX_INSTS: i64 = 24;   // 被调函数指令数阈值（保守起�
 
 import "./passes_p1.tie"
 import "./passes_p2.tie"
+import "./passes_p3.tie"
