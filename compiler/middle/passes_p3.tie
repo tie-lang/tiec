@@ -39,6 +39,16 @@ type tie<class>
 //   * 回边块/体的步进 store：值换成 n（循环变量收敛值）；终结 br 改指 E。
 //   * 删集合先"试探"，经全模块 use 校验（存活指令不得引用待删值）后才提交标记。
 //
+// 形状模式（r.1.7）：同一惯用法两套入口——`_nl`（unsafe:lock 已证，免锁）与
+// 带锁变体（安全代码，运行时一次加锁）。模式由体块内出现的 push 符号判定。
+// 未做（明确的 IR 约束，非遗漏）：
+//   * 常量填充（push 常量 K≠0 → repeat），需 3 参改写；pass 只能就地改操作数，
+//     3 参调用在既有 IR 上不可表达（add_operand 仅尾插）。
+//   * 区间复制 dst[a..a+n]=src[0..n]，需 (dst, off, src, n) 4 参 + 空隙零填充语义
+//     （含共享表扩容拒绝的诊断路径），同样越出"就地改操作数"的表达力。
+//   * reserve 协同：融合调用本身一次分配，前置 reserve 冗余但无害，未做剪枝。
+// 两者需要 IR 层的"插指令/扩操作数"能力（跨 pass 基础设施改动）再议。
+//
 // 审计：TIEC_APFUSE_AUDIT=1 打印每处融合（形状/函数/元素数）。
 
 import "./ir.tie"
@@ -432,8 +442,56 @@ func af_store_in_block(b: i64, slot: i64) -> i64 {
     return 0
 }
 
-// ---------- P2：零填充 ----------
-func af_try_p2(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bool>) -> i64 {
+// ---------- 形状模式：_nl（免锁；unsafe:lock 已证）与 locked（安全代码形状） ----------
+// 同一惯用法的两套入口：_nl 免锁；带锁变体把一次加锁留在运行时（融合后仍只锁一次）。
+func af_push_sym(locked: bool) -> string {
+    if locked {
+        return "tl_tbl$tbl_push"
+    }
+    return "tl_tbl$tbl_push_nl"
+}
+
+func af_at_sym(locked: bool) -> string {
+    if locked {
+        return "tl_tbl$tbl_at"
+    }
+    return "tl_tbl$tbl_at_nl"
+}
+
+func af_zeros_sym(locked: bool) -> string {
+    if locked {
+        return "tl_tbl$tbl_append_zeros"
+    }
+    return "tl_tbl$tbl_append_zeros_nl"
+}
+
+func af_repeat_v_sym(locked: bool) -> string {
+    if locked {
+        return "tl_tbl$tbl_append_repeat_v"
+    }
+    return "tl_tbl$tbl_append_repeat_v_nl"
+}
+
+func af_copy_sym(locked: bool) -> string {
+    if locked {
+        return "tl_tbl$tbl_append_tbl"
+    }
+    return "tl_tbl$tbl_append_tbl_nl"
+}
+
+// 体块里出现哪套 push（0=_nl，1=带锁，-1=无）。
+func af_body_push_mode(B: i64) -> i64 {
+    if af_find_call(B, "tl_tbl$tbl_push_nl") >= 0 {
+        return 0
+    }
+    if af_find_call(B, "tl_tbl$tbl_push") >= 0 {
+        return 1
+    }
+    return 0 - 1
+}
+
+// ---------- P2：零填充 / 常量填充 ----------
+func af_try_p2(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bool>, locked: bool) -> i64 {
     var bt = ir.block_end(B) - 1
     if bt < ir.block_start(B) {
         return 0
@@ -449,7 +507,7 @@ func af_try_p2(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bo
         return 0
     }
     // push_nl 恰一处
-    var pc = af_find_call(B, "tl_tbl$tbl_push_nl")
+    var pc = af_find_call(B, af_push_sym(locked))
     if pc < 0 {
         return 0
     }
@@ -467,14 +525,18 @@ func af_try_p2(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bo
         return 0
     }
     var sv = ir.ins_opnd(sti, 1)
-    if !af_is_const(sv, 0) {
-        return 0
-    }
-    // 元素类型门（const 的 ty 即元素类型）
     var svd = af_def_of(sv)
     if svd < 0 {
         return 0
     }
+    // 仅零填充（K=0 → zeros 入口，单次 memset）。
+    // 注：常量填充（K≠0）需 3 参改写（dst, K, n），而本 pass 运行在**操作数段连续
+    // 存储**的 IR 上——`ir.add_operand` 只允许紧随指令创建时追加，既有无从扩参
+    // （实测触发交错断言 panic）。故 K≠0 一律放弃（见文件头"未做"节）。
+    if !af_is_const(sv, 0) {
+        return 0
+    }
+    // 元素类型门（const 的 ty 即元素类型）
     if af_elem_forbidden(ir.ins_ty(svd)) {
         return 0
     }
@@ -577,8 +639,8 @@ func af_try_p2(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bo
         return 0
     }
     // ---------- 改写 ----------
-    // 1) push 调用 → append_zeros_nl(dst, n)：第 2 实参（值 + 类型）换成 n/i64
-    ir.set_opnd(pc, 0, interner.intern("tl_tbl$tbl_append_zeros_nl"), AF_K_VALUE)
+    // 1) push 调用改写 → append_zeros[_nl](dst, n)：第 2 实参（值 + 类型）换成 n/i64
+    ir.set_opnd(pc, 0, interner.intern(af_zeros_sym(locked)), AF_K_VALUE)
     ir.set_opnd(pc, 4, types.named(TK_I64), AF_K_IMM)
     ir.set_opnd(pc, 5, nv, AF_K_VALUE)
     // 2) 步进 store 值换 n（循环变量收敛值）
@@ -587,7 +649,11 @@ func af_try_p2(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bo
     ir.set_opnd(bt, 0, E, AF_K_BLOCK)
     af_mark_dead(cand, dead)
     if af_audit {
-        println("apfuse: P2 zeros fn=" + interner.lookup(ir.func_name(ir.block_func(B))) +
+        var lk = ""
+        if locked {
+            lk = " locked"
+        }
+        println("apfuse: P2 zeros" + lk + " fn=" + interner.lookup(ir.func_name(ir.block_func(B))) +
             " nval=" + to_string(nv))
     }
     g_af_hits = g_af_hits + 1
@@ -595,7 +661,7 @@ func af_try_p2(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bo
 }
 
 // ---------- P1：拷贝段 ----------
-func af_try_p1(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bool>) -> i64 {
+func af_try_p1(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bool>, locked: bool) -> i64 {
     var bt = ir.block_end(B) - 1
     if bt < ir.block_start(B) {
         return 0
@@ -625,8 +691,8 @@ func af_try_p1(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bo
     }
     // B 前驱唯一 = G
     var ctnb = af_count_targets(B)
-    var atc = af_find_call(B, "tl_tbl$tbl_at_nl")
-    var pc = af_find_call(J, "tl_tbl$tbl_push_nl")
+    var atc = af_find_call(B, af_at_sym(locked))
+    var pc = af_find_call(J, af_push_sym(locked))
     if ctnb != 1 {
         return 0
     }
@@ -1036,7 +1102,7 @@ func af_try_p1(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bo
     // 1) at 调用 → append_tbl_nl：符号名 + 三个实参（全 i64，类型操作数不动）
     //    arg0 = 复用后的 B 块 ptri(dst)（先改该 ptri 的操作数为 dst 装载值）
     ir.set_opnd(dst_p_b_inst, 0, dst_ld, AF_K_VALUE)
-    ir.set_opnd(atc, 0, interner.intern("tl_tbl$tbl_append_tbl_nl"), AF_K_VALUE)
+    ir.set_opnd(atc, 0, interner.intern(af_copy_sym(locked)), AF_K_VALUE)
     ir.set_opnd(atc, 3, at_out_p, AF_K_VALUE)
     ir.set_opnd(atc, 5, at_src_p, AF_K_VALUE)
     ir.set_opnd(atc, 7, nv, AF_K_VALUE)
@@ -1048,7 +1114,11 @@ func af_try_p1(G: i64, E: i64, B: i64, iv_slot: i64, nv: i64, ref dead: table<bo
     ir.set_opnd(jt, 0, E, AF_K_BLOCK)
     af_mark_dead(cand, dead)
     if af_audit {
-        println("apfuse: P1 copy fn=" + interner.lookup(ir.func_name(ir.block_func(B))) +
+        var lk1 = ""
+        if locked {
+            lk1 = " locked"
+        }
+        println("apfuse: P1 copy" + lk1 + " fn=" + interner.lookup(ir.func_name(ir.block_func(B))) +
             " nval=" + to_string(nv))
     }
     g_af_hits = g_af_hits + 1
@@ -1103,11 +1173,16 @@ func af_try_guard(G: i64, ref dead: table<bool>) -> i64 {
     if iv_slot < 0 {
         return 0
     }
-    var r = af_try_p2(G, E, B, iv_slot, gB, dead)
+    var lm = af_body_push_mode(B)
+    if lm < 0 {
+        return 0
+    }
+    var locked = lm == 1
+    var r = af_try_p2(G, E, B, iv_slot, gB, dead, locked)
     if r != 0 {
         return r
     }
-    var r2 = af_try_p1(G, E, B, iv_slot, gB, dead)
+    var r2 = af_try_p1(G, E, B, iv_slot, gB, dead, locked)
     return r2
 }
 
