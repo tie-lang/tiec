@@ -292,7 +292,8 @@ func is_builtin_name(nm: string) -> bool {
     if nm == "table_new_i64" || nm == "table_new_f64" || nm == "table_new_string" || nm == "table_new_bool" {
         return true
     }
-    if nm == "table_push" || nm == "table_at" || nm == "table_pop" || nm == "table_trunc" || nm == "table_append" || nm == "exit" {
+    if nm == "table_push" || nm == "table_at" || nm == "table_pop" || nm == "table_trunc" ||
+        nm == "table_append" || nm == "table_append_raw" || nm == "table_reserve" || nm == "exit" {
         return true
     }
     if nm == "arg_count" || nm == "arg_string" {
@@ -350,7 +351,8 @@ func is_builtin_name(nm: string) -> bool {
         return true
     }
     // ---------- channel 原语（p.6.5.7：ch_open/ch_send/ch_recv/ch_close，静态链接 trm_lite.a）----------
-    if nm == "ch_open" || nm == "ch_send" || nm == "ch_send_block" || nm == "ch_recv" || nm == "ch_close" || nm == "ch_select" {
+    if nm == "ch_open" || nm == "ch_send" || nm == "ch_send_block" || nm == "ch_recv" || nm == "ch_close" || nm == "ch_select" ||
+        nm == "ch_len" || nm == "ch_closed_flag" || nm == "ch_count" {
         return true
     }
     // ---------- WaitGroup 原语（p.6.7.11：wg_new/wg_add/wg_done/wg_wait/wg_count）----------

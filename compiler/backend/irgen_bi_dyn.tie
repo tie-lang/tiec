@@ -545,8 +545,101 @@ if nm == "table_append" {
 }
 }
 
+
+// 内置 `table_reserve`（预留容量：单次分配扩容 ≥n，不动 len；幂等）
+pub func bi_table_reserve(nm: string, id: i64) -> i64 {
+if nm == "table_reserve" {
+    g_used_trmlite = true
+    var t = tig_expr(call_arg(id, 0))
+    if t < 0 {
+        return -1
+    }
+    var nv = tig_expr(call_arg(id, 1))
+    if nv < 0 {
+        return -1
+    }
+    tl_void_2("tl_tbl$tbl_reserve", t21_ptri(t), nv)
+    g_builtin_res = tig_int_lit(0)
+    return 0
+}
+}
+
+// 内置 `table_append_raw`（从裸内存批量追加：table_append_raw(dst, ptr, n)）
+// 语义：与 table_append 同（元素宽度取 dst；n 个元素一次锁内拷入 dst 尾），差别在
+// 源是**原始地址**（供缓冲区/arena → 表）。元素类别门与 table_append 一致。
+pub func bi_table_append_raw(nm: string, id: i64) -> i64 {
+if nm == "table_append_raw" {
+    g_used_trmlite = true
+    var tname_node = call_arg(id, 0)
+    var tname = sstate.name_str(tname_node)
+    var tnid = interner.intern(tname)
+    if rp_is(tnid) {
+        sm_err_msg = "table_append_raw 不支持作用于行池 table<R>（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    // 元素类别门（v1）：与 table_append 同（拷贝型元素才可整段 memcpy）
+    var elem: i64 = types.named(TK_I64)
+    var te: i64 = -1
+    var tv_own = tblvar_get(tnid)
+    if tv_own >= 0 {
+        te = tv_own
+    } else if scope_get(tnid) >= 0 && types.is_table(g_lookup_ty) {
+        var le = types.table_elem(g_lookup_ty)
+        if le > 0 {
+            te = le
+        }
+    }
+    if te < 0 {
+        var aty = node_types[tname_node]
+        if types.is_table(aty) && !types.is_map(aty) && aty != types.named(TK_TABLE) {
+            var ale = types.table_elem(aty)
+            if ale > 0 {
+                te = ale
+            }
+        }
+    }
+    if te < 0 {
+        te = sinfer.var_table_elem(tnid)
+    }
+    if te >= 0 {
+        elem = te
+    }
+    var ek = types.kind(elem)
+    if types.is_table(elem) || types.is_map(elem) || elem == types.named(TK_ANY) ||
+        ek == K_STRUCT || ek == K_ENUM || ek == K_FN || ek == K_TUPLE {
+        sm_err_line = s_lines[id]
+        sm_err_col = s_cols[id]
+        sm_err_msg = "table_append_raw 暂不支持该元素类型（深表/复合/any 须逐元素处理，函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var t = tig_expr(tname_node)
+    if t < 0 {
+        return -1
+    }
+    var p = tig_expr(call_arg(id, 1))
+    if p < 0 {
+        return -1
+    }
+    var nv = tig_expr(call_arg(id, 2))
+    if nv < 0 {
+        return -1
+    }
+    var nl_ok = esc_take(tname_node, "table_append_raw")
+    t = tig_cow_before_write(t, tnid)
+    var addr = t21_ptri(p)
+    if nl_ok {
+        tl_void_3("tl_tbl$tbl_append_nl", t21_ptri(t), addr, nv)
+    } else {
+        tl_void_3("tl_tbl$tbl_append", t21_ptri(t), addr, nv)
+    }
+    g_builtin_res = tig_int_lit(0)
+    return 0
+}
+}
+
 // 动态加载原语（p.6.6.20 std/sqlite：winsqlite3.dll C ABI 桥）
 // 内置 `exit`（p.9.21.2 两步制①：自 builtin_expr 提取）
+
 pub func bi_exit(nm: string, id: i64) -> i64 {
 if nm == "exit" {
     // 去 Rust 桥（dev33 批次3 关联）：exit 是 libc 符号（tig_ext_call1 经

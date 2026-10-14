@@ -416,4 +416,64 @@ if nm == "wg_count" {
 }
 }
 
+// channel 观测原语（r.1.7：补齐库有内置无的三个缺口）
+// 内置 `ch_len`（通道内待取消息数）
+pub func bi_ch_len(nm: string, id: i64) -> i64 {
+if nm == "ch_len" {
+    g_used_trmlite = true
+    if sstate.fn_def_node("trm_lite_chan::ch_len") >= 0 {
+        sm_err_msg = "ch_len 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var T64l = types.named(TK_I64)
+    var c_ndl = call_arg(id, 0)
+    var c_vl = tig_expr(c_ndl)
+    if c_vl < 0 {
+        return -1
+    }
+    var atsl: table<i64> = table_new_i64()
+    var avsl: table<i64> = table_new_i64()
+    table_push(atsl, T64l); table_push(avsl, c_vl)
+    g_builtin_res = tig_trmlite_call("trm_lite_chan$ch_len", atsl, avsl, T64l)
+    return 0
+}
+}
+
+// 内置 `ch_closed_flag`（已关闭 → 1）
+pub func bi_ch_closed_flag(nm: string, id: i64) -> i64 {
+if nm == "ch_closed_flag" {
+    g_used_trmlite = true
+    if sstate.fn_def_node("trm_lite_chan::ch_closed_flag") >= 0 {
+        sm_err_msg = "ch_closed_flag 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var T64c = types.named(TK_I64)
+    var c_ndc = call_arg(id, 0)
+    var c_vc = tig_expr(c_ndc)
+    if c_vc < 0 {
+        return -1
+    }
+    var atsc: table<i64> = table_new_i64()
+    var avsc: table<i64> = table_new_i64()
+    table_push(atsc, T64c); table_push(avsc, c_vc)
+    g_builtin_res = tig_trmlite_call("trm_lite_chan$ch_closed_flag", atsc, avsc, T64c)
+    return 0
+}
+}
+
+// 内置 `ch_count`（已建通道计数）
+pub func bi_ch_count(nm: string, id: i64) -> i64 {
+if nm == "ch_count" {
+    g_used_trmlite = true
+    if sstate.fn_def_node("trm_lite_chan::ch_count") >= 0 {
+        sm_err_msg = "ch_count 内置与 import trm-lite 冲突：内置与 import 是替代运行时路径，不能混用（函数 " + g_cur_fn_name + "）"
+        return -1
+    }
+    var T64n = types.named(TK_I64)
+    var atsn: table<i64> = table_new_i64()
+    var avsn: table<i64> = table_new_i64()
+    g_builtin_res = tig_trmlite_call("trm_lite_chan$ch_count", atsn, avsn, T64n)
+    return 0
+}
+}
 }

@@ -720,6 +720,65 @@ pub func builtin_call_b_table_append_p(fn_name: string, args: table<i64>, call_n
         return types.named(TK_VOID)
 }
 
+pub func builtin_call_b_table_append_raw_p(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
+    var nargs = len(args)
+    // 原始内存批量追加：table_append_raw(dst, ptr, n) → 从裸地址拷 n 个元素到 dst 尾
+    // （元素宽度取 dst；指针侧按裸地址/ptr 实参）。
+        if nargs != 3 {
+            sm_err_line = s_lines[call_node]
+            sm_err_col = s_cols[call_node]
+            sm_err_msg = "table_append_raw() 期望 3 个参数（目标表, 指针, 个数），实际 " + to_string(nargs) + " 个"
+            return -2
+        }
+        return types.named(TK_VOID)
+}
+
+pub func builtin_call_b_table_reserve_p(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
+    var nargs = len(args)
+    // 预留容量：table_reserve(t, n) → 单次分配扩容到 ≥n（不动 len）
+        if nargs != 2 {
+            sm_err_line = s_lines[call_node]
+            sm_err_col = s_cols[call_node]
+            sm_err_msg = "table_reserve() 期望 2 个参数（目标表, 容量），实际 " + to_string(nargs) + " 个"
+            return -2
+        }
+        return types.named(TK_VOID)
+}
+
+pub func builtin_call_b_ch_len(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
+    return builtin_call_b_arity1_i64(fn_name, args, call_node)
+}
+
+pub func builtin_call_b_ch_closed_flag(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
+    return builtin_call_b_arity1_i64(fn_name, args, call_node)
+}
+
+pub func builtin_call_b_ch_count(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
+    return builtin_call_b_arity0_i64(fn_name, args, call_node)
+}
+
+// 通用：1 实参 → i64（observability 类内置；实参类型由 sinfer 复核）
+pub func builtin_call_b_arity1_i64(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
+        if len(args) != 1 {
+            sm_err_line = s_lines[call_node]
+            sm_err_col = s_cols[call_node]
+            sm_err_msg = fn_name + "() 期望 1 个参数，实际 " + to_string(len(args)) + " 个"
+            return -2
+        }
+        return types.named(TK_I64)
+}
+
+// 通用：0 实参 → i64
+pub func builtin_call_b_arity0_i64(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
+        if len(args) != 0 {
+            sm_err_line = s_lines[call_node]
+            sm_err_col = s_cols[call_node]
+            sm_err_msg = fn_name + "() 期望 0 个参数，实际 " + to_string(len(args)) + " 个"
+            return -2
+        }
+        return types.named(TK_I64)
+}
+
 pub func builtin_call_b_exit(fn_name: string, args: table<i64>, call_node: i64) -> i64 {
     var nargs = len(args)
     // ---------- S1.2 unsafe 指针/内存内置（固定返回类型部分） ----------

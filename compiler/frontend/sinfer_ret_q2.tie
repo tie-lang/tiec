@@ -366,6 +366,38 @@ pub func infer_call(id: i64) -> i64 {
             g_typed = g_typed + 1
             return types.named(TK_VOID)
         }
+        // table_reserve(t, n) → void：首参须为表（容量预留，不动 len）。
+        if fnm == "table_reserve" {
+            var ta = infer_expr(args[0])
+            if ta < 0 { return -1 }
+            if !types.is_table(ta) {
+                sm_err_line = s_lines[id]; sm_err_col = s_cols[id]
+                sm_err_msg = "table_reserve() 第 1 个参数必须是表，实际是 " + types.type_name(ta)
+                return -1
+            }
+            var tb2 = infer_expr(args[1])
+            if tb2 < 0 { return -1 }
+            node_types[id] = types.named(TK_VOID)
+            g_typed = g_typed + 1
+            return types.named(TK_VOID)
+        }
+        // table_append_raw(t, ptr, n) → void：首参须为表；指针侧与个数按通用推断。
+        if fnm == "table_append_raw" {
+            var ta2 = infer_expr(args[0])
+            if ta2 < 0 { return -1 }
+            if !types.is_table(ta2) {
+                sm_err_line = s_lines[id]; sm_err_col = s_cols[id]
+                sm_err_msg = "table_append_raw() 第 1 个参数必须是表，实际是 " + types.type_name(ta2)
+                return -1
+            }
+            var tp2 = infer_expr(args[1])
+            if tp2 < 0 { return -1 }
+            var tn2 = infer_expr(args[2])
+            if tn2 < 0 { return -1 }
+            node_types[id] = types.named(TK_VOID)
+            g_typed = g_typed + 1
+            return types.named(TK_VOID)
+        }
         // as_* 特殊检查（S1.3 数值转换 + P2b any 拆箱重载）：
         // 数字参数 → 数值转换；any 参数 → 拆箱（运行时 tag 检查）。
         // as_bool/as_string/as_char 仅支持 any（无数值转换语义）。

@@ -96,6 +96,8 @@ pub func builtin_call(fn_name: string, args: table<i64>, call_node: i64) -> i64 
     if fn_name == "table_pop" { return builtin_call_b_table_pop_p(fn_name, args, call_node) }
     if fn_name == "table_trunc" { return builtin_call_b_table_trunc_p(fn_name, args, call_node) }
     if fn_name == "table_append" { return builtin_call_b_table_append_p(fn_name, args, call_node) }
+    if fn_name == "table_append_raw" { return builtin_call_b_table_append_raw_p(fn_name, args, call_node) }
+    if fn_name == "table_reserve" { return builtin_call_b_table_reserve_p(fn_name, args, call_node) }
     if fn_name == "exit" { return builtin_call_b_exit(fn_name, args, call_node) }
     if fn_name == "read_line" || fn_name == "file_read" || fn_name == "file_delete" || fn_name == "file_exists" { return builtin_call_b_read_line(fn_name, args, call_node) }
     // 完整 fs 元数据内置（UTF-8 桥）：file_size → i64（失败 -1）；
@@ -160,6 +162,9 @@ pub func builtin_call(fn_name: string, args: table<i64>, call_node: i64) -> i64 
     // ---------- channel 原语（p.6.5.7：mailbox 承载，静态链接 trm_lite.a）----------
     // ch_open() -> i64（新通道句柄），0 参数。
     if fn_name == "ch_open" { return builtin_call_b_ch_open(fn_name, args, call_node) }
+    if fn_name == "ch_len" { return builtin_call_b_ch_len(fn_name, args, call_node) }
+    if fn_name == "ch_closed_flag" { return builtin_call_b_ch_closed_flag(fn_name, args, call_node) }
+    if fn_name == "ch_count" { return builtin_call_b_ch_count(fn_name, args, call_node) }
     // ch_send(ch, v) -> i64（0=入队成功 1=失败），2 参数。
     if fn_name == "ch_send" { return builtin_call_b_ch_send(fn_name, args, call_node) }
     // ch_send_block(ch, v) -> i64（p.9.5.x T3 背压：队满阻塞等待空位，Go 阻塞

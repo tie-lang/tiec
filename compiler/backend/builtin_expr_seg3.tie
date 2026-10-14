@@ -43,6 +43,8 @@ namespace irgen {
         if nm == "table_pop" { return bi_table_pop(nm, id) }
         if nm == "table_trunc" { return bi_table_trunc(nm, id) }
         if nm == "table_append" { return bi_table_append(nm, id) }
+        if nm == "table_append_raw" { return bi_table_append_raw(nm, id) }
+        if nm == "table_reserve" { return bi_table_reserve(nm, id) }
         // ---------- trm-lite 轻量执行体原语（阶段1块2：spawn/yield/collect） ----------
         if nm == "spawn" { return bi_spawn(nm, id) }
         if nm == "yield" { return bi_yield(nm, id) }
@@ -52,6 +54,9 @@ namespace irgen {
         // ch_open() → i64 新通道句柄；入队前初始化各平行数组/环形缓冲（trm_lite.a 内部完成）。
         // ---------- channel 原语（p.6.5.7：mailbox 承载，静态链接 trm_lite.a） ----------
         if nm == "ch_open" { return bi_ch_open(nm, id) }
+        if nm == "ch_len" { return bi_ch_len(nm, id) }
+        if nm == "ch_closed_flag" { return bi_ch_closed_flag(nm, id) }
+        if nm == "ch_count" { return bi_ch_count(nm, id) }
         // ch_send(ch, v) → i64（0=入队成功 1=失败：通道关闭或队列满）。
         if nm == "ch_send" { return bi_ch_send(nm, id) }
         // ch_send_block(ch, v) → i64（p.9.5.x T3 背压：队满阻塞等待空位；0=已入队
