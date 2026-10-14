@@ -123,6 +123,8 @@ pub var g_rng_reg_done: i64 = 0;
 // 置位后 irgen 登记导出面（ir.func_exported）供 llvmgen 输出 dllexport，
 // 并对导出函数做边界检查（表/struct 不跨动态库边界）。
 pub var g_dynlib: bool = false;
+// --dll-export 导出白名单（driver 经 set_dll_export 注入；空 = 不过滤）。
+pub var g_dll_export: string = "";
 // S1.4 --check-bounds：数组越界检查（默认关；driver 经 set_check_bounds 注入）。
 pub var g_check_bounds: bool = false;
 // 当前编译目标三元组（driver 在 tig_ast 前经 set_target 注入；空 = 未设置）。
@@ -339,6 +341,11 @@ pub func set_target(t: string) {
 // 置位后本模块对每个函数登记导出面（ir.func_export_set）+ 导出边界检查。
 pub func set_dynlib(v: bool) {
     g_dynlib = v
+}
+
+// 注入动态库导出白名单（逗号分隔的导出名，如 "tiel$check"；空 = 不过滤）。
+pub func set_dll_export(s: string) {
+    g_dll_export = s
 }
 
 // 注入数组越界检查（driver 在 --check-bounds 时调用；默认关）。

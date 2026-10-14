@@ -571,7 +571,9 @@ pub func emit() -> string {
             kk = kk + 1
         }
         if has_rti == 1 {
-            line("@llvm.global_ctors = appending global [1 x { i32, ptr, ptr }] [{ i32 65535, ptr @tie$rt_init, ptr null }]")
+            // 元素须带显式类型前缀：LLVM 21+ 收紧数组字面量解析，旧简写
+            // `[{ i32 65535, ... }]` 在 LLVM 22 报 expected '}' at end of struct。
+            line("@llvm.global_ctors = appending global [1 x { i32, ptr, ptr }] [{ i32, ptr, ptr } { i32 65535, ptr @tie$rt_init, ptr null }]")
         }
     }
     // r.1.4.4：未支持指令 = 硬错误——gen_inst 已登记 g_llvmgen_err，

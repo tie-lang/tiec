@@ -480,6 +480,51 @@ func tig_ns(ns_node: i64, prefix: string) -> i64 {
 
 // 函数定义 → tie-IR 函数。prefix 为命名空间前缀（顶层函数传 ""）。
 // 函数全名 = prefix::name（命名空间函数）；LLVM 符号由 llvmgen 转 $。
+// --dll-export 白名单匹配：full_name（"ns::fn"）按导出名形态（"ns$fn"）与
+// 逗号分隔的名单做精确比较（名单为空时不应调用——调用方已判空）。
+func dll_export_hit(full_name: string) -> bool {
+    // 构造导出名：:: → $
+    var sb = string_builder()
+    var i: i64 = 0
+    var n = str_len(full_name)
+    while i < n {
+        if i + 1 < n && str_byte(full_name, i) == 58 && str_byte(full_name, i + 1) == 58 {
+            sb_append(sb, "$")
+            i = i + 2
+        } else {
+            sb_append_byte(sb, str_byte(full_name, i))
+            i = i + 1
+        }
+    }
+    var ex = sb_build(sb)
+    // 名单逐段精确比较（逗号分隔；末段无逗号）
+    var m = str_len(g_dll_export)
+    var st: i64 = 0
+    var j: i64 = 0
+    while j <= m {
+        if j == m || str_byte(g_dll_export, j) == 44 {
+            var seg = j - st
+            if seg == str_len(ex) {
+                var eq = true
+                var k: i64 = 0
+                while k < seg {
+                    if str_byte(g_dll_export, st + k) != str_byte(ex, k) {
+                        eq = false
+                        break
+                    }
+                    k = k + 1
+                }
+                if eq {
+                    return true
+                }
+            }
+            st = j + 1
+        }
+        j = j + 1
+    }
+    return false
+}
+
 func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     // 泛型模板声明（children[0] == N_TYPE_PARAMS）：T3b 单态化前不生成 IR——
     // 模板体内 TypeVar 类型（"T"）无法静态编码，生成会报"类 'T' 未定义"。
@@ -568,6 +613,12 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     var is_pub: i64 = 1
     if prefix != "" {
         is_pub = s_vals[fn_node] & 1
+    }
+    // --dll-export 白名单（空 = 不过滤）：只导出名单内的函数（导出名 "ns$fn" 精确匹配）
+    if g_dynlib && is_pub == 1 && str_len(g_dll_export) > 0 {
+        if !dll_export_hit(full_name) {
+            is_pub = 0
+        }
     }
     if g_dynlib && is_pub == 1 {
         var rberr = dynlib_ty_ok(ret_ty)
