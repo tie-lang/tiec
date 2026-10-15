@@ -577,8 +577,11 @@ func is_libc_sym(sym: string) -> bool {
     // Linux 分支，UTF-8 直通；全为 libc 符号，非 interp 桥——同 r.1.6.2 注释）。
     // pipe/fork/dup2/execl/waitpid 供 exec_output 管道捕获；getcwd/setenv 供
     // cwd/set_env；strlen 已登记（arg_string/exec_output 取参长）。
+    // 2026-10-15：补 chdir/execv/pipe2/_exit —— tiej 执行域引擎（execrun.tie，
+    // POSIX 分支）直启/管道/接线用（无 shell 借用：fork+chdir+dup2+execv）。
     if sym == "getcwd" || sym == "setenv" || sym == "pipe" || sym == "fork" ||
-        sym == "dup2" || sym == "execl" || sym == "waitpid" {
+        sym == "dup2" || sym == "execl" || sym == "waitpid" ||
+        sym == "chdir" || sym == "execv" || sym == "pipe2" || sym == "_exit" {
         return true
     }
     // r.1.6.4：Linux POSIX socket 符号（net_* 内置 Linux 分支直调 libc socket 族，
