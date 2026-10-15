@@ -75,6 +75,15 @@ pub func kpass_irgen() -> i64 {
                         // p.9.17.1：str_char 缓存段（emit 侧隐含 SSO 段）
                         llvmgen.sc_enable()
                     }
+                    // p.9.15.1 装配路径补烘焙：全量路径在 irgen 后由 bake_build_stamp
+                    // 把「本次源码集指纹」覆写进 g_tiec_build_stamp 初值；装配路径
+                    // 跳过 irgen，该初值经 asm_reg_globals 重放为**源码初值**（空串）
+                    // ⇒ 命中路径 .ll 的 @.str 池缺「指纹串」条目、全局定义退化空串
+                    //（实测 3.2 万行纯编号重排、0 功能差异；池编号按文本升序、只由
+                    // 串集合决定 ⇒ 集合恢复即全文件字节一致）。片段全命中的前提 =
+                    // 同一源码集 ⇒ 此处重算值恒等于全量路径产物；非 tiec 自身编译
+                    //（has_global=false）惰性短路、零成本。
+                    bake_build_stamp()
                     var inc9 = get_env("TIEC_INC")
                     if inc9 == "1" {
                         dbg_txt("MODASM " + to_string(len(ap)) + "/" + to_string(len(ap)) + " assembled")
