@@ -545,7 +545,11 @@ func is_libc_sym(sym: string) -> bool {
         sym == "SHFileOperationW" ||
         // 控制台编码契约（irgen_console.tie）：GetConsoleMode/WriteConsoleW/
         // ReadConsoleW 同为 kernel32 符号（非 interp 桥）——未登记会误判桥。
-        sym == "GetConsoleMode" || sym == "WriteConsoleW" || sym == "ReadConsoleW" {
+        // 2026-10-16：补 SetConsoleMode/ReadConsoleInputW/GetConsoleScreenBufferInfo
+        // ——终端原语（tiej term.tie：逐键读取/VT 开启/尺寸；设计稿 §4.3）。
+        sym == "GetConsoleMode" || sym == "WriteConsoleW" || sym == "ReadConsoleW" ||
+        sym == "SetConsoleMode" || sym == "ReadConsoleInputW" ||
+        sym == "GetConsoleScreenBufferInfo" {
         return true
     }
     // p.6.4.6 exec_output 进程管道内联：kernel32 进程/管道/句柄 API（非 interp 桥）。
@@ -579,9 +583,12 @@ func is_libc_sym(sym: string) -> bool {
     // cwd/set_env；strlen 已登记（arg_string/exec_output 取参长）。
     // 2026-10-15：补 chdir/execv/pipe2/_exit —— tiej 执行域引擎（execrun.tie，
     // POSIX 分支）直启/管道/接线用（无 shell 借用：fork+chdir+dup2+execv）。
+    // 2026-10-16：补 isatty/tcgetattr/tcsetattr —— tiej 终端原语（term.tie，
+    // POSIX raw 模式；设计稿 §4.3）。
     if sym == "getcwd" || sym == "setenv" || sym == "pipe" || sym == "fork" ||
         sym == "dup2" || sym == "execl" || sym == "waitpid" ||
-        sym == "chdir" || sym == "execv" || sym == "pipe2" || sym == "_exit" {
+        sym == "chdir" || sym == "execv" || sym == "pipe2" || sym == "_exit" ||
+        sym == "isatty" || sym == "tcgetattr" || sym == "tcsetattr" {
         return true
     }
     // r.1.6.4：Linux POSIX socket 符号（net_* 内置 Linux 分支直调 libc socket 族，
