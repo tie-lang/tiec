@@ -69,3 +69,6 @@ gfx/skia/smoke/
 !tests/s21_probe/
 !tests/s22_probe/
 !tests/s23_probe/
+# tpkg 规范
+target/
+_local_only/
