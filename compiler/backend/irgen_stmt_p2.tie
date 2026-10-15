@@ -313,38 +313,26 @@ func tig_println(id: i64, newline: bool) -> i64 {
     var arg = sstate.child(id, sstate.slot_off(id))
     var atag = s_tags[arg]
     if atag == 2 {
-        // 字符串参数：格式 "%s\n" + 字符串指针
+        // 字符串参数：控制台编码契约分派（控制台宽写 / 管道文件原 printf）
         var sval = tig_str_lit(s_names[arg])
-        var fmt = interner.intern("%s" + nl)
-        var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-        ir.add_operand(inst, fmt, 0)
-        ir.add_operand(inst, sval, 0)
-        return ir.get_value(inst)
+        return tig_print_str_line(sval, newline)
     }
     if atag == 6 && scope_get(s_names[arg]) >= 0 && g_lookup_ty == types.named(TK_STR) {
-        // T4.5：字符串类型变量（如 `var p: string = get_env("PATH")`）→ "%s\n" + ptr
+        // T4.5：字符串类型变量（如 `var p: string = get_env("PATH")`）→ 分派
         var sval = tig_var_ref(s_names[arg])
         if sval < 0 {
             return -1
         }
-        var fmt = interner.intern("%s" + nl)
-        var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-        ir.add_operand(inst, fmt, 0)
-        ir.add_operand(inst, sval, 0)
-        return ir.get_value(inst)
+        return tig_print_str_line(sval, newline)
     }
     // 字符串表达式（str_cat 拼接 / 返回 string 的调用等）：node_types 推断为
-    // TK_STR → "%s\n" + ptr。曾漏此分支：拼接结果走 %lld 打印指针值（乱码）
+    // TK_STR → 分派。曾漏此分支：拼接结果走 %lld 打印指针值（乱码）
     if node_types[arg] == types.named(TK_STR) {
         var sval2 = tig_expr(arg)
         if sval2 < 0 {
             return -1
         }
-        var fmt2 = interner.intern("%s" + nl)
-        var inst2 = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-        ir.add_operand(inst2, fmt2, 0)
-        ir.add_operand(inst2, sval2, 0)
-        return ir.get_value(inst2)
+        return tig_print_str_line(sval2, newline)
     }
     // P2c：any 参数 → 运行时分派打印（tig_print_any 按 tag 逐分支）
     if node_types[arg] == types.named(TK_ANY) {
@@ -382,11 +370,7 @@ func tig_println(id: i64, newline: bool) -> i64 {
             return -1
         }
         var ms = s21_map_to_string(mv, m_vty)
-        var fm = interner.intern("%s" + nl)
-        var im = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-        ir.add_operand(im, fm, 0)
-        ir.add_operand(im, ms, 0)
-        return ir.get_value(im)
+        return tig_print_str_line(ms, newline)
     }
     // 浮点参数（f64/f32）：格式 "%f"（printf 变参要求 double，f32 需 fpext 提升——
     // 语义层 f32 场景罕见，按 f64 处理；f32 值经 fpext 指令提升）
@@ -529,9 +513,14 @@ func tig_print_any(v: i64, nl: string) -> i64 {
         var ld = ir.new_inst(g_cur_block, 21, pty_p)  // load payload
         ir.add_operand(ld, g1p, 0)
         var pv2 = ir.get_value(ld)
-        var pi = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-        ir.add_operand(pi, interner.intern(fmt_s), 0)
-        ir.add_operand(pi, pv2, 0)
+        if tag_id == 3 {
+            // 字符串负载：控制台编码契约分派（宽写 / 原 printf）；其余 tag 全 ASCII 走 printf
+            tig_print_str_line(pv2, str_len(nl) > 0)
+        } else {
+            var pi = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
+            ir.add_operand(pi, interner.intern(fmt_s), 0)
+            ir.add_operand(pi, pv2, 0)
+        }
         var be = ir.new_inst(g_cur_block, 30, -1)
         ir.add_operand(be, exit, 1)
         g_cur_block = nxt

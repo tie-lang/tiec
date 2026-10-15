@@ -760,11 +760,8 @@ func tig_await(fut_val: i64, ret_ty: i64) -> i64 {
     ir.add_operand(cbf, raiseb, 1)
     ir.add_operand(cbf, okb, 1)
     g_cur_block = raiseb
-    var fmtR = interner.intern("%s\n")
     var msgR = tig_str_lit(interner.intern("\"actor 方法 panic\""))
-    var pri = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-    ir.add_operand(pri, fmtR, 0)
-    ir.add_operand(pri, msgR, 0)
+    tig_print_str_line(msgR, true)  // 控制台编码契约：宽写 / 原 printf 分派
     var oneR = tig_int_lit_ty(1, T64)
     tig_ext_call1("exit", oneR, T64, -1)
     var brR = ir.new_inst(g_cur_block, 30, -1)
@@ -865,11 +862,8 @@ func gen_actor_sync_call(rech: i64, mi: i64, args: table<i64>, argtys: table<i64
     ir.add_operand(cbf, okb, 1)
     // raise：打印「actor 方法 panic」→ exit(1)（noreturn，死 br 补 terminator）
     g_cur_block = raiseb
-    var fmtR = interner.intern("%s\n")
     var msgR = tig_str_lit(interner.intern("\"actor 方法 panic\""))
-    var pri = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-    ir.add_operand(pri, fmtR, 0)
-    ir.add_operand(pri, msgR, 0)
+    tig_print_str_line(msgR, true)  // 控制台编码契约：宽写 / 原 printf 分派
     var oneR = tig_int_lit_ty(1, T64)
     tig_ext_call1("exit", oneR, T64, -1)
     var brR = ir.new_inst(g_cur_block, 30, -1)  // 死 br（terminator）

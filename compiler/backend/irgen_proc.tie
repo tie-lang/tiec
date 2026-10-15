@@ -470,17 +470,51 @@ func tig_set_env(k: i64, v: i64) {
     }
 }
 func tig_print_err(v: i64) {
+    // 控制台编码契约（设计稿 §4.1）：Windows 控制台 ⇒ 宽写（WriteConsoleW，
+    // stderr 句柄；LF 翻译对齐 CRT 文本模式）；管道/文件与 Linux ⇒ 原 _write
+    // 字节路径（逐字节不变）。
     var I32 = types.named(TK_I32)
     var len = s21_str_head_len(v)
-    var ats: table<i64> = table_new_i64()
-    var avs: table<i64> = table_new_i64()
-    table_push(ats, I32)
-    table_push(avs, tig_int_lit_ty(2, I32))   // fd = stderr
-    table_push(ats, types.named(TK_STR))
-    table_push(avs, v)
-    table_push(ats, types.named(TK_I64))
-    table_push(avs, len)                      // 字节数（低 32 位被 _write 读取）
-    tig_ext_call_typed("_write", ats, avs, -1)  // void（返回写入字节数，忽略）
+    if tig_is_linux() {
+        var atsl: table<i64> = table_new_i64()
+        var avsl: table<i64> = table_new_i64()
+        table_push(atsl, I32)
+        table_push(avsl, tig_int_lit_ty(2, I32))   // fd = stderr
+        table_push(atsl, types.named(TK_STR))
+        table_push(avsl, v)
+        table_push(atsl, types.named(TK_I64))
+        table_push(avsl, len)                      // 字节数（低 32 位被 _write 读取）
+        tig_ext_call_typed("_write", atsl, avsl, -1)  // void（返回写入字节数，忽略）
+    } else {
+        var h = tig_con_handle(-12)
+        var isc = tig_con_is_console(h)
+        var b_c = ir.new_block(g_cur_func, interner.intern("err.c"))
+        var b_p = ir.new_block(g_cur_func, interner.intern("err.p"))
+        var b_m = ir.new_block(g_cur_func, interner.intern("err.m"))
+        var cb = ir.new_inst(g_cur_block, 31, -1)
+        ir.add_operand(cb, isc, 0)
+        ir.add_operand(cb, b_c, 1)
+        ir.add_operand(cb, b_p, 1)
+        // 控制台：宽写（消息自带 \n，翻译处理）
+        g_cur_block = b_c
+        tig_con_write_line(h, v, 0)
+        var brc = ir.new_inst(g_cur_block, 30, -1)
+        ir.add_operand(brc, b_m, 1)
+        // 管道/文件：原 _write 路径
+        g_cur_block = b_p
+        var ats: table<i64> = table_new_i64()
+        var avs: table<i64> = table_new_i64()
+        table_push(ats, I32)
+        table_push(avs, tig_int_lit_ty(2, I32))   // fd = stderr
+        table_push(ats, types.named(TK_STR))
+        table_push(avs, v)
+        table_push(ats, types.named(TK_I64))
+        table_push(avs, len)                      // 字节数（低 32 位被 _write 读取）
+        tig_ext_call_typed("_write", ats, avs, -1)  // void（返回写入字节数，忽略）
+        var brp = ir.new_inst(g_cur_block, 30, -1)
+        ir.add_operand(brp, b_m, 1)
+        g_cur_block = b_m
+    }
 }
 func tig_sh_op(funcCode: i64, fromS: i64, toS: i64) -> i64 {
     var T64 = types.named(TK_I64)

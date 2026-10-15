@@ -91,10 +91,7 @@ func s21_table_push_ex(t: i64, elem_llvm_ty: i64, v: i64, excl: bool) {
 //（LLVM 要求块有 terminator；opt 会 DCE 死 br）。
 func s21_index_raise(next_blk: i64) {
     var msg = tig_str_lit(interner.intern("\"运行时错误: 表下标越界（负索引）\""))
-    var fmt = interner.intern("%s\n")  // 与 s21_map_missing_raise 同渲染路径
-    var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // printf vararg
-    ir.add_operand(inst, fmt, 0)
-    ir.add_operand(inst, msg, 0)
+    tig_print_str_line(msg, true)  // 控制台编码契约：宽写 / 原 printf 分派
     tig_ext_call1("exit", tig_int_lit_ty(1, types.named(TK_I32)), types.named(TK_I32), -1)
     var db = ir.new_inst(g_cur_block, 30, -1)  // 死 br（exit noreturn）
     ir.add_operand(db, next_blk, 1)
@@ -105,10 +102,7 @@ func s21_index_raise(next_blk: i64) {
 // noreturn；next_blk 供死 br 收尾（LLVM 要求块有 terminator；opt 会 DCE 死 br）。
 func s21_oob_raise(next_blk: i64) {
     var msg = tig_str_lit(interner.intern("\"运行时错误: 表下标越界——该表被别名共享，写越界会改变所有别名看到的长度；如需扩容请先 clone 出独立副本\""))
-    var fmt = interner.intern("%s\n")
-    var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))
-    ir.add_operand(inst, fmt, 0)
-    ir.add_operand(inst, msg, 0)
+    tig_print_str_line(msg, true)  // 控制台编码契约：宽写 / 原 printf 分派
     tig_ext_call1("exit", tig_int_lit_ty(1, types.named(TK_I32)), types.named(TK_I32), -1)
     var db = ir.new_inst(g_cur_block, 30, -1)
     ir.add_operand(db, next_blk, 1)
@@ -797,10 +791,7 @@ func s21_map_arr_grow_exact(m: i64, cap: i64, len: i64, data: i64, need: i64) {
 func s21_map_missing_raise(key: i64, next_blk: i64) {
     var p1 = tig_binary_str(0, tig_str_lit(interner.intern("\"运行时错误: map_get 键不存在：'\"")), key)
     var msg = tig_binary_str(0, p1, tig_str_lit(interner.intern("\"'\"")))
-    var fmt = interner.intern("%s\n")
-    var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-    ir.add_operand(inst, fmt, 0)
-    ir.add_operand(inst, msg, 0)
+    tig_print_str_line(msg, true)  // 控制台编码契约：宽写 / 原 printf 分派
     tig_ext_call1("exit", tig_int_lit_ty(1, types.named(TK_I32)), types.named(TK_I32), -1)
     var db = ir.new_inst(g_cur_block, 30, -1)  // 死 br（exit noreturn）
     ir.add_operand(db, next_blk, 1)

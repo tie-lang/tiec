@@ -18,12 +18,12 @@ func tig_bt_mode2(c0: i64, c1: i64) -> i64 {
     s21_store(s21_gep(md, 2, true), tig_int_lit_ty(0, I8), I8)  // 尾 \0
     return md
 }
-// 失败输出：printf(fmt, path) + exit(1)（对齐 tig_panic 的 call_vararg 范式；
-// fmt 为字符串池 id，llvmgen collect_strings 会收集 op41 操作数 0）
-func tig_bt_fail(p: i64, fmt: i64) {
-    var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-    ir.add_operand(inst, fmt, 0)
-    ir.add_operand(inst, p, 0)
+// 失败输出：路径 + 固定前缀（byte_read 诊断）→ 控制台编码契约分派 + exit(1)。
+// （原为 printf(fmt, path)、fmt 由调用方传入；唯一调用点 bits.tie byte_read。）
+func tig_bt_fail(p: i64) {
+    var pre = tig_str_lit(interner.intern("\"byte_read: 打开/读取文件失败: \""))
+    var msg = tig_binary_str(0, pre, p)
+    tig_print_str_line(msg, true)
     var one = tig_int_lit_ty(1, types.named(TK_I64))
     tig_ext_call1("exit", one, types.named(TK_I64), -1)
 }

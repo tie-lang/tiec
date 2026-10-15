@@ -573,11 +573,8 @@ func tig_panic(id: i64) -> i64 {
     if mv < 0 {
         return -1
     }
-    // 打印一次，再交给公共收尾决定「longjmp 回捕获点」还是「exit」
-    var fmt = interner.intern("%s\n")
-    var inst = ir.new_inst(g_cur_block, 41, types.named(TK_I32))  // call_vararg
-    ir.add_operand(inst, fmt, 0)
-    ir.add_operand(inst, mv, 0)
+    // 打印一次（控制台编码契约分派：宽写 / 原 printf），再交给公共收尾
+    tig_print_str_line(mv, true)
     var cont = ir.new_block(g_cur_func, interner.intern("pnc.o"))
     tig_panic_tail(cont)
     g_cur_block = cont

@@ -542,7 +542,10 @@ func is_libc_sym(sym: string) -> bool {
         sym == "CreateDirectoryW" || sym == "GetFileAttributesW" ||
         sym == "DeleteFileW" || sym == "FindFirstFileW" || sym == "FindNextFileW" ||
         sym == "FindClose" || sym == "CopyFileW" || sym == "MoveFileW" ||
-        sym == "SHFileOperationW" {
+        sym == "SHFileOperationW" ||
+        // 控制台编码契约（irgen_console.tie）：GetConsoleMode/WriteConsoleW/
+        // ReadConsoleW 同为 kernel32 符号（非 interp 桥）——未登记会误判桥。
+        sym == "GetConsoleMode" || sym == "WriteConsoleW" || sym == "ReadConsoleW" {
         return true
     }
     // p.6.4.6 exec_output 进程管道内联：kernel32 进程/管道/句柄 API（非 interp 桥）。

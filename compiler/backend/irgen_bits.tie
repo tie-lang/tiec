@@ -30,7 +30,7 @@ func tig_byte_read(p: i64) -> i64 {
     ir.add_operand(cb, fl, 1)
     // 失败：printf + exit(1) + 死 br（对齐 tig_panic 的双分支范式）
     g_cur_block = fl
-    tig_bt_fail(p, interner.intern("byte_read: 打开/读取文件失败: %s\n"))
+    tig_bt_fail(p)
     var brf = ir.new_inst(g_cur_block, 30, -1)
     ir.add_operand(brf, mg, 1)
     // 成功：定位长度 → 全量读入 u8 临时缓冲
