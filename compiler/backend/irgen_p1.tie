@@ -511,7 +511,10 @@ func is_libc_sym(sym: string) -> bool {
     // r.1.6.6：GetTickCount（kernel32 毫秒时钟，tiec 内部计时点）补登记——未登记
     // 会把纯 libc 程序误判为 interp 桥；Linux 由 linux_compat.c shim 解析。
     if sym == "GetCommandLineW" || sym == "CommandLineToArgvW" || sym == "LocalFree" ||
-        sym == "SetEnvironmentVariableW" || sym == "GetCurrentDirectoryW" ||
+        // 2026-10-16：补 GetEnvironmentVariableW —— tiej execrun.env_get（Windows
+        // 实时环境块直读；tie get_env 内置读 CRT 快照，进程内新写不可见）。
+        sym == "SetEnvironmentVariableW" || sym == "GetEnvironmentVariableW" ||
+        sym == "GetCurrentDirectoryW" ||
         sym == "GetTickCount" {
         return true
     }
