@@ -33,12 +33,50 @@ if nm == "time_now" {
 // 内置 `get_env`（p.9.21.2 两步制①：自 builtin_expr 提取）
 pub func bi_get_env(nm: string, id: i64) -> i64 {
 if nm == "get_env" {
-    // runtime.a 退役：内联到 libc getenv（返回 char* → 自动补头为 tie 串）
     var gv = tig_expr(call_arg(id, 0))
     if gv < 0 {
         return -1
     }
-    g_builtin_res = tig_ext_call1("getenv", gv, types.named(TK_STR), types.named(TK_STR))
+    if tig_is_linux() {
+        // POSIX：getenv 与 set_env 的 setenv 同源（共享 environ 数组），原实现保留。
+        // runtime.a 退役：内联到 libc getenv（返回 char* → 自动补头为 tie 串）
+        g_builtin_res = tig_ext_call1("getenv", gv, types.named(TK_STR), types.named(TK_STR))
+        return 0
+    }
+    // Windows：GetEnvironmentVariableW 读 Win32 实时环境块——与 set_env 的
+    // SetEnvironmentVariableW 成对（旧实现内联 CRT getenv 读启动快照 ⇒ 进程内
+    // set_env 后读不可见）。固定缓冲 = 单变量上限 32767 码元 + NUL = 32768；
+    // 先零化再调：变量不存在（返回 0、缓冲不被写）⇒ 全零 ⇒ tig_from_wide16 得空串。
+    var I32 = types.named(TK_I32)
+    var I8 = types.named(TK_I8)
+    var T64 = types.named(TK_I64)
+    var P8 = types.ptr_of(I8)
+    var cap = tig_int_lit(32768)
+    var cap32 = tig_int_lit_ty(32768, I32)
+    var nbytes = s21_bin(2, cap, tig_int_lit(2))   // 2*cap 字节
+    var buf = s21_raw_alloc_str(nbytes)
+    var kw = tig_wide16(gv)
+    var atsm: table<i64> = table_new_i64()
+    var avsm: table<i64> = table_new_i64()
+    table_push(atsm, P8)
+    table_push(avsm, buf)
+    table_push(atsm, I8)
+    table_push(avsm, tig_int_lit_ty(0, I8))
+    table_push(atsm, T64)
+    table_push(avsm, nbytes)
+    tig_ext_call_typed("memset", atsm, avsm, -1)
+    var ats: table<i64> = table_new_i64()
+    var avs: table<i64> = table_new_i64()
+    table_push(ats, P8)
+    table_push(avs, kw)
+    table_push(ats, P8)
+    table_push(avs, buf)
+    table_push(ats, I32)
+    table_push(avs, cap32)
+    tig_ext_call_typed("GetEnvironmentVariableW", ats, avs, I32)  // DWORD；本路径不依赖返回值
+    var res = tig_from_wide16(buf)
+    tig_ext_call1("free", buf, types.named(TK_STR), -1)
+    g_builtin_res = res
     return 0
 }
 }
