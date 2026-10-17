@@ -166,6 +166,13 @@ pub func dep_cache_key() -> string {
     } else {
         m = m + "\nF0"
     }
+    // 并发缺席标记（表访问免锁，irgen.set_noconc）：同一编译器可编出「免锁」
+    // 与「持锁」两种形态，键必须区分——否则有 spawn 的程序会命中免锁片段。
+    if g_noconc {
+        m = m + "\nQ1"
+    } else {
+        m = m + "\nQ0"
+    }
     // 检查恒开（规范 8.5 不可关闭）⇒ 缓存键固定 C1。保留该标记是有意的：
     // 旧缓存写的是 C0，标记不同即自动失效，不会误命中「无检查」的旧产物。
     m = m + "\nC1"
@@ -520,6 +527,13 @@ pub func cache_key_str(src: string) -> string {
     } else {
         m = m + "\nF0"
     }
+    // 并发缺席标记（表访问免锁，irgen.set_noconc）：同一编译器可编出「免锁」
+    // 与「持锁」两种形态，键必须区分——否则有 spawn 的程序会命中免锁片段。
+    if g_noconc {
+        m = m + "\nQ1"
+    } else {
+        m = m + "\nQ0"
+    }
     // 检查恒开（规范 8.5 不可关闭）⇒ 缓存键固定 C1。保留该标记是有意的：
     // 旧缓存写的是 C0，标记不同即自动失效，不会误命中「无检查」的旧产物。
     m = m + "\nC1"
@@ -584,7 +598,12 @@ pub func cache_enabled() -> bool {
 // 的 std/string.tie 片段被 driver 装配命中，其 test::expect_eq 展开引用的
 // test::expect 在 driver 单元无定义 → opt 报 use of undefined value）。
 pub func mod_slice_key(p: string, fp: string, topt: i64) -> string {
-    return "tm" + to_string(str_hash(p + "|" + fp + "|" + compiler_ident() + "|M" + to_string(topt) + "|TG" + g_target + "|R" + k_g_src))
+    // Q：并发缺席标记（见 dep_cache_key）——片段里是否免锁由它决定，键必须织入。
+    var q = "|Q0"
+    if g_noconc {
+        q = "|Q1"
+    }
+    return "tm" + to_string(str_hash(p + "|" + fp + "|" + compiler_ident() + "|M" + to_string(topt) + "|TG" + g_target + "|R" + k_g_src + q))
 }
 
 // p.9.21.9：全部模块片段命中 → 返回路径表（模块序 = dep_depset 序）；

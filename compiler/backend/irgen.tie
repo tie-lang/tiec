@@ -98,6 +98,11 @@ pub var g_used_interp: bool = false;
 // trm-lite 阶段1块2：程序是否使用了轻量执行体内置（spawn/yield/collect）。
 // 置位后 driver 链接 trm_lite.a（Go 式静态内置运行时；TIE_TRM_LITE_LIB 定位）。
 pub var g_used_trmlite: bool = false;
+// 并发缺席（driver 注入，见 pipeline.no_concurrency / set_noconc）：可执行产物 +
+// 非动态库 + 单元内无 spawn（三条件全满足）⇒ 无第二个执行流可达任何表 ⇒ 表读写
+// 免锁（与 esc 逐变量独占证明互补，二者任一即够）。
+// ★ 误置会把数据竞争带回来：driver 侧按「存疑即关」注入，且缓存键须织入本标志。
+pub var g_noconc: bool = false;
 // r.1.1.3：全局表字面量初值记录（表全局 + 非空表字面量）——
 // 并行表：全局名池 id ↔ 初始化 AST 节点 id（main 入口创建后 tig_table_lit
 // 整体构造，含逐元素 push）。空表/无初值不入表（main 建空表既有路径）。
@@ -353,6 +358,14 @@ pub func set_dll_export(s: string) {
 // 注入数组越界检查（driver 在 --check-bounds 时调用；默认关）。
 pub func set_check_bounds(v: bool) {
     g_check_bounds = v
+}
+
+// 注入「并发缺席」判据（driver 在前端完成后注入，判据见 pipeline.no_concurrency：
+// 可执行产物 + 非动态库 + 单元无 spawn）：此时不存在第二个执行流可达**任何**表
+// ⇒ 表读写与「可证独占」同价（免锁）。与 irgen_esc 的逐变量独占分析相互独立：
+// 两者都足以证明无边并发，任一成立即走免锁路径。
+pub func set_noconc(v: bool) {
+    g_noconc = v
 }
 
 

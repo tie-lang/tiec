@@ -7,6 +7,29 @@ type tie<class>
 // 风格 ns：函数在 `namespace driver` 内，一律 pub（driver 库 API 面）；
 // 主文件顶层 main() 以 driver.<名>() 调用。
 namespace driver {
+// 并发缺席：**可执行产物**（role_output == "exe"）、非动态库、且整个编译单元
+//（含 import 展开）不含 spawn。任一不满足 → false（保守：宁可少优化，绝不漏锁）。
+// 边界与依据：
+//   · 库产物（.a/.dll/.so）一律不算缺席——静态库会被多线程宿主链入，动态库更
+//     直接被任意线程调用（trm-lite 自身就是以 class 角色构建的 .a，其线程池
+//     调度器在 worker 线程里操作表，必须保留锁）；
+//   · spawn 是 tie 语言唯一的执行流创建路径（g_spawn_nodes 逐点登记，含任务集
+//     运行期组装的强制登记）；
+//   · 越过语言直接用 unsafe extern CreateThread / 运行时线程池（pp_open）创建
+//     线程者，属 unsafe 越界——与语言既有内存模型一致，由书写者负责。
+pub func no_concurrency() -> bool {
+    if g_shared {
+        return false
+    }
+    if role_output(str.clone(g_role)) != "exe" {
+        return false
+    }
+    if len(g_spawn_nodes) > 0 {
+        return false
+    }
+    return true
+}
+
 // 段 1 前端：词法 + 语法 + 语义（含 import）。失败返回 1（frontend 内部已
 // 打印诊断，wrapper 不重复打印）。
 pub func kpass_front() -> i64 {
@@ -621,6 +644,11 @@ pub func keel_run_pipeline(pid: i64, max_steps: i64) -> i64 {
             if frc != 0 {
                 return frc
             }
+            // 并发缺席判据注入（irgen.set_noconc）：前端已展开全部 import，此刻
+            // g_spawn_nodes 是**整个编译单元**的事实。必须在缓存判定之前注入——
+            // 缓存键织入 Q 标记（cache_drv），否则「有 spawn」的产物会命中
+            // 「无 spawn」时生成的免锁片段。
+            irgen.set_noconc(no_concurrency())
             if cache_enabled() {
                 var hit = cache_try_hit_dep()
                 if hit == 1 {
