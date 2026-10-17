@@ -16,7 +16,9 @@ pub func usage() -> i64 {
     dbg_txt("                     0 = opt -O0 + clang -O0    1 = opt -O2 + clang -O0")
     dbg_txt("                     2 = 不跑 opt + clang -O1    3 = 不跑 opt + clang -O2")
     dbg_txt("  --opt=<0-2>      额外跑 IR 优化（opt），如 -l3 --opt=2")
-    dbg_txt("  -t<0-3>          tiec 中端优化档，默认 0")
+    dbg_txt("  -t<0-3>          tiec 中端优化档，默认 2")
+    dbg_txt("  --develop        开发模式预设 = -t1 -l1 -w（显式参数可覆盖）")
+    dbg_txt("  --release        发布模式预设 = -t3 -l3 -Werror（显式参数可覆盖）")
     dbg_txt("  --mem-limit <MB>  内存上限，0 为不限")
     dbg_txt("  --jobs <N>       编译并发度")
     dbg_txt("  --no-cache       关闭编译缓存")
@@ -76,6 +78,48 @@ pub func parse_args() -> i64 {
     var n: i64 = arg_count()
     var i: i64 = 0
     var input_set: bool = false
+    // ---- 构建模式预扫描（--develop / --release）----
+    // 两组预设必须在主循环前应用，**显式参数才能无条件覆盖它们**（与书写顺序无关）。
+    // 模式只注入"默认值"：-t/-l 轴 + 警告策略；--ffast-math / --visibility /
+    // --no-sym 故意不注入（会静默改变数值语义或导出面，须显式选择）。
+    var mp: i64 = 0
+    var mj: i64 = 0
+    while mj < n {
+        var ma = arg_string(mj)
+        if ma == "--develop" {
+            if mp == 2 {
+                dbg_txt(diagcode.render_error(-1, -1, "构建模式冲突：--develop 与 --release 不能同时使用"))
+                return -1
+            }
+            mp = 1
+        } else if ma == "--release" {
+            if mp == 1 {
+                dbg_txt(diagcode.render_error(-1, -1, "构建模式冲突：--develop 与 --release 不能同时使用"))
+                return -1
+            }
+            mp = 2
+        }
+        mj = mj + 1
+    }
+    if mp == 1 {
+        // 开发：优化以"编得快、带警告"为准
+        g_build_mode = 1
+        g_tie_opt = 1
+        g_tie_set = true
+        g_llvm_opt = 1
+        g_llvm_set = true
+        g_front_warn = true
+    } else if mp == 2 {
+        // 发布：优化以"产物最快、警告即错"为准
+        g_build_mode = 2
+        g_tie_opt = 3
+        g_tie_set = true
+        g_llvm_opt = 3
+        g_llvm_set = true
+        g_warn_error = true
+        g_front_warn = true
+        g_no_warn = false
+    }
     while i < n {
         var a = arg_string(i)
         if a == "--help" || a == "-h" {
@@ -183,6 +227,8 @@ pub func parse_args() -> i64 {
             }
             g_jobs = parse_int(arg_string(i + 1))
             i = i + 1
+        } else if a == "--develop" || a == "--release" {
+            // 已在预扫描应用（此处仅消费参数，不重复赋值）
         } else if a == "--no-cache" {
             g_no_cache = true
         } else if a == "--no-warn" {

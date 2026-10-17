@@ -477,9 +477,14 @@ pub func effective_llvm_opt() -> i64 {
     if !g_llvm_set {
         level = 2
         if g_cfg_root >= 0 {
-            var cfg_opt = config.get_int(g_cfg_root, "llvm_opt")
-            if cfg_opt >= 0 && cfg_opt <= 3 {
-                level = cfg_opt
+            // ★ 必须用 path_get 判"键是否存在"：config.get_int 对缺失键返回 0，
+            //   直接当值用会把默认档污染成 l0（实测：默认档退化成 opt -O0 + clang -O0）。
+            var cnode = config.path_get(g_cfg_root, "llvm_opt")
+            if cnode >= 0 {
+                var cfg_opt = config.int_val(cnode)
+                if cfg_opt >= 0 && cfg_opt <= 3 {
+                    level = cfg_opt
+                }
             }
         }
     }
@@ -517,14 +522,17 @@ pub func effective_ir_opt() -> i64 {
 }
 
 // 生效 tiec 中端轴优化档（t 轴）优先级：CLI -t/--tie-opt 显式 > config
-// （含 profile 激活）> 默认 0（零 pass，自举不动点不变；p.9.20）。
+// （含 profile 激活）> 默认 2。
 // t 轴不受 --mem-limit 影响（pass 管道非内存大头）。
 pub func effective_tie_opt() -> i64 {
     var level = g_tie_opt
     if !g_tie_set && g_cfg_root >= 0 {
-        var cfg_t = config.get_int(g_cfg_root, "tiec_opt")
-        if cfg_t >= 0 && cfg_t <= 3 {
-            level = cfg_t
+        var tnode = config.path_get(g_cfg_root, "tiec_opt")
+        if tnode >= 0 {
+            var cfg_t = config.int_val(tnode)
+            if cfg_t >= 0 && cfg_t <= 3 {
+                level = cfg_t
+            }
         }
     }
     return level

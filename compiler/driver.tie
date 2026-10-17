@@ -83,11 +83,14 @@ pub var g_input: string = "";
 pub var g_output: string = "";        // -o 指定（空 = 默认）
 pub var g_llvm_opt: i64 = 2;          // -l LLVM/clang 轴（g_llvm_set 显式时生效；p.9.20 双轴）
 pub var g_llvm_set: bool = false;     // 是否显式指定 -l / --llvm-opt
-pub var g_tie_opt: i64 = 0;           // -t tiec 中端轴（0 = 零 pass；p.9.20）
+pub var g_tie_opt: i64 = 2;           // -t tiec 中端轴（默认 2；-t0 = 零 pass）
 pub var g_tie_set: bool = false;      // 是否显式指定 -t / --tie-opt
 // --opt=<0-2>：**强制额外跑** IR 优化（opt）阶段。默认不跑（-l2/-l3 预设）。
 // -1 = 未指定（由 -l 预设决定）；>=0 = 强制跑 opt -O<n>。
 pub var g_opt_force: i64 = -1;
+// 构建模式（--develop / --release 预设）：0 = 未指定，1 = develop，2 = release。
+// 只作为"一次性注入一组默认值"的语法糖，显式参数（-t/-l/-w/-Werror）后写覆盖。
+pub var g_build_mode: i64 = 0;
 pub var g_target: string = "";        // --target（空 = 未指定）
 // p.9.1.2 编译资源可调（利好老电脑）：
 pub var g_mem_limit: i64 = 0;         // --mem-limit <MB>：内存上限（0 = 不限；>0 时 -O3 受限降为 O2）

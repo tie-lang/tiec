@@ -724,6 +724,7 @@ diagcodes = [
     [ "code": "E00496", "key": "未知角色%（基础%；修饰%；自定义角色需%在%段注册，%仅识别内建）", "name": "未知角色 \"?\"（基础: script/data/ui/class/logic/port/db/ir/zd/tieir/test/bench；修饰: unsafe/owned/embedded；自定义角色需 tiec 在 config.data.tie roles 段注册，tie-prep 仅识别内建）", "family": 7, "src": "/prep/core.tie", "template": "未知角色 \"?\"（基础: script/data/ui/class/logic/port/db/ir/zd/tieir/test/bench；修饰: unsafe/owned/embedded；自定义角色需 tiec 在 config.data.tie roles 段注册，tie-prep 仅识别内建）" ],
     [ "code": "E00497", "key": "未知转义序列%", "name": "未知转义序列 \\", "family": 2, "src": "/compiler/frontend/errors.tie", "template": "未知转义序列 \\" ],
     [ "code": "E00498", "key": "条件必须是布尔，实际是%", "name": "条件必须是布尔，实际是", "family": 4, "src": "/compiler/tiep/vval.tie", "template": "条件必须是布尔，实际是 " ],
+    [ "code": "E00951", "key": "构建模式冲突：%与%不能同时使用", "name": "构建模式冲突", "family": 5, "src": "/compiler/driver/cli_args.tie", "template": "构建模式冲突：--develop 与 --release 不能同时使用" ],
     [ "code": "E00499", "key": "构建配置加载失败", "name": "构建配置加载失败", "family": 5, "src": "(manual)", "template": "构建配置加载失败" ],
     [ "code": "E00896", "key": "构建配置加载失败%", "name": "构建配置加载失败:", "family": 5, "src": "/compiler/driver.tie", "template": "构建配置加载失败: " ],
     [ "code": "E00500", "key": "构造%参数类型不匹配：字段%期望%，实际%", "name": "构造 '?' 参数类型不匹配：字段 '?'", "family": 3, "src": "/compiler/frontend/sinfer_q3.tie", "template": "构造 '?' 参数类型不匹配：字段 '?' 期望 ?，实际 " ],

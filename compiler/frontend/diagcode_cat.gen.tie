@@ -1,6 +1,6 @@
 type tie<class>
 // compiler/frontend/diagcode_cat.gen.tie —— 诊断标号目录（p.6.9.15 生成文件，勿手改）
-// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 925 条 + prefix 901 条。
+// 生成：scripts/gen-diagcodes.tie（tie 生成器）；exact 926 条 + prefix 902 条。
 // 标号规范：五位纯序号 E+5 位（E00001 起全局连续）；家族仅记 JSON/td family 字段，不编码进标号。
 var cat_keys: table<string>;
 var cat_codes: table<string>;
@@ -1459,6 +1459,8 @@ pub func ensure() {
     table_push(cat_codes, "E00497")
     table_push(cat_keys, "条件必须是布尔，实际是%")
     table_push(cat_codes, "E00498")
+    table_push(cat_keys, "构建模式冲突：%与%不能同时使用")
+    table_push(cat_codes, "E00951")
     table_push(cat_keys, "构建配置加载失败")
     table_push(cat_codes, "E00499")
     table_push(cat_keys, "构建配置加载失败%")
@@ -3281,6 +3283,8 @@ pub func ensure() {
     table_push(pfx_codes, "E00497")
     table_push(pfx_keys, "条件必须是布尔，实际是%")
     table_push(pfx_codes, "E00498")
+    table_push(pfx_keys, "构建模式冲突：%与%不能同时使用")
+    table_push(pfx_codes, "E00951")
     table_push(pfx_keys, "构建配置加载失败")
     table_push(pfx_codes, "E00499")
     table_push(pfx_keys, "构建配置加载失败%")
