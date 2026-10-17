@@ -425,22 +425,28 @@ func tig_read_file(p: i64) -> i64 {
     var size = s21_load(szb, T64)
     var big = tig_cmp_const(size, 3, 0x7FFFFFFF, T64)
     var toread = tig_select_i(big, tig_int_lit(0x7FFFFFFF), size, T64)
-    var buf = s21_raw_alloc_str(toread)
+    // 直读：ReadFile 直接写入最终串块的数据区。块布局 = n+41（8B 长度头 + 数据
+    // + \0 + 32B 尾部填充，与 tig_bytes_to_tie 同构），故省掉中转缓冲那次
+    // malloc/free 与整文件 memcpy（435KB 实测 156→125µs）。语义不变：长度头仍写
+    // **实读字节数**（文件在两调用间变短时按实际读到算）。
+    var sblk = s21_sso_alloc(toread)
+    var sd = s21_gep(sblk, 8, true)   // 数据区起点（头后）
     var nrb = s21_raw_alloc_str(tig_int_lit(4))
     s21_store(s21_gep(nrb, 0, true), tig_int_lit_ty(0, I32), I32)
     var nullov = tig_null_ptr()
     var ats: table<i64> = table_new_i64()
     var avs: table<i64> = table_new_i64()
     table_push(ats, P8);  table_push(avs, h)
-    table_push(ats, P8);  table_push(avs, buf)
+    table_push(ats, P8);  table_push(avs, sd)
     table_push(ats, I32); table_push(avs, tig_trunc_i32(toread))
     table_push(ats, P8);  table_push(avs, nrb)
     table_push(ats, P8);  table_push(avs, nullov)
     tig_ext_call_typed("ReadFile", ats, avs, I32)
     var nr = s21_zext(s21_load(nrb, I32), I32)
-    s21_store(sv, tig_bytes_to_tie(buf, nr), types.named(TK_STR))
+    s21_store(s21_gep(sblk, 0, true), nr, T64)                       // 长度头 = 实读字节数
+    s21_store(s21_gep(sd, nr, false), tig_int_lit_ty(0, I8), I8)     // 尾 \0
+    s21_store(sv, sd, types.named(TK_STR))
     tig_ext_call1("CloseHandle", h, P8, I32)
-    tig_ext_call1("free", buf, types.named(TK_STR), -1)
     tig_ext_call1("free", nrb, types.named(TK_STR), -1)
     tig_ext_call1("free", szb, types.named(TK_STR), -1)
     var brk = ir.new_inst(g_cur_block, 30, -1)
