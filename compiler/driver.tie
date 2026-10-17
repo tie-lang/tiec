@@ -85,11 +85,9 @@ pub var g_llvm_opt: i64 = 2;          // -l LLVM/clang 轴（g_llvm_set 显式�
 pub var g_llvm_set: bool = false;     // 是否显式指定 -l / --llvm-opt
 pub var g_tie_opt: i64 = 0;           // -t tiec 中端轴（0 = 零 pass；p.9.20）
 pub var g_tie_set: bool = false;      // 是否显式指定 -t / --tie-opt
-// -c 机器码档（clang 的 -O，0..2）：与 -l（opt 的 IR 优化档）正交。
-// 背景：三处 clang 调用原先都没传 -O（机器码实为 -O0），同 IR 换 -O2 实测
-// 内核 2.9×；默认仍 0 保持既有构建速度，发布档用 -c2。
-pub var g_clang_opt: i64 = 0;
-pub var g_clang_set: bool = false;
+// --opt=<0-2>：**强制额外跑** IR 优化（opt）阶段。默认不跑（-l2/-l3 预设）。
+// -1 = 未指定（由 -l 预设决定）；>=0 = 强制跑 opt -O<n>。
+pub var g_opt_force: i64 = -1;
 pub var g_target: string = "";        // --target（空 = 未指定）
 // p.9.1.2 编译资源可调（利好老电脑）：
 pub var g_mem_limit: i64 = 0;         // --mem-limit <MB>：内存上限（0 = 不限；>0 时 -O3 受限降为 O2）

@@ -9,7 +9,7 @@ type tie<class>
 //   - 工具发现：TIE_LLVM_HOME\bin → PATH → D:\LLVM\bin → C:\Program Files\LLVM\bin →
 //     C:\LLVM\bin（对齐 Rust find_clang / find_llvm_ar；TIE_LLVM_HOME 由 Rust 侧
 //     tie 启动器对随发行版 vendored LLVM（bin\llvm\bin）设置，优先级最高）
-//   - 中间优化：opt -O{0|1|2|3} -S in.ll -o out.opt.ll
+//   - 中间优化（可选）：opt -O{0|1|2} -S in.ll -o out.opt.ll（-l2/-l3 跳过）
 //   - 链接可执行：clang in.opt.ll -o out.exe [--target=T] [interp.lib]
 //     （仅 need_interp 时追加 tie_interp.lib 与 Rust std 依赖系统库；
 //     若 clang 旁有 lld-link.exe 则加 -fuse-ld=lld 强制走 lld 链接，免 MSVC）
@@ -201,7 +201,7 @@ pub func tc_cg_flag() -> string {
     return " -O" + to_string(g_cg_opt)
 }
 
-// 中间优化：opt -O{level} -S in.ll -o out.opt.ll。level 0..2（l3 已移除）。返回退出码。
+// 中间优化：opt -O{level} -S in.ll -o out.opt.ll。level 0..2（仅 -l0/-l1 与 --opt=<n> 会调用）。
 pub func opt(input_ll: string, output_opt: string, level: i64) -> i64 {
     var tool = find_tool("opt")
     if str_len(tool) == 0 {

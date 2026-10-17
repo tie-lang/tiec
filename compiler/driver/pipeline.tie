@@ -478,7 +478,7 @@ pub func effective_llvm_opt() -> i64 {
         level = 2
         if g_cfg_root >= 0 {
             var cfg_opt = config.get_int(g_cfg_root, "llvm_opt")
-            if cfg_opt >= 1 && cfg_opt <= 3 {
+            if cfg_opt >= 0 && cfg_opt <= 3 {
                 level = cfg_opt
             }
         }
@@ -487,21 +487,33 @@ pub func effective_llvm_opt() -> i64 {
     return level
 }
 
-// 生效机器码档（clang 的 -O，0..2）：CLI -c/--codegen-opt 显式 > config codegen_opt > 默认 0。
-// 与 -l（opt 的 IR 优化档）正交——三处 clang 调用原先都不传 -O（= -O0），
-// 同 IR 换 -O2 实测内核 2.9×（见 toolchain.tie tc_cg_flag 注释）。
+// -l 预设 → 机器码档（clang -O）：0/1 → -O0（IR 已由 opt 优化），2 → -O1，3 → -O2。
+// 三处 clang 调用此前都不传 -O（机器码实为 -O0）；-l2/-l3 的新语义是「不跑 opt，
+// 直接让 clang 优化」，实测与"opt 后再 clang -O2"等价且省一遍优化（见评估报告）。
 pub func effective_clang_opt() -> i64 {
-    var level = g_clang_opt
-    if !g_clang_set {
-        level = 0
-        if g_cfg_root >= 0 {
-            var cfg_c = config.get_int(g_cfg_root, "codegen_opt")
-            if cfg_c >= 0 && cfg_c <= 2 {
-                level = cfg_c
-            }
-        }
+    var level = effective_llvm_opt()
+    if level <= 1 {
+        return 0
     }
-    return level
+    return level - 1
+}
+
+// 是否**跑** opt 阶段，以及档位：-1 = 跳过（clang 直接吃原始 IR）。
+// 预设：-l0 → opt -O0；-l1 → **opt -O2**（IR 全优化 + clang -O0 的经典组合）；
+//       -l2/-l3 → 跳过 opt（交给 clang -O1/-O2）。
+// 优先级：--opt=<n> 强制 > -l 预设。
+pub func effective_ir_opt() -> i64 {
+    if g_opt_force >= 0 {
+        return g_opt_force
+    }
+    var level = effective_llvm_opt()
+    if level == 0 {
+        return 0
+    }
+    if level == 1 {
+        return 2
+    }
+    return -1
 }
 
 // 生效 tiec 中端轴优化档（t 轴）优先级：CLI -t/--tie-opt 显式 > config
@@ -523,12 +535,19 @@ pub func effective_tie_opt() -> i64 {
 pub func kpass_link() -> i64 {
     var ir_path = ir_path()
     var opt_path = opt_path()
-    // S3.1 + p.9.1.2：opt 优先级 CLI -O > 配置（含 profile）> 默认 2；受内存上限降档
-    var level = effective_llvm_opt()
-    var orc = tc.opt(ir_path, opt_path, level)
-    if orc != 0 {
-        dbg_txt(diagcode.render_error(-1, -1, "中间优化失败: " + tc_err_msg))
-        return 1
+    // IR 优化阶段：-l2/-l3 预设**跳过**（clang 自己会做全套 -O1/-O2 优化，
+    // 实测与"opt 后再 clang -O2"产物等价且少一遍优化、构建快 28s）；
+    // -l0/-l1 与 `--opt=<n>` 仍跑 opt。
+    var level = effective_ir_opt()
+    if level >= 0 {
+        var orc = tc.opt(ir_path, opt_path, level)
+        if orc != 0 {
+            dbg_txt(diagcode.render_error(-1, -1, "中间优化失败: " + tc_err_msg))
+            return 1
+        }
+    } else {
+        // 跳过 opt：clang 直接读原始 IR（--keep-ir 时不产出 .opt.ll）
+        opt_path = ir_path
     }
     // S3.1：target 优先级 CLI --target > 配置 target > 空（本机）
     var target = normalize_target(g_target)
