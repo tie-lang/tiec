@@ -60,6 +60,20 @@ func opnd_ref(inst_id: i64, k: i64) -> string {
         return pr
     }
     if kind == 0 {
+        // 整数常量在使用点**直接内联立即数**（llvmgen 原先把 const_i 物化成
+        // `%N = add i64 0, C` 一行；自编译 IR 里这类行有 36.0 万条 = 12.3%，
+        // 全是纯噪音：既拖 emit 的逐行排版，也拖 opt 的解析/遍历）。
+        // 只对整型/布尔内联——指针位（`store ptr null` 等）由 to_ptr/typed 路径
+        // 另行处理，混进来会产出 `store ptr 0` 这类非法 IR。
+        var cd = value_def(v)
+        if cd >= 0 {
+            if ir.ins_op(cd) == 60 {
+                var cty = ir.ins_ty(cd)
+                if types.is_int(cty) || cty == types.named(TK_BOOL) {
+                    return to_string(ir.ins_opnd(cd, 0))
+                }
+            }
+        }
         return "%" + to_string(v)
     }
     return to_string(v)
@@ -161,6 +175,12 @@ func arg_ref(inst_id: i64, k: i64) -> string {
         // 浮点实参：double/float 直传（printf %f 匹配；曾默认 i64 %N 类型错）
         if vt == TK_F64 || vt == TK_F32 {
             return llvm_ty(vt) + " %" + to_string(v)
+        }
+        // 整型常量实参：内联立即数（见 opnd_ref 注释；text 里不再有该常量的 def 行）
+        if ir.ins_op(def) == 60 {
+            if types.is_int(vt) || vt == types.named(TK_BOOL) {
+                return "i64 " + to_string(ir.ins_opnd(def, 0))
+            }
         }
     }
     return "i64 %" + to_string(v)
@@ -415,6 +435,13 @@ func typed_ref(inst_id: i64, k: i64) -> string {
             // （批次8 任务23：cb_ptr 回调地址经 extern string/ptr 槽传递）
             var gsym = intern.lookup(ir.ins_opnd(def, 0))
             return "@" + ns_replace(gsym)
+        }
+        // 整型常量实参：内联立即数（与 opnd_ref/arg_ref 同规则；text 里已无 def 行）
+        if ir.ins_op(def) == 60 {
+            var tcty = ir.ins_ty(def)
+            if types.is_int(tcty) || tcty == types.named(TK_BOOL) {
+                return to_string(ir.ins_opnd(def, 0))
+            }
         }
     }
     return "%" + to_string(v)

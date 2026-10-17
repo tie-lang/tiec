@@ -306,7 +306,22 @@ pub func gen_inst_b_31_cond_br(inst_id: i64) {
         var cond = ir.ins_opnd(inst_id, 0)
         var then_b = ir.ins_opnd(inst_id, 1)
         var else_b = ir.ins_opnd(inst_id, 2)
-        line("br i1 %" + to_string(cond) + ", label %bb" + to_string(then_b) + ", label %bb" + to_string(else_b))
+        // 条件为常量时内联 true/false（常量 def 行已不再出现在文本里，见 opnd_ref）
+        var cs = "i1 %" + to_string(cond)
+        var cdef = value_def(cond)
+        if cdef >= 0 {
+            if ir.ins_op(cdef) == 60 {
+                var ccty = ir.ins_ty(cdef)
+                if types.is_int(ccty) || ccty == types.named(TK_BOOL) {
+                    if ir.ins_opnd(cdef, 0) != 0 {
+                        cs = "i1 true"
+                    } else {
+                        cs = "i1 false"
+                    }
+                }
+            }
+        }
+        line("br " + cs + ", label %bb" + to_string(then_b) + ", label %bb" + to_string(else_b))
         return
 }
 

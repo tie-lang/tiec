@@ -113,9 +113,13 @@ pub func gen_inst_b_60_const_i(inst_id: i64) {
         reg = "%" + to_string(val)
     }
 
-        // const_i：立即数常量 → add 0, val（结果寄存器 = 值）。
-        // 类型按指令 ins_ty（i32 变量初始化是 i32 常量；i64 默认）——
-        // 否则 store i32 %N 会因 %N 为 i64 而类型不匹配。
+        // const_i：整型/布尔常量**不在文本里物化**——使用点由 opnd_ref 内联
+        // 立即数（见该函数注释）。省掉每常量一行 `add <ty> 0, C`。
+        var tyv0 = ir.ins_ty(inst_id)
+        if types.is_int(tyv0) || tyv0 == types.named(TK_BOOL) {
+            return
+        }
+        // 其余（如 ptr 形态）保持原样物化
         var v = ir.ins_opnd(inst_id, 0)
         var ty = llvm_ty(ir.ins_ty(inst_id))
         line(reg + " = add " + ty + " 0, " + to_string(v))
