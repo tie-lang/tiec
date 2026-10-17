@@ -150,7 +150,8 @@ pub func dep_cache_key() -> string {
     // p.9.20：优化键拆 L（LLVM/clang 轴）+ M（tiec 中端轴）——键变化 = 缓存一次性全失效
     var level = effective_llvm_opt()
     var topt = effective_tie_opt()
-    m = m + g_input + "\n" + g_output + "\nL" + to_string(level) + "\nM" + to_string(topt) + "\nTG" + g_target + "\nR" + g_role
+    var copt = effective_clang_opt()
+    m = m + g_input + "\n" + g_output + "\nL" + to_string(level) + "\nC" + to_string(copt) + "\nM" + to_string(topt) + "\nTG" + g_target + "\nR" + g_role
     if g_shared {
         m = m + "\nS1"
     } else {
@@ -509,7 +510,9 @@ pub func str_hash(s: string) -> i64 {
 pub func cache_key_str(src: string) -> string {
     var level = effective_llvm_opt()
     var topt = effective_tie_opt()
+    var copt = effective_clang_opt()
     var m = src + "\n" + g_input + "\n" + g_output + "\nL" + to_string(level) +
+        "\nC" + to_string(copt) +
         "\nM" + to_string(topt) + "\nTG" + g_target + "\nR" + g_role
     if g_shared {
         m = m + "\nS1"

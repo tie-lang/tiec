@@ -483,16 +483,23 @@ pub func effective_llvm_opt() -> i64 {
             }
         }
     }
-    var limit = g_mem_limit
-    if limit == 0 && g_cfg_root >= 0 {
-        limit = config.get_int(g_cfg_root, "tiec.mem_limit")
-    }
-    if limit > 0 && level >= 3 {
-        // 降级行为不受 --no-warn 影响，只抑制打印
-        if !g_no_warn {
-            dbg_txt(warn_render(-1, -1, "内存上限 " + to_string(limit) + "MB 下 LLVM 优化档 l3 受限，已自动降为 l2"))
+    // 注：-l3 已移除（实测更慢且越界），故不再有「内存上限下 l3 降档」分支。
+    return level
+}
+
+// 生效机器码档（clang 的 -O，0..2）：CLI -c/--codegen-opt 显式 > config codegen_opt > 默认 0。
+// 与 -l（opt 的 IR 优化档）正交——三处 clang 调用原先都不传 -O（= -O0），
+// 同 IR 换 -O2 实测内核 2.9×（见 toolchain.tie tc_cg_flag 注释）。
+pub func effective_clang_opt() -> i64 {
+    var level = g_clang_opt
+    if !g_clang_set {
+        level = 0
+        if g_cfg_root >= 0 {
+            var cfg_c = config.get_int(g_cfg_root, "codegen_opt")
+            if cfg_c >= 0 && cfg_c <= 2 {
+                level = cfg_c
+            }
         }
-        level = 2
     }
     return level
 }

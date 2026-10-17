@@ -55,6 +55,9 @@ func tc_w_flag() -> string {
     return ""
 }
 
+// 机器码档状态（-c<0-2> → clang -O<n>）；namespace 体内禁 var，故置于文件顶层。
+var g_cg_opt: i64 = 0;
+
 namespace tc {
 // ---------- 工具发现 ----------
 
@@ -179,7 +182,26 @@ func run(cmd: string) -> i64 {
     return rc
 }
 
-// 中间优化：opt -O{level} -S in.ll -o out.opt.ll。level 0..3。返回退出码。
+// 机器码档（clang 的 -O）。三处 clang 调用共用；由 driver 经 set_clang_opt 注入。
+// 背景（2026-10-17 实测）：此前三处都没有 -O ⇒ 机器码是 -O0；同一份优化后 IR
+// 换 -O2，1 亿次算术循环 160ms → 55ms（2.9×），二进制反而更小。默认 0 保持
+// 既有构建速度，发布档用 -c2。
+// 注：状态变量必须放**文件顶层**（namespace 体内禁 var，E00449）。
+pub func set_clang_opt(v: i64) {
+    if v < 0 {
+        v = 0
+    }
+    if v > 2 {
+        v = 2
+    }
+    g_cg_opt = v
+}
+// clang 的 -O 旗标文本（前导空格；0 时显式 -O0，避免默认随 LLVM 版本漂移）
+pub func tc_cg_flag() -> string {
+    return " -O" + to_string(g_cg_opt)
+}
+
+// 中间优化：opt -O{level} -S in.ll -o out.opt.ll。level 0..2（l3 已移除）。返回退出码。
 pub func opt(input_ll: string, output_opt: string, level: i64) -> i64 {
     var tool = find_tool("opt")
     if str_len(tool) == 0 {
@@ -235,7 +257,7 @@ pub func link_exe(input_opt: string, output_exe: string, target: string, need_in
             lld_flag = " -fuse-ld=link"
         }
     }
-    var cmd = tool + lld_flag + tc_fm_flag() + tc_w_flag() + " " + input_opt + " -o " + output_exe
+    var cmd = tool + tc_cg_flag() + lld_flag + tc_fm_flag() + tc_w_flag() + " " + input_opt + " -o " + output_exe
     if is_linux {
         cmd = cmd + " -Wl,--build-id=none"
         // r.1.6.6：Linux 目标 LLVM libcall（floor/pow/sqrt 等浮点运算下降为
@@ -333,7 +355,7 @@ pub func link_shared(input_opt: string, output_so: string, target: string, need_
     if is_linux {
         shared_flag = "-shared -fPIC"
     }
-    var cmd = tool + lld_flag + " " + shared_flag + tc_fm_flag() + tc_w_flag() + " " + input_opt + " -o " + output_so
+    var cmd = tool + tc_cg_flag() + lld_flag + " " + shared_flag + tc_fm_flag() + tc_w_flag() + " " + input_opt + " -o " + output_so
     if str_len(target) > 0 {
         cmd = cmd + " --target=" + target
     }
@@ -418,7 +440,7 @@ pub func compile_object(input_opt: string, output_obj: string, target: string) -
         tc_err_msg = "未找到 clang，请确认 LLVM 已安装并在 PATH 中"
         return -1
     }
-    var cmd = tool + " -c " + input_opt + " -o " + output_obj
+    var cmd = tool + tc_cg_flag() + " -c " + input_opt + " -o " + output_obj
     if str_len(target) > 0 {
         cmd = cmd + " --target=" + target
     }
