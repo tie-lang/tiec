@@ -305,67 +305,89 @@ func s21_utf8_char_at(s: i64, i: i64) -> i64 {
     return s21_load(sv, types.named(TK_I64))
 }
 
-// StringBuilder 句柄 = ptr → { i64 cap, i64 len, ptr data }（两级指针：
-// data 重分配可移动，句柄地址稳定）。string_builder() 返回 ptrtoint 句柄。
+// StringBuilder 句柄 = ptr → { i64 cap, i64 len, ptr base, i64 cow }（两级指针：
+// base 可移动、句柄地址稳定）。块与字符串块同构（base 为块起点，数据在 base+8，
+// 块 = cap+41）⇒ sb_build 零拷贝交接；cow 标记「块已交出」，此后首次追加写时复制
+//（旧块归字符串、不 free），故 build→append→build 累积语义同旧实现（probe5_sb）。
 func s21_sb_new() -> i64 {
-    // 句柄 = 原始字节缓冲 {cap, len, data}，用 s21_raw_alloc_str（K_PTR 返回，
-    // 绕开 op36 对 TK_STR 返回的 strlen+memcpy 扫描——曾用 TK_STR malloc 触发
-    // 对未初始化句柄做垃圾 strlen 扫描，属漏洞 A 类隐患）
-    var h = s21_raw_alloc_str(tig_int_lit(24))
+    // 句柄用 s21_raw_alloc_str（K_PTR 返回，绕开 op36 对 TK_STR 返回的
+    // strlen+memcpy 扫描——曾对未初始化句柄做垃圾 strlen，属漏洞 A 类）。
+    var h = s21_raw_alloc_str(tig_int_lit(32))
+    // 立即持 41 字节空块 ⇒ sb_build 恒能原地写头/尾（无分支、无结果槽）。
+    var b0 = s21_raw_alloc_str(tig_int_lit(41))
     s21_store(s21_gep(h, 0, true), tig_int_lit(0), types.named(TK_I64))    // cap = 0
     s21_store(s21_gep(h, 8, true), tig_int_lit(0), types.named(TK_I64))    // len = 0
-    s21_store(s21_gep(h, 16, true), tig_int_lit(0), types.named(TK_STR))   // data = null
+    s21_store(s21_gep(h, 16, true), b0, types.named(TK_STR))               // base = 空块
+    s21_store(s21_gep(h, 24, true), tig_int_lit(0), types.named(TK_I64))   // cow = 0
     var pi = ir.new_inst(g_cur_block, 24, types.named(TK_I64))  // ptrtoint
     ir.add_operand(pi, h, 0)
     return ir.get_value(pi)
 }
 
-// 句柄 i64 → 真 ptr（inttoptr）
 func s21_sb_ptr(hv: i64) -> i64 {
     var ip = ir.new_inst(g_cur_block, 25, types.named(TK_STR))  // inttoptr → ptr
     ir.add_operand(ip, hv, 0)
     return ir.get_value(ip)
 }
 
-// 若 need > cap：重新分配 data 缓冲（newcap = max(cap*2, need)），
-// 拷贝旧数据（len>0 时）、释放旧缓冲、更新句柄 cap/data 字段。
-// 生成 if 链后 g_cur_block 推进到汇合块（调用方继续生成追加逻辑）。
-func s21_sb_grow(h: i64, cap: i64, len: i64, data: i64, need: i64) {
-    var gc = tig_icmp_c(need, cap, 3)  // sgt
+// 若 need > cap 或 cow != 0：重新分配块并拷旧数据，更新 cap/base/cow；仅
+// 非借用块（cow == 0）释放旧块。生成 if 链后 g_cur_block 指向汇合块。
+func s21_sb_grow(h: i64, cap: i64, len: i64, base: i64, need: i64, cow: i64) {
+    var gc0 = tig_icmp_c(need, cap, 3)  // sgt
+    var gcw = tig_cmp_zero(cow, 1)      // cow != 0
+    var gc = tig_or_i1(gc0, gcw)
     var gt = ir.new_block(g_cur_func, interner.intern("s21.gt"))
     var ge = ir.new_block(g_cur_func, interner.intern("s21.ge"))
     var cb = ir.new_inst(g_cur_block, 31, -1)  // cond_br
     ir.add_operand(cb, gc, 0)
     ir.add_operand(cb, gt, 1)
     ir.add_operand(cb, ge, 1)
-    // then：倍增容量（newcap = max(cap*2, need)）
+    // then：仅当数据真的超出 cap 才倍增——写时复制只换块不换容量，否则
+    // build→append→build 每轮 cap*2 指数膨胀（实测 40 轮即 2^40，写入崩）。
     g_cur_block = gt
     var nc2 = s21_bin(2, cap, tig_int_lit(2))  // mul
     var c_lt = tig_icmp_c(nc2, need, 2)  // slt
-    var newcap = tig_select_i(c_lt, need, nc2, types.named(TK_I64))
-    // 数据缓冲 = 原始字节区（非 {头,数据,\0} 布局），用 s21_raw_alloc_str 绕开
-    // TK_STR 扫描（漏洞 A 类隐患同 s21_sb_new）
-    var nd = s21_raw_alloc_str(newcap)
-    s21_memcpy_if(nd, data, len)
-    tig_ext_call1("free", data, types.named(TK_STR), -1)
+    var nc2b = tig_select_i(c_lt, need, nc2, types.named(TK_I64))  // max(cap*2, need)
+    var newcap = tig_select_i(gc0, nc2b, cap, types.named(TK_I64))  // need>cap ? nc2b : cap
+    // 新块 = newcap + 41（8 头 + 数据 + \0 位 + 32 尾垫），数据区在 +8
+    var nd = s21_raw_alloc_str(s21_bin(0, newcap, tig_int_lit(41)))
+    var ndd = s21_gep(nd, 8, true)
+    var odd = s21_gep(base, 8, true)
+    s21_memcpy_if(ndd, odd, len)
+    // 释放旧块仅限非借用（cow == 0）：借用块归字符串，free 即 UAF
+    var c_eq0 = tig_cmp_zero(cow, 0)  // cow == 0
+    var bf = ir.new_block(g_cur_func, interner.intern("s21.gf"))
+    var bfm = ir.new_block(g_cur_func, interner.intern("s21.gm"))
+    var cbf = ir.new_inst(g_cur_block, 31, -1)  // cond_br
+    ir.add_operand(cbf, c_eq0, 0)
+    ir.add_operand(cbf, bf, 1)
+    ir.add_operand(cbf, bfm, 1)
+    g_cur_block = bf
+    tig_ext_call1("free", base, types.named(TK_STR), -1)
+    var brf = ir.new_inst(g_cur_block, 30, -1)  // br bfm
+    ir.add_operand(brf, bfm, 1)
+    g_cur_block = bfm
     s21_store(s21_gep(h, 16, true), nd, types.named(TK_STR))
     s21_store(s21_gep(h, 0, true), newcap, types.named(TK_I64))
+    s21_store(s21_gep(h, 24, true), tig_int_lit(0), types.named(TK_I64))  // cow = 0
     var brg = ir.new_inst(g_cur_block, 30, -1)  // br ge
     ir.add_operand(brg, ge, 1)
     g_cur_block = ge
 }
 
-// sb_append(h, s)：原地追加（读 s 长度头 O(1)；增长分支；memcpy 数据段）
+// sb_append(h, s)：原地追加（长度头 O(1) + 增长分支 + memcpy 数据段）
 func s21_sb_append(hv: i64, s: i64) {
     var h = s21_sb_ptr(hv)
     var cap = s21_load(s21_gep(h, 0, true), types.named(TK_I64))
     var len = s21_load(s21_gep(h, 8, true), types.named(TK_I64))
-    var data = s21_load(s21_gep(h, 16, true), types.named(TK_STR))
+    var base = s21_load(s21_gep(h, 16, true), types.named(TK_STR))
+    var cow = s21_load(s21_gep(h, 24, true), types.named(TK_I64))
     var slen = s21_str_head_len(s)
     var need = s21_bin(0, len, slen)
-    s21_sb_grow(h, cap, len, data, need)
-    // 汇合后重新读 data（增长分支可能已更新）
-    var data2 = s21_load(s21_gep(h, 16, true), types.named(TK_STR))
+    s21_sb_grow(h, cap, len, base, need, cow)
+    // 汇合后重读 base（增长分支可能已更新）
+    var base2 = s21_load(s21_gep(h, 16, true), types.named(TK_STR))
+    var data2 = s21_gep(base2, 8, true)
     var dst = s21_gep(data2, len, false)
     s21_memcpy_if(dst, s, slen)
     s21_store(s21_gep(h, 8, true), need, types.named(TK_I64))
@@ -376,35 +398,55 @@ func s21_sb_append_byte(hv: i64, b: i64) {
     var h = s21_sb_ptr(hv)
     var cap = s21_load(s21_gep(h, 0, true), types.named(TK_I64))
     var len = s21_load(s21_gep(h, 8, true), types.named(TK_I64))
-    var data = s21_load(s21_gep(h, 16, true), types.named(TK_STR))
+    var base = s21_load(s21_gep(h, 16, true), types.named(TK_STR))
+    var cow = s21_load(s21_gep(h, 24, true), types.named(TK_I64))
     var need = s21_bin(0, len, tig_int_lit(1))
-    s21_sb_grow(h, cap, len, data, need)
-    var data2 = s21_load(s21_gep(h, 16, true), types.named(TK_STR))
+    s21_sb_grow(h, cap, len, base, need, cow)
+    var base2 = s21_load(s21_gep(h, 16, true), types.named(TK_STR))
+    var data2 = s21_gep(base2, 8, true)
     var dst = s21_gep(data2, len, false)
     s21_store(dst, s21_trunc_i8(b), types.named(TK_I8))
     s21_store(s21_gep(h, 8, true), need, types.named(TK_I64))
 }
 
-// sb_build(h)：产出 {头, 数据, \0} 字符串（短串走 SSO 静态池零分配 /
-// 长串 malloc len+41；写头；拷数据；尾 \0）。+41 = 8 头 + 1 \0 + 32 尾部填充
-//（容纳向量化宽读，漏洞 B 修复）。句柄不释放（探针/短期程序进程退出回收）。
+// sb_build(h)：写块首长与数据尾 \0 后交出 base+8（零拷贝，旧实现每次整缓冲再拷
+// 一份：437KB 构建 325µs 约一半在此）。无分支；重复 build 幂等，append 走写时复制。
 func s21_sb_build(hv: i64) -> i64 {
+    var T64 = types.named(TK_I64)
+    var I8 = types.named(TK_I8)
     var h = s21_sb_ptr(hv)
-    var len = s21_load(s21_gep(h, 8, true), types.named(TK_I64))
-    var data = s21_load(s21_gep(h, 16, true), types.named(TK_STR))
-    var buf = s21_sso_alloc(len)
-    s21_store(s21_gep(buf, 0, true), len, types.named(TK_I64))  // 长度头
-    var d0 = s21_gep(buf, 8, true)  // 数据起始
-    s21_memcpy_if(d0, data, len)
-    s21_store(s21_gep(d0, len, false), tig_int_lit_ty(0, types.named(TK_I8)), types.named(TK_I8))  // 尾 \0
+    var len = s21_load(s21_gep(h, 8, true), T64)
+    var base = s21_load(s21_gep(h, 16, true), types.named(TK_STR))
+    s21_store(s21_gep(base, 0, true), len, T64)                        // 长度头（块首）
+    var d0 = s21_gep(base, 8, true)
+    s21_store(s21_gep(d0, len, false), tig_int_lit_ty(0, I8), I8)      // 尾 \0
+    s21_store(s21_gep(h, 24, true), tig_int_lit(1), T64)               // cow = 1
     return d0
 }
 
-// sb_reset(h)：清空复用（len = 0；cap/data 缓冲保留）——build 快照后继续
-// 追加会累积旧内容，split_lines 类逐行扫描必须 reset。返回 0。
+// sb_reset(h)：清空复用（len = 0）——split_lines 类逐行扫描必须 reset。返回 0。
 func s21_sb_reset(hv: i64) -> i64 {
+    var T64 = types.named(TK_I64)
     var h = s21_sb_ptr(hv)
-    s21_store(s21_gep(h, 8, true), tig_int_lit(0), types.named(TK_I64))  // len = 0
+    var cow = s21_load(s21_gep(h, 24, true), T64)
+    var cne = tig_cmp_zero(cow, 1)  // cow != 0（块已交给字符串）
+    var rt = ir.new_block(g_cur_func, interner.intern("s21.rt"))
+    var re = ir.new_block(g_cur_func, interner.intern("s21.re"))
+    var crb = ir.new_inst(g_cur_block, 31, -1)  // cond_br
+    ir.add_operand(crb, cne, 0)
+    ir.add_operand(crb, rt, 1)
+    ir.add_operand(crb, re, 1)
+    // then：旧块归字符串所有——换新空块（cap 归零），旧块一律不动。否则 reset
+    // 后的 sb_build 会把上一次产出的长度头改写成 0（split_lines 实测丢末行）。
+    g_cur_block = rt
+    var nb0 = s21_raw_alloc_str(tig_int_lit(41))
+    s21_store(s21_gep(h, 16, true), nb0, types.named(TK_STR))
+    s21_store(s21_gep(h, 0, true), tig_int_lit(0), T64)
+    s21_store(s21_gep(h, 24, true), tig_int_lit(0), T64)
+    var brt = ir.new_inst(g_cur_block, 30, -1)  // br re
+    ir.add_operand(brt, re, 1)
+    g_cur_block = re
+    s21_store(s21_gep(h, 8, true), tig_int_lit(0), T64)  // len = 0
     return tig_int_lit(0)
 }
 

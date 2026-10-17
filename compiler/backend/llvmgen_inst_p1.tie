@@ -425,6 +425,30 @@ func str_ptr_ref(v: i64) -> string {
     return to_ptr(v)
 }
 
+// 字符串值 → **长度表达式**（i64 立即数文本或 %sc 寄存器名；str_cat 用）。
+// 长度头不变量：字符串数据前 8 字节恒为 i64 字节长（.rodata 字面量为
+// { i64 头, [N+33 x i8] }、str_cat/sb_build/子串走 sso_alloc 块、桥返回由
+// op36 补头）——len(string) 本身即读该头，故与 strlen 同值，但免去整串扫描，
+// 且对含 \0 的串不再截断（旧 strlen 语义）。字面量走编译期长度，零指令。
+func str_len_ref(v: i64) -> string {
+    var def = value_def(v)
+    if def >= 0 {
+        if ir.ins_op(def) == 62 {
+            return to_string(str_len_of_slot(str_slot(ir.ins_opnd(def, 0))))
+        }
+    }
+    var hp = reg_gep(to_ptr(v), "-8")
+    return reg_load_i64(hp)
+}
+
+// 生成 `%N = load i64, ptr addr`（长度头读取；独立寄存器号）
+func reg_load_i64(addr: string) -> string {
+    g_str_reg_cnt = g_str_reg_cnt + 1
+    var r = "%sc" + to_string(g_str_reg_cnt)
+    line(r + " = load i64, ptr " + addr)
+    return r
+}
+
 // 任意值 → 真 ptr 寄存器名（字符串指针实参统一入口）：
 //   const_str(62)  → "@.str.N"（直接引用常量）
 //   str_cat(56)    → inttoptr 新寄存器（str_cat 结果是 i64 指针整数，

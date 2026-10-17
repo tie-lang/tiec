@@ -226,10 +226,13 @@ pub func gen_inst_b_56_str_cat(inst_id: i64) {
         // → 写头 → memcpy 两段 → 末尾 \0。
         var lv = ir.ins_opnd(inst_id, 0)
         var rv = ir.ins_opnd(inst_id, 1)
+        // 长度一律取 8 字节长度头（str_len_ref）：字面量→编译期立即数，
+        // 其余→load i64, gep(ptr, -8)。旧路径用 strlen 各扫全串两遍（437KB
+        // 拼接实测多付 ~30%），且对含 \0 的串按首个 \0 截断。
         // 注意：arg 传裸引用（gen_call_i64 内部会加 argty 前缀），
         // 曾误传 "ptr " + ref 导致 `strlen(ptr ptr @.str.N)` 重复前缀
-        var n1 = gen_call_i64("strlen", "ptr", str_ptr_ref(lv))
-        var n2 = gen_call_i64("strlen", "ptr", str_ptr_ref(rv))
+        var n1 = str_len_ref(lv)
+        var n2 = str_len_ref(rv)
         // total = n1 + n2；size = total + 41（8 字节头 + 数据 + \0 + 32 字节
         // 尾部填充）。32 字节保留区：CRT 向量化 strlen/strcmp/memcmp 按
         // 16B/32B 宽读可能越 NUL 读到分配末尾之后——缓冲必须能容纳这类
