@@ -599,6 +599,10 @@ func exec_stmt(st: i64) -> i64 {
         if iv == 0 {
             br = sstate.child(st, 2)
         }
+        // 条件为假且源码没写 else（else 槽 = -1）：无语句可执行。
+        if br < 0 {
+            return 0
+        }
         var nb = sstate.nchild(br)
         var i: i64 = 0
         while i < nb {

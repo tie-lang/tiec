@@ -646,10 +646,9 @@ pub func check_stmt_if(s: i64) -> i64 {
             return -1
         }
         var els = sstate.child(s, 2)
-        // 注意：`if` 无 else 时 els 不是 -1 而是空 StmtList（nchild==0），
-        // 仅判 els >= 0 会把"没有 else"误报成空语句块。故要求 if 实际
-        // 有第三个子节点才检查。
-        if els >= 0 && sstate.nchild(s) > 2 {
+        // 无 else 时解析器把该槽留为 -1（不造空 StmtList 占位）⇒ `els >= 0`
+        // 即「源码里确实写了 else」，此时空块才是 W00010 的告警对象。
+        if els >= 0 {
             warn_empty_block(els, s)
             r = check_cf_block(els, s)
             if r < 0 {

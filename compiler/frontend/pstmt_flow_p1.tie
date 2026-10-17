@@ -286,9 +286,12 @@ func parse_if() -> i64 {
                 return -1
             }
         }
-    } else {
-        else_list = ast.new_node(N_STMTLIST, -1, -1, -1, line, col)
     }
+    // 无 else 时 else 槽保持 -1（= 该子节点不存在），**不得**造空 StmtList 占位：
+    // 空 StmtList 与「显式 `else {}`」在 AST 上完全同形，下游（W00010 空语句块
+    // 检查）无法区分二者，会把任何无 else 的 if 误报成空语句块。
+    // 下游消费者一律按 `child(id, 2) >= 0` 读取该槽（irgen/smove/sgen/scollect/
+    // consteval/tiep），-1 正是它们预期的「无 else」表示。
     var n = ast.new_node(N_IF, -1, -1, -1, line, col)
     var kids: table<i64> = table_new_i64()
     table_push(kids, cond)
