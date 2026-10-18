@@ -189,10 +189,42 @@ func parse_primary() -> i64 {
             }
         }
         putil.advance()
-        // 命名空间路径：a::b::c
-        if putil.peek_tag() == lex_dcolon {
+        // 点分命名空间前缀：`tie.ir::f` / `tie.ir::K`。
+        // 只在「点链后确实跟 ::」时合并（否则保持普通字段访问 t.a.b）。
+        var dotted_name = name
+        var dotted_path = false
+        if putil.peek_tag() == lex_dot {
+            var di: i64 = 0
+            var ok = false
+            while putil.peek_n(di) == lex_dot {
+                if putil.peek_n(di + 1) != lex_ident {
+                    break
+                }
+                if putil.peek_n(di + 2) == lex_dcolon {
+                    ok = true
+                    break
+                }
+                di = di + 2
+            }
+            if ok {
+                while putil.peek_tag() == lex_dot {
+                    if putil.peek_n(1) != lex_ident {
+                        break
+                    }
+                    putil.advance()   // .
+                    var ds = putil.expect_ident()
+                    if ds < 0 {
+                        return -1
+                    }
+                    dotted_name = interner.intern(interner.lookup(dotted_name) + "::" + interner.lookup(ds))
+                }
+                dotted_path = true
+            }
+        }
+        // 命名空间路径：a::b::c（含点分前缀 a.b::c）
+        if dotted_path || putil.peek_tag() == lex_dcolon {
             var segs: table<i64> = table_new_i64()
-            table_push(segs, name)
+            table_push(segs, dotted_name)
             while putil.eat(lex_dcolon) {
                 var s = putil.expect_ident()
                 if s < 0 {
