@@ -309,6 +309,11 @@ func tig_parse_int(s: i64, ok_ptr: i64) -> i64 {
     var sign_blk = ir.new_block(g_cur_func, interner.intern("pi.sign"))
     var cond_blk = ir.new_block(g_cur_func, interner.intern("pi.cond"))
     var body_blk = ir.new_block(g_cur_func, interner.intern("pi.body"))
+    // pi.ovf：**十进制溢出预检**——acc*10+d 是否越过 i64 上界。
+    // 缺此块时 "99999999999999999999" 静默回绕成 7766279631452241919：本函数的
+    // ok 出参是「解析是否成功」的唯一判据，而 to_i64 的失败语义是内建检查，
+    // 溢出给错值比报错危险得多（Rust str::parse 对溢出返回 Err）。
+    var ovf_blk = ir.new_block(g_cur_func, interner.intern("pi.ovf"))
     var acc_blk = ir.new_block(g_cur_func, interner.intern("pi.acc"))
     var succ_blk = ir.new_block(g_cur_func, interner.intern("pi.succ"))
     var fail_blk = ir.new_block(g_cur_func, interner.intern("pi.fail"))
@@ -343,7 +348,7 @@ func tig_parse_int(s: i64, ok_ptr: i64) -> i64 {
     ir.add_operand(cb1, c_i, 0)
     ir.add_operand(cb1, body_blk, 1)
     ir.add_operand(cb1, succ_blk, 1)
-    // body：b = byte(s,i)；非数字 → fail；否则 → acc
+    // body：b = byte(s,i)；非数字 → fail；否则 → ovf（溢出预检）
     g_cur_block = body_blk
     var ib = s21_load(i_ptr, T64)
     var bv = s21_str_byte(s, ib)
@@ -352,8 +357,29 @@ func tig_parse_int(s: i64, ok_ptr: i64) -> i64 {
     var is_dig = tig_and_i1(ge48, le57)
     var bd = ir.new_inst(g_cur_block, 31, -1)
     ir.add_operand(bd, is_dig, 0)
-    ir.add_operand(bd, acc_blk, 1)
+    ir.add_operand(bd, ovf_blk, 1)
     ir.add_operand(bd, fail_blk, 1)
+    // ovf：acc > LIM || (acc == LIM && d > LAST) → fail；否则 → acc
+    //   LIM  = 922337203685477580 = floor(2^63 / 10)
+    //   LAST = neg ? 8 : 7（2^63 的末位；负数可取到 |min| = 2^63）
+    // 量值一律按**无符号**比（负数侧 acc 可达 2^63，其 i64 位模式为负）。
+    g_cur_block = ovf_blk
+    var io2 = s21_load(i_ptr, T64)
+    var bo2 = s21_str_byte(s, io2)
+    var co2 = s21_load(acc_ptr, T64)
+    var negv = s21_load(neg_ptr, T64)
+    var is_neg2 = tig_icmp_c(negv, z64, 1)  // ne：neg != 0
+    var lastv = tig_select_i(is_neg2, tig_int_lit(8), tig_int_lit(7), T64)
+    var do2 = s21_bin(1, bo2, c48)
+    var c_gt = tig_cmp_const(co2, 7, 922337203685477580, T64)  // ugt LIM
+    var c_eq = tig_cmp_const(co2, 0, 922337203685477580, T64)  // eq  LIM
+    var c_dg = tig_icmp_c(do2, lastv, 7)                       // ugt d, LAST
+    var c_both = tig_and_i1(c_eq, c_dg)
+    var c_bad = tig_or_i1(c_gt, c_both)
+    var cbov = ir.new_inst(g_cur_block, 31, -1)
+    ir.add_operand(cbov, c_bad, 0)
+    ir.add_operand(cbov, fail_blk, 1)
+    ir.add_operand(cbov, acc_blk, 1)
     // acc：acc = acc*10 + (b-48)；i++；→ cond
     g_cur_block = acc_blk
     var ia = s21_load(i_ptr, T64)
