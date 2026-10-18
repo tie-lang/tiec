@@ -223,7 +223,7 @@ pub var g_ns_depth: i64 = 0;
 pub var g_typed: i64 = 0;
 
 // struct/tuple 类型 id 缓存与 tuple 字段段
-var struct_tys: table<i64>;   // struct 索引 -> 3<<40|idx
+pub var struct_tys: table<i64>;   // struct 索引 -> 3<<40|idx
 pub var tuple_tys: table<i64>;    // tuple 索引 -> 4<<40|idx
 pub var tup_names: table<i64>;    // tuple 字段名 id（扁平段）
 pub var tup_tys: table<i64>;      // tuple 字段类型 id（扁平段）

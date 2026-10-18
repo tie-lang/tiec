@@ -933,6 +933,91 @@ pub func compile_unit_reset() {
     s_fn_uctx_nodes = []
     s_fn_uctx_vals = []
     s_file_uctx = 0
+    // ===== 单元级累加器（2026-10-18，常驻编译服务）=====
+    // **位置纪律**：这些表必须在本函数（真正的一次性单元边界，parser 之前）清，
+    // 不能放 reset_sem_state —— 后者在 parser 之后被 check_ast/check_impl 调用，
+    // 清掉 s_imp_cap_* / 注解 / doc 注释这些「parser → 语义」的交接表会把它们
+    // 抹掉（实测 cred_idle_probe 的 #[unsafe.ext] 丢失 ⇒ 假 E00719）。
+    // 一次性 CLI 每进程只编一个单元，清不清都看不出差别；长驻复用不清则跨单元串状态：
+    // 上一单元的 spawn 点/actor 登记/警告行号挂到本单元的节点 id 上（假 E00903、
+    // `irgen 未支持的表达式 tag=…`）。
+    // 对齐纪律：今后新增「单元级累加」表，挂到这里。
+    // ===== 常驻复用（--tink-serve 的 compile 请求）：**单元级累加器**补齐 =====
+    // 背景：check_impl 入口就会调本函数，但下列表此前**没人清**——一次性 CLI
+    // 每进程只分析一个单元，永远看不出来；常驻服务里它们跨单元存活，症状是
+    // 「上一个单元的 spawn 点/actor 登记/警告行号 挂到本单元的 AST 节点 id 上」：
+    // 实测 149 个语言用例连编时出现假 E00903（行号指向本文件第 9 行）与
+    // `irgen 未支持的表达式（tag=…）`（旧节点的 tag 撞进本单元节点空间）。
+    // 对齐纪律：今后新增「单元级累加」的全局表，必须同时挂到这里。
+    cl_grefs = table_new_i64()
+    g_spawn_nodes = table_new_i64()
+    g_spawn_args = table_new_i64()
+    g_spawn_caps = table_new_i64()
+    g_spawn_unsafe = table_new_i64()
+    g_spawn_force = table_new_i64()
+    // actor 表（ac_*：方法/字段段式登记，索引与 types.BASE_ACTOR 行号对应）
+    ac_keys = table_new_i64()
+    ac_vals = table_new_i64()
+    ac_mnames = table_new_i64()
+    ac_fnames = table_new_i64()
+    ac_mpar = table_new_i64()
+    ac_mptys = table_new_i64()
+    ac_mret = table_new_i64()
+    ac_mrets = table_new_i64()
+    ac_fdefs = table_new_i64()
+    ac_ftys = table_new_i64()
+    ac_masync = table_new_i64()
+    ac_mreent = table_new_i64()
+    ac_mn = table_new_i64()
+    ac_fncnt = table_new_i64()
+    ac_foffs = table_new_i64()
+    ac_ftyoff = table_new_i64()
+    ac_fvoff = table_new_i64()
+    ac_moff = table_new_i64()
+    ac_mnpars = table_new_i64()
+    ac_paroff = table_new_i64()
+    ac_fnoff = table_new_i64()
+    // struct 形状/表示类、泛型登记、move 分析、属性与凭据登记
+    struct_tys = table_new_i64()
+    st_reprc = table_new_i64()
+    gtyp_kinds = table_new_i64()
+    gtyp_kindoff = table_new_i64()
+    gval_kkeys = table_new_i64()
+    gval_kvals = table_new_i64()
+    lv_moved = table_new_i64()
+    g_uwt_keys = table_new_i64()
+    g_vp_keys = table_new_i64()
+    gen_marks = table_new_i64()
+    gr_dead = table_new_i64()
+    gr_rel = table_new_i64()
+    s_fn_attr_nodes = table_new_i64()
+    s_fn_attr_vals = table_new_i64()
+    s_fn_cap_nodes = table_new_i64()
+    s_fn_cap_vals = table_new_i64()
+    s_fn_uctx_nodes = table_new_i64()
+    s_fn_uctx_vals = table_new_i64()
+    s_imp_cap_nodes = table_new_i64()
+    s_imp_cap_vals = table_new_i64()
+    g_im_keys = table_new_i64()
+    g_im_vals = table_new_i64()
+    // 警告 pass 的行号/位置累加（w16 未修改绑定、w19 越界常量下标）
+    // goto 标签/块表（scheck 侧登记）
+    g_cmp_getter = table_new_i64()
+    g_cmp_setter = table_new_i64()
+    // 注解 / doc 注释登记
+    // 文件级登记（import 展开 / idle 凭据 / 命名空间改名）
+    g_file_idle_auth = table_new_i64()
+    g_file_idle_used = table_new_i64()
+    g_file_stem = table_new_string()
+    g_ns_rename_old = table_new_string()
+    g_ns_rename_new = table_new_string()
+    g_extra_tops = table_new_i64()
+    g_imported = table_new_string()
+    g_file_roots = table_new_i64()
+    g_imp_alias_names = table_new_string()
+    g_imp_alias_paths = table_new_string()
+    tre_bi_vals = table_new_i64()
+    fld_defs = table_new_i64()
 }
 
 // 本文件获授权的域位集。

@@ -3,7 +3,13 @@ type tie<class>
 
 // p.9.22.10 tinker：人读文本出口（--tink 时 stdout 让位帧流，文本改走 stderr；
 // 非 tink 模式与 println 逐字节等价）。编译路径的 println 统一经此出口。
+// 常驻编译服务：g_svc_cap_on 时改为**按请求捕获**（帧内回传，客户端按请求配对，
+// 不依赖共享 stderr 的时序切分）。
 pub func dbg_txt(s: string) {
+    if g_svc_cap_on {
+        g_svc_cap = g_svc_cap + s + "\n"
+        return
+    }
     if g_tink || g_tink_serve {
         print_err(s + "\n")
     } else {

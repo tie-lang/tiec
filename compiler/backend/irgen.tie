@@ -368,6 +368,49 @@ pub func set_noconc(v: bool) {
     g_noconc = v
 }
 
+// 常驻编译服务：**单元级**复位（一次性 CLI 用不到——每进程只编一个单元）。
+// tig_ast() 开头已复位 sc/lp/str 三族与 ir.new_module()，但**不含**下列跨单元
+// 累加器：不清则第二个单元带着上一个单元的全局初值登记 → 重复 @g 初始化 /
+// 重复定义（与 reset_global_regs 注释里记的「二次登记」同一类故障）。
+pub func unit_reset() {
+    g_ginit_names = table_new_i64()
+    g_ginit_nodes = table_new_i64()
+    g_agginit_names = table_new_i64()
+    g_agginit_nodes = table_new_i64()
+    g_agginit_tys = table_new_i64()
+    // 「惰性一次」的单元级缓存：不清则第二单元直接命中第一单元的形状
+    //（实测 g_stl_done 残留 ⇒ struct_field_off 越界，index 1 / len 1）。
+    g_stl_fbase = table_new_i64()
+    g_stl_offs = table_new_i64()
+    g_stl_size = table_new_i64()
+    g_stl_align = table_new_i64()
+    g_stl_done = 0
+    g_eenv_fns = table_new_i64()
+    g_eenv_refs = table_new_i64()
+    g_eenv_ready = 0
+    g_extern_ids = table_new_i64()
+    g_extern_ready = 0
+    rp_keys = table_new_i64()
+    rp_si = table_new_i64()
+    rp_ncol = table_new_i64()
+    rp_allocas = []
+    // 命名计数器（参与符号名后缀）：不归零则本单元哨兵从上一单元的计数接着编
+    //（实测 comprehension.tie 的 @tl_loopf_main_274… 而非 _1…，产物逐字节不等）。
+    g_tf_ctr = 0
+    g_rx_u = 0
+    g_used_trmlite = false
+    g_used_interp = false
+    g_used_wsock = false
+    g_dynlib = false
+    g_dll_export = ""
+    g_msg_reg_done = 0
+    g_rng_reg_done = 0
+    g_cur_fn_name = ""
+    g_cur_func = 0
+    g_cur_block = 0
+    g_asm_target = ""
+}
+
 
 pub func tig_ast() -> i64 {
     // 重置生成器状态

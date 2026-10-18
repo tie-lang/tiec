@@ -581,6 +581,17 @@ pub func check_ast(base_dir: string) -> string {
 // 纯 tie、零新增运行时（无析构器、无新增引用计数）。
 // 无 caller 调用时行为逐字节不变（单次编译路径零影响）。
 pub func release_ast() {
+    release_ast_keep_intern()
+    intern.reset()
+}
+
+// 常驻编译服务（--tink-serve 的 compile 请求）：单元间复位，**保留 intern 池**。
+// 与 release_ast 的唯一差别：不清名字池。理由：服务进程里已有模块**长期持有**
+// 名字池 id（角色注册表、dbgem 记录族、诊断表），清池会让这些 id 重新指向别的
+// 名字——实测症状极隐蔽：asm_mem_probe 的「str_cat 临时串可释放」判定被带偏，
+// 产物多出一条 `call @tie_str_free_if_heap`（语义仍是错的释放点）。
+// 池单调增长在构建服务里可接受（增量 ≈ 各单元标识符总量），CLI 一次性路径不受影响。
+pub func release_ast_keep_intern() {
     reset_sem_state()
     // 导入展开状态表一并清（expand_imports 下次会重建）。
     g_imported = table_new_string()
@@ -595,8 +606,7 @@ pub func release_ast() {
     g_file_count = 1
     g_root = 0
     s_n = 0
-    // intern 池与 parser 节点池：与 s_* 同批清（s_names 存的就是池 id）。
-    intern.reset()
+    // parser 节点池：与 s_* 同批清（s_names 存的就是池 id；调用方决定是否清池）
     ast.reset()
 }
 

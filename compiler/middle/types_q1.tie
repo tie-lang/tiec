@@ -879,6 +879,33 @@ pub func is_unsafe_ty(t: i64) -> bool {
     return false
 }
 
+// 常驻编译服务：复位**类型构造器登记表**（一次性 CLI 每进程只编一个单元，用不到）。
+// 这些表按「首次见到即登记、索引即类型 id 低负载」累积：不清则第二个单元继承
+// 第一个单元的 fn 签名 / 嵌套聚合负载，llvmgen 会为本单元凭空输出未使用的
+// 类型别名（实测 `%fn.0 = type { ptr, ptr }` 泄漏进 hello.tie 的 .ll），
+// 产物与一次性 CLI 不再逐字节相同。
+// tykw_names 是**常量表**（TyKw 索引 → 名字，懒构建），不属单元状态，不清。
+pub func reset_registries() {
+    st_names = table_new_string()
+    en_names = table_new_string()
+    act_names = table_new_string()
+    pt_names = table_new_string()
+    nest_tbl_elems = table_new_i64()
+    nest_map_vals = table_new_i64()
+    nest_ptr_elems = table_new_i64()
+    nest_slice_elems = table_new_i64()
+    nest_atomic_elems = table_new_i64()
+    nest_future_elems = table_new_i64()
+    nest_arr_elems = table_new_i64()
+    nest_arr_lens = table_new_i64()
+    fn_ret = table_new_i64()
+    fn_nparams = table_new_i64()
+    fn_paroff = table_new_i64()
+    fn_params = table_new_i64()
+    fn_param_refs = table_new_i64()
+    fn_has_var = table_new_i64()
+}
+
 // 登记 struct 索引 -> 名字（语义阶段收集 struct 时调用；
 // 追加式，索引 = 登记顺序，与语义 struct 表行号对应）。
 pub func set_struct_name(idx: i64, nm: string) {

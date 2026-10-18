@@ -339,6 +339,10 @@ pub func reset_global_regs() {
     g_global_inits_ok = table_new_i64()
     g_global_fps = table_new_i64()
     g_global_strs = table_new_i64()
+    // ★ g_global_fns 必须与上面七张平行表同批清：漏了它，后续登记的每一行都会
+    // 在「函数指针段」上整体错位一格（实测常驻复用第二单元把 @clo_eenv_* 的初值
+    // 写成上一个单元的字符串常量：`global ptr getelementptr (…, @.str.0, …)`）。
+    g_global_fns = table_new_i64()
     g_vt_names = table_new_i64()
     g_vt_tys = table_new_i64()
     g_vt_n = table_new_i64()
@@ -381,6 +385,37 @@ pub func wsock_enable() {
 // 可捕获 panic 启用标记（irgen 首次生成 catch_panic / 受捕 panic 置位；幂等）。
 pub func catch_enable() {
     g_catch_enabled = 1
+}
+
+// 常驻编译服务：**单元级**全量复位（一次性 CLI 用不到——每进程只编一个单元）。
+// reset_global_regs() 只回滚「登记类」状态（装配降级语义，见其注释），
+// **不碰置位类旗标**；常驻逐请求复用必须把旗标一并清算——否则上一单元用过的
+// SSO 短串池 / str_char 缓存 / wsock 初始化 / catch_panic 会凭空给本单元多输出
+// 对应全局段（产物与一次性 CLI 不一致，且没人报错）。
+// 字符串池与 out_lines 由 emit()/collect_strings() 自建，这里显式清是为了让
+// 「复位后立即崩溃」也不残留上一单元的串表（排障时不留假象）。
+pub func unit_reset() {
+    reset_global_regs()
+    g_sso_enabled = 0
+    g_sc_enabled = 0
+    g_wsock_enabled = 0
+    g_catch_enabled = 0
+    g_llvmgen_err = ""
+    out_lines = table_new_string()
+    str_pool = table_new_i64()
+    str_idx = table_new_i64()
+    str_count = 0
+    g_ss_stamp = table_new_i64()
+    g_ss_slotv = table_new_i64()
+    g_slot_len = table_new_i64()
+    g_fn_lines = table_new_string()
+    g_pfid = 0
+    g_pcnt = 0
+    vdef_cache = table_new_i64()
+    vdef_cache_ready = 0
+    g_inst_blk = table_new_i64()
+    g_inst_blk_ready = 0
+    ext_syms = table_new_i64()
 }
 
 
