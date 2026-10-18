@@ -27,7 +27,6 @@ namespace irgen {
         if nm == "slice_len" { return bi_slice_len(nm, id) }
         if nm == "slice_index" { return bi_slice_index(nm, id) }
         var as_dst: i64 = -1
-        var as_dst: i64 = -1
         if nm == "as_i8" || nm == "to_i8" {
             as_dst = types.named(TK_I8)
         } else if nm == "as_i16" || nm == "to_i16" {
@@ -82,22 +81,63 @@ namespace irgen {
                 g_builtin_res = ux
                 return 0
             }
-            if at >= 0 && at != as_dst && (types.is_int(at) || types.is_float(at)) {
+            // 文本实参（规范 §2.11）：to_i64(s) / to_f64(s) 是 to_ 族**唯一**的
+            // 文本入口，语义 = 十进制解析 + 解析失败触发内建检查（与越界/除零同一
+            // 失败语义，catch_panic 可捕）。其余宽度不提供隐式文本解析——窄化须
+            // 显式书写（to_i32(to_i64(s))），以免「解析」顺带做丢信息的截断。
+            // 此前该路径落到下面的「同型直通」，把字符串指针写进 i64/f64 槽 ⇒
+            // IR 非法，opt 报 `defined with type 'ptr' but expected 'i64'`（E00883）。
+            if at == types.named(TK_STR) {
+                if nm == "to_i64" || nm == "to_f64" {
+                    var pv = tig_str_num_checked(av, nm == "to_f64", nm, s_lines[id])
+                    if pv < 0 {
+                        return -1
+                    }
+                    g_builtin_res = pv
+                    return 0
+                }
+                sm_err_line = s_lines[id]
+                sm_err_col = s_cols[id]
+                sm_err_msg = nm + "() 不接受文本实参；文本解析只有 to_i64 / to_f64，窄化请显式嵌套"
+                return -1
+            }
+            if at >= 0 && (types.is_int(at) || types.is_float(at)) {
                 if !is_num_conv {
                     sm_err_line = s_lines[id]
                     sm_err_col = s_cols[id]
                     sm_err_msg = nm + "() 只做从 any 解包；数值类型转换请用 to_ 族（如 to_i64）"
                     return -1
                 }
+                if at == as_dst {
+                    g_builtin_res = av
+                    return 0
+                }
                 var cv = tig_coerce(av, at, as_dst)
                 if cv < 0 {
                     return -1
                 }
                 g_builtin_res = cv
-            } else {
-                g_builtin_res = av
+                return 0
             }
-            return 0
+            // 类型未知（泛型 typevar / 占位）→ 直通：具体类型要到实例化后才有，
+            // 此处无法判断表示宽度。
+            if at < 0 || types.kind(at) == types.K_TYPEVAR {
+                g_builtin_res = av
+                return 0
+            }
+            // i64 占位表示的句柄（actor/guard/future）→ 直通，宽度已是 i64。
+            var ak = types.kind(at)
+            if ak == types.K_ACTOR || ak == types.K_GUARD || ak == types.K_FUTURE {
+                g_builtin_res = av
+                return 0
+            }
+            // 其余具体类型（bool/char/trit/struct/table/slice/fn/…）：表示宽度不是
+            // i64/f64，直通必然产出宽度不匹配的 store。此前正是静默直通 ⇒ 用户只
+            // 看到 clang 的 E00883，指不到源码行；这里改为明确诊断。
+            sm_err_line = s_lines[id]
+            sm_err_col = s_cols[id]
+            sm_err_msg = nm + "() 的参数必须是数值，实际为 " + types.type_name(at)
+            return -1
         }
         // ---------- S1.3 checked_* 溢出检测族 ----------
         if nm == "checked_add" || nm == "checked_sub" || nm == "checked_mul" ||
