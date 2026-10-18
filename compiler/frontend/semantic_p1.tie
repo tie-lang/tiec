@@ -606,6 +606,7 @@ func expand_imports() -> i64 {
     table_push(g_file_roots, g_root)   // 文件 0 = 主文件顶层根
     // 2026-10-12：词干表与 roots 对齐（主文件占位空串；导入文件在展开点推入）
     g_file_stem = table_new_string()
+    g_entry_name = ""
     table_push(g_file_stem, "")
     var n = sstate.nchild(g_root)
     var i: i64 = 0

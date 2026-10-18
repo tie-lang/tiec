@@ -16,6 +16,11 @@ func gen_func(fid: i64) {
     if ns_pos >= 0 {
         sym = ns_replace(name)
     }
+    // 程序入口：主文件的 main（可能在命名空间内）以 C 入口符号 @main 发射。
+    // 其余同名 main（库函数）仍按命名空间符号，不抢入口。
+    if str_len(g_entry_name) > 0 && name == g_entry_name {
+        sym = "main"
+    }
     var ret_llvm = llvm_ty(ir.func_ret(fid))
     // main 特殊：void main → define i32 @main
     if sym == "main" && ret_llvm == "void" {

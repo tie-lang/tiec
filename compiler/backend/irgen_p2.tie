@@ -809,7 +809,7 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
     // 无初值/空表 → 运行时建空表（既有路径，元素宽由标注决定）。
     // 注：--shared 库无 main，此初始化改经 tie$rt_init 模块构造器执行
     //（见 tig_shared_rt_init）。
-    if full_name == "main" {
+    if is_entry_name(full_name) {
         var eer = gen_global_tbl_init()
         if eer < 0 {
             return -1
@@ -860,7 +860,7 @@ func tig_fn_def(fn_node: i64, prefix: string) -> i64 {
                 ir.add_operand(gv, g_gen_tbl, 0)
                 var gre = ir.new_inst(g_cur_block, 32, ret_ty)
                 ir.add_operand(gre, ir.get_value(gv), 0)
-            } else if full_name == "main" {
+            } else if is_entry_name(full_name) {
                 // main 补 ret i32 0：ty 必须显式 i32（llvmgen 按 ins_ty 输出 ret 类型，
                 // ty=-1 会生成 ret ptr 0 / ret void 与 define i32 @main 不匹配）
                 var ret = ir.new_inst(g_cur_block, 32, types.named(TK_I32))  // ret i32

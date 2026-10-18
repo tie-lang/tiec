@@ -462,6 +462,9 @@ pub var g_imp_alias_paths: table<string>;   // 对应导入路径（归一化）
 // expand_imports 推进）。file_id_of_node 对基址二分定位任意节点的来源模块。
 pub var g_file_base: table<i64>;    // 文件 id -> 该文件首节点基址（升序；主文件 0）
 pub var g_file_stem: table<string>; // 文件 id -> 文件名词干（顶层限定通道，2026-10-12；宏展开文件为空）
+// 程序入口全名（主文件 file id 0 里最后一段为 main 的函数；命名空间内的
+// main 记 "ns::main"）。llvmgen 据此以 C 入口符号 @main 发射。
+pub var g_entry_name: string = "";
 // 符号表来源模块列（与各表行对齐；登记时由 def_node 反查文件 id）：
 pub var sg_mod: table<i64>;         // 签名行来源模块（行号 = 签名 id，与 sg_* 对齐）
 pub var gb_mod: table<i64>;         // 全局变量行来源模块（与 gb_keys/vals 行对齐）

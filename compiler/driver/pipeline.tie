@@ -431,6 +431,7 @@ pub func kpass_emit() -> i64 {
     unsafe {
         var t3 = clock()
     }
+    llvmgen.set_entry(sstate.g_entry_name)
     var ll_text = llvmgen.emit()
     unsafe {
         var t3e = clock()

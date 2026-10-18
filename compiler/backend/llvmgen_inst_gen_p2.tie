@@ -349,7 +349,7 @@ pub func gen_inst_b_32_ret(inst_id: i64) {
                 // main 特例（define i32 @main，irgen 补 ret i32 0）：
                 // 按值类型输出；其他 void 函数 → ret void
                 var fnm = intern.lookup(ir.func_name(g_pfid))
-                if fnm == "main" {
+                if fnm == "main" || (str_len(g_entry_name) > 0 && fnm == g_entry_name) {
                     // 补 ret（irgen 尾部生成 ret i32 0）：operand 是 IMM(2) 字面量 0，
                     // 不能查 value_def——值 id 0 恰好是第一条指令，会误判为 i64
                     var def = -1

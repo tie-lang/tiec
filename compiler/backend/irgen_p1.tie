@@ -4,6 +4,18 @@ type tie<class>
 // 由 split_parts.py 按行数贪心分片：只搬函数与紧邻注释，
 // 顶层全局 var 与 import 树仍留在 irgen.tie。
 namespace irgen {
+// 是否程序入口：主文件的 main（可能在命名空间内，如 "app::main"）。
+// 入口全名由 frontend 的 reg_fn 按「file id 0 + 末段 main」登记。
+func is_entry_name(full_name: string) -> bool {
+    if full_name == "main" {
+        return true
+    }
+    if str_len(sstate.g_entry_name) > 0 && full_name == sstate.g_entry_name {
+        return true
+    }
+    return false
+}
+
 // 变量引用：load 指令（从 alloca 读取）。含全局变量（标量 load @g /
 // 表全局 load ptr, ptr @g——表指针本身）。
 func tig_var_ref(name_id: i64) -> i64 {

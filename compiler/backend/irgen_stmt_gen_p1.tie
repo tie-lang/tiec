@@ -528,7 +528,7 @@ pub func tig_stmt_b_104_Return(id: i64) -> i64 {
                 ir.add_operand(gv, g_gen_tbl, 0)
                 var gre = ir.new_inst(g_cur_block, 32, g_cur_ret_ty)
                 ir.add_operand(gre, ir.get_value(gv), 0)
-            } else if g_cur_fn_name == "main" {
+            } else if is_entry_name(g_cur_fn_name) {
                 var ret = ir.new_inst(g_cur_block, 32, types.named(TK_I32))  // ret i32 0
                 ir.add_operand(ret, 0, 2)
             } else {

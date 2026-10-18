@@ -74,6 +74,18 @@ pub func reg_fn(full_name: string, is_pub: i64, nparams: i64, required: i64, ret
         }
         return -1
     }
+    // 程序入口：主文件（file id 0）里最后一段为 main 的函数。命名空间内的
+    // main 记全名（如 "app::main"），由 llvmgen 以 C 入口符号 @main 发射。
+    if file_id_of_node(def_node) == 0 {
+        var lastm = rfind_ns(full_name)
+        var tail = full_name
+        if lastm >= 0 {
+            tail = str.slice(full_name, lastm + 2, str_len(full_name))
+        }
+        if tail == "main" {
+            g_entry_name = full_name
+        }
+    }
     var sig = len(sg_nparams)
     var off = len(sp_tys)
     table_push(sg_nparams, nparams)
