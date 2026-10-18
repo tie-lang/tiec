@@ -446,7 +446,10 @@ func sv_analyze(p: table<i64>) -> i64 {
     var base = a.2
     var vpath = a.3
     var stages = a.4
-    // 分析请求的专属口径：警告通道开（LSP 要警告）、零落盘（不写 .sym.zd）
+    // 分析请求的专属口径：警告通道开（LSP 要警告）、零落盘（不写 .sym.zd）。
+    // dbgem.boot() 在这里补（复位已把它清掉；编译角色则由 compile_program 在
+    // role_registry_boot 之后调，顺序与 CLI 一致）。
+    dbgem.boot()
     g_front_warn = true
     g_no_sym = true
     g_input = vpath

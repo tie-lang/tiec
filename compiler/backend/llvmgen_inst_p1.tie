@@ -549,6 +549,26 @@ func reg_gep(base: string, off: string) -> string {
     return r
 }
 
+// 操作数槽是否**不是**真值引用（名字池 id / 文本池 id）：
+//   35 call / 36 extern_call —— [0] 符号名池 id
+//   41 call_vararg —— [0] 格式串池 id
+//   51 const_f / 62 const_str —— [0] 文本池 id
+// 这些槽位按 kind=0（OK_VALUE）登记，payload 与值 id 同处一个整数空间 ⇒
+// 「池 id 恰好等于 v」会被误判成一次使用，于是该释放的临时串不释放。
+// 判据受影响的直接后果：释放与否取决于无关的字符串计数历史（常驻服务与一次性
+// CLI 的池 id 起点不同 → 3 个用例产物不一致：多一条 @tie_str_free_if_heap）。
+// 注：这里是「按 op 的槽位布局」精确排除，不是放宽判据——这些槽位永远不装值，
+// 排除它们不可能漏掉真实使用；真正的实参（35/36 的 [3],[5]…）照旧计数。
+func not_payload_slot(op: i64, k: i64) -> bool {
+    if k != 0 {
+        return true
+    }
+    if op == 35 || op == 36 || op == 41 || op == 51 || op == 62 {
+        return false
+    }
+    return true
+}
+
 // p.6.7.5：str_cat 链式临时释放判定（见 op56）——值 v 须为 op56 定义，且除**本次
 // 拼接指令自身**外再无可达引用（纯 SSA 链上中间体：仅被下一段拼接消费，从未
 // store 进槽、从未传参/返回），才在结果就绪后调 @tie_str_free_if_heap 释放。
@@ -576,7 +596,7 @@ func str_temp_free_pass(inst_id: i64, v: i64, length_ref: string) {
         var oc = ir.ins_ops_cnt(j)
         var k: i64 = 0
         while k < oc {
-            if ir.ins_opnd(j, k) == v && ir.ins_opnd_kind(j, k) == 0 {
+            if not_payload_slot(ir.ins_op(j), k) && ir.ins_opnd(j, k) == v && ir.ins_opnd_kind(j, k) == 0 {
                 uses_out = uses_out + 1
             }
             k = k + 1

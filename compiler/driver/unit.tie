@@ -304,12 +304,17 @@ pub func run_unit() -> i64 {
 
 // 单元级复位：常驻服务逐请求调用（一次性 CLI 每进程只编一个单元，用不到）。
 // 三处分工：前端 AST/语义表 + intern/节点池（semantic.release_ast）、
-// 诊断记录（dbgem.boot）、后端单元级累加器与置位旗标（irgen/llvmgen.unit_reset）。
+// 类型登记表（types.reset_registries）、后端单元级累加器与置位旗标
+// （irgen/llvmgen.unit_reset）。
+// ⚠ **不在这里调 dbgem.boot()**：那是「单元内」的初始化，CLI 在 compile_program
+// 里做（role_registry_boot 之后）。提前到这里会改变**名字池的登记顺序**，进而
+// 改变字符串池 id ⇒ 与一次性 CLI 的产物不再逐字节相同（实测 3 个用例多出
+// @tie_str_free_if_heap：释放判定扫操作数时，池 id 与值 id 数值相同即被误判为
+// 使用——见 backend/llvmgen_inst_p1.tie 的已知缺陷注记）。
 // **对齐纪律**：新增跨单元累加的全局时，必须同时挂到对应 unit_reset 上，
 // 否则第二个单元会带上一个单元的状态（产物静默漂移，且往往没有报错）。
 pub func unit_reset() {
     semantic.release_ast()
-    dbgem.boot()
     types.reset_registries()
     irgen.unit_reset()
     llvmgen.unit_reset()
