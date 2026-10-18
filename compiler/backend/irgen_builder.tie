@@ -129,19 +129,21 @@ func scope_get_global(name_id: i64) -> i64 {
     if ty < 0 {
         var full = g_cur_fn_name
         while str_len(full) > 0 {
+            // 先试**当前全名**（g_cur_fn_name 可能是单段命名空间 "tiel"，
+            // 此时 rfind_ns 返回 -1；旧代码直接 break，单段命名空间永远补不上）
+            var cand = full + "::" + intern.lookup(name_id)
+            var cid = interner.intern(cand)
+            ty = global_ty(cid)
+            if ty >= 0 {
+                name_id = cid
+                break
+            }
             var last = sstate.rfind_ns(full)
             if last < 0 {
                 break
             }
             var prefix = ig_slice(full, 0, last)
             if prefix == "" {
-                break
-            }
-            var cand = prefix + "::" + intern.lookup(name_id)
-            var cid = interner.intern(cand)
-            ty = global_ty(cid)
-            if ty >= 0 {
-                name_id = cid
                 break
             }
             full = prefix  // 再往上一层

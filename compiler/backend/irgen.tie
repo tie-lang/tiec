@@ -656,6 +656,7 @@ pub func tig_src(src: string, base_dir: string) -> i64 {
 // tie$rt_init 模块构造器在 DLL 加载时执行（见 tig_shared_rt_init）。
 // 发射到当前 g_cur_block。返回 0 / -1（错误已置 sm_err_msg）。
 pub func gen_global_tbl_init() -> i64 {
+    var saved_fn = g_cur_fn_name
     var gi: i64 = 0
     while gi < len(gb_keys) {
         var gte = gb_telem[gi]
@@ -668,6 +669,15 @@ pub func gen_global_tbl_init() -> i64 {
             var gv: i64 = -1
             var ginit_node = g_ginit_node_of(gb_keys[gi])
             if ginit_node >= 0 {
+                // 初始化表达式在**声明所在命名空间**里求值：全局键可能是
+                // "tiel::names"，裸名常量 KW_ALIAS 须按 tiel 前缀补全。
+                var gkey = intern.lookup(gb_keys[gi])
+                var gcut = sstate.rfind_ns(gkey)
+                if gcut >= 0 {
+                    g_cur_fn_name = ig_slice(gkey, 0, gcut)
+                } else {
+                    g_cur_fn_name = ""
+                }
                 gv = tig_table_lit(ginit_node)
                 if gv < 0 {
                     return -1
@@ -691,6 +701,13 @@ pub func gen_global_tbl_init() -> i64 {
     // 缺此段则 @g 恒为 zeroinitializer——struct 读出全 0、fn（已门禁）读野指针。
     var ai: i64 = 0
     while ai < len(g_agginit_names) {
+        var akey = intern.lookup(g_agginit_names[ai])
+        var acut = sstate.rfind_ns(akey)
+        if acut >= 0 {
+            g_cur_fn_name = ig_slice(akey, 0, acut)
+        } else {
+            g_cur_fn_name = ""
+        }
         var av = tig_expr(g_agginit_nodes[ai])
         if av < 0 {
             return -1
@@ -702,6 +719,7 @@ pub func gen_global_tbl_init() -> i64 {
         ir.add_operand(ast, interner.intern("@" + intern.lookup(g_agginit_names[ai])), 3)
         ai = ai + 1
     }
+    g_cur_fn_name = saved_fn
     return 0
 }
 
