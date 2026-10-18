@@ -141,7 +141,11 @@ pub func gb_find_ns(nid: i64) -> i64 {
 }
 
 pub func gb_const_of(nid: i64) -> i64 {
-    var idx = sstate.bs_find(gb_keys, nid)
+    var k = gb_find_ns_key(nid)
+    if k < 0 {
+        return 0
+    }
+    var idx = sstate.bs_find(gb_keys, k)
     if idx < 0 {
         return 0
     }
@@ -149,7 +153,11 @@ pub func gb_const_of(nid: i64) -> i64 {
 }
 
 pub func gb_telem_of(nid: i64) -> i64 {
-    var idx = sstate.bs_find(gb_keys, nid)
+    var k = gb_find_ns_key(nid)
+    if k < 0 {
+        return -1
+    }
+    var idx = sstate.bs_find(gb_keys, k)
     if idx < 0 {
         return -1
     }
@@ -157,12 +165,18 @@ pub func gb_telem_of(nid: i64) -> i64 {
 }
 
 // 表元素类型（变量名）：局部 → 全局 → -1
+// 全局查找须走 gb_find_ns_key：命名空间内的裸名（names）要补全成 ns::names，
+// 否则 gb_telem 查不到、table_push 等内建会按 i64 默认元素类型误报 E00032。
 pub func var_table_elem(nid: i64) -> i64 {
     var i = sstate.bs_find(lv_keys, nid)
     if i >= 0 {
         return lv_telem[i]
     }
-    var j = sstate.bs_find(gb_keys, nid)
+    var k = gb_find_ns_key(nid)
+    if k < 0 {
+        return -1
+    }
+    var j = sstate.bs_find(gb_keys, k)
     if j >= 0 {
         return gb_telem[j]
     }
@@ -174,11 +188,10 @@ pub func var_dyn(nid: i64) -> i64 {
     if i >= 0 {
         return lv_dyn[i]
     }
-    var j = sstate.bs_find(gb_keys, nid)
-    if j >= 0 {
-        return 1
+    if gb_find_ns_key(nid) < 0 {
+        return 0
     }
-    return 0
+    return 1
 }
 
 // p.8.1.5：Option<T> 形态判定 + payload 类型——枚举含 Some(T)（恰 1 字段）与

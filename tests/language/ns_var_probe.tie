@@ -22,6 +22,20 @@ namespace nsv_b {
     pub var x: i64 = 2
 }
 
+// 命名空间内的表全局：元素类型须随命名空间解析（gb_telem 走 ns 前缀补全），
+// 否则 table_push 会按 i64 默认元素类型误报 E00032。
+namespace nsv_t {
+    pub var names: table<string> = []
+
+    pub func add(s: string) {
+        table_push(names, s)
+    }
+
+    pub func first() -> string {
+        return names[0]
+    }
+}
+
 func main() {
     println(nsv_a::sum())      // 30
     nsv_a::bump()
@@ -33,4 +47,6 @@ func main() {
     println(nsv_b::x)          // 2
     nsv_b::x = 7
     println(nsv_b::x)          // 7
+    nsv_t::add("abc")
+    println(nsv_t::first())    // abc
 }
