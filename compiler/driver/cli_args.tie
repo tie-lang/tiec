@@ -334,6 +334,8 @@ pub func parse_args() -> i64 {
             g_tink = true
         } else if a == "--tink-serve" {
             g_tink_serve = true
+        } else if a == "--serve-compile" {
+            g_serve_compile = true
         } else if a == "--tink-in" {
             g_tink_in = true
         } else if a == "--tink-file" {
@@ -366,8 +368,9 @@ pub func parse_args() -> i64 {
         }
         i = i + 1
     }
-    if !input_set && !g_tink_serve {
-        // --tink-serve（分析服务）不吃命令行输入文件（源码经请求帧传入）。
+    if !input_set && !g_tink_serve && !g_serve_compile {
+        // 常驻服务（--tink-serve 分析 / --serve-compile 编译）不吃命令行输入文件
+        // ——参数经请求帧传入。
         return -1
     }
     return 0

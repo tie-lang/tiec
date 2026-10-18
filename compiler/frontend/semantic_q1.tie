@@ -585,7 +585,7 @@ pub func release_ast() {
     intern.reset()
 }
 
-// 常驻编译服务（--tink-serve 的 compile 请求）：单元间复位，**保留 intern 池**。
+// 常驻编译服务（--serve-compile 的 op=2 请求）：单元间复位，**保留 intern 池**。
 // 与 release_ast 的唯一差别：不清名字池。理由：服务进程里已有模块**长期持有**
 // 名字池 id（角色注册表、dbgem 记录族、诊断表），清池会让这些 id 重新指向别的
 // 名字——实测症状极隐蔽：asm_mem_probe 的「str_cat 临时串可释放」判定被带偏，

@@ -180,8 +180,11 @@ pub var g_tink_in: bool = false;
 pub var g_tink_file: string = "";
 pub var g_tink_in_file: string = "";
 pub var g_tink_save: string = "";
-// tink 分析服务（--tink-serve）：常驻 stdin/stdout 请求-应答（见 driver/serve.tie）
+// tink 常驻服务（见 driver/serve.tie）：两种角色，各自独占进程
+//   --tink-serve     role=1 分析（只接 op=1）
+//   --serve-compile  role=2 编译（只接 op=2；落盘 + spawn clang/link）
 pub var g_tink_serve: bool = false;
+pub var g_serve_compile: bool = false;
 // 常驻服务·编译请求的人读文本捕获缓冲（dbg_txt 在 g_svc_cap_on 时改写入此；
 // 由 serve.sv_compile 每请求清空并随 done 帧回传）。
 pub var g_svc_cap: string = "";
@@ -257,10 +260,14 @@ func main() -> i64 {
             return rrc
         }
     }
-    // tink 分析服务（--tink-serve）：常驻请求-应答循环（tsp 包化接口）。
-    // 与一次性编译路径互不影响；命中即进服务，进程随服务退出（EOF/停机帧）。
+    // tink 常驻服务：分析（--tink-serve，tsp/LSP 用）与编译（--serve-compile，
+    // 构建驱动用）是**两个角色、两个进程**——编译会 spawn clang/link 且内部 panic
+    // 走 exit(1)，与编辑器服务同进程会把故障与延迟一起传染过去。
     if g_tink_serve {
         return driver.run_serve()
+    }
+    if g_serve_compile {
+        return driver.run_compile_serve()
     }
     // 单编译单元执行体（服务模式同源；见 driver/unit.tie）
     return driver.run_unit()

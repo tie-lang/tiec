@@ -10,7 +10,9 @@ pub func dbg_txt(s: string) {
         g_svc_cap = g_svc_cap + s + "\n"
         return
     }
-    if g_tink || g_tink_serve {
+    // 任何「stdout 是帧流」的模式都必须把人读文本改道 stderr：
+    // --tink（一次性帧输出）、--tink-serve（分析角色）、--serve-compile（编译角色）。
+    if g_tink || g_tink_serve || g_serve_compile {
         print_err(s + "\n")
     } else {
         println(s)

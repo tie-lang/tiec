@@ -47,7 +47,7 @@ pub func env_encode(kind: i64, stage: i64, name: string, payload: table<i64>) ->
 // ---------- 解码（结果入 tinker 全局；见 tinker.tie 主文件） ----------
 
 // varint 读取：bytes[pos..] → (值, next)；失败 (0, -1)。
-// pub：供 --tink-serve 的请求字段解析复用（单一解码实现）。
+// pub：供常驻服务的请求字段解析复用（单一解码实现）。
 pub func rd_varint(bytes: table<i64>, pos: i64) -> (i64, i64) {
     var v: i64 = 0
     var shift: i64 = 0
