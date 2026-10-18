@@ -284,6 +284,35 @@ pub func parse_expr_or_assign() -> i64 {
             ast.set_children(a, kids)
             return a
         }
+        if tag == N_PATH {
+            // 命名空间限定的全局变量赋值：ns::g = v / ns::g op= v。
+            // 目标名 = 各段以 "::" 拼接的全名，与 gb_* 的登记名一致；
+            // 可见性/const 由 semantic 的 check_const_visibility_nid 与
+            // irgen 的 scope_get_global 复核。
+            var value = pexpr.parse_expr()
+            if value < 0 {
+                return -1
+            }
+            if !putil.expect_stmt_end() {
+                return -1
+            }
+            var full: string = ""
+            var nc = ast.child_count(expr)
+            var si: i64 = 0
+            while si < nc {
+                var seg = ast.child_at(expr, si)
+                if si > 0 {
+                    full = full + "::"
+                }
+                full = full + interner.lookup(ast.name(seg))
+                si = si + 1
+            }
+            var a = ast.new_node(N_ASSIGN, interner.intern(full), op, -1, line, col)
+            var kids: table<i64> = table_new_i64()
+            table_push(kids, value)
+            ast.set_children(a, kids)
+            return a
+        }
         putil.set_err(putil.peek_line(), putil.peek_col(), "赋值目标必须是变量或对象字段")
         return -1
     }

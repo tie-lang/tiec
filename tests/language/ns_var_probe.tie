@@ -1,0 +1,36 @@
+type tie<logic>
+
+// 命名空间内的全局变量：私有 var（模块私有）+ pub var（跨文件可读写）、
+// 多命名空间块同名成员互不干扰、复合赋值。
+// 限定访问统一用 ns::name（与 ns::func() 同一条路径）。
+
+namespace nsv_a {
+    var g_priv: i64 = 10
+    pub var g_pub: i64 = 20
+
+    pub func sum() -> i64 {
+        return g_priv + g_pub
+    }
+
+    pub func bump() {
+        g_priv += 1
+        g_pub += 1
+    }
+}
+
+namespace nsv_b {
+    pub var x: i64 = 2
+}
+
+func main() {
+    println(nsv_a::sum())      // 30
+    nsv_a::bump()
+    println(nsv_a::sum())      // 32
+    nsv_a::g_pub = 100
+    println(nsv_a::sum())      // 111
+    nsv_a::g_pub += 1
+    println(nsv_a::g_pub)      // 101
+    println(nsv_b::x)          // 2
+    nsv_b::x = 7
+    println(nsv_b::x)          // 7
+}
